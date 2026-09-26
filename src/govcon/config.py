@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     attachment_max_mb: int = 100
     http_user_agent: str = "govcon-platform/2.0"
     dibbs_request_interval_seconds: float = Field(default=2.0, ge=0)
+    sam_vendor_cache_hours: int = Field(default=24, ge=1)
 
     web_bind_host: str = "127.0.0.1"
     web_bind_allow_public: bool = False
