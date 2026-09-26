@@ -116,3 +116,12 @@ No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
 
 Follow-up closure from Phase 9:
 - DEV-004 (`review_reopen_required` after a material amendment) is now implemented in Phase 10 via collaborative review reopen orchestration (`apply_material_amendment_reopen`) and is covered by DB-backed tests.
+
+## Phase 11
+
+No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
+
+Implementation notes:
+- The `proposal_drafting_v1` and `proposal_red_team_v1` prompts were placeholders in earlier phases. They are now activated with full production text from §41.1 and §41.2.
+- Proposal red-team severity uses `critical | major | minor` (as defined in §41.2), not the compliance system's `critical | high | medium | low`. Only critical proposal findings create blocking compliance findings (ADR-041).
+- `finalize_proposal(APPROVE_FOR_SUBMISSION)` passes the human approval as the override reason for Phase 9's pre-flight check, consistent with the human-final-authority principle (ADR-040).

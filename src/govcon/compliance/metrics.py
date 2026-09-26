@@ -88,6 +88,16 @@ def coverage_counts(requirements: Iterable[Requirement], findings: Iterable[Comp
     return counts
 
 
+def coverage_summary(requirements: list[Requirement]) -> dict[str, Any]:
+    """Return a flat summary dict suitable for workspace/checklist display.
+
+    Accepts a list of Requirement ORM objects directly (no Session needed).
+    Returns the same keys as coverage_counts without the by_category breakdown.
+    """
+    counts = coverage_counts(requirements, [])
+    return {k: v for k, v in counts.items() if k not in ("by_category", "percentages")}
+
+
 def record_matrix_run(session: Session, opportunity_id: int, *, status: str = "complete", warnings: list | None = None, extra: dict[str, Any] | None = None) -> tuple[dict[str, Any], int]:
     requirements = active_requirements(session, opportunity_id)
     findings = open_findings(session, opportunity_id)

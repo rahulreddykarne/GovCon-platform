@@ -951,3 +951,61 @@ Some third-party guides treat `offset` as a record offset (`offset = page * limi
 ### Recommended next task
 
 Phase 2 — watchlist matching engine (`PHASE_02_MATCHING.md`), only after pull request #3 is merged and its gates pass. Phase 2 is not started. `IMPLEMENTATION_STATUS.md` still marks Phase 2 as NOT STARTED.
+
+---
+
+## Phase 11 — Post-approval proposal and submission-package generation
+
+**Status:** COMPLETE  
+**Date:** 2026-09-26  
+**Model:** claude-sonnet-4-6  
+**Branch:** cursor/phase-11-proposal-submission-3a2d
+
+### What was implemented
+
+- **`src/govcon/proposals/versions.py`** — Immutable version management: `create_proposal_version`, `latest_proposal_version`, `list_proposal_versions`, `get_sections_for_version`.
+- **`src/govcon/proposals/drafting.py`** — AI proposal drafting via `proposal_drafting` prompt. Reads compliance matrix + approved facts; never fabricates.
+- **`src/govcon/proposals/ai_review.py`** — Red-team AI review via `proposal_red_team` prompt. Critical findings become blocking `ComplianceFinding` rows. Requirement IDs validated before FK insert (ADR-042).
+- **`src/govcon/proposals/service.py`** — Main orchestration: `get_or_create_proposal`, `generate_proposal` (requires `approved_to_bid`), `get_proposal_workspace`, `finalize_proposal` (APPROVE_FOR_SUBMISSION / RETURN_FOR_FIX / CANCEL_BID), `record_submission_confirmation`.
+- **`src/govcon/proposals/export.py`** — `export_proposal_docx` (DOCX via python-docx), `export_coverage_xlsx` (XLSX via openpyxl), `export_submission_zip` (ZIP containing DOCX + XLSX + instructions + checklist + manifest).
+- **`src/govcon/submissions/service.py`** — `generate_submission_package` extracts submission instructions from compliance matrix key_values; creates/updates `Submission` record.
+- **`src/govcon/submissions/checklist.py`** — `generate_final_checklist` (structured checklist with ready/pending/blocked/unknown status per item), `generate_step_by_step_instructions`.
+- **`src/govcon/submissions/email_adapter.py`** — `draft_submission_email` produces To, Subject, body draft with `[[REVIEW:...]]` markers. No auto-send.
+- **Prompts activated:** `proposal_drafting_v1.md` and `proposal_red_team_v1.md` (both in `prompts/deepseek/`).
+- **New schemas:** `ProposalDraftV1`, `ProposalRedTeamV1`, `ProposalRedTeamFinding`, `ProposalDraftSection` in `compliance/schemas.py`.
+- **New metric:** `coverage_summary(requirements)` in `compliance/metrics.py` (flat summary without by_category).
+- **Migration:** `a1b2c3d4e5f6` — adds `final_approved_by_user_id`, `final_approved_at`, `red_team_analysis_id`, `submission_id`, and `ck_proposals_status` check constraint to `proposals`.
+- **CLI commands:** `govcon proposal generate|status|red-team|approve|return|cancel|export` and `govcon submission package|checklist|instructions|email-draft|confirm`.
+- **Test updated:** `tests/test_http_prompts.py` — added `activated_phase11` set to reflect both new active prompts.
+
+### Acceptance criteria verification
+
+| Criterion | Verified by | Result |
+|---|---|---|
+| AC-1: Approval-to-bid starts proposal/package generation | `test_generate_proposal_creates_version_when_approved`, `test_generate_proposal_requires_approved_to_bid` | PASS |
+| AC-2: Proposal sections traceable to requirements | `test_proposal_sections_have_requirement_ids`, `test_placeholder_draft_maps_requirement_ids` | PASS |
+| AC-3: Submission instructions from solicitation evidence | `test_submission_package_generated_from_requirements`, `test_submission_instructions_from_checklist`, `test_email_draft_generated` | PASS |
+| AC-4: Missing mandatory items block `ready` | `test_missing_mandatory_blocks_ready`, `test_all_satisfied_shows_ready`, `test_checklist_blocked_when_mandatory_missing` | PASS |
+| AC-5: Export DOCX/XLSX/ZIP | `test_export_proposal_docx`, `test_export_coverage_xlsx`, `test_export_submission_zip` | PASS |
+| AC-6: Final approval human-authorized | `test_final_approval_requires_approver_role`, `test_approve_for_submission_sets_final_approved`, `test_return_for_fix_sets_returned_status`, `test_cancel_bid_sets_pursuit_cancelled`, `test_final_approval_is_audited` | PASS |
+| AC-7: No arbitrary portal auto-submission | `test_no_auto_submission_in_v1` | PASS |
+
+Additional tests: red-team critical/major findings, immutable versions (`test_every_regeneration_creates_new_version`), coverage run after generation, CLI smoke tests.
+
+### Design decisions
+- ADR-040: Final-approval uses `override_reason="human_final_approval_gate"` to satisfy Phase 9's pre-flight check requirement.
+- ADR-041: Proposal red-team severity is `critical|major|minor`; compliance severity remains `critical|high|medium|low`.
+- ADR-042: AI-returned requirement IDs are validated against the opportunity's actual requirements before FK insert.
+
+### ⚠️ VERIFY items
+Phase 11 has no `⚠️ VERIFY` markers. The spec's AI prompts and schemas are derived from §41 of the master spec and directly implemented without external interface verification.
+
+### Known deviations
+None. Full implementation of the spec with no silent deferrals.
+
+### Unresolved blockers
+None.
+
+### Recommended next phase
+
+`PHASE_12_MCP.md` — MCP server. Do not implement in this run.

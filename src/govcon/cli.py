@@ -32,6 +32,8 @@ prompts_app = typer.Typer(help="Prompt registry administration.")
 decision_app = typer.Typer(help="JEV decision bundles and package generation.")
 review_app = typer.Typer(help="Collaborative review workspace operations.")
 compliance_app = typer.Typer(help="High-reliability compliance matrix, validation, and pre-flight.")
+proposal_app = typer.Typer(help="Post-approval proposal generation and final approval (Phase 11).")
+submission_app = typer.Typer(help="Submission package generation and tracking (Phase 11).")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -46,6 +48,8 @@ app.add_typer(prompts_app, name="prompts")
 app.add_typer(decision_app, name="decision")
 app.add_typer(review_app, name="review")
 app.add_typer(compliance_app, name="compliance")
+app.add_typer(proposal_app, name="proposal")
+app.add_typer(submission_app, name="submission")
 
 
 def main() -> None:
@@ -1900,3 +1904,321 @@ def compliance_benchmark(
             typer.echo(f"- {failure}")
     if not suite.gate.passed:
         raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 — Proposal commands
+# ---------------------------------------------------------------------------
+
+@proposal_app.command("generate")
+def proposal_generate(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str = typer.Option(..., help="Authorized user email."),
+    skip_ai: bool = typer.Option(False, help="Use placeholder draft (no AI key required)."),
+) -> None:
+    """Generate an AI proposal draft for an approved-to-bid opportunity."""
+    from govcon.proposals.service import generate_proposal
+
+    settings = _settings()
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            result = generate_proposal(session, opportunity_id=opportunity_id, actor=actor, skip_ai=skip_ai, settings=settings)
+        typer.echo(f"proposal_id: {result['proposal_id']}  version_id: {result['version_id']}  sections: {result['section_count']}")
+        if result.get("global_blockers"):
+            typer.echo("Global blockers:", err=True)
+            for b in result["global_blockers"]:
+                typer.echo(f"  {b}", err=True)
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@proposal_app.command("status")
+def proposal_status(
+    opportunity_id: int = typer.Option(...),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show the proposal workspace for the final approver."""
+    import json as _json
+    from govcon.proposals.service import get_proposal_workspace
+
+    settings = _settings()
+    with session_scope(settings) as session:
+        ws = get_proposal_workspace(session, opportunity_id=opportunity_id)
+    if as_json:
+        typer.echo(_json.dumps(ws, indent=2, default=str))
+    else:
+        typer.echo(f"readiness: {ws['readiness']}")
+        typer.echo(f"proposal_status: {ws['proposal_status']}")
+        typer.echo(f"version: v{ws['current_version_number']}")
+        typer.echo(f"mandatory {ws['mandatory_satisfied']}/{ws['mandatory_total']} satisfied")
+        typer.echo(f"critical unresolved: {ws['critical_unresolved']}")
+        if ws["blocking_issues"]:
+            for issue in ws["blocking_issues"]:
+                typer.echo(f"BLOCKER: {issue}", err=True)
+
+
+@proposal_app.command("red-team")
+def proposal_red_team(
+    opportunity_id: int = typer.Option(...),
+    proposal_version_id: int = typer.Option(...),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the red-team AI reviewer against a proposal version."""
+    import json as _json
+    from govcon.proposals.ai_review import run_proposal_red_team
+    from govcon.ai.structured import StructuredCallError
+
+    settings = _settings()
+    try:
+        with session_scope(settings) as session:
+            result = run_proposal_red_team(
+                session,
+                opportunity_id=opportunity_id,
+                proposal_version_id=proposal_version_id,
+                settings=settings,
+            )
+        if as_json:
+            typer.echo(_json.dumps(result, indent=2, default=str))
+        else:
+            typer.echo(f"assessment: {result['overall_assessment']}  critical: {result['critical_count']}  major: {result['major_count']}  minor: {result['minor_count']}")
+            for f in result["result"].get("findings", []):
+                typer.echo(f"  [{f['severity'].upper()}] req={f.get('requirement_id')} sec={f.get('proposal_section')}: {f['description'][:100]}")
+    except StructuredCallError as exc:
+        typer.echo(f"AI unavailable: {exc.reason}: {exc.detail}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@proposal_app.command("approve")
+def proposal_approve(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str = typer.Option(..., help="Authorized approver email."),
+    override_reason: str | None = typer.Option(None, help="Override reason when blockers remain."),
+) -> None:
+    """APPROVE FOR SUBMISSION: mark proposal final-approved and advance pursuit to ready_to_submit."""
+    from govcon.proposals.service import finalize_proposal
+    from govcon.compliance.submission_preflight import ReadinessBlocked
+    from govcon.collaboration.users import PermissionDenied
+
+    settings = _settings()
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            result = finalize_proposal(session, opportunity_id=opportunity_id, action="APPROVE_FOR_SUBMISSION", actor=actor, override_reason=override_reason)
+        typer.echo(f"proposal {result['proposal_id']} → {result['status']}  pursuit → {result['pursuit_stage']}")
+    except ReadinessBlocked as exc:
+        typer.echo(f"Blocked by {len(exc.blockers)} issue(s). Use --override-reason to bypass.", err=True)
+        raise typer.Exit(code=1) from exc
+    except (PermissionDenied, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@proposal_app.command("return")
+def proposal_return(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str = typer.Option(..., help="Authorized approver email."),
+) -> None:
+    """RETURN FOR FIX: return the proposal for additional work."""
+    from govcon.proposals.service import finalize_proposal
+    from govcon.collaboration.users import PermissionDenied
+
+    settings = _settings()
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            result = finalize_proposal(session, opportunity_id=opportunity_id, action="RETURN_FOR_FIX", actor=actor)
+        typer.echo(f"proposal {result['proposal_id']} → {result['status']}")
+    except (PermissionDenied, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@proposal_app.command("cancel")
+def proposal_cancel(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str = typer.Option(..., help="Authorized approver email."),
+) -> None:
+    """CANCEL BID: cancel the pursuit."""
+    from govcon.proposals.service import finalize_proposal
+    from govcon.collaboration.users import PermissionDenied
+
+    settings = _settings()
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            result = finalize_proposal(session, opportunity_id=opportunity_id, action="CANCEL_BID", actor=actor)
+        typer.echo(f"proposal {result['proposal_id']} → {result['status']}  pursuit → {result['pursuit_stage']}")
+    except (PermissionDenied, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@proposal_app.command("export")
+def proposal_export(
+    opportunity_id: int = typer.Option(...),
+    format_: str = typer.Option("zip", "--format", help="docx | xlsx | zip"),
+    output: str | None = typer.Option(None, help="Output file path (default: stdout as bytes or current dir)."),
+) -> None:
+    """Export the current proposal version (DOCX/XLSX) or the full submission package (ZIP)."""
+    import pathlib
+    from govcon.models import Proposal
+    from sqlalchemy import select as _select
+
+    settings = _settings()
+    with session_scope(settings) as session:
+        proposal = session.scalars(_select(Proposal).where(Proposal.opportunity_id == opportunity_id)).first()
+        if proposal is None:
+            typer.echo("No proposal for this opportunity.", err=True)
+            raise typer.Exit(code=1)
+
+        if format_.lower() == "docx":
+            from govcon.proposals.export import export_proposal_docx
+            if proposal.current_version_id is None:
+                typer.echo("No proposal version yet.", err=True)
+                raise typer.Exit(code=1)
+            data = export_proposal_docx(session, proposal_version_id=proposal.current_version_id)
+            ext = ".docx"
+        elif format_.lower() == "xlsx":
+            from govcon.proposals.export import export_coverage_xlsx
+            if proposal.current_version_id is None:
+                typer.echo("No proposal version yet.", err=True)
+                raise typer.Exit(code=1)
+            data = export_coverage_xlsx(session, opportunity_id=opportunity_id, proposal_version_id=proposal.current_version_id)
+            ext = ".xlsx"
+        elif format_.lower() == "zip":
+            from govcon.proposals.export import export_submission_zip
+            data = export_submission_zip(session, opportunity_id=opportunity_id)
+            ext = ".zip"
+        else:
+            typer.echo(f"Unknown format: {format_!r}. Use docx | xlsx | zip.", err=True)
+            raise typer.Exit(code=1)
+
+    out_path = pathlib.Path(output) if output else pathlib.Path(f"opp_{opportunity_id}_proposal{ext}")
+    out_path.write_bytes(data)
+    typer.echo(f"Wrote {len(data):,} bytes → {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 — Submission commands
+# ---------------------------------------------------------------------------
+
+@submission_app.command("package")
+def submission_package(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str | None = typer.Option(None),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Generate or refresh the submission package from solicitation evidence."""
+    import json as _json
+    from govcon.submissions.service import generate_submission_package
+
+    settings = _settings()
+    with session_scope(settings) as session:
+        actor = _actor(session, actor_email) if actor_email else None
+        result = generate_submission_package(session, opportunity_id=opportunity_id, actor=actor, settings=settings)
+    if as_json:
+        typer.echo(_json.dumps(result, indent=2, default=str))
+    else:
+        typer.echo(f"submission_id: {result['submission_id']}  status: {result['status']}")
+        typer.echo(f"method: {result['submission_method']}  destination: {result['submission_destination']}")
+        typer.echo(f"deadline: {result['deadline']} ({result['deadline_timezone']})")
+        typer.echo(f"required_files: {result['required_files']}")
+        if result["missing_documents"]:
+            for m in result["missing_documents"]:
+                typer.echo(f"  MISSING: {m}", err=True)
+
+
+@submission_app.command("checklist")
+def submission_checklist(
+    opportunity_id: int = typer.Option(...),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show the final submission checklist."""
+    import json as _json
+    from govcon.submissions.checklist import generate_final_checklist
+
+    settings = _settings()
+    with session_scope(settings) as session:
+        result = generate_final_checklist(session, opportunity_id=opportunity_id)
+    if as_json:
+        typer.echo(_json.dumps(result, indent=2, default=str))
+    else:
+        typer.echo(f"overall: {result['overall'].upper()}")
+        for item in result["items"]:
+            flag = "✓" if item["status"] == "ready" else ("✗" if item["status"] == "blocked" else "?")
+            typer.echo(f"  [{flag}] {item['label']}: {item['detail']}")
+
+
+@submission_app.command("instructions")
+def submission_instructions(
+    opportunity_id: int = typer.Option(...),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show step-by-step submission instructions."""
+    import json as _json
+    from govcon.submissions.checklist import generate_step_by_step_instructions
+
+    settings = _settings()
+    with session_scope(settings) as session:
+        steps = generate_step_by_step_instructions(session, opportunity_id=opportunity_id)
+    if as_json:
+        typer.echo(_json.dumps(steps, indent=2, default=str))
+    else:
+        for step in steps:
+            typer.echo(f"Step {step['step']} [{step['status'].upper()}]: {step['title']}")
+            typer.echo(f"  {step['description']}")
+
+
+@submission_app.command("email-draft")
+def submission_email_draft(
+    opportunity_id: int = typer.Option(...),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Generate a draft submission email."""
+    import json as _json
+    from govcon.submissions.email_adapter import draft_submission_email
+
+    settings = _settings()
+    with session_scope(settings) as session:
+        draft = draft_submission_email(session, opportunity_id=opportunity_id)
+    if as_json:
+        typer.echo(_json.dumps(draft, indent=2, default=str))
+    else:
+        typer.echo(f"To: {draft['to']}")
+        typer.echo(f"Subject: {draft['subject']}")
+        typer.echo(f"Attachments: {draft['attachments']}")
+        typer.echo("---")
+        typer.echo(draft["body"])
+        if draft["notes"]:
+            for n in draft["notes"]:
+                typer.echo(f"NOTE: {n}", err=True)
+
+
+@submission_app.command("confirm")
+def submission_confirm(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str = typer.Option(..., help="Authorized approver email."),
+    confirmation_number: str | None = typer.Option(None, help="Confirmation number from the portal/email."),
+    notes: str | None = typer.Option(None, help="Optional notes about the submission."),
+) -> None:
+    """Record that the human has submitted and has a confirmation number."""
+    from govcon.proposals.service import record_submission_confirmation
+    from govcon.collaboration.users import PermissionDenied
+
+    settings = _settings()
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            result = record_submission_confirmation(
+                session,
+                opportunity_id=opportunity_id,
+                confirmation_number=confirmation_number,
+                confirmation_notes=notes,
+                actor=actor,
+            )
+        typer.echo(f"submission {result['submission_id']} → {result['status']}  confirmation: {result.get('confirmation_number')}")
+    except (PermissionDenied, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
