@@ -43,10 +43,21 @@ def test_placeholder_prompts_load() -> None:
         "evidence_rules",
         "company_facts_policy",
     }
+    activated_phase9 = {
+        "requirement_extraction_a",
+        "requirement_extraction_b",
+        "requirement_reconciliation",
+        "compliance_validator",
+        "contradiction_detection",
+        "compliance_red_team",
+        "amendment_analysis",
+        "proposal_coverage",
+        "submission_preflight_ai",
+    }
     for asset in assets:
         assert asset.version == "v1"
         assert len(asset.content_hash) == 64
-        if asset.name in activated_phase7:
+        if asset.name in activated_phase7 | activated_phase9:
             assert asset.metadata["status"] == "active", f"{asset.name} should be active"
             assert "Do not activate." not in asset.body
         else:

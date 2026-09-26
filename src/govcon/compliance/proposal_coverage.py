@@ -79,7 +79,7 @@ def needs_response(req: Requirement) -> bool:
 
 
 def count_items(noun: str, text: str) -> int:
-    labels = set(re.findall(rf"\b{re.escape(noun)}s?\s*(?:#|no\.?)?\s*([A-Z]|\d+)\b", text, re.I))
+    labels = set(re.findall(rf"\b(?i:{re.escape(noun)})s?\s+(?:#\s*|(?i:no\.?)\s*)?([A-Z]|\d+)\b", text))
     lines = [line for line in text.splitlines() if re.match(rf"\s*(?:[-*•]|\d+[.)])?\s*{re.escape(noun)}\b", line, re.I)]
     return max(len(labels), len(lines))
 

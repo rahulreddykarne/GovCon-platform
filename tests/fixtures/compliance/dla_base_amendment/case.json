@@ -30,7 +30,10 @@
   ],
   "expected_critical_requirements": ["deadline", "sf1449_signed", "price_every_clin", "sam_registration", "small_business", "acknowledge_amendment"],
   "expected_conflicts": [{"topic": "delivery_days", "resolution": "superseded"}],
-  "expected_amendment_changes": [{"requirement": "delivery_30", "change": "superseded"}],
+  "expected_amendment_changes": [
+    {"requirement": "delivery_30", "change": "superseded"},
+    {"requirement": "past_performance", "change": "stale"}
+  ],
   "expected_submission_files": ["SF 1449", "SF 30"],
   "evidence": {
     "company_facts": {"sam_registration_status": "active", "sam_expiration_date": "2027-06-30"},
