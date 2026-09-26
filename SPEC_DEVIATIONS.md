@@ -13,3 +13,7 @@ Record only verified deviations from `MASTER_SPEC_v2.5.md`.
 - Reason:
 - Impact:
 - Follow-up:
+
+## Phase 0
+
+No confirmed behavior deviation was required. Choices that add columns or tables required by the specification prose (timestamps, sessions, audit, notifications, `decision_runs`, optimistic `version`) are recorded in `DECISIONS.md`.

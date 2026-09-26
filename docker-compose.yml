@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: govcon
+      POSTGRES_PASSWORD: govcon
+      POSTGRES_DB: govcon
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - govcon_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U govcon -d govcon"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  govcon_pg:
