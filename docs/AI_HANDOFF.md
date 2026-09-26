@@ -84,8 +84,6 @@ Covered acceptance checks:
 
 Phase 4 — DIBBS ingestion (`PHASE_04_DIBBS.md`). **Do not start until this Phase 3 pull request is merged and its gates pass.**
 
-`main` was re-read at 2026-09-26 18:58 UTC and is `26ed863` (Phase 0 and Phase 1 merged). This branch is `cursor/phase-02-matching-d53f`. One pull request: #5.
-
 ## 2026-09-26 18:58 UTC — PHASE_02_MATCHING
 
 - Agent/model identity: Cursor cloud, model `composer-2.5` (CoS-selected)
