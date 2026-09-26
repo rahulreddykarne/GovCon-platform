@@ -105,3 +105,11 @@ Record durable architecture/implementation decisions.
 - Decision: Compose uses `pgvector/pgvector:pg16`, database `govcon`, and the spec's local user and password. That password is a development default in `.env.example`, not a deployed secret. `.env` is gitignored.
 - Alternatives considered: A different host port or a required external database.
 - Consequences: `docker compose up -d && govcon db upgrade` matches the acceptance command when `.env` or `DATABASE_URL` is set.
+
+### ADR-014 — Audit payloads never store secrets
+- Phase: 0
+- Date: 2026-09-26
+- Context: §24 forbids secrets in logs and PostgreSQL. `audit_events.old_value` and `new_value` are JSONB written by `record_audit`.
+- Decision: Callers record only non-secret fields such as email, role, and ids. `record_audit` drops keys whose names contain password, token, secret, cookie, or credential markers, including nested objects, before insert. The invite audit stores email and role only.
+- Alternatives considered: Keep the secret key with a `[REDACTED]` placeholder.
+- Consequences: A mistaken caller cannot persist a password, password hash, or raw token in the audit table.

@@ -1,4 +1,4 @@
-"""Append-only audit events. Secret fields are scrubbed before insert."""
+"""Append-only audit events. Secret fields are removed before insert."""
 
 from __future__ import annotations
 
@@ -8,31 +8,38 @@ from sqlalchemy.orm import Session
 
 from govcon.models import AuditEvent
 
-_SECRET_KEYS = frozenset(
-    {
-        "password",
-        "password_hash",
-        "token",
-        "token_hash",
-        "api_key",
-        "secret",
-        "cookie",
-        "smtp_pass",
-        "authorization",
-        "mfa_secret",
-    }
+# Substrings matched against a normalized key (lower case, hyphens as underscores).
+# A hit drops the key so passwords, hashes, and raw tokens never reach JSONB.
+_SECRET_MARKERS = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "cookie",
+    "authorization",
+    "credential",
+    "smtp_pass",
 )
 
 
+def _is_secret_key(key: str) -> bool:
+    normalized = str(key).lower().replace("-", "_")
+    return any(marker in normalized for marker in _SECRET_MARKERS)
+
+
 def scrub(value: Any) -> Any:
-    """Return a JSON-ready copy with secret keys removed."""
+    """Return a JSON-ready copy with secret keys removed.
+
+    Nested dicts and lists are walked. Non-secret fields are kept unchanged.
+    """
     if isinstance(value, dict):
         cleaned: dict[str, Any] = {}
         for key, item in value.items():
-            if str(key).lower() in _SECRET_KEYS:
-                cleaned[str(key)] = "[REDACTED]"
-            else:
-                cleaned[str(key)] = scrub(item)
+            if _is_secret_key(key):
+                continue
+            cleaned[str(key)] = scrub(item)
         return cleaned
     if isinstance(value, list):
         return [scrub(item) for item in value]

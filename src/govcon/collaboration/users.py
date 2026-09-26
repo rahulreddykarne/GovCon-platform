@@ -93,7 +93,7 @@ def invite_user(
         user_id=actor_user_id,
         entity_type="user",
         entity_id=user.id,
-        new_value={"email": user.email, "role": user.role, "password": password},
+        new_value={"email": user.email, "role": user.role},
     )
     return user
 

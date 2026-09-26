@@ -157,9 +157,42 @@ def test_auth_sessions_roles_and_audit(upgraded_engine) -> None:
             select(AuditEvent).where(AuditEvent.entity_id == owner_id, AuditEvent.action_type == "user_invited")
         )
         assert audit is not None
-        assert audit.new_value is not None
-        assert audit.new_value["password"] == "[REDACTED]"
-        assert password not in str(audit.new_value)
+        assert audit.new_value == {"email": email, "role": "owner"}
+        assert "password" not in audit.new_value
+        assert "password_hash" not in audit.new_value
+        rendered = str(audit.new_value)
+        assert password not in rendered
+        assert "argon2" not in rendered.lower()
+
+        probed = record_audit(
+            session,
+            action_type="secret_probe",
+            user_id=owner_id,
+            entity_type="user",
+            entity_id=owner_id,
+            old_value={"password": password, "note": "before"},
+            new_value={
+                "email": email,
+                "role": "owner",
+                "user_id": owner_id,
+                "password": password,
+                "password_hash": owner.password_hash,
+                "token": "raw-session-token",
+                "nested": {"api_key": "sk-test-secret", "id": owner_id},
+            },
+        )
+        stored = str(probed.old_value) + str(probed.new_value)
+        assert probed.old_value == {"note": "before"}
+        assert probed.new_value == {
+            "email": email,
+            "role": "owner",
+            "user_id": owner_id,
+            "nested": {"id": owner_id},
+        }
+        assert password not in stored
+        assert owner.password_hash not in stored
+        assert "raw-session-token" not in stored
+        assert "sk-test-secret" not in stored
 
         assert authenticate(session, email, password) is not None
         assert authenticate(session, email, "wrong-password-value") is None
