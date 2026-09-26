@@ -2,6 +2,77 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 23:45 UTC — PHASE_12_MCP
+
+- Agent/model identity: Cursor cloud agent, model `composer-2.5`
+- Datetime (UTC): 2026-09-26 23:45 UTC
+- Phase/task: PHASE_12_MCP (master §18)
+- Branch: `cursor/phase-12-mcp-d442`
+- Base: `main` at `88caffa` (Phase 11 squash merge)
+- Pull request: (draft, pending)
+
+### Files changed
+
+- `pyproject.toml` — add `fastmcp>=4.0`
+- `src/govcon/config.py` — optional `mcp_actor_email`
+- `src/govcon/mcp/__init__.py`, `serialize.py`, `context.py`, `operations.py`, `server.py`
+- `src/govcon/cli.py` — `govcon mcp serve`
+- `tests/test_mcp.py`
+- `IMPLEMENTATION_STATUS.md`, `DECISIONS.md` (ADR-043), `SPEC_DEVIATIONS.md` (DEV-007), this file
+
+### What shipped
+
+- FastMCP stdio server exposing all §18 read/write tools as thin wrappers over existing services (matching, intelligence, decision, compliance, proposals, submissions, collaboration).
+- Compact structured responses with description truncation unless `include_full_description` / `include_full_text` / `include_requirement_text` is set.
+- Structured error envelope (no stack traces); `audit.scrub` on outputs; match dismissal requires `confirm=true`; submission confirmation never auto-submits.
+- Actor resolution for write tools via `actor_email`, `MCP_ACTOR_EMAIL`, `mcp_actor_email`, or first active owner.
+- `similar_opportunities` heuristic (NSN/PSC/agency) until Phase 13; `learning_summary` reads `outcome_feedback` until Phase 15 analytics.
+
+### ADRs / DECISIONS touched
+
+- ADR-043 (new). DEV-007 in `SPEC_DEVIATIONS.md`.
+
+### Migrations
+
+None.
+
+### Tests
+
+Local PostgreSQL 16 + pgvector on `localhost:5432` (installed on the VM).
+
+- Dependency check before coding: `pytest` on `main` after pull → 207 passed, 1 skipped (Phases 0–11 green).
+- `pytest tests/test_mcp.py` → 6 passed (includes Phase 12 acceptance e2e workflow).
+- `pytest` → 213 passed, 1 skipped.
+
+### Acceptance criteria (§18)
+
+1. Example e2e interaction through MCP against local DB — `test_acceptance_e2e_mcp_workflow` lists new matches closing within 7 days, returns price history, explains bid candidate missing information, moves match to `reviewing`, and surfaces compliance gaps.
+2. All 15 read + 13 write tools registered — `test_mcp_registers_all_phase12_tools`.
+3. Compact output + truncation — `test_compact_opportunity_truncates_description_and_scrubs_secrets`.
+4. Structured errors — `test_truncate_text_and_failure_shape` and dismiss-without-confirm path.
+5. No secret leakage in serialized opportunity links — scrub test.
+6. Destructive dismiss requires explicit intent — `test_dismiss_match_requires_confirm`.
+7. Write tool echoes changed record — `test_record_outcome_persists_feedback`.
+
+### VERIFY outcomes
+
+`PHASE_12_MCP.md` has no `⚠️ VERIFY` items. FastMCP 4.x `@mcp.tool` + stdio `mcp.run()` verified against installed `fastmcp==4.0.10`.
+
+### Known problems
+
+- MCP transport is stdio only in this phase (HTTP/SSE deferred).
+- `similar_opportunities` is heuristic, not embedding-based (Phase 13).
+- `learning_summary` is a table summary, not Phase 15 analytics.
+- Live SAM vendor fetch in `vendor_profile` still requires `SAM_API_KEY` when cache is cold.
+
+### Unfinished work
+
+None for Phase 12 scope. Phase 13 semantic search and Phase 14 web UI are not started.
+
+### Recommended next task
+
+**Phase 13 — Semantic search & recommendations (`PHASE_13_SEMANTIC_SEARCH.md`).** Start only after this draft PR passes the Spec/QA gate and merges. Replace the `similar_opportunities` heuristic with pgvector-backed recommendations.
+
 ## 2026-09-26 23:20 UTC — PHASE_10_COLLABORATIVE_REVIEW
 
 - Agent/model identity: Cursor cloud agent, model `codex-5.3`

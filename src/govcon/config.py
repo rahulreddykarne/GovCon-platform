@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     review_high_value_threshold: float | None = None
     review_short_deadline_days: int = Field(default=5, ge=0)
     review_override_allowed: bool = True
+    mcp_actor_email: str | None = None
 
     @field_validator(
         "database_url",
@@ -121,6 +122,7 @@ class Settings(BaseSettings):
         "smtp_user",
         "smtp_pass",
         "alert_email_to",
+        "mcp_actor_email",
         mode="before",
     )
     @classmethod

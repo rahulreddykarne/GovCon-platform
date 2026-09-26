@@ -330,6 +330,14 @@ Record durable architecture/implementation decisions.
 - Alternatives considered: Map proposal severity to compliance severity; use a shared severity type.
 - Consequences: The red-team prompt can use its natural terminology. The compliance finding system only sees validated `critical` severity strings.
 
+### ADR-043 — MCP tools are thin adapters with session-scoped auth and secret scrubbing
+- Phase: 12
+- Date: 2026-09-26
+- Context: §18 requires a safe MCP interface over implemented capabilities without new product behavior or secret leakage.
+- Decision: Implement `govcon.mcp.operations` as session-first wrappers over existing CLI/service modules. Register tools via FastMCP on stdio (`govcon mcp serve`). Read tools return compact JSON with description truncation unless explicitly requested. Write tools echo changed records. Errors return `{ok: false, error: {code, message}}` without stack traces. Outputs pass through `audit.scrub`. Write tools resolve an actor from `actor_email`, `MCP_ACTOR_EMAIL`, `mcp_actor_email`, or the first active owner. Destructive match dismissal requires `confirm=true`. Submission tools call existing confirmation helpers and never auto-submit to portals.
+- Alternatives considered: Duplicate business logic inside MCP handlers; HTTP MCP transport by default; returning full raw opportunity payloads.
+- Consequences: MCP stays aligned with CLI behavior. Phase 13 semantic search and Phase 15 outcome analytics remain explicitly deferred behind heuristic/read-only summaries (DEV-007).
+
 ### ADR-042 — ProposalRedTeamFinding requirement_id is validated against known requirements before FK insert
 - Phase: 11
 - Date: 2026-09-26

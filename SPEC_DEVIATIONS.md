@@ -121,6 +121,17 @@ Follow-up closure from Phase 9:
 
 No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
 
+## Phase 12
+
+### DEV-007 — `similar_opportunities` and `learning_summary` expose stored data only until later phases
+- Phase: 12
+- Date: 2026-09-26
+- Spec requirement: §18 lists `similar_opportunities(...)` and `learning_summary(...)` as MCP tools; §19/§21 assign semantic search and outcome analytics to Phases 13 and 15.
+- Verified external/repository reality: `matching/semantic.py`, `enrich/embeddings.py`, and `learning/analytics.py` are Phase 0 stubs; `outcome_feedback` rows exist from the foundation schema.
+- Decision: Register both MCP tools now. `similar_opportunities` returns heuristic matches on NSN/PSC/agency_path with an explicit note that vector search is Phase 13. `learning_summary` aggregates `outcome_feedback` rows with an explicit note that analytics are Phase 15.
+- Impact: MCP clients can call stable tool names without inventing embeddings or analytics logic early.
+- Follow-up: Phase 13 replaces the heuristic backend for `similar_opportunities`; Phase 15 replaces `learning_summary` aggregation.
+
 Implementation notes:
 - The `proposal_drafting_v1` and `proposal_red_team_v1` prompts were placeholders in earlier phases. They are now activated with full production text from §41.1 and §41.2.
 - Proposal red-team severity uses `critical | major | minor` (as defined in §41.2), not the compliance system's `critical | high | medium | low`. Only critical proposal findings create blocking compliance findings (ADR-041).
