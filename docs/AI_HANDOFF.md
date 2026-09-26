@@ -73,6 +73,11 @@ None. `decision_runs` already exists from Phase 0 schema (ADR-002), so Phase 8 r
   - `python3 -m pytest tests/test_decision_engine.py` → **9 passed, 0 skipped, 0 failed**
   - `python3 -m pytest` → **147 passed, 1 skipped, 0 failed**
   - DB-backed Phase 8 acceptance tests in `tests/test_decision_engine.py` executed (not skipped).
+- ✅ HOLD-clearing verification rerun (2026-09-26 21:12 UTC):
+  - `DATABASE_URL=postgresql+psycopg://govcon:govcon@localhost:5432/govcon python3 -m govcon.cli db upgrade head` (exit 0)
+  - `python3 -m pytest tests/test_cli_and_schema.py::test_upgrade_from_empty_database -q` → **1 passed**
+  - `python3 -m pytest tests/test_decision_engine.py -q` (exit 0; DB-backed AC suite executed)
+  - `python3 -m pytest -q` (exit 0)
 
 ### VERIFY outcomes
 
@@ -87,6 +92,7 @@ Live probes on 2026-09-26:
 ### Known problems
 
 - Full authenticated JEV execution is unverified in this environment due missing key.
+- Live JEV behavior remains mocked/fallback-driven in tests because `JEV_API_KEY` is unset in this environment.
 - LLM fallback behavior remains configuration-dependent and is intentionally conservative.
 
 ### Unfinished work
