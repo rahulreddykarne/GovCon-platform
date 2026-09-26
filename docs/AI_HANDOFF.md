@@ -2,6 +2,110 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 20:20 UTC — PHASE_05_AWARDS_PRICING
+
+- Agent/model identity: Cursor cloud, model `grok-4.7` (reasoning_effort=high, fast=true)
+- Datetime (UTC): 2026-09-26 20:20 UTC
+- Phase/task: PHASE_05_AWARDS_PRICING
+- Run: https://cursor.com/agents/bc-aece79cb-a5c1-56a3-965a-7e385d39ff80
+- Branch: `cursor/phase-05-awards-pricing-ff80`
+- Base: `main` at `7577c61` (Phase 4 DIBBS ingestion, pull request #7)
+- Pull request: pending in this commit
+- Implementation: this session
+
+### Files changed
+
+- `src/govcon/ingest/usaspending.py`
+- `src/govcon/ingest/runs.py`
+- `src/govcon/ingest/__init__.py`
+- `src/govcon/matching/pricing.py`
+- `src/govcon/intelligence/awards.py`
+- `src/govcon/intelligence/__init__.py`
+- `src/govcon/alerts/digest.py`
+- `src/govcon/cli.py`
+- `alembic/versions/c3e8a1b74f20_award_recompete_view.py`
+- `tests/test_usaspending.py`
+- `tests/fixtures/usaspending_spending_by_award.json`
+- `.env.example`
+- `README.md`
+- `IMPLEMENTATION_STATUS.md`
+- `DECISIONS.md`
+- `SPEC_DEVIATIONS.md`
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- `govcon ingest usaspending` pulls contract awards (`A`/`B`/`C`/`D`) for PSC and NAICS codes on enabled watchlists. The first successful run uses a 3-year action-date window. Later runs use `last_modified_date` from the day before that window through today.
+- `govcon ingest usaspending --backfill` forces the 3-year window. `--from`/`--to` is an explicit window. `--file` ingests a local search document and does not move the watermark.
+- Each result is upserted on `(source='usaspending', award_id=generated_internal_id)`. The search object is stored in `raw`. An unchanged payload does not rewrite the row.
+- NSN is the first dashed or NSN-labeled 13-digit value in the description. Quantity and unit price are taken only from explicit keys or from a quantity / unit price / unit cost label. Award amount is never divided into a unit price.
+- `price_history`, `price_history_psc`, `award_history_for_agency`, and `top_awardees` read stored rows. CLI: `govcon awards price-history`, `price-history-psc`, `history`, `top`, and `recompete`.
+- Migration `c3e8a1b74f20` adds view `award_recompete_candidates` for awards whose action date is at least 18 months ago and whose period end is missing or within the next 18 months.
+- The Phase 3 digest adds a "Recent award comps" section when stored awards match the opportunity NSN, or the PSC when that NSN has no rows. Unit price is omitted when it is null.
+
+### ADRs / DECISIONS touched
+
+- ADR-021 in `DECISIONS.md`: search contract, separate PSC/NAICS requests, incremental watermark, null unit price, and the recompete view.
+- `SPEC_DEVIATIONS.md` Phase 5: no behavior deviation from `MASTER_SPEC_v2.5.md`.
+- Phase 0 ADR-001 through ADR-014, Phase 1 ADR-015 through ADR-017, Phase 2 ADR-018, Phase 3 ADR-019, and Phase 4 ADR-020 were not changed.
+- `finish_run` accepts an optional `details` object on `ingestion_runs.errors`. Callers that omit it keep the previous `messages` payload.
+
+### Migrations
+
+- `c3e8a1b74f20_award_recompete_view.py` revises `97cb081e9a8e`.
+- Adds function `govcon_award_period_end(jsonb)` and view `award_recompete_candidates`.
+- No new awards columns. Upgrade from an empty database is covered by the existing schema test.
+
+### Tests
+
+Command: `pytest`
+
+Result: **95 passed, 1 skipped** (Phase 1 live-pull skip unchanged).
+
+Covered acceptance checks:
+
+- A known NSN returns vendor, date, and amount, including the undashed form of the same NSN.
+- Unit price is returned only when the row has one. Quantity 10 and obligation 1000 do not produce a unit price. A labeled unit price of 25 is stored as 25, not as obligation divided by quantity.
+- The 2026-09-26 live fixture for PSC 6515 extracts NSN `6545-01-632-0167` and leaves quantity, unit price, and set-aside null.
+- A two-page mock pull inserts both awards, and the second pull is unchanged after a database reload.
+- After a successful backfill watermark, the next request uses `last_modified_date` and starts one day earlier.
+- Enabled PSC and NAICS codes are separate requests. Disabled codes and a run with no codes do not expand the pull.
+- A repeated page fails the run.
+- PSC keyword matching is whole-word. Agency history and top awardees sum obligations and do not emit a unit price.
+- The recompete view includes an older open award and an older award ending soon, and excludes a recent award and an older award with a far period end.
+- The digest HTML shows recent comps with unit price only on the row that has one.
+- CLI `--file` ingest is idempotent, and `awards price-history` / `top` / `recompete` print the stored facts.
+
+### VERIFY outcomes
+
+Checked live on 2026-09-26 against `https://api.usaspending.gov` and the USAspending API contracts for spending-by-award, search filters, and award detail.
+
+- Endpoint: `POST /api/v2/search/spending_by_award/`. No API key. A sample PSC `R425` search, a page 2 request, a PSC prefix `R4`, a NAICS prefix `5415`, and a keyword `NSN` search all returned HTTP 200.
+- Pagination: `page` is 1-based. `page_metadata.hasNext` was true when more rows existed. `limit` 100 succeeded. `limit` 101 returned HTTP 422 with max 100.
+- Fields used: `generated_internal_id`, `Award ID`, `Recipient Name`, `Recipient UEI`, `Award Amount`, `Base Obligation Date`, `Start Date`, `End Date`, `Description`, `PSC.code`, `NAICS.code`, `Awarding Agency`, `Awarding Sub Agency`, `Last Modified Date`.
+- `date_type` must be set. The filter docs compare an omitted type's start to `action_date` and its end to `date_signed`. This client sends `action_date` or `last_modified_date` for both bounds.
+- Award detail `GET /api/v2/awards/CONT_AWD_80MSFC18C0011_8000_-NONE-_-NONE-/` includes `type_set_aside` and does not include quantity or unit price. Bulk ingest stores the search payload and does not call that endpoint per row.
+- Fixture: `tests/fixtures/usaspending_spending_by_award.json` is two live PSC `6515` rows captured on 2026-09-26 (`SPE2DM26FVSMW`, `SPE2DM26FVSMV`), both describing NSN `6545-01-632-0167`.
+- The endpoint list checked the same day does not publish a numeric quota. HTTP 429 and 5xx still retry through `govcon.http.request_with_retry`.
+
+### Known problems
+
+- Search rows do not carry quantity or unit price, so those columns stay null unless the description or an explicit key states them.
+- Set-aside is not on the search field list. It stays null for ordinary search rows.
+- A failed pull can commit awards fetched from earlier pages in that attempt. The watermark does not advance, so the next run repeats the window.
+- More than 1000 pages fails the run instead of saving a partial silent cutoff.
+- The recompete rule is 18 months. The phase text says "older awards" and does not name that interval.
+
+### Unfinished work
+
+- Phase 6 vendors and competitor intelligence (`PHASE_06_VENDORS_COMPETITORS.md`) — not started in this run.
+- IDV award types and per-award detail fetches are not part of this pull.
+- USAspending scheduling stays in Phase 17.
+
+### Recommended next task
+
+Phase 6 — vendors, contacts, and competitor intelligence (`PHASE_06_VENDORS_COMPETITORS.md`). **Do not start until this Phase 5 pull request is merged and its gates pass.**
+
 ## 2026-09-26 20:00 UTC — PHASE_04_DIBBS
 
 - Agent/model identity: Cursor cloud, model `grok-4.7` (params: reasoning_effort=high, fast=true)

@@ -1,6 +1,6 @@
 # GovCon platform
 
-Collaborative federal-first opportunity and bid workspace. Phase 0 is the foundation (schema, auth, CLI). Phase 1 ingests SAM.gov opportunities with immutable snapshots. Phase 4 ingests DIBBS daily index files into the same opportunity table. USAspending, solicitation analysis, and proposals are later phases.
+Collaborative federal-first opportunity and bid workspace. Phase 0 is the foundation (schema, auth, CLI). Phase 1 ingests SAM.gov opportunities with immutable snapshots. Phase 4 ingests DIBBS daily index files into the same opportunity table. Phase 5 stores USAspending contract awards and pricing history. Solicitation analysis and proposals are later phases.
 
 ## Prerequisites
 
@@ -57,6 +57,22 @@ The original index bytes are kept under `DATA_DIR/dibbs/`. Re-running an unchang
 
 Set `SAM_API_KEY` from the SAM.gov Account Details page. The client calls `https://api.sam.gov/opportunities/v2/search` and never prints the key. Description files and attachment downloads are not part of this ingest.
 
+## Phase 5 commands
+
+| Command | Purpose |
+|---|---|
+| `govcon ingest usaspending` | Pull contract awards for PSC and NAICS codes on enabled watchlists. The first run looks back 3 years. Later runs use last-modified date since that window. |
+| `govcon ingest usaspending --backfill` | Force the 3-year action-date pull. |
+| `govcon ingest usaspending --from YYYY-MM-DD --to YYYY-MM-DD` | Pull an explicit action-date window. Add `--modified` to use last-modified date. |
+| `govcon ingest usaspending --file path` | Ingest a local spending-by-award JSON file. Does not call the network or move the incremental window. |
+| `govcon awards price-history --nsn` | Award history for one NSN. Unit price is printed only when stored. |
+| `govcon awards price-history-psc --psc --keywords` | Awards for a PSC prefix. Keywords are whole words. |
+| `govcon awards history --agency` | Awards for an awarding agency. |
+| `govcon awards top` | Recipients with the most stored awards. |
+| `govcon awards recompete` | Older awards from the `award_recompete_candidates` view. |
+
+USAspending search does not use an API key. The client calls `https://api.usaspending.gov/api/v2/search/spending_by_award/`. Award amount is not turned into a unit price. A digest includes recent comps when stored awards match the opportunity NSN or PSC.
+
 ## Not in this phase
 
-USAspending ingestion, solicitation analysis, JEV decisions, proposal generation, the review quorum workflow, and the web UI are later phases. Prompt and JEV files under `src/govcon/prompts/` are inactive placeholders.
+Vendor profiles, solicitation analysis, JEV decisions, proposal generation, the review quorum workflow, and the web UI are later phases. Prompt and JEV files under `src/govcon/prompts/` are inactive placeholders.

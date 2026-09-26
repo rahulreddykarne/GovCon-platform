@@ -1,0 +1,69 @@
+{
+  "spending_level": "awards",
+  "limit": 2,
+  "results": [
+    {
+      "internal_id": 362150590,
+      "Award ID": "SPE2DM26FVSMW",
+      "Recipient Name": "CARDINAL HEALTH 200, LLC",
+      "Recipient UEI": "ZJEUBM5FYLQ2",
+      "Start Date": "2026-06-11",
+      "End Date": "2026-06-12",
+      "Award Amount": 96870.96,
+      "Total Outlays": null,
+      "Description": "4572115436!OCP, JFAK COMPLETE, NSN 6545-01-632-0167",
+      "Awarding Agency": "Department of Defense",
+      "Awarding Sub Agency": "Defense Logistics Agency",
+      "Contract Award Type": "DELIVERY ORDER",
+      "NAICS": {
+        "code": "423450",
+        "description": "MEDICAL, DENTAL, AND HOSPITAL EQUIPMENT AND SUPPLIES MERCHANT WHOLESALERS"
+      },
+      "PSC": {
+        "code": "6515",
+        "description": "MEDICAL AND SURGICAL INSTRUMENTS, EQUIPMENT, AND SUPPLIES"
+      },
+      "generated_internal_id": "CONT_AWD_SPE2DM26FVSMW_9700_SPE2DM20D5004_9700",
+      "Last Modified Date": "2026-09-10 02:27:18",
+      "Base Obligation Date": "2026-06-11",
+      "awarding_agency_id": 1173,
+      "agency_slug": "department-of-defense"
+    },
+    {
+      "internal_id": 362150589,
+      "Award ID": "SPE2DM26FVSMV",
+      "Recipient Name": "CARDINAL HEALTH 200, LLC",
+      "Recipient UEI": "ZJEUBM5FYLQ2",
+      "Start Date": "2026-06-11",
+      "End Date": "2026-06-12",
+      "Award Amount": 59523.12,
+      "Total Outlays": null,
+      "Description": "4572115435!OCP, JFAK COMPLETE, NSN 6545-01-632-0167",
+      "Awarding Agency": "Department of Defense",
+      "Awarding Sub Agency": "Defense Logistics Agency",
+      "Contract Award Type": "DELIVERY ORDER",
+      "NAICS": {
+        "code": "423450",
+        "description": "MEDICAL, DENTAL, AND HOSPITAL EQUIPMENT AND SUPPLIES MERCHANT WHOLESALERS"
+      },
+      "PSC": {
+        "code": "6515",
+        "description": "MEDICAL AND SURGICAL INSTRUMENTS, EQUIPMENT, AND SUPPLIES"
+      },
+      "generated_internal_id": "CONT_AWD_SPE2DM26FVSMV_9700_SPE2DM20D5004_9700",
+      "Last Modified Date": "2026-09-10 02:27:18",
+      "Base Obligation Date": "2026-06-11",
+      "awarding_agency_id": 1173,
+      "agency_slug": "department-of-defense"
+    }
+  ],
+  "page_metadata": {
+    "page": 1,
+    "hasNext": true,
+    "last_record_unique_id": 362150589,
+    "last_record_sort_value": "1789007238000"
+  },
+  "messages": [
+    "For searches, time period start and end dates are currently limited to an earliest date of 2007-10-01.  For data going back to 2000-10-01, use either the Custom Award Download feature on the website or one of our download or bulk_download API endpoints as listed on https://api.usaspending.gov/docs/endpoints. "
+  ]
+}

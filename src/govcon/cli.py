@@ -24,12 +24,14 @@ ingest_app = typer.Typer(help="Source ingestion.")
 match_app = typer.Typer(help="Watchlist matching.")
 watchlist_app = typer.Typer(help="Watchlist administration.")
 alerts_app = typer.Typer(help="Alert digests.")
+awards_app = typer.Typer(help="Award history and pricing.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(match_app, name="match")
 app.add_typer(watchlist_app, name="watchlist")
 app.add_typer(alerts_app, name="alerts")
+app.add_typer(awards_app, name="awards")
 
 
 def main() -> None:
@@ -351,6 +353,112 @@ def ingest_dibbs(
         raise typer.Exit(code=1)
 
 
+@ingest_app.command("usaspending")
+def ingest_usaspending(
+    backfill: bool = typer.Option(False, "--backfill", help="Force the 3-year action-date backfill."),
+    window_from: str | None = typer.Option(None, "--from", help="Window start (YYYY-MM-DD or MM/dd/yyyy)."),
+    window_to: str | None = typer.Option(None, "--to", help="Window end (YYYY-MM-DD or MM/dd/yyyy)."),
+    modified: bool = typer.Option(
+        False,
+        "--modified",
+        help="For an explicit window, filter on last_modified_date instead of action_date.",
+    ),
+    file: str | None = typer.Option(
+        None,
+        "--file",
+        help="Ingest a local spending_by_award JSON file. Does not call the network.",
+    ),
+) -> None:
+    """Pull USAspending contract awards for enabled watchlist PSC and NAICS codes.
+
+    The first successful run uses a 3-year action-date lookback. Later runs
+    pull last-modified awards since that window, with one day of overlap.
+    """
+    from pathlib import Path
+
+    from govcon.ingest.runs import IngestStats, finish_run, start_run
+    from govcon.ingest.usaspending import (
+        JOB_NAME,
+        UsaSpendingError,
+        ingest_award_records,
+        load_search_document,
+        parse_user_date,
+        plan_pull,
+        pull_usaspending,
+    )
+    from govcon.logging import redact
+
+    if file and (backfill or window_from or window_to or modified):
+        typer.echo("pass either --file or a date window, not both", err=True)
+        raise typer.Exit(code=2)
+    if modified and not (window_from and window_to):
+        typer.echo("--modified applies to an explicit --from/--to window", err=True)
+        raise typer.Exit(code=2)
+    local_path: Path | None = None
+    if file:
+        local_path = Path(file)
+        if not local_path.is_file():
+            typer.echo(f"award file not found: {file}", err=True)
+            raise typer.Exit(code=2)
+    start = end = None
+    if window_from or window_to:
+        if not window_from or not window_to:
+            typer.echo("--from and --to must be provided together", err=True)
+            raise typer.Exit(code=2)
+        try:
+            start = parse_user_date(window_from)
+            end = parse_user_date(window_to)
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    status = "succeeded"
+    stats = IngestStats()
+    details: dict = {"mode": "file"} if local_path is not None else {}
+    with session_scope(settings) as session:
+        run = start_run(session, JOB_NAME)
+        try:
+            if local_path is not None:
+                stats = ingest_award_records(session, load_search_document(local_path))
+                details = {"mode": "file"}
+            else:
+                plan = plan_pull(
+                    session,
+                    force_backfill=backfill,
+                    start=start,
+                    end=end,
+                    date_type="last_modified_date" if modified else None,
+                )
+                details = {
+                    "mode": plan.mode,
+                    "date_type": plan.date_type,
+                    "window_start": plan.start.isoformat(),
+                    "window_end": plan.end.isoformat(),
+                }
+                typer.echo(f"mode: {plan.mode}")
+                typer.echo(f"date_type: {plan.date_type}")
+                typer.echo(f"window: {plan.start.isoformat()}..{plan.end.isoformat()}")
+                stats = pull_usaspending(session, plan, settings=settings)
+        except (UsaSpendingError, OSError, ValueError) as exc:
+            attached = getattr(exc, "stats", None)
+            stats = attached if isinstance(attached, IngestStats) else stats
+            message = redact(str(exc))
+            if message not in stats.errors:
+                stats.errors.append(message)
+            status = "failed"
+        status = status if status == "failed" else _run_status(stats)
+        finish_run(run, stats, status=status, details=details or None)
+        run_id = run.id
+    _echo_ingest(run_id, status, stats)
+    if status != "succeeded":
+        raise typer.Exit(code=1)
+
+
 @ingest_app.command("sam-backfill")
 def ingest_sam_backfill(
     posted_from: str = typer.Option(..., help="Posted-from date (MM/dd/yyyy or YYYY-MM-DD)."),
@@ -649,6 +757,138 @@ def alerts_digest() -> None:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     _echo_digest(result)
+
+
+def _echo_award_count(count: int) -> None:
+    typer.echo(f"count: {count}")
+
+
+def _echo_price_points(rows) -> None:
+    _echo_award_count(len(rows))
+    for row in rows:
+        typer.echo(f"award_id: {row.award_id}")
+        typer.echo(f"vendor: {row.vendor_name or ''}")
+        typer.echo(f"date: {row.action_date.isoformat() if row.action_date else ''}")
+        typer.echo(f"amount: {_decimal_text(row.amount)}")
+        if row.unit_price is not None:
+            typer.echo(f"unit_price: {_decimal_text(row.unit_price)}")
+        typer.echo("---")
+
+
+def _decimal_text(value) -> str:
+    if value is None:
+        return ""
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+@awards_app.command("price-history")
+def awards_price_history(
+    nsn: str = typer.Option(..., "--nsn", help="NSN, with or without dashes."),
+) -> None:
+    """Show stored award history for one NSN."""
+    from govcon.matching.pricing import price_history
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        rows = price_history(session, nsn)
+    _echo_price_points(rows)
+
+
+@awards_app.command("price-history-psc")
+def awards_price_history_psc(
+    psc: str = typer.Option(..., "--psc", help="PSC code or prefix."),
+    keywords: str | None = typer.Option(None, "--keywords", help="Comma-separated whole-word keywords."),
+) -> None:
+    """Show stored awards for a PSC prefix, optionally filtered by keywords."""
+    from govcon.matching.pricing import price_history_psc
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        rows = price_history_psc(session, psc, _parse_csv_option(keywords))
+    _echo_price_points(rows)
+
+
+@awards_app.command("history")
+def awards_history(
+    agency: str = typer.Option(..., "--agency", help="Awarding agency text to match."),
+    psc: str | None = typer.Option(None, "--psc", help="Optional PSC code or prefix."),
+    naics: str | None = typer.Option(None, "--naics", help="Optional NAICS code or prefix."),
+    nsn: str | None = typer.Option(None, "--nsn", help="Optional NSN."),
+) -> None:
+    """Show stored awards for an awarding agency."""
+    from govcon.intelligence.awards import award_history_for_agency
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        rows = award_history_for_agency(session, agency, psc=psc, naics=naics, nsn=nsn)
+    _echo_price_points(rows)
+
+
+@awards_app.command("top")
+def awards_top(
+    psc: str | None = typer.Option(None, "--psc", help="Optional PSC code or prefix."),
+    naics: str | None = typer.Option(None, "--naics", help="Optional NAICS code or prefix."),
+    nsn: str | None = typer.Option(None, "--nsn", help="Optional NSN."),
+    limit: int = typer.Option(10, min=1, help="Maximum recipients to print."),
+) -> None:
+    """Show recipients with the most stored awards. Does not print a unit price."""
+    from govcon.intelligence.awards import top_awardees
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        rows = top_awardees(session, psc=psc, naics=naics, nsn=nsn, limit=limit)
+    _echo_award_count(len(rows))
+    for row in rows:
+        typer.echo(f"recipient_uei: {row.recipient_uei or ''}")
+        typer.echo(f"recipient_name: {row.recipient_name or ''}")
+        typer.echo(f"award_count: {row.award_count}")
+        typer.echo(f"total_obligation: {_decimal_text(row.total_obligation)}")
+        typer.echo("---")
+
+
+@awards_app.command("recompete")
+def awards_recompete(
+    psc: str | None = typer.Option(None, "--psc", help="Optional PSC code or prefix."),
+    naics: str | None = typer.Option(None, "--naics", help="Optional NAICS code or prefix."),
+    nsn: str | None = typer.Option(None, "--nsn", help="Optional NSN."),
+) -> None:
+    """List older awards that may be recompeted."""
+    from govcon.intelligence.awards import recompete_candidates
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        rows = recompete_candidates(session, psc=psc, naics=naics, nsn=nsn)
+    _echo_award_count(len(rows))
+    for row in rows:
+        typer.echo(f"award_id: {row.award_id}")
+        typer.echo(f"heuristic: {row.heuristic}")
+        typer.echo(f"action_date: {row.action_date.isoformat() if row.action_date else ''}")
+        typer.echo(f"period_end: {row.period_end.isoformat() if row.period_end else ''}")
+        typer.echo(f"vendor: {row.recipient_name or ''}")
+        typer.echo("---")
 
 
 @watchlist_app.command("disable")

@@ -42,11 +42,20 @@ def start_run(session: Session, job: str) -> IngestionRun:
     return run
 
 
-def finish_run(run: IngestionRun, stats: IngestStats, *, status: str) -> None:
+def finish_run(
+    run: IngestionRun,
+    stats: IngestStats,
+    *,
+    status: str,
+    details: dict | None = None,
+) -> None:
     run.finished_at = datetime.now(timezone.utc)
     run.status = status
     run.fetched = stats.fetched
     run.inserted = stats.inserted
     run.updated = stats.updated
     run.unchanged = stats.unchanged
-    run.errors = {"messages": list(stats.errors)}
+    payload: dict = {"messages": list(stats.errors)}
+    if details:
+        payload["details"] = details
+    run.errors = payload
