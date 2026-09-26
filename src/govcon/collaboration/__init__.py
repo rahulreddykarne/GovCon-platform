@@ -1,1 +1,1 @@
-"""Collaboration primitives: users, sessions, and in-app notifications."""
+"""Collaboration primitives: auth, assignments, comments, and review sessions."""

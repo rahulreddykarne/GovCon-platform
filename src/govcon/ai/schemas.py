@@ -7,6 +7,8 @@ stored as valid.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -113,8 +115,50 @@ class SolicitationAnalysisV1(BaseModel):
     clauses: list[str] = Field(default_factory=list)
 
 
+class ReviewEvidenceItem(BaseModel):
+    source_file_id: int | None = None
+    page: int | None = None
+    section: str | None = None
+    quote: str | None = None
+    summary: str | None = None
+
+
+class ReviewerCommentValidationV1(BaseModel):
+    position: Literal[
+        "agree",
+        "partially_agree",
+        "disagree",
+        "insufficient_evidence",
+        "needs_human_review",
+    ]
+    confidence: Literal["low", "medium", "high"]
+    reason: str = Field(min_length=1)
+    supporting_evidence: list[ReviewEvidenceItem] = Field(default_factory=list)
+    contradicting_evidence: list[ReviewEvidenceItem] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    suggested_action: str | None = None
+
+
+class ConsolidatedReviewV1(BaseModel):
+    reviewer_alignment: str
+    review_mode: Literal["single", "dual", "conditional", "override-driven"] | None = None
+    shared_concerns: list[str] = Field(default_factory=list)
+    disagreements: list[str] = Field(default_factory=list)
+    disagreements_with_ai_package: list[str] = Field(default_factory=list)
+    new_material_risks: list[str] = Field(default_factory=list)
+    resolved_issues: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    evidence_needed_before_approval: list[str] = Field(default_factory=list)
+    prior_analysis_stale: bool | None = None
+    jev_final_recommendation: Literal["bid", "no_bid", "review", "insufficient_information"] | None = None
+    human_approval_required: bool = True
+    summary: str | None = None
+
+
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "solicitation_analysis.v1": SolicitationAnalysisV1,
+    "reviewer_comment_validation.v1": ReviewerCommentValidationV1,
+    "consolidated_review.v1": ConsolidatedReviewV1,
 }
 
 from govcon.compliance.schemas import COMPLIANCE_SCHEMAS  # noqa: E402

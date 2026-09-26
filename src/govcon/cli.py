@@ -30,6 +30,7 @@ contacts_app = typer.Typer(help="Buyer contact search.")
 enrich_app = typer.Typer(help="Attachment download and AI analysis.")
 prompts_app = typer.Typer(help="Prompt registry administration.")
 decision_app = typer.Typer(help="JEV decision bundles and package generation.")
+review_app = typer.Typer(help="Collaborative review workspace operations.")
 compliance_app = typer.Typer(help="High-reliability compliance matrix, validation, and pre-flight.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
@@ -43,6 +44,7 @@ app.add_typer(contacts_app, name="contacts")
 app.add_typer(enrich_app, name="enrich")
 app.add_typer(prompts_app, name="prompts")
 app.add_typer(decision_app, name="decision")
+app.add_typer(review_app, name="review")
 app.add_typer(compliance_app, name="compliance")
 
 
@@ -1370,6 +1372,204 @@ def decision_runs(
     for row in rows:
         _echo_decision_run(row)
         typer.echo("---")
+
+
+# ── Collaborative review CLI ──
+
+
+def _review_actor(session, email: str) -> User:
+    user = session.scalar(
+        select(User).where(
+            User.email == email.strip().lower(),
+            User.is_active.is_(True),
+        )
+    )
+    if user is None:
+        raise ValueError(f"no active user {email}")
+    return user
+
+
+@review_app.command("assign")
+def review_assign(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    user_id: int = typer.Option(..., help="Reviewer user id."),
+    assignment_role: str = typer.Option("reviewer", help="Assignment role label."),
+    actor_email: str | None = typer.Option(None, help="Optional actor email for audit attribution."),
+) -> None:
+    """Assign or re-assign a reviewer to an opportunity."""
+    from govcon.collaboration.assignments import assign_reviewer
+    from govcon.collaboration.review_sessions import recalculate_quorum
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _review_actor(session, actor_email) if actor_email else None
+            row = assign_reviewer(
+                session,
+                opportunity_id=opportunity_id,
+                user_id=user_id,
+                assignment_role=assignment_role,
+                actor_user_id=actor.id if actor else None,
+            )
+            quorum = recalculate_quorum(session, opportunity_id=opportunity_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        f"assignment_id: {row.id} status={row.status} quorum={quorum.completed_review_count}/{quorum.required_review_count}"
+    )
+
+
+@review_app.command("comment")
+def review_comment(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    user_id: int = typer.Option(..., help="Reviewer user id."),
+    body: str = typer.Option(..., help="Human comment text."),
+    topic: str | None = typer.Option(None, help="Optional concern topic."),
+    parent_comment_id: int | None = typer.Option(None, help="Optional parent comment id for threads."),
+    recommendation: str | None = typer.Option(None, help="Optional recommendation tied to the comment."),
+    no_ai: bool = typer.Option(False, "--no-ai", help="Skip AI validation for this comment."),
+) -> None:
+    """Append a threaded reviewer comment; preserves original text and optional AI opinion."""
+    from govcon.collaboration.comments import add_comment
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            row = add_comment(
+                session,
+                opportunity_id=opportunity_id,
+                user_id=user_id,
+                body=body,
+                topic=topic,
+                parent_comment_id=parent_comment_id,
+                user_recommendation=recommendation,
+                validate_with_ai=not no_ai,
+            )
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"comment_id: {row.id}")
+    typer.echo(f"ai_position: {row.ai_position}")
+    typer.echo(f"ai_confidence: {row.ai_confidence}")
+
+
+@review_app.command("complete")
+def review_complete(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    user_id: int = typer.Option(..., help="Reviewer user id."),
+    action: str = typer.Option(
+        ...,
+        help="approve_continue | request_second_review | return_for_ai_analysis | no_bid",
+    ),
+    recommendation: str | None = typer.Option(None, help="Reviewer recommendation, e.g. bid/no_bid/review."),
+    agree_with_ai_assessment: bool | None = typer.Option(
+        None,
+        help="Explicit agreement when no comment text is added.",
+    ),
+    second_review_reason: str | None = typer.Option(
+        None,
+        help="Reason when requesting a second review.",
+    ),
+) -> None:
+    """Mark one reviewer action complete and recompute quorum/consolidation."""
+    from govcon.collaboration.review_sessions import complete_assignment
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            row = complete_assignment(
+                session,
+                opportunity_id=opportunity_id,
+                user_id=user_id,
+                action=action,
+                recommendation=recommendation,
+                agree_with_ai_assessment=agree_with_ai_assessment,
+                second_review_reason=second_review_reason,
+            )
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"assignment_id: {row.id} status={row.status}")
+
+
+@review_app.command("context")
+def review_context(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    user_id: int | None = typer.Option(None, help="Optional current user id (starts assigned review)."),
+) -> None:
+    """Show the collaborative review workspace state and approval context."""
+    import json as _json
+
+    from govcon.collaboration.review_sessions import review_workspace
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        data = review_workspace(session, opportunity_id=opportunity_id, user_id=user_id)
+    typer.echo(_json.dumps(data, indent=2, default=str))
+
+
+@review_app.command("approve")
+def review_approve(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    actor_email: str = typer.Option(..., help="Approver/owner email."),
+    action: str = typer.Option(..., help="approve_to_bid | return_for_review | no_bid"),
+    expected_version: int | None = typer.Option(None, help="Optional review-session optimistic version."),
+    override_reason: str | None = typer.Option(
+        None,
+        help="Required when approving without quorum; must be explicit.",
+    ),
+) -> None:
+    """Finalize the human approval gate decision after collaborative review."""
+    from govcon.collaboration.review_sessions import finalize_approval
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _review_actor(session, actor_email)
+            row = finalize_approval(
+                session,
+                opportunity_id=opportunity_id,
+                actor=actor,
+                action=action,
+                expected_version=expected_version,
+                override_reason=override_reason,
+            )
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        f"review_session_id: {row.id} status={row.status} final_approval_status={row.final_approval_status}"
+    )
+
+
+@review_app.command("reopen-for-amendment")
+def review_reopen_for_amendment(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    actor_email: str | None = typer.Option(None, help="Optional actor email for audit attribution."),
+) -> None:
+    """Consume Phase 9 material-amendment reopen flag and reopen completed reviews."""
+    from govcon.collaboration.review_sessions import apply_material_amendment_reopen
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        actor = _review_actor(session, actor_email) if actor_email else None
+        changed = apply_material_amendment_reopen(
+            session, opportunity_id=opportunity_id, actor=actor
+        )
+    typer.echo(f"reopened: {'yes' if changed else 'no'}")
 
 
 # ── Compliance CLI ──
