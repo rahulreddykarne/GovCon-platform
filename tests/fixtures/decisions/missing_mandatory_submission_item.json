@@ -1,0 +1,40 @@
+{
+  "state": {
+    "opportunity": {
+      "status": "open",
+      "days_remaining": 9
+    },
+    "eligibility": {
+      "set_aside_match": true
+    },
+    "sourcing": {
+      "product_found": true
+    },
+    "pricing": {
+      "margin_pct": 12.0,
+      "historical_comparable_count": 3
+    },
+    "bundle_results": {
+      "eligibility_and_execution": {
+        "stop_evaluation": false,
+        "capability_match": "medium",
+        "execution_risk": "medium"
+      },
+      "market_and_pricing": {
+        "margin_quality": "marginal",
+        "commercial_attractiveness": "low",
+        "historical_comparability": "medium"
+      }
+    },
+    "compliance": {
+      "mandatory_missing": 2,
+      "critical_unresolved": 1
+    },
+    "analysis": {
+      "missing_information": []
+    }
+  },
+  "expected_allowed_decisions": ["review"],
+  "must_escalate": true,
+  "notes": "Missing mandatory submission content should require REVIEW."
+}

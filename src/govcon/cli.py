@@ -29,6 +29,7 @@ vendors_app = typer.Typer(help="Vendor profiles and competitor intelligence.")
 contacts_app = typer.Typer(help="Buyer contact search.")
 enrich_app = typer.Typer(help="Attachment download and AI analysis.")
 prompts_app = typer.Typer(help="Prompt registry administration.")
+decision_app = typer.Typer(help="JEV decision bundles and package generation.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -40,6 +41,7 @@ app.add_typer(vendors_app, name="vendors")
 app.add_typer(contacts_app, name="contacts")
 app.add_typer(enrich_app, name="enrich")
 app.add_typer(prompts_app, name="prompts")
+app.add_typer(decision_app, name="decision")
 
 
 def main() -> None:
@@ -1218,3 +1220,123 @@ def prompts_activate(
     with session_scope() as session:
         activate_version(session, prompt_name, version)
     typer.echo(f"activated: {prompt_name}@{version}")
+
+
+# ── Decision engine CLI ──
+
+
+def _echo_decision_run(run) -> None:
+    typer.echo(f"decision_run_id: {run.id}")
+    typer.echo(f"bundle: {run.bundle_name}@{run.bundle_version}")
+    typer.echo(f"provider: {run.provider}")
+    typer.echo(f"model: {run.model or ''}")
+    typer.echo(f"decision_spec: {run.decision_spec_name or ''}")
+    typer.echo(f"decision_spec_hash: {run.decision_spec_hash or ''}")
+    typer.echo(f"schema_version: {run.schema_version or ''}")
+    typer.echo(f"input_state_hash: {run.input_state_hash}")
+    typer.echo(f"confidence: {run.confidence if run.confidence is not None else ''}")
+    typer.echo(f"latency_ms: {run.latency_ms if run.latency_ms is not None else ''}")
+    typer.echo(f"created_at: {run.created_at.isoformat() if run.created_at else ''}")
+
+
+@decision_app.command("run-bundle")
+def decision_run_bundle(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    bundle: str = typer.Option(..., help="Bundle name, e.g. bid_decision."),
+    allow_llm_fallback: bool = typer.Option(
+        False,
+        help="Allow LLM fallback when primary provider is unavailable.",
+    ),
+) -> None:
+    """Run one decision bundle and persist a decision_runs row."""
+    import json as _json
+
+    from govcon.decision.engine import run_decision_bundle
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    try:
+        with session_scope(settings) as session:
+            execution = run_decision_bundle(
+                session,
+                opportunity_id=opportunity_id,
+                bundle_name=bundle,
+                settings=settings,
+                allow_llm_fallback=allow_llm_fallback,
+            )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_decision_run(execution.run)
+    if execution.hard_rule_findings:
+        typer.echo("hard_rule_findings:")
+        for item in execution.hard_rule_findings:
+            typer.echo(f"- {item}")
+    typer.echo("result_json:")
+    typer.echo(_json.dumps(execution.result, indent=2))
+
+
+@decision_app.command("run-package")
+def decision_run_package(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    allow_llm_fallback: bool = typer.Option(
+        False,
+        help="Allow LLM fallback when primary provider is unavailable.",
+    ),
+) -> None:
+    """Run Phase 8 bundle set and persist an AI decision package."""
+    import json as _json
+
+    from govcon.decision.engine import run_preliminary_decision_package
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope(settings) as session:
+        package = run_preliminary_decision_package(
+            session,
+            opportunity_id=opportunity_id,
+            settings=settings,
+            allow_llm_fallback=allow_llm_fallback,
+        )
+    typer.echo(f"analysis_id: {package.analysis.id}")
+    typer.echo(f"bid_decision_id: {package.bid_decision.id}")
+    typer.echo(f"recommendation: {package.bid_decision.recommendation}")
+    typer.echo("bundle_runs:")
+    for run in package.bundle_runs:
+        typer.echo(
+            f"- {run.bundle_name}: run_id={run.run.id} provider={run.provider} "
+            f"model={run.model or ''} confidence={run.confidence if run.confidence is not None else ''}"
+        )
+    typer.echo("decision_package_json:")
+    typer.echo(_json.dumps(package.package_output, indent=2))
+
+
+@decision_app.command("runs")
+def decision_runs(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    bundle: str | None = typer.Option(None, help="Optional bundle filter."),
+    limit: int = typer.Option(25, min=1, help="Maximum rows to print."),
+) -> None:
+    """List persisted decision runs with provider/model/spec metadata."""
+    from govcon.decision.engine import list_decision_runs
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope(settings) as session:
+        rows = list_decision_runs(session, opportunity_id=opportunity_id, bundle_name=bundle, limit=limit)
+    typer.echo(f"count: {len(rows)}")
+    for row in rows:
+        _echo_decision_run(row)
+        typer.echo("---")

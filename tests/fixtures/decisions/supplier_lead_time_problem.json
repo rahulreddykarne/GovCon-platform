@@ -1,0 +1,40 @@
+{
+  "state": {
+    "opportunity": {
+      "status": "open",
+      "days_remaining": 12
+    },
+    "eligibility": {
+      "set_aside_match": true
+    },
+    "sourcing": {
+      "product_found": true
+    },
+    "pricing": {
+      "margin_pct": 13.0,
+      "historical_comparable_count": 5
+    },
+    "bundle_results": {
+      "eligibility_and_execution": {
+        "stop_evaluation": false,
+        "capability_match": "medium",
+        "execution_risk": "high"
+      },
+      "market_and_pricing": {
+        "margin_quality": "marginal",
+        "commercial_attractiveness": "low",
+        "historical_comparability": "medium"
+      }
+    },
+    "compliance": {
+      "mandatory_missing": 0,
+      "critical_unresolved": 0
+    },
+    "analysis": {
+      "missing_information": []
+    }
+  },
+  "expected_allowed_decisions": ["review"],
+  "must_escalate": true,
+  "notes": "Lead-time execution risk with only marginal economics should route to REVIEW."
+}

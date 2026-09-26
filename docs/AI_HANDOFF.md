@@ -2,6 +2,108 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 21:35 UTC — PHASE_08_JEV_DECISION_PACKAGE
+
+- Agent/model identity: Cursor cloud, model `gpt-5.3-codex` (reasoning=high)
+- Datetime (UTC): 2026-09-26 21:35 UTC
+- Phase/task: PHASE_08_JEV_DECISION_PACKAGE
+- Branch: `cursor/phase-08-jev-decision-package-6495`
+- Base: `main` at `d0ee176` (Phase 7 squash merge target)
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/11
+- Head SHA (gate-unblock rerun): `59242f4ae45776f1c78d10a970546c007879878e`
+
+### Files changed
+
+- `src/govcon/decision/provider.py`
+- `src/govcon/decision/schemas.py`
+- `src/govcon/decision/bundles.py`
+- `src/govcon/decision/rules.py`
+- `src/govcon/decision/engine.py`
+- `src/govcon/decision/providers/jev.py`
+- `src/govcon/decision/providers/rule_fallback.py`
+- `src/govcon/decision/providers/llm_fallback.py`
+- `src/govcon/decision/providers/__init__.py`
+- `src/govcon/decision/__init__.py`
+- `src/govcon/cli.py` (new `decision` command group)
+- `src/govcon/prompts/jev/*.yaml` (all 13 Phase 8 spec contracts materialized)
+- `tests/test_decision_engine.py`
+- `tests/fixtures/decisions/*.json` (13 calibration cases)
+- `.env.example`
+- `IMPLEMENTATION_STATUS.md`
+- `SPEC_DEVIATIONS.md`
+- `DECISIONS.md`
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- DecisionProvider contract and structured provider result envelope.
+- `JevDecisionProvider` using JEV-style decision contract (`model/state/questions`) with auth and typed-answer parsing.
+- Deterministic `RuleDecisionProvider` heuristics for all 13 bundles.
+- Optional `LLMDecisionProvider` fallback for partial JSON patch refinement.
+- Hard-rule engine with deterministic override applied before consequential recommendations.
+- Bundle metadata/spec hashing and runtime linkage to versioned YAML decision specs.
+- Decision engine that:
+  - builds structured source-backed state,
+  - runs bundle decisions with fallback chain,
+  - validates output with Pydantic schemas,
+  - persists immutable `decision_runs` history (with supersedes links).
+- Preliminary recommendation + review-ready AI decision package persisted to `bid_decisions` and `ai_analyses`.
+- Multiple runs per opportunity supported (no overwrite).
+- Guardrails preserved: AI cannot directly set `bid_approved` or `submitted`.
+- CLI commands:
+  - `govcon decision run-bundle`
+  - `govcon decision run-package`
+  - `govcon decision runs`
+
+### ADRs / DECISIONS touched
+
+- ADR-027: JEV interface verification and endpoint contract.
+- ADR-028: hard-rules-first orchestration and provider fallback chain.
+- ADR-029: decision package persistence model and human-authority guardrails.
+
+### Migrations
+
+None. `decision_runs` already exists from Phase 0 schema (ADR-002), so Phase 8 reuses it.
+
+### Tests
+
+- ✅ `python3 -m pytest tests/test_decision_engine.py::test_decision_fixture_contract_and_boundaries tests/test_http_prompts.py -q`
+- ✅ `python3 -m compileall src/govcon/decision src/govcon/cli.py`
+- ✅ Gate-unblock rerun with local PostgreSQL on `localhost:5432`:
+  - `python3 -m pytest tests/test_decision_engine.py` → **9 passed, 0 skipped, 0 failed**
+  - `python3 -m pytest` → **147 passed, 1 skipped, 0 failed**
+  - DB-backed Phase 8 acceptance tests in `tests/test_decision_engine.py` executed (not skipped).
+- ✅ HOLD-clearing verification rerun (2026-09-26 21:12 UTC):
+  - `DATABASE_URL=postgresql+psycopg://govcon:govcon@localhost:5432/govcon python3 -m govcon.cli db upgrade head` (exit 0)
+  - `python3 -m pytest tests/test_cli_and_schema.py::test_upgrade_from_empty_database -q` → **1 passed**
+  - `python3 -m pytest tests/test_decision_engine.py -q` (exit 0; DB-backed AC suite executed)
+  - `python3 -m pytest -q` (exit 0)
+
+### VERIFY outcomes
+
+Live probes on 2026-09-26:
+
+- `POST https://api.typesafe.ai/v1/systemone` → auth-required response (`403 Must supply an API key`).
+- `POST https://thejevai.com/v1/systemone` → auth-required response (`401 sign in`).
+- `POST https://www.jevai.org/api/v1/decisions` → auth-required response (`401`).
+- `POST .../v1/chat/completions` on JEV hosts → `404` (confirms non-chat contract).
+- No `JEV_API_KEY` / `JEV_BASE_URL` were present in this run.
+
+### Known problems
+
+- Full authenticated JEV execution is unverified in this environment due missing key.
+- Live JEV behavior remains mocked/fallback-driven in tests because `JEV_API_KEY` is unset in this environment.
+- LLM fallback behavior remains configuration-dependent and is intentionally conservative.
+
+### Unfinished work
+
+- None for Phase 8 scope.
+- Phase 9+ work remains out of scope for this run.
+
+### Recommended next task
+
+Checkpoint B after this Phase 8 branch merges and gates pass; then proceed to **Phase 9 only**.
+
 ## 2026-09-26 20:45 UTC — PHASE_07_ATTACHMENTS_AI_ANALYSIS
 
 - Agent/model identity: Cursor cloud, model `claude-opus-4-6` (effort=high, thinking=true)

@@ -1,0 +1,40 @@
+{
+  "state": {
+    "opportunity": {
+      "status": "open",
+      "days_remaining": 12
+    },
+    "eligibility": {
+      "set_aside_match": true
+    },
+    "sourcing": {
+      "product_found": true
+    },
+    "pricing": {
+      "margin_pct": 2.5,
+      "historical_comparable_count": 8
+    },
+    "bundle_results": {
+      "eligibility_and_execution": {
+        "stop_evaluation": false,
+        "capability_match": "medium",
+        "execution_risk": "medium"
+      },
+      "market_and_pricing": {
+        "margin_quality": "poor",
+        "commercial_attractiveness": "very_low",
+        "historical_comparability": "high"
+      }
+    },
+    "compliance": {
+      "mandatory_missing": 0,
+      "critical_unresolved": 0
+    },
+    "analysis": {
+      "missing_information": []
+    }
+  },
+  "expected_allowed_decisions": ["no_bid"],
+  "must_escalate": true,
+  "notes": "Margin below threshold should force NO_BID."
+}

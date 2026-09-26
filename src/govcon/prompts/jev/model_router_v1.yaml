@@ -1,4 +1,37 @@
 name: model_router
 version: v1
-status: placeholder
-notes: Phase 0 placeholder. The production decision spec is added in Phase 8. Do not activate.
+provider: jev
+input_schema: model_router_state.v1
+objective: >
+  Route model usage and budget posture for task execution while preserving
+  deterministic policy enforcement.
+questions:
+  - id: generative_llm_required
+    type: boolean
+    question: Does this task require a generative model call?
+  - id: low_cost_model_sufficient
+    type: boolean
+    question: Is a low-cost model sufficient?
+  - id: high_capability_model_required
+    type: boolean
+    question: Does this task require a high-capability model?
+  - id: second_model_review_required
+    type: boolean
+    question: Should a second-model review be required?
+  - id: external_ai_policy
+    type: choice
+    question: What is external AI policy disposition?
+    choices: [allow, block, human_review]
+  - id: another_model_call_warranted
+    type: boolean
+    question: Does uncertainty justify another model call?
+  - id: additional_budget_warranted
+    type: boolean
+    question: Should additional token budget be spent?
+policy:
+  unknown_is_not_negative: true
+  hard_rules_override: true
+  low_confidence_escalate_to_review: true
+  confidence_threshold: medium
+  consequential_action_requires_human: true
+  human_approval_required_for: [bid_approved, submitted]
