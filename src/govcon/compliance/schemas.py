@@ -172,6 +172,46 @@ class AmendmentAnalysisV1(BaseModel):
     unresolved_conflicts: list[str] = Field(default_factory=list)
 
 
+class ProposalDraftSection(BaseModel):
+    section_key: str
+    heading: str | None = None
+    content: str
+    requirement_ids: list[int] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    word_count: int | None = None
+
+
+class ProposalDraftV1(BaseModel):
+    sections: list[ProposalDraftSection] = Field(default_factory=list)
+    global_blockers: list[str] = Field(default_factory=list)
+    source_fact_ids_used: list[str] = Field(default_factory=list)
+    draft_notes: list[str] = Field(default_factory=list)
+
+
+ProposalSeverity = Literal["critical", "major", "minor"]
+
+
+class ProposalRedTeamFinding(BaseModel):
+    finding_id: str | None = None
+    severity: ProposalSeverity
+    category: str | None = None
+    requirement_id: int | None = None
+    proposal_section: str | None = None
+    description: str
+    evidence: str | None = None
+    recommended_fix: str | None = None
+
+
+class ProposalRedTeamV1(BaseModel):
+    findings: list[ProposalRedTeamFinding] = Field(default_factory=list)
+    critical_count: int = 0
+    major_count: int = 0
+    minor_count: int = 0
+    overall_assessment: Literal["READY", "NOT_READY", "NEEDS_REVIEW"] = "NEEDS_REVIEW"
+    reviewer_notes: list[str] = Field(default_factory=list)
+
+
 COMPLIANCE_SCHEMAS: dict[str, type[BaseModel]] = {
     "requirement_extraction.v1": RequirementExtractionV1,
     "requirement_reconciliation.v1": RequirementReconciliationV1,
@@ -181,4 +221,6 @@ COMPLIANCE_SCHEMAS: dict[str, type[BaseModel]] = {
     "proposal_coverage.v1": ProposalCoverageV1,
     "submission_preflight_ai.v1": SubmissionPreflightAIV1,
     "amendment_analysis.v1": AmendmentAnalysisV1,
+    "proposal_draft.v1": ProposalDraftV1,
+    "proposal_red_team.v1": ProposalRedTeamV1,
 }

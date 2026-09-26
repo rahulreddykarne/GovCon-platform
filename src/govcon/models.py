@@ -609,7 +609,13 @@ class Requirement(TimestampMixin, VersionMixin, Base):
 
 class Proposal(TimestampMixin, VersionMixin, Base):
     __tablename__ = "proposals"
-    __table_args__ = (UniqueConstraint("opportunity_id", name="uq_proposals_opportunity"),)
+    __table_args__ = (
+        UniqueConstraint("opportunity_id", name="uq_proposals_opportunity"),
+        CheckConstraint(
+            "status IN ('draft', 'ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix', 'cancelled')",
+            name="ck_proposals_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     opportunity_id: Mapped[int] = mapped_column(ForeignKey("opportunities.id"), nullable=False)
@@ -620,6 +626,10 @@ class Proposal(TimestampMixin, VersionMixin, Base):
         BigInteger,
         ForeignKey("proposal_versions.id", use_alter=True, name="fk_proposals_current_version_id"),
     )
+    final_approved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    final_approved_at: Mapped[datetime | None] = mapped_column(_ts())
+    red_team_analysis_id: Mapped[int | None] = mapped_column(ForeignKey("ai_analyses.id"))
+    submission_id: Mapped[int | None] = mapped_column(ForeignKey("submissions.id"))
 
 
 class ProposalVersion(CreatedAtMixin, Base):

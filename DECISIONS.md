@@ -313,3 +313,27 @@ Record durable architecture/implementation decisions.
 - Decision: `review_sessions` is the workflow anchor. Quorum is recomputed from assignment state plus configurable conditional triggers (`review_conditional_triggers`, deadline/value thresholds). On quorum satisfaction, consolidated review synthesis is generated and routed through the Phase 8 `collaborative_review_synthesis` bundle. Final `approved_to_bid` is blocked until quorum unless an authorized `override_review` user records an explicit reason; all transitions are audited. Phase 9 `review_reopen_required` findings reopen completed assignments via `apply_material_amendment_reopen`.
 - Alternatives considered: Hard-code dual review for all opportunities; permit silent auto-approval based on AI/JEV recommendation; reopen only as a manual out-of-band process.
 - Consequences: One-review opportunities can progress without waiting for optional reviewers, mandatory second-review cases remain blocked unless explicitly overridden, and material amendments re-open review deterministically.
+
+### ADR-040 — Phase 11 final-approval serves as readiness override for pre-flight requirement
+- Phase: 11
+- Date: 2026-09-26
+- Context: Phase 9's `move_to_ready_to_submit` checks whether a pre-flight run exists and is current. Phase 11 introduces a human final-approval gate (`APPROVE_FOR_SUBMISSION`) which is a higher-authority action than running the automated pre-flight.
+- Decision: `finalize_proposal(action=APPROVE_FOR_SUBMISSION)` passes `override_reason="human_final_approval_gate"` to `move_to_ready_to_submit`, so the human final approval implicitly overrides the pre-flight-missing blocker. Hard blockers (e.g. deadline passed) still propagate as `ReadinessBlocked` and cannot be overridden. The override is audited via the existing `compliance_readiness_override` audit event type.
+- Alternatives considered: Require a pre-flight run before the final approval can proceed; decouple `finalize_proposal` from `move_to_ready_to_submit` entirely.
+- Consequences: The human final approval is genuinely authoritative. The audit trail records both the proposal approval action and any compliance override.
+
+### ADR-041 — Proposal severity uses proposal-specific levels (critical/major/minor)
+- Phase: 11
+- Date: 2026-09-26
+- Context: The red-team spec (§41.2) defines `critical | major | minor` as the three severity levels for proposal findings. The compliance system uses `critical | high | medium | low`. These are different contexts.
+- Decision: `ProposalRedTeamFinding.severity` uses `Literal["critical", "major", "minor"]` in `compliance/schemas.py`. Only `critical` findings from the red-team create blocking `ComplianceFinding` rows (with compliance severity `critical`). Major and minor findings are advisory.
+- Alternatives considered: Map proposal severity to compliance severity; use a shared severity type.
+- Consequences: The red-team prompt can use its natural terminology. The compliance finding system only sees validated `critical` severity strings.
+
+### ADR-042 — ProposalRedTeamFinding requirement_id is validated against known requirements before FK insert
+- Phase: 11
+- Date: 2026-09-26
+- Context: The red-team model may reference requirement IDs that do not exist in the current opportunity. Inserting them into `compliance_findings.requirement_id` would violate the FK constraint.
+- Decision: `run_proposal_red_team` validates every finding's `requirement_id` against the set of active requirement IDs for the opportunity. If the ID is not in the known set, it is set to `None` before creating the finding row.
+- Alternatives considered: Catch FK violations and retry without the requirement_id.
+- Consequences: The FK constraint is never violated. Finding traceability is preserved when the model correctly references an existing requirement.
