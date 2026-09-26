@@ -1,0 +1,8 @@
+{
+  "requirements": [
+    {"requirement_text": "Q&A answer sets the technical proposal limit at 15 pages.", "requirement_type": "page_limit", "mandatory": true, "severity": "high", "source_file_id": 2, "source_page": null, "source_section": null, "supporting_quote": "A1: The technical proposal shall not exceed 15 pages.", "confidence": 0.85, "uncertainty_reason": "Q&A may not be incorporated by amendment"},
+    {"requirement_text": "Page limit for the technical proposal is 10 pages.", "requirement_type": "page_limit", "mandatory": true, "severity": "high", "source_file_id": 1, "source_page": null, "source_section": "SECTION L INSTRUCTIONS TO OFFERORS", "supporting_quote": "The technical proposal shall not exceed 10 pages.", "confidence": 0.94},
+    {"requirement_text": "Proposal receipt deadline December 1, 2026 4:00 PM CT.", "requirement_type": "submission", "mandatory": true, "severity": "critical", "source_file_id": 1, "source_page": null, "source_section": "SECTION L INSTRUCTIONS TO OFFERORS", "supporting_quote": "Proposals must be received no later than December 1, 2026 4:00 PM CT.", "confidence": 0.95}
+  ],
+  "extraction_notes": []
+}

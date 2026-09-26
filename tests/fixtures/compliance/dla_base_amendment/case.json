@@ -1,0 +1,47 @@
+{
+  "case_id": "dla_base_amendment",
+  "description": "DLA RFQ with price schedule and Amendment 0001 that shortens delivery from 30 to 20 days. Pass A misses the page limit and carries one paraphrased citation; supplier transit time is undocumented; no package is assembled.",
+  "stages": ["base", "amendment"],
+  "now": "2026-10-01T12:00:00+00:00",
+  "opportunity": {"response_deadline": "2026-10-15T18:00:00+00:00", "set_aside_code": "SBA"},
+  "source_files": [
+    {"file_id": 1, "path": "solicitation.txt", "filename": "SPE2DM-26-Q-0412_solicitation.txt", "stage": "base"},
+    {"file_id": 2, "path": "price_schedule.txt", "filename": "Attachment_2_Price_Schedule.xlsx", "stage": "base", "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+    {"file_id": 3, "path": "amendment_0001.txt", "filename": "SPE2DM-26-Q-0412_amendment_0001.txt", "stage": "amendment"}
+  ],
+  "recorded_passes": {
+    "base": {"A": "base_pass_a.json", "B": "base_pass_b.json"},
+    "amendment": {"A": "amendment_pass_a.json", "B": "amendment_pass_b.json"}
+  },
+  "expected_mandatory_requirements": [
+    {"id": "deadline", "match": ["due", "october 15, 2026"], "critical": true},
+    {"id": "email_submission", "match": ["jane.buyer@dla.mil"]},
+    {"id": "sf1449_signed", "match": ["sf 1449", "sign"], "critical": true},
+    {"id": "page_limit", "match": ["10 pages"]},
+    {"id": "pdf_format", "match": ["pdf format"]},
+    {"id": "price_every_clin", "match": ["pricing for every clin"], "critical": true},
+    {"id": "past_performance", "match": ["three past performance references"]},
+    {"id": "sam_registration", "match": ["system for award management (sam)"], "critical": true},
+    {"id": "small_business", "match": ["small business under naics 339113"], "critical": true},
+    {"id": "delivery_30", "match": ["within 30 calendar days"]},
+    {"id": "delivery_20", "match": ["within 20 calendar days"]},
+    {"id": "acknowledge_amendment", "match": ["acknowledge", "amendment 0001"], "critical": true},
+    {"id": "clin_quantities", "match": ["0001", "500"]}
+  ],
+  "expected_critical_requirements": ["deadline", "sf1449_signed", "price_every_clin", "sam_registration", "small_business", "acknowledge_amendment"],
+  "expected_conflicts": [{"topic": "delivery_days", "resolution": "superseded"}],
+  "expected_amendment_changes": [{"requirement": "delivery_30", "change": "superseded"}],
+  "expected_submission_files": ["SF 1449", "SF 30"],
+  "evidence": {
+    "company_facts": {"sam_registration_status": "active", "sam_expiration_date": "2027-06-30"},
+    "supplier": {"lead_time_days": 12}
+  },
+  "expected_not_satisfied": ["deadline", "sf1449_signed", "sam_registration", "small_business", "delivery_20", "acknowledge_amendment", "page_limit"],
+  "expected_status": {
+    "delivery_20": "unknown",
+    "small_business": "unknown",
+    "sf1449_signed": "unknown",
+    "delivery_30": "superseded",
+    "sam_registration": "needs_review"
+  }
+}

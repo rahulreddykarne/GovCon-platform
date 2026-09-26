@@ -114,18 +114,30 @@ def upsert_open_finding(
     certainty: str | None = "confirmed",
     compliance_run_id: int | None = None,
 ) -> ComplianceFinding:
-    """Persist a finding once; a repeat detection refreshes the open row."""
-    existing = session.scalar(
-        select(ComplianceFinding).where(
+    """Persist a finding once; a repeat detection refreshes the open row.
+
+    A finding a human resolved stays resolved while the detected facts (and
+    therefore the description) are unchanged.
+    """
+    same = (
+        select(ComplianceFinding)
+        .where(
             ComplianceFinding.opportunity_id == opportunity_id,
             ComplianceFinding.finding_type == finding_type,
             ComplianceFinding.description == description,
-            ComplianceFinding.status == "open",
             (ComplianceFinding.requirement_id == requirement_id)
             if requirement_id is not None
             else ComplianceFinding.requirement_id.is_(None),
         )
+        .order_by(desc(ComplianceFinding.id))
     )
+    existing = session.scalar(same.where(ComplianceFinding.status == "open"))
+    if existing is None:
+        human_resolved = session.scalar(
+            same.where(ComplianceFinding.status == "resolved", ~ComplianceFinding.resolution_notes.like("no longer detected%"))
+        )
+        if human_resolved is not None:
+            return human_resolved
     refs = source_refs if isinstance(source_refs, dict) or source_refs is None else {"items": source_refs}
     if existing is not None:
         existing.severity = severity
@@ -152,6 +164,34 @@ def upsert_open_finding(
     session.add(finding)
     session.flush()
     return finding
+
+
+def close_undetected_findings(
+    session: Session,
+    opportunity_id: int,
+    *,
+    detected_by: str,
+    keep_ids: set[int],
+    run_id: int,
+    finding_types: set[str] | None = None,
+) -> list[int]:
+    """Resolve open deterministic findings that the latest run of that detector no longer reproduces."""
+    closed: list[int] = []
+    for finding in session.scalars(
+        select(ComplianceFinding).where(
+            ComplianceFinding.opportunity_id == opportunity_id,
+            ComplianceFinding.detected_by == detected_by,
+            ComplianceFinding.status == "open",
+        )
+    ).all():
+        if finding.id in keep_ids or (finding_types is not None and finding.finding_type not in finding_types):
+            continue
+        finding.status = "resolved"
+        finding.resolved_at = datetime.now(UTC)
+        finding.resolution_notes = f"no longer detected by {detected_by} (compliance run {run_id})"
+        closed.append(finding.id)
+    session.flush()
+    return closed
 
 
 def open_findings(session: Session, opportunity_id: int, *, blocking_only: bool = False) -> list[ComplianceFinding]:
@@ -440,7 +480,7 @@ def inputs_for(
     if override and requirement.amendment_changed_at and override.get("at"):
         if datetime.fromisoformat(override["at"]) < requirement.amendment_changed_at:
             override = None
-    deterministic = list(validation.get("deterministic") or [])
+    deterministic = list(validation.get("deterministic") or []) + list(validation.get("proposal_coverage_checks") or [])
     revalidated = bool(fresh) or any(d.get("status") in {"pass", "fail"} for d in deterministic)
     return ValidationInputs(
         requirement_type=requirement.requirement_type,

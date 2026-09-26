@@ -1,0 +1,18 @@
+{
+  "benchmark_version": "compliance_benchmark.v1",
+  "recorded_on": "2026-09-26",
+  "notes": "Release gate floors/ceilings for the replayed compliance benchmark. Raise floors as calibration improves; never lower a critical metric without an explicit, reviewed decision. Any case that misses a critical requirement or produces a false SATISFIED fails regardless of these values.",
+  "min": {
+    "mandatory_recall": 1.0,
+    "critical_recall": 1.0,
+    "citation_accuracy": 0.95,
+    "canonical_citation_accuracy": 1.0,
+    "amendment_change_detection": 1.0,
+    "conflict_recall": 1.0,
+    "submission_file_completeness": 1.0,
+    "expected_status_accuracy": 1.0
+  },
+  "max": {
+    "false_satisfied_rate": 0.0
+  }
+}

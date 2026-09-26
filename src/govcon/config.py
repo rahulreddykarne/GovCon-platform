@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     compliance_low_confidence_threshold: float | None = None
     compliance_merge_similarity: float = Field(default=0.72, gt=0, le=1)
     compliance_possible_duplicate_similarity: float = Field(default=0.4, gt=0, le=1)
+    compliance_coverage_min_overlap: float = Field(default=0.6, gt=0, le=1)
+    compliance_coverage_partial_overlap: float = Field(default=0.3, gt=0, le=1)
     company_facts_path: Path | None = None
 
     smtp_host: str | None = None

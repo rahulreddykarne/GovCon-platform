@@ -1,0 +1,30 @@
+SOLICITATION SPE2DM-26-Q-0412 REQUEST FOR QUOTATION
+Issued September 20, 2026
+Defense Logistics Agency Troop Support
+
+SECTION 1 SCHEDULE
+CLIN 0001 Nitrile examination gloves, NSN 6515-01-519-8818, quantity 500 boxes.
+CLIN 0002 Latex-free surgical gloves, NSN 6515-01-632-0167, quantity 200 boxes.
+
+SECTION 2 SUBMISSION INSTRUCTIONS
+Quotes are due no later than October 15, 2026 2:00 PM ET.
+Quotes shall be submitted by email to jane.buyer@dla.mil.
+Quoters shall complete and sign the SF 1449 and return it with the quote.
+The technical volume shall not exceed 10 pages.
+All files shall be submitted in PDF format.
+Quotes that do not include pricing for every CLIN will be rejected.
+
+SECTION 3 EVALUATION
+Quoters shall provide three past performance references for similar supply contracts.
+Offerors must be registered in the System for Award Management (SAM) at the time of quote submission.
+This acquisition is a total small business set-aside; the quoter must be a small business under NAICS 339113.
+
+SECTION 4 DELIVERY
+Delivery shall be made within 30 calendar days after award, FOB Destination.
+
+SECTION 5 CLAUSES
+52.212-1 Instructions to Offerors—Commercial Products and Commercial Services (SEP 2023)
+52.204-7 System for Award Management (NOV 2024)
+52.219-6 Notice of Total Small Business Set-Aside (NOV 2020)
+DFARS 252.225-7001 Buy American and Balance of Payments Program
+DLAD 52.211-9010 Shipping Label Requirements

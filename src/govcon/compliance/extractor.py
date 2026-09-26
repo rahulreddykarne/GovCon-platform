@@ -220,6 +220,43 @@ def scan_requirements(inventory: Inventory) -> list[Candidate]:
     return candidates
 
 
+def structural_candidates(inventory: Inventory) -> list[Candidate]:
+    """Requirements implied by the package structure itself (one per amendment)."""
+    candidates: list[Candidate] = []
+    for index, doc in enumerate(inventory.amendments(), start=1):
+        if not doc.amendment_number:
+            continue
+        number = f"{doc.amendment_number:04d}"
+        quote = None
+        for page, text in doc.pages():
+            for line in (text or "").splitlines():
+                if re.search(r"amendment", line, re.I) and len(line.strip()) >= 8:
+                    quote = normalize_ws(line)[:300]
+                    source_page = page
+                    break
+            if quote:
+                break
+        if quote is None:
+            continue
+        candidates.append(
+            Candidate(
+                candidate_id=f"D-amend-{index}",
+                pass_label="D",
+                requirement_text=f"Acknowledge receipt of Amendment {number} in the offer.",
+                requirement_type="amendment_acknowledgment",
+                mandatory=True,
+                severity="critical",
+                source_file_id=doc.file_id,
+                source_page=source_page,
+                supporting_quote=quote,
+                source_snapshot_id=doc.snapshot_id,
+                key_values={"amendments_to_acknowledge": [number]},
+                citation_verified=True,
+            )
+        )
+    return candidates
+
+
 def _sections(text: str) -> list[tuple[str | None, str]]:
     sections: list[tuple[str | None, str]] = []
     heading: str | None = None
@@ -347,7 +384,7 @@ def run_ai_pass(
 
 
 def run_scanner_pass(session: Session, opportunity_id: int, inventory: Inventory) -> PassOutcome:
-    candidates = scan_requirements(inventory)
+    candidates = scan_requirements(inventory) + structural_candidates(inventory)
     run = record_run(
         session,
         opportunity_id=opportunity_id,

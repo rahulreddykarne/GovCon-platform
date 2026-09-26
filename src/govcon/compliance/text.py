@@ -159,7 +159,7 @@ _TZ = re.compile(r"\b(EST|EDT|ET|CST|CDT|CT|MST|MDT|MT|PST|PDT|PT|UTC|GMT|Z|East
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
 _FORM = re.compile(r"\b(SF|DD|OF)[- ]?(\d{2,4}[A-Z]?)\b")
 _CLIN_QTY = re.compile(r"\bCLIN\s*(\d{4}[A-Z]{0,2})\b[^.\n]{0,80}?\b(?:qty|quantity)\s*(?:of|:|=)?\s*([\d,]+)", re.I)
-_CLIN_QTY_TABLE = re.compile(r"\b(\d{4}[A-Z]{0,2})\s*\|[^|\n]*\|\s*([\d,]+)\s*\|", re.I)
+_CLIN_QTY_TABLE = re.compile(r"^\s*(\d{4}[A-Z]{0,2})\s*\|[^|\n]*\|\s*([\d,]+)\s*(?:\||$)", re.I | re.M)
 _DELIVERY_DAYS = re.compile(
     r"(?:deliver\w*|delivery|ship\w*)[^.]{0,80}?\b(?:within|in|no later than|nlt)\s+(\d+|[a-z]+)\s*(?:\((\d+)\)\s*)?(calendar|business|working)?\s*days",
     re.I,

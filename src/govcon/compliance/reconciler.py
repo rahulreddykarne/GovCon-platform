@@ -248,6 +248,7 @@ def persist_reconciliation(
     pass_runs: dict[str, int | None] | None = None,
     warnings: list[dict[str, Any]] | None = None,
     input_hash: str | None = None,
+    inventory_files: list[dict[str, Any]] | None = None,
 ) -> tuple[list[Requirement], dict[str, Any]]:
     existing = active_requirements(session, opportunity_id)
     matched_existing: set[int] = set()
@@ -305,13 +306,14 @@ def persist_reconciliation(
         "single_pass": len(canonicals) - independently,
         "needs_review_on_reconciliation": [c.requirement_id for c in canonicals if c.status == "needs_review"],
         "pass_runs": pass_runs or {},
+        "inventory_files": inventory_files or [],
         "canonicals": [
             {"requirement_id": c.requirement_id, **c.reconciliation_json(), "source_refs": c.source_refs}
             for c in canonicals
         ],
     }
     session.flush()
-    return inserted + updated, {"run_id": run.id, **{k: v for k, v in run.output_json.items() if k != "canonicals"}}
+    return inserted + updated, {"run_id": run.id, **{k: v for k, v in run.output_json.items() if k not in {"canonicals", "inventory_files"}}}
 
 
 def _new_requirement(opportunity_id: int, canonical: CanonicalRequirement, run_id: int, *, introduced_by: str | None) -> Requirement:

@@ -23,7 +23,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
-from govcon.compliance.matrix import active_requirements, record_run, upsert_open_finding
+from govcon.compliance.matrix import active_requirements, close_undetected_findings, record_run, upsert_open_finding
 from govcon.compliance.records import Inventory, SourceDocument
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement
@@ -169,6 +169,7 @@ def apply_conflicts(session: Session, opportunity_id: int, conflicts: list[Confl
     requirements = {r.id: r for r in active_requirements(session, opportunity_id)}
     superseded_ids: list[int] = []
     ambiguous_ids: list[int] = []
+    finding_ids: list[int] = []
     now = datetime.now(UTC)
     for conflict in conflicts:
         involved = [requirements[v["requirement"]] for v in conflict.values if v["requirement"] in requirements]
@@ -194,7 +195,7 @@ def apply_conflicts(session: Session, opportunity_id: int, conflicts: list[Confl
                 if new is not None:
                     _flag(new, "supersedes", {"topic": conflict.topic, "superseded": conflict.superseded})
                     new.amendment_changed_at = new.amendment_changed_at or now
-            upsert_open_finding(
+            finding = upsert_open_finding(
                 session,
                 opportunity_id=opportunity_id,
                 requirement_id=controlling,
@@ -207,11 +208,12 @@ def apply_conflicts(session: Session, opportunity_id: int, conflicts: list[Confl
                 blocks_submission=False,
                 compliance_run_id=run_id,
             )
+            finding_ids.append(finding.id)
         else:
             for req in involved:
                 _flag(req, "conflict_ambiguous", {"topic": conflict.topic, "values": [v["value"] for v in conflict.values]})
                 ambiguous_ids.append(req.id)
-            upsert_open_finding(
+            finding = upsert_open_finding(
                 session,
                 opportunity_id=opportunity_id,
                 requirement_id=involved[0].id,
@@ -224,8 +226,9 @@ def apply_conflicts(session: Session, opportunity_id: int, conflicts: list[Confl
                 blocks_submission=potentially_mandatory or severe,
                 compliance_run_id=run_id,
             )
+            finding_ids.append(finding.id)
     session.flush()
-    return {"superseded": sorted(set(superseded_ids)), "ambiguous": sorted(set(ambiguous_ids))}
+    return {"superseded": sorted(set(superseded_ids)), "ambiguous": sorted(set(ambiguous_ids)), "finding_ids": finding_ids}
 
 
 def run_conflict_scan(
@@ -242,6 +245,10 @@ def run_conflict_scan(
     conflicts = detect_conflicts([_facts_for(r) for r in requirements], docs)
     run = record_run(session, opportunity_id=opportunity_id, run_type="conflict_scan", run_version=CONFLICT_VERSION, output={})
     applied = apply_conflicts(session, opportunity_id, conflicts, run_id=run.id, detected_by="deterministic_conflict_scan")
+    applied["closed_finding_ids"] = close_undetected_findings(
+        session, opportunity_id, detected_by="deterministic_conflict_scan", keep_ids=set(applied["finding_ids"]), run_id=run.id,
+        finding_types={"conflict_ambiguous"},
+    )
     ai_summary: dict[str, Any] = {"status": "not_run"}
     warnings: list[dict[str, Any]] = []
     if use_ai and requirements:

@@ -18,7 +18,7 @@ from pathlib import Path
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
-from govcon.compliance.matrix import record_run, upsert_open_finding
+from govcon.compliance.matrix import close_undetected_findings, record_run, upsert_open_finding
 from govcon.compliance.records import Inventory, InventoryWarning, SourceDocument
 from govcon.models import ComplianceRun, Opportunity, OpportunityEvent, OpportunitySnapshot, StoredFile
 
@@ -241,7 +241,7 @@ def analyze_inventory(
         for match in _ATTACHMENT_REF.finditer(doc.text or ""):
             label = f"{match.group(1).title()} {match.group(2).upper()}"
             references.setdefault(label, set()).add(doc.file_id)
-    headers = " ".join(((d.text or "")[:400]).lower() for d in documents)
+    headers = " ".join(next((line for line in (d.text or "").splitlines() if line.strip()), "").lower() for d in documents)
     for label, file_ids in sorted(references.items()):
         kind, ident = label.split(" ", 1)
         ident_l = ident.lower()
@@ -312,10 +312,11 @@ def build_document_inventory(session: Session, opportunity_id: int) -> tuple[Inv
         source_snapshot_ids=snapshot_ids,
         input_hash=inventory_hash(inventory),
     )
+    kept: set[int] = set()
     for warning in inventory.warnings:
         if warning.severity == "info":
             continue
-        upsert_open_finding(
+        finding = upsert_open_finding(
             session,
             opportunity_id=opportunity_id,
             finding_type=f"inventory_{warning.code}",
@@ -327,4 +328,6 @@ def build_document_inventory(session: Session, opportunity_id: int) -> tuple[Inv
             blocks_submission=warning.blocking,
             compliance_run_id=run.id,
         )
+        kept.add(finding.id)
+    close_undetected_findings(session, opportunity_id, detected_by="document_inventory", keep_ids=kept, run_id=run.id)
     return inventory, run

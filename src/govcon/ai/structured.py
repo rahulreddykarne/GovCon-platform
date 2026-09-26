@@ -45,7 +45,7 @@ class StructuredCallError(RuntimeError):
 @dataclass(frozen=True)
 class StructuredCallResult:
     output: BaseModel
-    analysis: AIAnalysis
+    analysis: AIAnalysis | None
     prompt: PromptAsset
 
 
@@ -61,9 +61,9 @@ def resolve_prompt(session: Session | None, prompt_name: str, settings: Settings
 
 
 def run_structured_prompt(
-    session: Session,
+    session: Session | None,
     *,
-    opportunity_id: int,
+    opportunity_id: int | None,
     prompt_name: str,
     analysis_type: str,
     variables: dict[str, Any],
@@ -141,8 +141,9 @@ def run_structured_prompt(
             estimated_cost=None,
             latency_ms=getattr(result, "latency_ms", None),
         )
-        session.add(analysis)
-        session.flush()
+        if session is not None:
+            session.add(analysis)
+            session.flush()
         return StructuredCallResult(output=validated, analysis=analysis, prompt=prompt)
 
     assert last_error is not None

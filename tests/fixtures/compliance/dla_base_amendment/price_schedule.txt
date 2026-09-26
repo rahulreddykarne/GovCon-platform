@@ -1,0 +1,5 @@
+[Sheet: Price Schedule]
+CLIN	Description	Quantity	Unit Price
+0001	Nitrile examination gloves	500	
+0002	Latex-free surgical gloves	200	
+Quoters shall enter a unit price for every CLIN on this price schedule.

@@ -39,7 +39,7 @@ SET_ASIDE_STATUS = {
 }
 
 
-def _result(name: str, status: str, reason: str, **evidence: Any) -> ValidatorResult:
+def _result(name: str, status: str, reason: str, /, **evidence: Any) -> ValidatorResult:
     return ValidatorResult(name, status, reason, {k: _jsonable(v) for k, v in evidence.items()}, VALIDATOR_VERSION)
 
 
