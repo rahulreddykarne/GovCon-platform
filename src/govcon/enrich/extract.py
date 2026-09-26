@@ -80,15 +80,38 @@ def _extract_pdf(data: bytes) -> ExtractionResult:
         return ExtractionResult(None, "error", str(exc))
 
 
+def extract_pdf_pages(data: bytes) -> list[str] | None:
+    """Return per-page text for a PDF, or ``None`` when it cannot be read."""
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(data))
+        return [page.extract_text() or "" for page in reader.pages]
+    except Exception as exc:
+        logger.warning("PDF page extraction failed: %s", exc)
+        return None
+
+
 def _extract_docx(data: bytes) -> ExtractionResult:
     try:
         from docx import Document
 
         doc = Document(io.BytesIO(data))
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-        if not paragraphs:
-            return ExtractionResult(None, "partial", "DOCX contained no text paragraphs")
-        return ExtractionResult("\n\n".join(paragraphs), "success")
+        # Requirements are often embedded in tables (packaging, CLIN, marking);
+        # paragraph-only extraction silently drops them.
+        tables: list[str] = []
+        for index, table in enumerate(doc.tables, start=1):
+            rows = []
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells]
+                if any(cells):
+                    rows.append("\t".join(cells))
+            if rows:
+                tables.append(f"[Table {index}]\n" + "\n".join(rows))
+        if not paragraphs and not tables:
+            return ExtractionResult(None, "partial", "DOCX contained no text paragraphs or tables")
+        return ExtractionResult("\n\n".join(paragraphs + tables), "success")
     except Exception as exc:
         logger.warning("DOCX extraction failed: %s", exc)
         return ExtractionResult(None, "error", str(exc))
