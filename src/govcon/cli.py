@@ -273,6 +273,84 @@ def ingest_sam(
         raise typer.Exit(code=1)
 
 
+def _echo_dibbs(run_id: int, status: str, result) -> None:
+    coverage = result.coverage
+    typer.echo(f"index_file: {result.index_name}")
+    if result.retained_path:
+        typer.echo(f"retained: {result.retained_path}")
+    typer.echo(f"records: {coverage.records}")
+    typer.echo(f"nsn_coverage: {coverage.nsn}/{coverage.records}")
+    typer.echo(f"quantity_coverage: {coverage.quantity}/{coverage.records}")
+    _echo_ingest(run_id, status, result.stats)
+
+
+@ingest_app.command("dibbs")
+def ingest_dibbs(
+    file: str | None = typer.Option(
+        None,
+        "--file",
+        help="Local inYYMMDD.txt index to ingest. Does not call the network.",
+    ),
+    posted_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Index post date (YYYY-MM-DD or MM/dd/yyyy). Default is the newest file on the recent RFQ page.",
+    ),
+) -> None:
+    """Ingest one DIBBS daily index file. Re-running an unchanged file does not add snapshots."""
+    from pathlib import Path
+
+    from govcon.ingest.dibbs import DibbsError, ingest_index_file, parse_user_date, pull_dibbs_index
+    from govcon.ingest.runs import IngestStats, finish_run, start_run
+    from govcon.logging import redact
+
+    if file and posted_date:
+        typer.echo("pass either --file or --date, not both", err=True)
+        raise typer.Exit(code=2)
+    day = None
+    if posted_date:
+        try:
+            day = parse_user_date(posted_date)
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
+    local_path: Path | None = None
+    if file:
+        local_path = Path(file)
+        if not local_path.is_file():
+            typer.echo(f"index file not found: {file}", err=True)
+            raise typer.Exit(code=2)
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    status = "succeeded"
+    stats = IngestStats()
+    result = None
+    with session_scope(settings) as session:
+        run = start_run(session, "dibbs_index")
+        try:
+            if local_path is not None:
+                result = ingest_index_file(session, local_path, data_dir=settings.data_dir)
+            else:
+                result = pull_dibbs_index(session, settings=settings, posted_date=day)
+            stats = result.stats
+        except (DibbsError, OSError, ValueError) as exc:
+            stats = IngestStats(errors=[redact(str(exc))])
+            status = "failed"
+        status = status if status == "failed" else _run_status(stats)
+        finish_run(run, stats, status=status)
+        run_id = run.id
+    if result is None:
+        _echo_ingest(run_id, status, stats)
+    else:
+        _echo_dibbs(run_id, status, result)
+    if status != "succeeded":
+        raise typer.Exit(code=1)
+
+
 @ingest_app.command("sam-backfill")
 def ingest_sam_backfill(
     posted_from: str = typer.Option(..., help="Posted-from date (MM/dd/yyyy or YYYY-MM-DD)."),

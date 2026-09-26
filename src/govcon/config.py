@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     ai_max_cost_usd_per_opportunity: float | None = None
     attachment_max_mb: int = 100
     http_user_agent: str = "govcon-platform/2.0"
+    dibbs_request_interval_seconds: float = Field(default=2.0, ge=0)
 
     web_bind_host: str = "127.0.0.1"
     web_bind_allow_public: bool = False
@@ -112,6 +113,13 @@ class Settings(BaseSettings):
     def blank_float_is_unset(cls, value: object) -> object:
         if isinstance(value, str) and value.strip() == "":
             return None
+        return value
+
+    @field_validator("dibbs_request_interval_seconds", mode="before")
+    @classmethod
+    def blank_dibbs_interval_uses_default(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip() == "":
+            return 2.0
         return value
 
     @model_validator(mode="after")

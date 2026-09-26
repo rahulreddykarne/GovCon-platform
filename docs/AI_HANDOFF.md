@@ -2,6 +2,96 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 20:00 UTC — PHASE_04_DIBBS
+
+- Agent/model identity: Cursor cloud, model `grok-4.7` (params: reasoning_effort=high, fast=true)
+- Datetime (UTC): 2026-09-26 20:00 UTC
+- Phase/task: PHASE_04_DIBBS
+- Run: https://cursor.com/agents/bc-2058fbc4-7d59-5a06-a61e-fd49eb18a6d6
+- Branch: `cursor/phase-04-dibbs-a6d6`
+- Base: `main` at `49a3b99` (Phase 3 alert digests, pull request #6)
+- Pull request: pending
+
+### Files changed
+
+- `src/govcon/ingest/dibbs.py`
+- `src/govcon/ingest/__init__.py`
+- `src/govcon/cli.py`
+- `src/govcon/config.py`
+- `tests/test_dibbs.py`
+- `tests/fixtures/dibbs/in260925.txt`
+- `.env.example`
+- `README.md`
+- `IMPLEMENTATION_STATUS.md`
+- `DECISIONS.md`
+- `SPEC_DEVIATIONS.md`
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- `govcon ingest dibbs` downloads the newest fixed-width DIBBS index (`inYYMMDD.txt`) from the recent RFQ page, retains the original bytes under `DATA_DIR/dibbs/`, and upserts one opportunity per line.
+- `govcon ingest dibbs --date YYYY-MM-DD` downloads that post date's index. `govcon ingest dibbs --file` ingests a local index and does not open the network.
+- Parsed fields are solicitation number, dashed NSN when the value is 13 digits, nomenclature, quantity, unit, return-by date, set-aside code, buyer code, AMSC, and the RFQ record URL.
+- `source_id` is `solicitation:purchase_request`. A changed line writes a snapshot and field events through the Phase 1 upsert. An unchanged re-run does not.
+- NSN and quantity coverage are logged. The saved 2026-09-25 file is 521/523 NSNs and 523/523 quantities.
+- DIBBS rows are ordinary `source='dibbs'` opportunities. The Phase 2 watchlist engine matches them on NSN, set-aside, keyword, and source without a matcher change.
+- `caYYMMDD.zip` and `bqYYMMDD.zip` are not downloaded. Individual RFQ HTML pages are not fetched.
+
+### ADRs / DECISIONS touched
+
+- ADR-020 in `DECISIONS.md`: index layout, line identity, dashed NSN, FSC in `psc_code`, return-by end of UTC day, consent banner, and request spacing.
+- DEV-002 in `SPEC_DEVIATIONS.md`: retain the index only.
+- Phase 0 ADR-001 through ADR-014, Phase 1 ADR-015 through ADR-017, Phase 2 ADR-018, and Phase 3 ADR-019 were not changed.
+
+### Migrations
+
+None. Phase 4 uses the Phase 0 schema (`97cb081e9a8e`).
+
+### Tests
+
+Command: `pytest`
+
+Result: **81 passed, 1 skipped** (Phase 1 live-pull skip unchanged).
+
+Covered acceptance checks:
+
+- The 2026-09-25 fixture (newest index listed on 2026-09-26) ingests 523 rows.
+- Coverage is logged: NSN 521/523 (0.9962), quantity 523/523 (1.0000).
+- A second ingest inserts 0, updates 0, and leaves the snapshot count unchanged.
+- A changed quantity and return-by write `quantity_changed`, `deadline_changed`, and a second snapshot. A later payload with status `cancelled` writes `cancelled`.
+- A dibbs-only NSN watchlist matches the DIBBS row and not a SAM row with the same NSN. A sam+dibbs watchlist matches both. Set-aside `Y` matches 106 DIBBS rows. Keyword `helmet` matches the fixture row.
+- CLI `--file` prints coverage and is idempotent. Consent download and newest-index selection are mocked and do not request the zip files.
+
+### VERIFY outcomes
+
+Checked live on 2026-09-26.
+
+- Pages: `https://www.dibbs.bsm.dla.mil/` is DIBBS 6.3.2. Downloads point at `https://www.dibbs.bsm.dla.mil/RFQ/RFQDates.aspx?category=recent`. Documents are on `https://dibbs2.bsm.dla.mil/`.
+- Batch mechanism: each post date has `caYYMMDD.zip` (solicitation PDF/HTML), `inYYMMDD.txt` (index), and `bqYYMMDD.zip` (quote template). Layout help is `https://www.dibbs.bsm.dla.mil/Rfq/RfqFileDefs.aspx`. The index is 140 fixed-width characters. The quote template is comma-delimited and documented at the batch-quoting help page (last updated 30-APR-2024).
+- Fixture: `tests/fixtures/dibbs/in260925.txt` (74,266 bytes, 523 records) from `https://dibbs2.bsm.dla.mil/Downloads/RFQ/Archive/in260925.txt`. The recent page at 2026-09-26 19:48 UTC listed 09-25-2026 as the newest post date. Help text says today's file is posted the next day. 2026-09-26 is a Saturday, so no `in260926.txt` was listed.
+- Access: public information may be copied (DLA privacy notice). Unauthorized uploads are prohibited. A session consent cookie is set by posting `butAgree=OK`. Account terms apply to quoting users.
+- Robots: `https://www.dibbs.bsm.dla.mil/robots.txt` is HTTP 404 after consent. `https://dibbs2.bsm.dla.mil/robots.txt` is the documents site's file-not-found page. No disallow or crawl-delay is published. This client waits 2 seconds between requests by default.
+- One record URL was opened to confirm the pattern: `https://www.dibbs.bsm.dla.mil/RFQ/RfqRec.aspx?sn=SPE1C126T1698` returned the RFQ record. That page is not fetched during ingest.
+
+### Known problems
+
+- The index has a buyer code, not a buyer name or email. Contact rows are not created.
+- Two of 523 lines are item type `1` but not 13-digit NSNs (`5815LLNC02443`, `9535LLNCA9756`). They keep quantity and leave `nsn` null.
+- The index has no cancellation column. A line missing from a later day is not marked cancelled.
+- `psc_code` stores the FSC (first four digits of a 13-digit NSN). The index has no separate PSC or NAICS.
+- Return-by is stored as 23:59:59 UTC because the file has a date only.
+- If the process stops after the file is saved and before the database commit, the next run ingests the retained file again. The database upsert is still idempotent.
+
+### Unfinished work
+
+- Phase 5 USAspending awards and pricing (`PHASE_05_AWARDS_PRICING.md`) — not started in this run.
+- PDF and HTML solicitation files inside `caYYMMDD.zip` stay out of this ingest.
+- DIBBS scheduling stays in Phase 17.
+
+### Recommended next task
+
+Phase 5 — USAspending awards and pricing (`PHASE_05_AWARDS_PRICING.md`). **Do not start until this Phase 4 pull request is merged and its gates pass.**
+
 ## 2026-09-26 19:10 UTC — PHASE_03_ALERTS
 
 - Agent/model identity: Cursor cloud, model `grok-4.7-high-fast`
