@@ -9,7 +9,7 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - Phase/task: PHASE_09_COMPLIANCE (master §15). Resumed after an interrupted run; the in-progress work was kept and completed.
 - Branch: `cursor/phase-09-compliance-e5e4`
 - Base: `main` at `3b6eaab` (Phase 8, pull request #11)
-- Pull request: PR_URL_PLACEHOLDER (draft)
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/12 (draft)
 
 ### Files changed
 
