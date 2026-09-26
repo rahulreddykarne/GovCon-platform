@@ -2,7 +2,82 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
-`main` was re-read at 2026-09-26 18:50 UTC and is still `e7ba0b1` (Phase 0 merged, pull request #1). No other agent commits were on this branch. This branch is `cursor/phase-01-sam-ingestion-43a0`. One pull request: #3.
+`main` was re-read at 2026-09-26 19:15 UTC and is `26ed863` (Phase 0 and Phase 1 merged). This branch is `cursor/phase-02-matching-d53f`.
+
+## 2026-09-26 19:15 UTC — PHASE_02_MATCHING
+
+- Agent/model identity: Cursor cloud, model `composer-2.5`
+- Datetime (UTC): 2026-09-26 19:15 UTC
+- Phase/task: PHASE_02_MATCHING
+- Run: https://cursor.com/agents/bc-a779864f-ed95-592a-a2ab-61aabff2d53f
+- Branch: `cursor/phase-02-matching-d53f`
+- Pull request: (opened at end of this session)
+
+### Files changed
+
+- `src/govcon/matching/engine.py`
+- `src/govcon/matching/watchlists.py`
+- `src/govcon/matching/__init__.py`
+- `src/govcon/cli.py`
+- `tests/test_matching.py`
+- `tests/test_cli_and_schema.py`
+- `IMPLEMENTATION_STATUS.md`
+- `DECISIONS.md`
+- `SPEC_DEVIATIONS.md`
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- Deterministic watchlist matching: every non-empty rule group must pass; values inside a group are OR'd; empty groups are wildcards.
+- Rule groups: PSC prefix, NAICS prefix, keywords, exclude keywords (whole-word veto), exact NSN, set-asides, source filters, min/max estimated value when known, minimum days until deadline.
+- Unknown opportunity values do not fail value filters; `matched_on.groups.value.status` is `unknown`.
+- Rule-hit score and explainable `matched_on` JSON evidence per match.
+- Idempotent upsert on `(opportunity_id, watchlist_id)`; existing match `status` is preserved on update.
+- CLI: `govcon match run`, `govcon match rebuild --watchlist N`, `govcon watchlist add`, `govcon watchlist list`, `govcon watchlist edit`, `govcon watchlist disable`.
+
+### ADRs / DECISIONS touched
+
+- ADR-018 in `DECISIONS.md`: matching semantics, whole-word keyword/exclude handling, unknown value behavior, rebuild stale-match removal, idempotent upsert.
+- Phase 0 ADR-001 through ADR-014 and Phase 1 ADR-015 through ADR-017 were not changed.
+- No new table and no Alembic revision.
+
+### Migrations
+
+None. Phase 2 uses the Phase 0 schema (`97cb081e9a8e`).
+
+### Tests
+
+Command: `pytest`
+
+Result: **50 passed, 1 skipped** (Phase 1 live-pull skip unchanged).
+
+Covered acceptance checks:
+
+- PSC prefix match and non-match.
+- NAICS prefix match and non-match.
+- Exclude keyword veto (whole-word; `unclassified` does not trigger `classified`).
+- Wildcard empty PSC group while NAICS still filters.
+- Unknown estimated value passes when `max_value` is configured; known out-of-range value fails.
+- Idempotent match upsert (second run inserts 0, unchanged 1).
+- CLI `match run`, `watchlist add/list/disable`, and `match rebuild` stale removal.
+
+### VERIFY outcomes
+
+`PHASE_02_MATCHING.md` contains no `⚠️ VERIFY` items. No live external interface verification was required for this phase.
+
+### Known problems
+
+- A sources-only watchlist (such as the seeded demo watchlist before targeting arrays are filled) matches every opportunity from the configured sources. Operators should add PSC/NAICS/keyword filters before expecting a narrow shortlist.
+- `govcon match run` evaluates all enabled watchlists; disable unused watchlists to avoid broad matches.
+
+### Unfinished work
+
+- Phase 3 alert digests (`PHASE_03_ALERTS.md`) — not started in this run.
+- Semantic/vector matching, AI bid decisions, and proposal workflow remain out of scope per phase boundaries.
+
+### Recommended next task
+
+Phase 3 — alert digests (`PHASE_03_ALERTS.md`), only after this pull request is merged and its gates pass.
 
 ## 2026-09-26 18:50 UTC — PHASE_01_SAM_INGESTION
 
