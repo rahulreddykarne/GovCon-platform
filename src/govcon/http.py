@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity.wait import wait_base
 
 from govcon.config import Settings, get_settings
 
@@ -28,13 +29,28 @@ def build_client(settings: Settings | None = None, **overrides: object) -> httpx
     return httpx.Client(headers=headers, timeout=timeout, follow_redirects=True, **overrides)
 
 
-def request_with_retry(client: httpx.Client, method: str, url: str, **kwargs: object) -> httpx.Response:
-    """Retry transport failures and 429/5xx responses with exponential backoff."""
+def request_with_retry(
+    client: httpx.Client,
+    method: str,
+    url: str,
+    *,
+    attempts: int = 3,
+    wait: wait_base | None = None,
+    **kwargs: object,
+) -> httpx.Response:
+    """Retry transport failures and 429/5xx responses with exponential backoff.
+
+    The default wait stays short so tests remain fast. Callers that talk to a
+    quota-limited API can pass a longer ``wait`` and a higher ``attempts``.
+    """
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1")
+    policy = wait or wait_exponential(multiplier=0.05, min=0.05, max=0.5)
 
     @retry(
         retry=retry_if_exception_type((httpx.TransportError, RetryableStatus)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=0.05, min=0.05, max=0.5),
+        stop=stop_after_attempt(attempts),
+        wait=policy,
         reraise=True,
     )
     def _send() -> httpx.Response:

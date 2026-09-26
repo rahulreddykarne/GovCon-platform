@@ -90,7 +90,7 @@ class Opportunity(TimestampMixin, Base):
     response_deadline: Mapped[datetime | None] = mapped_column(_ts())
     archive_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'open'"))
-    poc: Mapped[dict | None] = mapped_column(JSONB)
+    poc: Mapped[dict | list | None] = mapped_column(JSONB)
     links: Mapped[dict | None] = mapped_column(JSONB)
     raw: Mapped[dict] = mapped_column(JSONB, nullable=False)
     raw_hash: Mapped[str | None] = mapped_column(Text)
