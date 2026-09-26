@@ -1,4 +1,35 @@
 name: post_submission_routing
 version: v1
-status: placeholder
-notes: Phase 0 placeholder. The production decision spec is added in Phase 8. Do not activate.
+provider: jev
+input_schema: post_submission_routing_state.v1
+objective: >
+  Route post-submission communications by urgency and required action without
+  inventing legal/compliance commitments.
+questions:
+  - id: action_required
+    type: boolean
+    question: Does this communication require action?
+  - id: urgency
+    type: score
+    question: How urgent is the required action?
+    scale: [low, medium, high, critical]
+  - id: communication_type
+    type: classification
+    question: What communication class best fits?
+    classes: [amendment, clarification, award_notice, rejection, request_for_information, general, review]
+  - id: response_required
+    type: boolean
+    question: Is a user response required?
+  - id: proposal_or_pricing_change_required
+    type: boolean
+    question: Does this require proposal or pricing change?
+  - id: return_to_review_workflow
+    type: boolean
+    question: Should this return to an earlier review workflow stage?
+policy:
+  unknown_is_not_negative: true
+  hard_rules_override: true
+  low_confidence_escalate_to_review: true
+  confidence_threshold: medium
+  consequential_action_requires_human: true
+  human_approval_required_for: [submitted, award_acceptance]

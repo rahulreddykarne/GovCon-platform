@@ -1,0 +1,41 @@
+{
+  "state": {
+    "opportunity": {
+      "status": "open",
+      "days_remaining": 10
+    },
+    "eligibility": {
+      "set_aside_match": true
+    },
+    "sourcing": {
+      "product_found": true
+    },
+    "pricing": {
+      "margin_pct": 9.0,
+      "historical_comparable_count": 4
+    },
+    "bundle_results": {
+      "eligibility_and_execution": {
+        "stop_evaluation": false,
+        "capability_match": "medium",
+        "execution_risk": "high"
+      },
+      "market_and_pricing": {
+        "margin_quality": "marginal",
+        "commercial_attractiveness": "low",
+        "historical_comparability": "medium"
+      }
+    },
+    "compliance": {
+      "mandatory_missing": 0,
+      "critical_unresolved": 1,
+      "country_of_origin_conflict": true
+    },
+    "analysis": {
+      "missing_information": []
+    }
+  },
+  "expected_allowed_decisions": ["review"],
+  "must_escalate": true,
+  "notes": "Country-of-origin concern should avoid auto BID."
+}

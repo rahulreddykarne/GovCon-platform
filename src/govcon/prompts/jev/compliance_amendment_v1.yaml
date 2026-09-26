@@ -1,4 +1,54 @@
 name: compliance_amendment
 version: v1
-status: placeholder
-notes: Phase 0 placeholder. The production decision spec is added in Phase 8. Do not activate.
+provider: jev
+input_schema: compliance_amendment_state.v1
+objective: >
+  Route compliance and amendment risk from structured requirement state.
+  JEV does not replace deterministic compliance extraction or validation.
+questions:
+  - id: requirement_decisions
+    type: classification
+    question: For each requirement, classify mandatory/risk/blocking status.
+    classes: [satisfied, missing, review]
+  - id: mandatory_total
+    type: score
+    question: Mandatory requirement volume indicator.
+    scale: [low, medium, high]
+  - id: mandatory_unresolved
+    type: score
+    question: Mandatory unresolved severity indicator.
+    scale: [low, medium, high, critical]
+  - id: critical_total
+    type: score
+    question: Critical requirement volume indicator.
+    scale: [low, medium, high]
+  - id: critical_unresolved
+    type: score
+    question: Critical unresolved severity indicator.
+    scale: [low, medium, high, critical]
+  - id: false_satisfied_risk
+    type: score
+    question: How high is false-satisfied risk?
+    scale: [low, medium, high]
+  - id: second_validation_required
+    type: boolean
+    question: Is second validation needed?
+  - id: amendment_material
+    type: boolean
+    question: Is the amendment material?
+  - id: proposal_revision_required
+    type: boolean
+    question: Does amendment impact require proposal revision?
+  - id: bid_reassessment_required
+    type: boolean
+    question: Should bid/no-bid be reassessed due to amendment/compliance state?
+  - id: immediate_alert_required
+    type: boolean
+    question: Should immediate alerting happen for this compliance state?
+policy:
+  unknown_is_not_negative: true
+  hard_rules_override: true
+  low_confidence_escalate_to_review: true
+  confidence_threshold: medium
+  consequential_action_requires_human: true
+  human_approval_required_for: [bid_approved, submitted]

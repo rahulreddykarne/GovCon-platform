@@ -1,4 +1,45 @@
 name: market_pricing
 version: v1
-status: placeholder
-notes: Phase 0 placeholder. The production decision spec is added in Phase 8. Do not activate.
+provider: jev
+input_schema: market_pricing_state.v1
+objective: >
+  Evaluate historical comparability, competitiveness, and economic attractiveness
+  from source-backed pricing and award intelligence.
+questions:
+  - id: historical_comparability
+    type: score
+    question: How comparable are historical awards for this opportunity?
+    scale: [low, medium, high]
+  - id: supplier_cost_competitiveness
+    type: choice
+    question: Is supplier cost competitive versus historical evidence?
+    choices: [yes, no, unclear]
+  - id: competition_level
+    type: score
+    question: How intense is competition?
+    scale: [low, medium, high]
+  - id: incumbent_advantage
+    type: score
+    question: How strong is incumbent advantage?
+    scale: [low, medium, high]
+  - id: margin_quality
+    type: choice
+    question: How attractive is expected margin?
+    choices: [poor, marginal, good, strong]
+  - id: pricing_research_required
+    type: boolean
+    question: Is additional pricing research needed?
+  - id: commercial_attractiveness
+    type: score
+    question: How attractive is this opportunity commercially?
+    scale: [very_low, low, medium, high, very_high]
+  - id: pricing_human_review_required
+    type: boolean
+    question: Should pricing be escalated to human review?
+policy:
+  unknown_is_not_negative: true
+  hard_rules_override: true
+  low_confidence_escalate_to_review: true
+  confidence_threshold: medium
+  consequential_action_requires_human: true
+  human_approval_required_for: [bid_approval, submission]

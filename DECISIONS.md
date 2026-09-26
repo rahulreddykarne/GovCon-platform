@@ -209,3 +209,28 @@ Record durable architecture/implementation decisions.
 - Decision: The `SolicitationAnalysisV1` Pydantic model validates AI output before persistence. Validated output is stored in `ai_analyses.output_json` with `analysis_type='solicitation_summary'` and `schema_version='solicitation_analysis.v1'`. Source references use the `SourceRef` model (`source_file_id`, `page`, `section`, `quote`) at the item, delivery, submission, eligibility, and top levels. The analysis records full prompt metadata: `prompt_name`, `prompt_version`, `prompt_hash`, `generation_settings`, `input_snapshot_hash`, `context_manifest`, `token_usage`, and `latency_ms`. Malformed JSON output fails closed (returns None). AI errors are logged but never alter source data. The context manifest records `opportunity_id`, `files` (with `file_id`, `sha256`, `extraction_status`), and `structured_inputs`. Existing analyses are not overwritten unless `force=True`.
 - Alternatives considered: Store raw unvalidated JSON. Use a separate output table. Allow partial validation with a warning.
 - Consequences: Every AI analysis is reproducible from its recorded metadata. Schema validation catches model output errors before persistence. Source opportunity fields remain unchanged.
+
+### ADR-027 — JEV contract verification and endpoint shape (2026-09-26)
+- Phase: 8
+- Date: 2026-09-26
+- Context: Phase 8 requires live verification of the JEV interface before implementing the provider and decision bundle runtime.
+- Decision: Use the structured decision contract `POST /v1/systemone` with `model`, `state`, and `questions`, Bearer authentication, and typed answers. Treat `/v1/chat/completions` as invalid for JEV decisions.
+- Verification evidence: unauthenticated probes returned expected auth errors on structured endpoints and 404 on chat-completions paths.
+- Alternatives considered: Reusing an OpenAI-compatible `messages` contract for JEV.
+- Consequences: The JEV provider serializes typed question maps and parses typed answer payloads. Missing credentials or endpoint failures cleanly trigger fallback providers without breaking ingest/browse/manual flows.
+
+### ADR-028 — Phase 8 decision orchestration: hard rules first, then provider fallback chain
+- Phase: 8
+- Date: 2026-09-26
+- Context: The master spec requires deterministic hard-rule precedence, bundle schema validation, immutable `decision_runs` history, and explicit fallback behavior.
+- Decision: For each bundle run: evaluate hard rules first, produce deterministic baseline via `RuleDecisionProvider`, attempt JEV as primary (when configured), optionally apply LLM fallback, then enforce low-confidence escalation and hard-rule override before persisting the final validated result.
+- Alternatives considered: JEV-first with no deterministic baseline; replacing failed JEV runs with LLM output as equivalent.
+- Consequences: Hard blockers always win over AI recommendations. Every run is auditable with provider/model/spec/input hashes. JEV outages degrade to rules/LLM/human review rather than breaking workflows.
+
+### ADR-029 — Decision package persistence model and human-authority guardrails
+- Phase: 8
+- Date: 2026-09-26
+- Context: Phase 8 must produce a review-ready AI decision package while preserving human authority for consequential transitions.
+- Decision: Persist bundle-level outputs in `decision_runs`, persist preliminary recommendation in `bid_decisions`, and persist the review package in `ai_analyses` (`analysis_type=decision_package`, `schema_version=decision_package.v1`). Link/update `review_sessions.ai_decision_package_id` for reviewer workflow handoff.
+- Alternatives considered: Storing only one collapsed JSON blob; mutating pursuit stage directly from AI recommendation.
+- Consequences: Multiple AI runs per opportunity are preserved over time. `bid_decision` output cannot directly set `bid_approved`, and submission readiness cannot directly set `submitted`; those transitions remain human-authoritative.

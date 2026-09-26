@@ -1,0 +1,40 @@
+{
+  "state": {
+    "opportunity": {
+      "status": "open",
+      "days_remaining": 15
+    },
+    "eligibility": {
+      "set_aside_match": true
+    },
+    "sourcing": {
+      "product_found": true
+    },
+    "pricing": {
+      "margin_pct": 22.0,
+      "historical_comparable_count": 9
+    },
+    "bundle_results": {
+      "eligibility_and_execution": {
+        "stop_evaluation": false,
+        "capability_match": "high",
+        "execution_risk": "low"
+      },
+      "market_and_pricing": {
+        "margin_quality": "strong",
+        "commercial_attractiveness": "high",
+        "historical_comparability": "high"
+      }
+    },
+    "compliance": {
+      "mandatory_missing": 0,
+      "critical_unresolved": 0
+    },
+    "analysis": {
+      "missing_information": []
+    }
+  },
+  "expected_allowed_decisions": ["bid"],
+  "must_escalate": false,
+  "notes": "High margin and strong historical comparability should produce BID."
+}

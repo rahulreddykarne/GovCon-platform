@@ -1,4 +1,42 @@
 name: submission_readiness
 version: v1
-status: placeholder
-notes: Phase 0 placeholder. The production decision spec is added in Phase 8. Do not activate.
+provider: jev
+input_schema: submission_readiness_state.v1
+objective: >
+  Evaluate submission readiness posture while preserving human authority for
+  final submission transitions.
+questions:
+  - id: status
+    type: choice
+    question: Is this bid ready for submission?
+    choices: [ready, not_ready, review]
+  - id: blocking_issue_exists
+    type: boolean
+    question: Is there a blocking unresolved issue?
+  - id: document_package_complete
+    type: choice
+    question: Is required documentation complete?
+    choices: [yes, no, review]
+  - id: override_candidate
+    type: choice
+    question: Are remaining issues suitable for human override consideration?
+    choices: [yes, no, review]
+  - id: deadline_critical
+    type: boolean
+    question: Is deadline risk now critical?
+  - id: another_review_required
+    type: boolean
+    question: Is another review cycle required?
+  - id: human_verification_required
+    type: boolean
+    question: Is manual verification required before submission?
+  - id: immediate_alert_required
+    type: boolean
+    question: Should users be alerted immediately?
+policy:
+  unknown_is_not_negative: true
+  hard_rules_override: true
+  low_confidence_escalate_to_review: true
+  confidence_threshold: medium
+  consequential_action_requires_human: true
+  human_approval_required_for: [submitted]

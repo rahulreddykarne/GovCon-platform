@@ -1,0 +1,40 @@
+{
+  "state": {
+    "opportunity": {
+      "status": "open",
+      "days_remaining": 10
+    },
+    "eligibility": {
+      "set_aside_match": true
+    },
+    "sourcing": {
+      "product_found": true
+    },
+    "pricing": {
+      "margin_pct": 14.0,
+      "historical_comparable_count": 4
+    },
+    "bundle_results": {
+      "eligibility_and_execution": {
+        "stop_evaluation": true,
+        "capability_match": "high",
+        "execution_risk": "medium"
+      },
+      "market_and_pricing": {
+        "margin_quality": "good",
+        "commercial_attractiveness": "medium",
+        "historical_comparability": "medium"
+      }
+    },
+    "compliance": {
+      "mandatory_missing": 1,
+      "critical_unresolved": 0
+    },
+    "analysis": {
+      "missing_information": []
+    }
+  },
+  "expected_allowed_decisions": ["no_bid"],
+  "must_escalate": true,
+  "notes": "Certification blocker in eligibility should force NO_BID."
+}

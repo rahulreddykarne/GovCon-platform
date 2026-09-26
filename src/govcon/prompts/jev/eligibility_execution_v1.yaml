@@ -1,4 +1,44 @@
 name: eligibility_execution
 version: v1
-status: placeholder
-notes: Phase 0 placeholder. The production decision spec is added in Phase 8. Do not activate.
+provider: jev
+input_schema: eligibility_execution_state.v1
+objective: >
+  Evaluate capability, eligibility, and execution feasibility without
+  inventing missing certifications or delivery facts.
+questions:
+  - id: capability_match
+    type: score
+    question: How strong is capability match?
+    scale: [very_low, low, medium, high, very_high]
+  - id: eligibility_clear
+    type: boolean
+    question: Is set-aside and eligibility state clear enough to proceed?
+  - id: certification_blocker_risk
+    type: score
+    question: How likely are mandatory certifications to block the bid?
+    scale: [low, medium, high, critical]
+  - id: delivery_feasibility
+    type: choice
+    question: Is delivery schedule feasible?
+    choices: [yes, no, review]
+  - id: country_of_origin_risk
+    type: score
+    question: How severe is country-of-origin risk?
+    scale: [low, medium, high, critical]
+  - id: execution_risk
+    type: score
+    question: How severe is overall execution risk?
+    scale: [low, medium, high, critical]
+  - id: stop_evaluation
+    type: boolean
+    question: Is there a qualification issue that should stop evaluation?
+  - id: human_review_required
+    type: boolean
+    question: Is human review required before progressing?
+policy:
+  unknown_is_not_negative: true
+  hard_rules_override: true
+  low_confidence_escalate_to_review: true
+  confidence_threshold: medium
+  consequential_action_requires_human: true
+  human_approval_required_for: [bid_approval, submission]

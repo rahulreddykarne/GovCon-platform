@@ -1,4 +1,45 @@
 name: proposal_review
 version: v1
-status: placeholder
-notes: Phase 0 placeholder. The production decision spec is added in Phase 8. Do not activate.
+provider: jev
+input_schema: proposal_review_state.v1
+objective: >
+  Assess proposal-review routing signals without generating prose.
+  Unknowns should escalate to review.
+questions:
+  - id: ready_for_human_review
+    type: boolean
+    question: Is proposal content ready for human review?
+  - id: requirement_coverage
+    type: choice
+    question: How complete is requirement coverage?
+    choices: [yes, no, partial]
+  - id: unsupported_claims_present
+    type: boolean
+    question: Are unsupported claims present?
+  - id: quality
+    type: choice
+    question: What is proposal quality level?
+    choices: [poor, fair, good, strong]
+  - id: compliance_risk
+    type: score
+    question: What is compliance risk in the proposal?
+    scale: [low, medium, high]
+  - id: regeneration_required
+    type: boolean
+    question: Should content be regenerated?
+  - id: stronger_model_required
+    type: boolean
+    question: Is a stronger model required for review?
+  - id: human_sme_review_required
+    type: boolean
+    question: Is human SME review required?
+  - id: another_red_team_pass
+    type: boolean
+    question: Is another red-team pass warranted?
+policy:
+  unknown_is_not_negative: true
+  hard_rules_override: true
+  low_confidence_escalate_to_review: true
+  confidence_threshold: medium
+  consequential_action_requires_human: true
+  human_approval_required_for: [bid_approved, submitted]
