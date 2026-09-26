@@ -9,7 +9,7 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - Phase/task: `PHASE_10_COLLABORATIVE_REVIEW.md` only (master §16 + §24A collaboration requirements)
 - Branch: `cursor/phase-10-collaborative-review-7021`
 - Base: `main` at `9ee76af` (Phase 9 merge tip)
-- Pull request: to be created as draft from this branch in this run
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/13 (draft)
 
 ### Files changed
 
