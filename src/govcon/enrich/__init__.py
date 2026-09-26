@@ -1,1 +1,1 @@
-"""enrich package. Implementation arrives in a later phase.\n"""
+"""Enrichment: attachment download, text extraction, and AI analysis."""

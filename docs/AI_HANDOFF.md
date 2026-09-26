@@ -2,6 +2,121 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 20:45 UTC — PHASE_07_ATTACHMENTS_AI_ANALYSIS
+
+- Agent/model identity: Cursor cloud, model `claude-opus-4-6` (effort=high, thinking=true)
+- Datetime (UTC): 2026-09-26 20:45 UTC
+- Phase/task: PHASE_07_ATTACHMENTS_AI_ANALYSIS
+- Branch: `cursor/phase-07-attachments-ai-analysis-83b9`
+- Base: `main` at `f711c39` (Phase 6 SAM vendor profiles, competitors, and contact search, pull request #9)
+- Pull request: pending
+
+### Files changed
+
+- `src/govcon/ai/schemas.py` — Pydantic models for solicitation_analysis.v1 output validation
+- `src/govcon/ai/providers/__init__.py` — AI provider factory (DeepSeek)
+- `src/govcon/ai/providers/deepseek.py` — DeepSeek chat completions provider
+- `src/govcon/enrich/attachments.py` — Attachment download, SHA-256, dedup, text extraction
+- `src/govcon/enrich/extract.py` — PDF/DOCX/XLSX/text extraction
+- `src/govcon/enrich/summarize.py` — Structured solicitation analysis orchestrator
+- `src/govcon/enrich/__init__.py` — Package docstring
+- `src/govcon/prompting/registry.py` — Prompt registry sync, activation, and load
+- `src/govcon/prompting/renderer.py` — Compose system prompt from shared fragments + task prompt
+- `src/govcon/prompts/shared/source_security_rules_v1.md` — Production body (§38.1)
+- `src/govcon/prompts/shared/no_fabrication_rules_v1.md` — Production body (§38.2)
+- `src/govcon/prompts/shared/evidence_rules_v1.md` — Production body (§38.3)
+- `src/govcon/prompts/shared/company_facts_policy_v1.md` — Production body (§38.4)
+- `src/govcon/prompts/deepseek/solicitation_analysis_v1.md` — Production body (§39.1)
+- `src/govcon/cli.py` — CLI commands: enrich download/analyze/process/ingest-file, prompts sync/activate
+- `pyproject.toml` — Added pypdf, python-docx, openpyxl dependencies
+- `tests/test_attachments_analysis.py` — 34 Phase 7 tests
+- `tests/test_http_prompts.py` — Updated placeholder test for Phase 7 activations
+- `tests/fixtures/solicitation_fixture.pdf` — DLA solicitation fixture for acceptance testing
+- `.env.example` — Updated DeepSeek documentation
+- `IMPLEMENTATION_STATUS.md` — Phase 7 complete
+- `DECISIONS.md` — ADR-023 through ADR-026
+- `SPEC_DEVIATIONS.md` — Phase 7 entry
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- **Attachment ingestion**: `download_attachments` for pursued/reviewing opportunities. Downloads source attachments from `links.resourceLinks`, `links.attachments`, and `raw.resourceLinks`. Computes SHA-256. Preserves original files under `DATA_DIR/attachments/<opp_id>/`. Extracts text from PDF (pypdf), DOCX (python-docx), XLSX (openpyxl), and plain text. Tracks extraction status (`success`/`partial`/`unsupported`/`error`) and errors. Deduplicates on `(opportunity_id, url, sha256)`. OCR is optional fallback, not default.
+- **DeepSeek AI provider**: OpenAI-compatible chat completions at `https://api.deepseek.com/chat/completions`. Models: `deepseek-flash`, `deepseek-v4-pro`. JSON output mode. Goes through `authorize_external_call` gateway. Graceful `NoProviderConfigured` when no API key is set.
+- **Prompt registry**: `sync_prompts` scans source-controlled prompt files and upserts to `prompt_registry`. `activate_version` sets exactly one active version per prompt. `load_prompt` / `load_prompt_from_disk` resolve prompts by name and version.
+- **Shared prompt fragments**: `source_security_rules_v1`, `no_fabrication_rules_v1`, `evidence_rules_v1`, `company_facts_policy_v1` populated with production text from §38.
+- **Prompt renderer**: Resolves `includes` front-matter to compose system prompts from shared fragments + task prompt.
+- **Solicitation analysis**: `solicitation_analysis_v1` prompt (§39.1) with structured output schema (`SolicitationAnalysisV1` Pydantic model). Validated JSON with source refs. Persisted to `ai_analyses` with full prompt and context metadata. Malformed output fails closed.
+- **CLI**: `govcon enrich download`, `govcon enrich analyze`, `govcon enrich process`, `govcon enrich ingest-file`, `govcon prompts sync`, `govcon prompts activate`.
+
+### ADRs / DECISIONS touched
+
+- ADR-023: DeepSeek API contract verified, provider layer design
+- ADR-024: Prompt registry, shared fragments, no-hardcoded-prompt rule
+- ADR-025: Attachment ingestion design (download, SHA-256, extraction, dedup)
+- ADR-026: Structured solicitation analysis output and persistence
+- Phase 0–6 ADRs were not changed.
+
+### Migrations
+
+None. Phase 7 uses the Phase 0 `files`, `ai_analyses`, and `prompt_registry` tables without schema changes. Upgrade from an empty database works.
+
+### Tests
+
+Command: `pytest`
+
+Result: **138 passed, 1 skipped** (Phase 1 live-pull skip unchanged).
+
+Covered acceptance checks:
+
+- Fixture PDF (`tests/fixtures/solicitation_fixture.pdf`) extracts text with solicitation number, NSN, quantity, and all section content.
+- Mock AI provider produces valid structured JSON conforming to `solicitation_analysis.v1`.
+- Key values (NSN, quantity, delivery, submission) map to source references with page and section.
+- No `DEEPSEEK_API_KEY` produces an `AnalysisWarning`, not a crash.
+- Analysis output is saved to `ai_analyses.output_json`, not overwriting opportunity source fields.
+- Prompt metadata (name, version, hash, schema version, generation settings, context manifest) is recorded.
+- Dedup: same file downloaded twice stores only one row.
+- SHA-256 matches the computed hash of the fixture PDF bytes.
+- DOCX and XLSX extraction produce text from their content.
+- Prompt registry sync writes active prompts to `prompt_registry`.
+- No hardcoded prompts in business-service modules (AST scan).
+- Malformed JSON response returns None (fails closed).
+- Re-running analysis without force returns the existing row.
+- No extracted files returns None (no analysis attempted).
+
+### VERIFY outcomes
+
+Checked live on 2026-09-26 against https://api-docs.deepseek.com/:
+
+- Endpoint: `POST https://api.deepseek.com/chat/completions` (OpenAI-compatible format)
+- Authentication: `Authorization: Bearer <key>` header
+- Models: `deepseek-flash` (DeepSeek-V4.1-Flash), `deepseek-v4-pro` (DeepSeek-V4-Pro-0813)
+- Legacy IDs `deepseek-chat` and `deepseek-reasoner` are retired (redirected to V4.1-Flash)
+- JSON output: `response_format: {"type": "json_object"}` supported
+- Context length: 1M tokens for both models
+- Usage: `prompt_tokens`, `completion_tokens`, `total_tokens` in response
+- No `DEEPSEEK_API_KEY` was available in this run. The provider was tested with mocks.
+
+### Known problems
+
+- No live `DEEPSEEK_API_KEY` was available. AI analysis was tested with mock responses only.
+- Image-only PDFs (scanned documents) get `partial` extraction status; OCR is not attempted.
+- The front-matter parser uses simplified `key: value` parsing, not full YAML. Includes must be comma-separated.
+- Attachment download for SAM opportunities requires the SAM API key for `resourceLinks` URLs.
+- Token/cost tracking records usage from the provider response but does not compute dollar cost.
+
+### Unfinished work
+
+- Phase 8 JEV preliminary decision engine and AI decision package — not started.
+- OCR fallback for image-only PDFs — optional, not default per spec.
+- OpenAI and Anthropic provider implementations — later phases.
+- Prompt regression suite and evaluation metrics — later phases (§43.6, §43.7).
+- Live AI analysis with a real `DEEPSEEK_API_KEY` — not executed here.
+- MCP, semantic search, web UI, bid submission — later phases.
+
+### Recommended next task
+
+**Phase 8** — JEV preliminary decision engine + AI decision package (`PHASE_08_JEV_DECISION.md`). **Do not start until this Phase 7 pull request merges and CI gates pass.**
+
 ## 2026-09-26 20:35 UTC — PHASE_06_VENDORS_COMPETITORS
 
 - Agent/model identity: Cursor cloud, model `composer-2.5` (fast=true)

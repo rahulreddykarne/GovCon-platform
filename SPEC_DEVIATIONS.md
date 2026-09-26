@@ -53,3 +53,11 @@ No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. The liv
 No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. SAM entity v3 lookup, the vendor cache window, agency-segment matching, and office matching are recorded in ADR-022.
 
 On 2026-09-26 this environment had no live `SAM_API_KEY`. The committed fixture is derived from the official Entity Management API documentation example shape. A live entity pull runs only when `SAM_API_KEY` is set.
+
+## Phase 7
+
+No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. The DeepSeek API contract, prompt registry design, attachment extraction, and analysis persistence are recorded in ADR-023 through ADR-026.
+
+On 2026-09-26 this environment had no `DEEPSEEK_API_KEY`. The AI provider returns a graceful warning when no key is configured. The fixture PDF test uses a mock provider with a known-good solicitation analysis response. A live AI analysis runs only when `DEEPSEEK_API_KEY` is set.
+
+The front-matter parser uses a simplified `key: value` format. YAML list syntax for `includes` is not supported; comma-separated strings are used instead. This is a parser limitation, not a schema deviation.
