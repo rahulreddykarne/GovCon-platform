@@ -234,3 +234,66 @@ Record durable architecture/implementation decisions.
 - Decision: Persist bundle-level outputs in `decision_runs`, persist preliminary recommendation in `bid_decisions`, and persist the review package in `ai_analyses` (`analysis_type=decision_package`, `schema_version=decision_package.v1`). Link/update `review_sessions.ai_decision_package_id` for reviewer workflow handoff.
 - Alternatives considered: Storing only one collapsed JSON blob; mutating pursuit stage directly from AI recommendation.
 - Consequences: Multiple AI runs per opportunity are preserved over time. `bid_decision` output cannot directly set `bid_approved`, and submission readiness cannot directly set `submitted`; those transitions remain human-authoritative.
+
+### ADR-030 — Phase 9 schema: extend the Phase 0 compliance tables, no parallel tables
+- Phase: 9
+- Date: 2026-09-26
+- Context: §5.15–5.16 already define `requirements`, `requirement_evidence`, `compliance_runs`, `clause_library`, and `compliance_findings` (created in Phase 0). Phase 9 needs per-pass source references, reconciliation flags, parsed key values, a validation trail, blocking flags, clause links, optimistic concurrency, run status/warnings, and red-team certainty.
+- Decision: Migration `d9a4c1e7b209` adds columns only: `requirements.{source_refs, reconciliation, key_values, validation, status_reason, blocks_submission, clause_library_id, compliance_run_id, amendment_changed_at, version}` plus a severity check constraint; `compliance_runs.{status, warnings}`; `compliance_findings.{compliance_run_id, blocks_submission, certainty}`; two lookup indexes. The document inventory is stored as a `compliance_runs` row (`run_type=document_inventory`) rather than new `files` columns; page count, document type, table status, and OCR flag are computed per run.
+- Alternatives considered: A separate `requirement_candidates` table per pass; new `files` columns for inventory metadata.
+- Consequences: Every pass's citation survives in `requirements.source_refs`; raw pass output is in `compliance_runs.output_json` and `ai_analyses`. Upgrade from an empty database and downgrade are verified.
+
+### ADR-031 — Extraction: two AI passes with different prompts and context strategies, plus a deterministic safety-net pass
+- Phase: 9
+- Date: 2026-09-26
+- Context: §15.5 requires independent passes; §15.20's example miss is a table-embedded requirement. CI must not depend on live model keys.
+- Decision: Pass A (`requirement_extraction_a`) reads documents in package order as page-labeled chunks. Pass B (`requirement_extraction_b`) reads amendments first, then tables/attachments/pricing/forms, Q&A, SOW, and the base solicitation last, chunked by table/paragraph blocks, optionally on `COMPLIANCE_PASS_B_PROVIDER` or the escalation provider for high-value opportunities. Pass D is a deterministic mandatory-language/table-row scanner plus one structural acknowledgment requirement per amendment. `independently_confirmed` means found by both A and B (literal §15.5); D contributes recall and parsed values but never confirmation or satisfaction. Every AI quote is checked against the cited file/page.
+- Alternatives considered: Treating D as a confirming pass; a single AI pass with self-consistency sampling.
+- Consequences: One AI miss (or both, as in the table fixture) does not drop a requirement that states mandatory language. D adds review noise, which §Appendix E accepts.
+
+### ADR-032 — Conservative deterministic reconciliation; AI reconciliation is advisory only
+- Phase: 9
+- Date: 2026-09-26
+- Context: §15.6 requires deduplication without silently merging unrelated requirements.
+- Decision: Candidates from different passes merge only when token similarity ≥ `COMPLIANCE_MERGE_SIMILARITY`, stated values (delivery days, page limit, deadline, recipient, CLIN quantities, numbers) agree, and exactly one group qualifies. Borderline or ambiguous matches stay separate with `possible_duplicate`/`ambiguous_merge` flags. A/B disagreement on mandatory or severity sets `ab_disagreement` → `needs_review`; ambiguous mandatory status sets `mandatory_uncertain` → `needs_review`. The `requirement_reconciliation` prompt can only add flags. Re-extraction merges into existing rows; an existing requirement not found again is kept and flagged `not_found_in_latest_extraction`.
+- Alternatives considered: Letting the AI reconciler produce the canonical set.
+- Consequences: No requirement is deleted by reconciliation. Thresholds are configuration, not constants.
+
+### ADR-033 — One status gate for every compliance state
+- Phase: 9
+- Date: 2026-09-26
+- Context: §15.3, §15.7, §15.11, §15.12, §15.14 and acceptance criteria 5, 6, 10, 12, 17.
+- Decision: `matrix.decide_status` is the only mapping from validation inputs to a state; `apply_decision` and `override_requirement` are the only writers after reconciliation. Order: superseded → human override (unless an amendment made it stale) → deterministic failure (`missing` for artifact requirements, else `needs_review`; AI SATISFIED is recorded as a blocked claim and surfaced as an `ai_claim_blocked` finding) → stale → no source location → blocking reconciliation/conflict flags → validation methods. Methods are `deterministic` (all mapped validators pass), `human`, `proposal_scan`, `ai_validation` and `ai_validation_secondary` (only when citing verified, post-amendment evidence ids). Critical requires two methods; AI-only non-critical requires a configured, calibrated `COMPLIANCE_HIGH_CONFIDENCE_THRESHOLD` (unset by default). No evidence → `unknown`, never `missing`. AI `NOT_APPLICABLE` → `needs_review`. `apply_decision` raises if `satisfied` has no method. Overrides require the `override_compliance` permission (owner/approver), a ≥10-character reason, the expected optimistic version, explicit acknowledgment of any deterministic failure, and write `audit_events`.
+- Alternatives considered: Letting the AI validator write statuses; trusting high AI confidence by default.
+- Consequences: False SATISFIED requires a human override on record. `compliance_runs.false_satisfied_detected` self-checks every matrix run.
+
+### ADR-034 — Conflicts use version-rank precedence only; amendments invalidate by evidence
+- Phase: 9
+- Date: 2026-09-26
+- Context: §15.9–15.10.
+- Decision: Conflicts are detected on parsed values per topic (scoped by CLIN where stated). A numbered amendment outranks the base package and lower amendments; that is the only automatic precedence. Same-document, Q&A-vs-base, SOW-vs-solicitation, or equal-rank conflicts are ambiguous → `conflict_ambiguous` flag + blocking finding. Resolved conflicts mark the older requirement `superseded` with `superseded_by_requirement_id`. After a source change, requirements are marked `stale` when a replaced/removed file sourced them, an amendment change sentence names their topic/section/CLIN/file, a Phase 1 event (deadline/quantity/set-aside) touches their topic, or `amendment_analysis` names them. Linked proposal sections become `stale`. A "COMPLIANCE STATUS CHANGED" finding counts previously satisfied requirements. Stale clears only with evidence recorded after the change or a fresh validator pass/fail. JEV `compliance_and_amendment` re-runs; the `bid_decision` bundle re-runs when material.
+- Alternatives considered: Letting AI pick the controlling instruction; marking every requirement stale on any amendment.
+- Consequences: Topic matching can over-mark stale (accepted noise). Reopening a completed review is flagged (`review_reopen_required`) for the Phase 10 review workflow rather than performed here.
+
+### ADR-035 — Pre-flight and the ready_to_submit gate
+- Phase: 9
+- Date: 2026-09-26
+- Context: §15.18 and acceptance criteria 15–17.
+- Decision: `run_submission_preflight` checks proposal content (via the latest coverage run for that proposal version), pricing workbook/rows, signatures, representations, certifications, amendment acknowledgments, required attachments, filenames, file types, sizes, page limit, recipient, destination, deadline, timing, timezone, submission-instruction requirements, stale conclusions, matrix blockers, open blocking findings, and inventory completeness. A check whose instruction is absent is `not_applicable` only when the inventory is complete; otherwise `unknown`. Required attachments are `unknown` until the submission record lists them (an explicit empty list confirms none). AI pre-flight and JEV `submission_readiness` can only make the result stricter. `move_to_ready_to_submit` refuses while blockers exist (requirements, open blocking findings, no/not-ready/outdated pre-flight via a requirement-state hash) unless an owner/approver gives a reason; a passed deadline cannot be overridden. Overrides and stage changes are audited.
+- Alternatives considered: Letting JEV `ready` move the pursuit.
+- Consequences: Submission itself stays a human action (Phase 11).
+
+### ADR-036 — Compliance benchmark replays recorded AI outputs; release gate in CI
+- Phase: 9
+- Date: 2026-09-26
+- Context: §15.19–15.20, §25 compliance release gate, acceptance criteria 18–20; CI has no model keys.
+- Decision: `tests/fixtures/compliance/<case>/case.json` cases replay recorded pass A/B JSON through the production pure stages (mapping, scanner, reconciliation, conflict precedence, amendment impact, validators, status gate). Metrics: mandatory/critical recall, AI citation accuracy, canonical citation accuracy, false-satisfied rate, amendment-change detection, conflict recall, submission-file completeness, expected-status accuracy. `baseline_metrics.json` sets floors/ceilings; any case missing a critical requirement or producing false SATISFIED fails regardless. `govcon compliance benchmark` exits 1 on failure; `--live` re-runs passes on the configured provider. Safety-critical prompt activation (`govcon prompts activate`) runs the gate (render, required variables, schema registration, hash stability, injection confinement, secret scan, compliance suite) and `govcon prompts rollback` restores the prior version from the audit trail.
+- Alternatives considered: Scoring only live model calls; ungated activation.
+- Consequences: Parser and reconciliation regressions fail CI (tested by disabling the scanner). Replay does not measure a new prompt's model behavior; `--live` must be run with keys before activating a changed extraction prompt in production.
+
+### ADR-037 — Clause library seed limited to verified entries
+- Phase: 9
+- Date: 2026-09-26
+- Context: §15.8; clause text is legal reference data.
+- Decision: Seed 24 FAR/DFARS/DLAD entries whose titles (and dates where recorded) were checked on acquisition.gov on 2026-09-26. Dates not verified are null and skip version checks. Current DLAD Part 52 (rev. PROCLTR 2021-03) contains only 5452.233-9001; legacy DLAD 52.211-9xxx references are therefore surfaced as unknown clauses for review. Summaries are routing aids, marked as not legal interpretation.
+- Consequences: Unknown, re-dated, alternate, or deviation clauses produce review findings; known clauses attach verification questions and expected evidence to a requirement.

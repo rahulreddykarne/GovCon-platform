@@ -67,3 +67,45 @@ The front-matter parser uses a simplified `key: value` format. YAML list syntax 
 No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
 
 On 2026-09-26 this environment had no `JEV_API_KEY` or `JEV_BASE_URL`. Live contract probes were run against public JEV endpoints (`POST /v1/systemone`) and confirmed auth-required responses plus non-support for `/v1/chat/completions`. Phase 8 tests therefore use deterministic rule fallback plus fixture/mocked states for calibration boundaries; full authenticated JEV calls remain environment-gated.
+
+## Phase 9
+
+No product-behavior deviation from `MASTER_SPEC_v2.5.md` was required. `PHASE_09_COMPLIANCE.md` contains no `⚠️ VERIFY` items; AI calls reuse the DeepSeek contract verified in Phase 7 (ADR-023) and JEV routing reuses the Phase 8 contract (ADR-027). Clause-library titles were verified on acquisition.gov on 2026-09-26 (ADR-037). Scope notes, recorded so they are not mistaken for silent deferrals:
+
+### DEV-003 — Compliance UI (§15.21) delivered as data + CLI, not web pages
+- Phase: 9
+- Date: 2026-09-26
+- Spec requirement: §15.21 review workspace columns and filters; reviewer can open the exact source page/section.
+- Verified external/repository reality: The web UI is Phase 14; this run is instructed not to start UI work.
+- Decision: `compliance.matrix.compliance_matrix()` returns every §15.21 column (requirement, mandatory, severity, source file/page/section/quote/local path/URL, evidence, validator output, status, confidence, independent confirmation, amendment freshness, blocking) and all eight filters. `govcon compliance matrix [--filter …] [--json]` exposes it.
+- Impact: Phase 14 renders this data; no compliance logic lives in the UI layer.
+- Follow-up: Phase 14.
+
+### DEV-004 — Review reopen after a material amendment is flagged, not performed
+- Phase: 9
+- Date: 2026-09-26
+- Spec requirement: §15.10 "Reopen human review if policy requires".
+- Verified external/repository reality: Review sessions, assignments, and quorum policy belong to Phase 10.
+- Decision: Amendment revalidation records `impact.review_reopen_required` and a blocking `review_reopen_required` finding when a completed/approved review session exists.
+- Impact: The pursuit cannot reach `ready_to_submit` until that finding is handled. Phase 10 performs the reopen.
+- Follow-up: Phase 10 consumes the flag.
+
+### DEV-005 — Sourcing/pricing re-runs after an amendment are flagged
+- Phase: 9
+- Date: 2026-09-26
+- Spec requirement: §15.10 "Re-run sourcing/pricing if affected".
+- Verified external/repository reality: No automated sourcing or pricing engine exists yet (`intelligence/sourcing.py` is a stub; pricing is manual on `pursuits`).
+- Decision: `rerun_sourcing` / `rerun_pricing` impact flags and open findings are raised when delivery/technical/origin/pricing requirements change.
+- Impact: Visible, non-blocking findings; compliance validation and JEV re-run automatically.
+- Follow-up: The phase that implements sourcing/pricing automation subscribes to these flags.
+
+### DEV-006 — Benchmark replay does not evaluate new model behavior
+- Phase: 9
+- Date: 2026-09-26
+- Spec requirement: §15.20 / §43.8 run the benchmark when prompts/models/parsers change and block on regression.
+- Verified external/repository reality: CI has no model keys.
+- Decision: CI replays recorded pass outputs through the production stages; this gates parser, scanner, reconciler, precedence, amendment, validator, and status-gate regressions. `govcon compliance benchmark --live` re-runs passes A/B on the configured provider; the activation gate runs the replay suite plus render/variable/schema/injection/secret checks.
+- Impact: A changed extraction prompt must be evaluated with `--live` (keys required) before production activation.
+- Follow-up: Add recorded live outputs as new cases once `DEEPSEEK_API_KEY` is available.
+
+On 2026-09-26 this environment had no `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `JEV_API_KEY`. AI steps were tested with a mocked provider; JEV routing used the Phase 8 rule fallback.
