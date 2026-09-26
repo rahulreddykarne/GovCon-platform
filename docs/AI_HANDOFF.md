@@ -9,7 +9,7 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - Phase/task: PHASE_12_MCP (master §18)
 - Branch: `cursor/phase-12-mcp-d442`
 - Base: `main` at `88caffa` (Phase 11 squash merge)
-- Pull request: (draft, pending)
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/15 (draft)
 
 ### Files changed
 
