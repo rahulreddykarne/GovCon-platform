@@ -2,6 +2,109 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 22:30 UTC — PHASE_09_COMPLIANCE
+
+- Agent/model identity: Cursor cloud agent, model `claude-opus-5-5`
+- Datetime (UTC): 2026-09-26 22:30 UTC
+- Phase/task: PHASE_09_COMPLIANCE (master §15). Resumed after an interrupted run; the in-progress work was kept and completed.
+- Branch: `cursor/phase-09-compliance-e5e4`
+- Base: `main` at `3b6eaab` (Phase 8, pull request #11)
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/12 (draft)
+
+### Files changed
+
+- `alembic/versions/d9a4c1e7b209_phase9_compliance_subsystem.py` (new migration)
+- `src/govcon/models.py`, `src/govcon/config.py`, `src/govcon/collaboration/users.py` (`override_compliance` permission)
+- `src/govcon/compliance/`: `records.py`, `text.py`, `schemas.py`, `inventory.py`, `extractor.py`, `reconciler.py`, `clauses.py`, `data/clause_library_v1.json`, `conflicts.py`, `deterministic.py`, `matrix.py`, `validator.py`, `amendments.py`, `red_team.py`, `metrics.py`, `proposal_coverage.py`, `submission_preflight.py`, `regression.py`, `pipeline.py`
+- `src/govcon/ai/structured.py` (shared structured-prompt runner), `src/govcon/ai/schemas.py` (registers compliance schemas)
+- `src/govcon/prompting/renderer.py` (required variables, user-context data blocks), `registry.py` (gated `activate_prompt`, `rollback_prompt`), `evaluation.py` (activation gate)
+- `src/govcon/prompts/deepseek/requirement_extraction_{a,b}_v1.md`, `amendment_analysis_v1.md`, `src/govcon/prompts/compliance/*.md` (9 prompts, production bodies from §40/§39.5, status active)
+- `src/govcon/enrich/extract.py` (DOCX tables, per-page PDF text)
+- `src/govcon/cli.py` (`govcon compliance …`, gated `prompts activate`, `prompts rollback`)
+- `tests/test_compliance.py`, `tests/fixtures/compliance/` (3 cases + `baseline_metrics.json`), `tests/test_http_prompts.py`
+- `tests/test_dibbs.py`: strip ANSI styling before the `--help` substring check. This pre-existing test failed on GitHub Actions (also on `main` after #11) because Rich forces styled output there.
+- `pyproject.toml` (package data), `.env.example`, `IMPLEMENTATION_STATUS.md`, `SPEC_DEVIATIONS.md`, `DECISIONS.md`, this file
+
+### What shipped
+
+- Document inventory with every §15.2 field, and detection of missing/duplicate/re-versioned/amended/failed/unreadable sources; blocking problems make runs `incomplete` and raise findings.
+- Pass A / Pass B AI extraction with different prompts and context strategies (Pass B provider/model and high-value escalation are configurable), a deterministic mandatory-language/table scanner, structural amendment-acknowledgment requirements, and citation verification.
+- Conservative reconciliation that never drops a candidate; A/B disagreement → `needs_review`; the AI reconciler only adds flags.
+- 19 deterministic validators with the `pass|fail|unknown` + reason + evidence + version contract.
+- Single status gate: evidence/validator required for `satisfied`; deterministic failures block AI claims (visible `ai_claim_blocked` finding); `unknown` never collapses; critical requires two methods; stale never green; audited, role-checked, versioned overrides.
+- Clause library (24 verified seeds) with verification questions; unknown/re-dated/alternate clauses flagged.
+- Conflict detection with version-rank precedence; supersession or ambiguous → `needs_review`.
+- Amendment invalidation: stale requirements and proposal sections, "COMPLIANCE STATUS CHANGED" alert, sourcing/pricing flags, JEV `compliance_and_amendment` + `bid_decision` re-runs, review-reopen flag.
+- Red team (deterministic checklist + `compliance_red_team` prompt) persisted to `compliance_findings` with certainty.
+- JEV routing through Phase 8 `run_decision_bundle` (can add blockers, never clear them).
+- Count-based coverage by status and category; `false_satisfied_detected` self-check.
+- Proposal coverage against a selected proposal version (substance + counts; writer mapping alone never counts); gaps are blocking findings.
+- Submission pre-flight (§15.18 checklist) and the `ready_to_submit` gate with audited override.
+- Replayed compliance benchmark + release gate (`govcon compliance benchmark`), and gated prompt activation/rollback.
+
+### ADRs / DECISIONS touched
+
+ADR-030 through ADR-037 (new). Earlier ADRs unchanged. SPEC_DEVIATIONS Phase 9: DEV-003 (UI → data/CLI), DEV-004 (review reopen flagged for Phase 10), DEV-005 (sourcing/pricing re-run flagged), DEV-006 (replay vs live evaluation).
+
+### Migrations
+
+`d9a4c1e7b209` revises `c3e8a1b74f20`. Upgrade from an empty database passes (`tests/test_cli_and_schema.py::test_upgrade_from_empty_database`). Downgrade → upgrade was run successfully. `alembic check` reports only the pre-existing `opportunities_fts` expression-normalization diff from Phase 0.
+
+### Tests
+
+Local PostgreSQL 16 + pgvector on `localhost:5432` (installed on the VM; same image family as CI).
+
+- Dependency check before coding: `python3 -m pytest` → 147 passed, 1 skipped (Phases 0, 1, 7, 8 suites all green).
+- `python3 -m pytest tests/test_compliance.py` → 25 passed (DB-backed; passes a second time against a populated database).
+- `python3 -m pytest` → 172 passed, 1 skipped (SAM live pull; no `SAM_API_KEY`).
+- GitHub Actions `pytest` on PR #12: pass (both push and pull_request runs).
+- `govcon compliance benchmark` → gate PASS. Aggregate: mandatory recall 1.0, critical recall 1.0, AI citation accuracy 0.9688 (one fixture citation is deliberately paraphrased), canonical citation accuracy 1.0, false-satisfied rate 0.0, amendment-change detection 1.0, conflict recall 1.0, submission-file completeness 1.0, expected-status accuracy 1.0.
+
+### Acceptance criteria (§15.22)
+
+1. Source attribution — every requirement stores file/page/section/quote/snapshot/pass/confidence; no location → `needs_review` (`test_pipeline_requirements_are_source_backed`, inventory test).
+2. Independent passes run and reconcile — A/B distinct prompts + contexts, runs persisted (`test_independent_passes_reconcile_and_single_pass_is_kept`).
+3. Single-pass never discarded — page limit found only by B is kept and flagged; reconciler unit test.
+4. Deterministic validators exist — 19 validators, table-driven test.
+5. Deterministic failures not overridden silently — AI SATISFIED blocked + finding; override requires explicit acknowledgment.
+6. Unknown distinct — delivery without transit and set-aside without facts stay `unknown`.
+7. Clause mapping — known clauses link to library; unknown/re-dated/alternate flagged.
+8. Conflicts surfaced — Q&A 15 pages vs Section L 10 pages → both `needs_review` + blocking finding.
+9. Amendments invalidate — delivery superseded, previously satisfied requirement stale, proposal section stale, alert, JEV re-run.
+10. Critical redundant validation — one method → `needs_review`; deterministic + AI-with-evidence → `satisfied`.
+11. Coverage by category — counts, category breakdown, defined percentages, CLI.
+12. Satisfied has evidence/validator output — invariant raises; all satisfied rows carry methods.
+13. Red-team findings persisted — AI (confirmed/possible) and rule findings.
+14. Proposal coverage — counts checked (2 of 3 references → PARTIAL → `missing` + blocking finding); unsupported mapping → `needs_review`.
+15. Pre-flight — full §15.18 checklist; unknowns never green.
+16. Blockers prevent `ready_to_submit` — refused; green path succeeds; matrix change after pre-flight re-blocks.
+17. Overrides need reason + audit — role, reason, version, deterministic acknowledgment; `audit_events` rows.
+18. Benchmark in CI — `test_compliance_benchmark_passes_and_metrics_are_measurable` runs in pytest CI; CLI exits non-zero on failure.
+19. Recall and citation accuracy measurable — per-case and aggregate metrics.
+20. Critical-recall regression blocks release — disabling the scanner or adding an unmet critical expectation fails the gate/CLI.
+
+### VERIFY outcomes
+
+`PHASE_09_COMPLIANCE.md` has no `⚠️ VERIFY` items. Clause titles/dates were checked on acquisition.gov (FAR Part 52, DFARS Part 252, DLAD Part 52) on 2026-09-26; the current DLAD Part 52 lists only 5452.233-9001.
+
+### Known problems
+
+- No live `DEEPSEEK_API_KEY` / `JEV_API_KEY`: AI steps are mocked; JEV routing ran on the Phase 8 rule fallback.
+- The deterministic scanner and topic-based stale marking favor recall and add review noise by design.
+- PDF tables are extracted as flattened text (inventory marks `text_only`); OCR is still not attempted.
+- `anthropic`/`openai` providers remain stubs, so Pass B escalation to a second model family only works once one is implemented; unavailable escalation is reported as a warning.
+- Confidence thresholds are unset (uncalibrated); AI-only validation therefore never auto-accepts.
+
+### Unfinished work
+
+None for Phase 9 scope. The compliance UI (DEV-003) and review reopen (DEV-004) are handed off to Phases 14 and 10.
+
+### Recommended next task
+
+**Phase 10 — Collaborative review, AI comment validation, and approval (`PHASE_10_COLLABORATIVE_REVIEW.md`).** Start only after this draft PR passes the Spec/QA gate and merges. Phase 10 should consume `review_reopen_required` findings and the compliance matrix/coverage counts in the review workspace.
+
+- Follow-up (2026-09-26 22:25 UTC, `claude-opus-5-5`): resume check after a reported interruption. Branch head matched the remote and draft PR #12. Re-ran on local PostgreSQL: `pytest` → 172 passed, 1 skipped; `tests/test_compliance.py` → 25 passed; `govcon compliance benchmark` → gate PASS. No code changes were needed.
+
 ## 2026-09-26 21:35 UTC — PHASE_08_JEV_DECISION_PACKAGE
 
 - Agent/model identity: Cursor cloud, model `gpt-5.3-codex` (reasoning=high)

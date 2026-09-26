@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     jev_min_confidence: float | None = None
     jev_human_review_threshold: float | None = None
 
+    compliance_pass_b_provider: str | None = None
+    compliance_pass_b_model: str | None = None
+    compliance_escalation_provider: str | None = None
+    compliance_escalation_model: str | None = None
+    compliance_escalation_min_value: float | None = None
+    compliance_high_confidence_threshold: float | None = None
+    compliance_low_confidence_threshold: float | None = None
+    compliance_merge_similarity: float = Field(default=0.72, gt=0, le=1)
+    compliance_possible_duplicate_similarity: float = Field(default=0.4, gt=0, le=1)
+    compliance_coverage_min_overlap: float = Field(default=0.6, gt=0, le=1)
+    compliance_coverage_partial_overlap: float = Field(default=0.3, gt=0, le=1)
+    company_facts_path: Path | None = None
+
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_user: str | None = None
@@ -92,6 +105,11 @@ class Settings(BaseSettings):
         "ai_secondary_review_provider",
         "jev_api_key",
         "jev_base_url",
+        "compliance_pass_b_provider",
+        "compliance_pass_b_model",
+        "compliance_escalation_provider",
+        "compliance_escalation_model",
+        "company_facts_path",
         "smtp_host",
         "smtp_user",
         "smtp_pass",
@@ -108,6 +126,9 @@ class Settings(BaseSettings):
         "jev_min_confidence",
         "jev_human_review_threshold",
         "ai_max_cost_usd_per_opportunity",
+        "compliance_escalation_min_value",
+        "compliance_high_confidence_threshold",
+        "compliance_low_confidence_threshold",
         mode="before",
     )
     @classmethod

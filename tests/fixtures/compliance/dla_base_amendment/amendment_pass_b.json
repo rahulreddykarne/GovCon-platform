@@ -1,0 +1,7 @@
+{
+  "requirements": [
+    {"requirement_text": "Revised delivery: 20 calendar days after award.", "requirement_type": "delivery", "mandatory": true, "severity": "high", "source_file_id": 3, "source_page": null, "source_section": "Section 4 Delivery", "supporting_quote": "Delivery shall be made within 20 calendar days after award, FOB Destination.", "confidence": 0.95},
+    {"requirement_text": "Return a signed SF 30 acknowledging Amendment 0001.", "requirement_type": "amendment_acknowledgment", "mandatory": true, "severity": "critical", "source_file_id": 3, "source_page": null, "source_section": null, "supporting_quote": "Quoters must acknowledge receipt of this amendment 0001 by signing block 15 of the SF 30 and returning it with the quote.", "confidence": 0.96}
+  ],
+  "extraction_notes": []
+}

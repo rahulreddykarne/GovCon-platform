@@ -117,6 +117,10 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "solicitation_analysis.v1": SolicitationAnalysisV1,
 }
 
+from govcon.compliance.schemas import COMPLIANCE_SCHEMAS  # noqa: E402
+
+SCHEMA_REGISTRY.update(COMPLIANCE_SCHEMAS)
+
 
 def validate_analysis_output(schema_version: str, data: dict) -> BaseModel:
     """Validate AI output against its declared schema version.

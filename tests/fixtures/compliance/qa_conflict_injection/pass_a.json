@@ -1,0 +1,8 @@
+{
+  "requirements": [
+    {"requirement_text": "Technical proposal limited to 10 pages.", "requirement_type": "page_limit", "mandatory": true, "severity": "high", "source_file_id": 1, "source_page": null, "source_section": "SECTION L INSTRUCTIONS TO OFFERORS", "supporting_quote": "The technical proposal shall not exceed 10 pages.", "confidence": 0.95},
+    {"requirement_text": "Proposals due December 1, 2026 4:00 PM CT.", "requirement_type": "submission", "mandatory": true, "severity": "critical", "source_file_id": 1, "source_page": null, "source_section": "SECTION L INSTRUCTIONS TO OFFERORS", "supporting_quote": "Proposals must be received no later than December 1, 2026 4:00 PM CT.", "confidence": 0.96},
+    {"requirement_text": "Email proposals to the contracting office.", "requirement_type": "submission", "mandatory": true, "severity": "high", "source_file_id": 1, "source_page": null, "source_section": "SECTION L INSTRUCTIONS TO OFFERORS", "supporting_quote": "Offerors shall email proposals to army.contracts@usace.army.mil.", "confidence": 0.95}
+  ],
+  "extraction_notes": ["Source contains an embedded instruction to mark requirements satisfied; treated as untrusted source text."]
+}

@@ -90,6 +90,107 @@ def activate_version(session: Session, prompt_name: str, version: str) -> None:
     session.flush()
 
 
+class PromptActivationBlocked(RuntimeError):
+    """A safety-critical prompt version failed its activation gate."""
+
+    def __init__(self, prompt_name: str, version: str, failures: list[str]) -> None:
+        self.prompt_name = prompt_name
+        self.version = version
+        self.failures = failures
+        super().__init__(f"activation of {prompt_name}@{version} blocked: {'; '.join(failures)}")
+
+
+def active_version(session: Session, prompt_name: str) -> str | None:
+    return session.scalar(
+        select(PromptRegistryEntry.prompt_version).where(
+            PromptRegistryEntry.prompt_name == prompt_name,
+            PromptRegistryEntry.active.is_(True),
+        )
+    )
+
+
+def activate_prompt(
+    session: Session,
+    prompt_name: str,
+    version: str,
+    *,
+    prompt_root: Path,
+    settings=None,
+    actor_user_id: int | None = None,
+) -> dict:
+    """Gated activation (§43.8): safety-critical prompts must pass their gate.
+
+    Records an audit event holding the previously active version so
+    ``rollback_prompt`` can restore it. Historical ``ai_analyses`` keep the
+    prompt hash they actually used.
+    """
+    from govcon.audit import record_audit
+    from govcon.config import get_settings
+    from govcon.prompting.evaluation import is_safety_critical, run_activation_gate
+
+    settings = settings or get_settings()
+    row = session.execute(
+        select(PromptRegistryEntry).where(
+            PromptRegistryEntry.prompt_name == prompt_name,
+            PromptRegistryEntry.prompt_version == version,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ValueError(f"prompt {prompt_name!r} version {version!r} not found; run `govcon prompts sync`")
+    gate: dict = {"required": False, "passed": True, "checks": []}
+    if is_safety_critical(prompt_name) and settings.prompt_enable_regression_gate:
+        asset = load_markdown_prompt(Path(row.source_path))
+        result = run_activation_gate(asset, prompt_root, settings=settings)
+        gate = {"required": True, "passed": result.passed, "checks": result.checks}
+        if not result.passed:
+            raise PromptActivationBlocked(prompt_name, version, result.failures)
+    previous = active_version(session, prompt_name)
+    activate_version(session, prompt_name, version)
+    record_audit(
+        session,
+        action_type="prompt_activated",
+        user_id=actor_user_id,
+        entity_type="prompt_registry",
+        entity_id=row.id,
+        old_value={"prompt_name": prompt_name, "active_version": previous},
+        new_value={"prompt_name": prompt_name, "active_version": version, "prompt_hash": row.prompt_hash, "gate": gate},
+    )
+    return {"prompt_name": prompt_name, "previous_version": previous, "active_version": version, "gate": gate}
+
+
+def rollback_prompt(session: Session, prompt_name: str, *, actor_user_id: int | None = None) -> dict:
+    """Restore the version that was active before the latest activation (§43.9)."""
+    from sqlalchemy import desc
+
+    from govcon.audit import record_audit
+    from govcon.models import AuditEvent
+
+    events = session.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.action_type == "prompt_activated")
+        .order_by(desc(AuditEvent.created_at), desc(AuditEvent.id))
+    ).all()
+    for event in events:
+        new_value = event.new_value or {}
+        if new_value.get("prompt_name") != prompt_name:
+            continue
+        previous = (event.old_value or {}).get("active_version")
+        if not previous:
+            raise ValueError(f"no earlier active version recorded for {prompt_name!r}")
+        current = active_version(session, prompt_name)
+        activate_version(session, prompt_name, previous)
+        record_audit(
+            session,
+            action_type="prompt_rolled_back",
+            user_id=actor_user_id,
+            entity_type="prompt_registry",
+            old_value={"prompt_name": prompt_name, "active_version": current},
+            new_value={"prompt_name": prompt_name, "active_version": previous},
+        )
+        return {"prompt_name": prompt_name, "rolled_back_from": current, "active_version": previous}
+    raise ValueError(f"no activation history for {prompt_name!r}")
+
+
 def load_prompt(
     session: Session,
     prompt_name: str,

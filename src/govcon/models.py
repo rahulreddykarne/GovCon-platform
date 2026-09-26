@@ -551,7 +551,7 @@ class DecisionRun(CreatedAtMixin, Base):
     supersedes_run_id: Mapped[int | None] = mapped_column(ForeignKey("decision_runs.id"))
 
 
-class Requirement(TimestampMixin, Base):
+class Requirement(TimestampMixin, VersionMixin, Base):
     __tablename__ = "requirements"
     __table_args__ = (
         Index("ix_requirements_opportunity_status", "opportunity_id", "status"),
@@ -561,6 +561,10 @@ class Requirement(TimestampMixin, Base):
             "'not_applicable', 'stale', 'superseded'"
             ")",
             name="ck_requirements_status",
+        ),
+        CheckConstraint(
+            "severity IS NULL OR severity IN ('critical', 'high', 'medium', 'low')",
+            name="ck_requirements_severity",
         ),
     )
 
@@ -591,6 +595,16 @@ class Requirement(TimestampMixin, Base):
     superseded_by_requirement_id: Mapped[int | None] = mapped_column(ForeignKey("requirements.id"))
     created_by: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'ai'"))
     verified_by_human: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Phase 9: every pass's citation, reconciliation flags, parsed facts, and validation trail.
+    source_refs: Mapped[list | None] = mapped_column(JSONB)
+    reconciliation: Mapped[dict | None] = mapped_column(JSONB)
+    key_values: Mapped[dict | None] = mapped_column(JSONB)
+    validation: Mapped[dict | None] = mapped_column(JSONB)
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    blocks_submission: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    clause_library_id: Mapped[int | None] = mapped_column(ForeignKey("clause_library.id"))
+    compliance_run_id: Mapped[int | None] = mapped_column(ForeignKey("compliance_runs.id"))
+    amendment_changed_at: Mapped[datetime | None] = mapped_column(_ts())
 
 
 class Proposal(TimestampMixin, VersionMixin, Base):
@@ -646,6 +660,9 @@ class RequirementEvidence(TimestampMixin, Base):
 
 class ComplianceRun(CreatedAtMixin, Base):
     __tablename__ = "compliance_runs"
+    __table_args__ = (
+        Index("ix_compliance_runs_opportunity_type_created", "opportunity_id", "run_type", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     opportunity_id: Mapped[int] = mapped_column(ForeignKey("opportunities.id"), nullable=False)
@@ -663,6 +680,8 @@ class ComplianceRun(CreatedAtMixin, Base):
     critical_satisfied: Mapped[int | None] = mapped_column(Integer, server_default=text("0"))
     critical_unresolved: Mapped[int | None] = mapped_column(Integer, server_default=text("0"))
     false_satisfied_detected: Mapped[int | None] = mapped_column(Integer, server_default=text("0"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'complete'"))
+    warnings: Mapped[list | None] = mapped_column(JSONB)
 
 
 class ClauseLibraryEntry(TimestampMixin, Base):
@@ -688,6 +707,7 @@ class ClauseLibraryEntry(TimestampMixin, Base):
 
 class ComplianceFinding(TimestampMixin, Base):
     __tablename__ = "compliance_findings"
+    __table_args__ = (Index("ix_compliance_findings_opportunity_status", "opportunity_id", "status"),)
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     opportunity_id: Mapped[int] = mapped_column(ForeignKey("opportunities.id"), nullable=False)
@@ -701,6 +721,9 @@ class ComplianceFinding(TimestampMixin, Base):
     detector_version: Mapped[str | None] = mapped_column(Text)
     resolved_at: Mapped[datetime | None] = mapped_column(_ts())
     resolution_notes: Mapped[str | None] = mapped_column(Text)
+    compliance_run_id: Mapped[int | None] = mapped_column(ForeignKey("compliance_runs.id"))
+    blocks_submission: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    certainty: Mapped[str | None] = mapped_column(Text)
 
 
 class ProposalSection(TimestampMixin, Base):

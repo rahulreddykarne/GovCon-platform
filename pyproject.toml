@@ -38,7 +38,7 @@ govcon = "govcon.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-govcon = ["prompts/**/*.md", "prompts/**/*.yaml"]
+govcon = ["prompts/**/*.md", "prompts/**/*.yaml", "compliance/data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

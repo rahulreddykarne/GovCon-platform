@@ -1,0 +1,204 @@
+{
+  "library_version": "clause_library.v1",
+  "verified_on": "2026-09-26",
+  "verified_against": [
+    "https://www.acquisition.gov/far/part-52",
+    "https://www.acquisition.gov/dfars/part-252-solicitation-provisions-and-contract-clauses",
+    "https://www.acquisition.gov/dlad/part-52-%E2%80%93-solicitation-provisions-and-contract-clauses"
+  ],
+  "notice": "Summaries are plain-language routing aids, not legal interpretation. Titles and dates were checked against acquisition.gov on the verified_on date; a null source_version_date means the date was not verified and version mismatch checks are skipped.",
+  "clauses": [
+    {
+      "clause_family": "FAR", "clause_number": "52.204-7", "title": "System for Award Management", "category": "representations_certifications",
+      "summary": "Offeror must be registered in SAM at offer submission (unless an alternate applies) and keep the registration current.",
+      "typical_effects": ["Offer may be ineligible for award without an active SAM registration."],
+      "verification_questions": ["Is the offeror's SAM registration active on the offer date?", "Do the UEI and CAGE in the offer match SAM?"],
+      "expected_evidence": ["company_registration"], "default_risk_level": "critical",
+      "source_url": "https://www.acquisition.gov/far/52.204-7", "source_version_date": "2024-11-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.204-24", "title": "Representation Regarding Certain Telecommunications and Video Surveillance Services or Equipment", "category": "representations_certifications",
+      "summary": "Offeror represents whether it will provide or uses covered telecommunications equipment or services (Section 889).",
+      "typical_effects": ["A required representation; omission can make the offer incomplete."],
+      "verification_questions": ["Has the Section 889 representation been completed for this offer?"],
+      "expected_evidence": ["signed_form", "company_record"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/far/52.204-24", "source_version_date": "2021-11-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.204-25", "title": "Prohibition on Contracting for Certain Telecommunications and Video Surveillance Services or Equipment", "category": "data_handling",
+      "summary": "Prohibits providing covered telecommunications equipment or services and requires reporting if discovered.",
+      "typical_effects": ["Supplied products must not include covered telecommunications equipment."],
+      "verification_questions": ["Does any offered product or supplier component fall under the covered-equipment prohibition?"],
+      "expected_evidence": ["supplier_spec_sheet", "company_record"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/far/52.204-25", "source_version_date": null
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.204-26", "title": "Covered Telecommunications Equipment or Services-Representation", "category": "representations_certifications",
+      "summary": "Annual SAM representation on covered telecommunications equipment or services.",
+      "typical_effects": ["Representation normally completed in SAM; confirm it is current."],
+      "verification_questions": ["Is the SAM representation for covered telecommunications current?"],
+      "expected_evidence": ["company_registration"], "default_risk_level": "medium",
+      "source_url": "https://www.acquisition.gov/far/52.204-26", "source_version_date": "2020-10-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.209-5", "title": "Certification Regarding Responsibility Matters", "category": "representations_certifications",
+      "summary": "Offeror certifies responsibility matters such as debarment, indictments, and delinquent taxes.",
+      "typical_effects": ["A required certification; an unresolved item needs human and possibly legal review."],
+      "verification_questions": ["Has the responsibility-matters certification been completed accurately?"],
+      "expected_evidence": ["signed_form", "company_record"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/far/52.209-5", "source_version_date": "2020-08-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.211-16", "title": "Variation in Quantity", "category": "delivery",
+      "summary": "States the permitted over/under shipment percentage for delivered quantities.",
+      "typical_effects": ["Delivered quantity outside the stated variation may be rejected."],
+      "verification_questions": ["What variation percentage is stated, and can the supplier ship within it?"],
+      "expected_evidence": ["supplier_quote"], "default_risk_level": "medium",
+      "source_url": "https://www.acquisition.gov/far/52.211-16", "source_version_date": "1984-04-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.211-17", "title": "Delivery of Excess Quantities", "category": "delivery",
+      "summary": "Addresses how excess delivered quantities are handled and paid.",
+      "typical_effects": ["Excess quantities may be returned or retained without payment."],
+      "verification_questions": ["Does the shipment plan avoid excess quantities?"],
+      "expected_evidence": ["supplier_quote"], "default_risk_level": "low",
+      "source_url": "https://www.acquisition.gov/far/52.211-17", "source_version_date": null
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.212-1", "title": "Instructions to Offerors—Commercial Products and Commercial Services", "category": "submission",
+      "summary": "Standard submission instructions for commercial acquisitions, including required offer content and late-offer rules.",
+      "typical_effects": ["Missing required offer content or late submission can make the offer non-responsive."],
+      "verification_questions": ["Does the offer include every item listed in the instructions (addenda included)?", "Will the offer be received before the stated time?"],
+      "expected_evidence": ["submission_package", "proposal_section"], "default_risk_level": "critical",
+      "source_url": "https://www.acquisition.gov/far/52.212-1", "source_version_date": "2023-09-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.212-3", "title": "Offeror Representations and Certifications—Commercial Products and Commercial Services", "category": "representations_certifications",
+      "summary": "Offeror representations and certifications for commercial acquisitions, normally completed in SAM with any required paragraphs in the offer.",
+      "typical_effects": ["Incomplete representations can make the offer ineligible."],
+      "verification_questions": ["Are the SAM representations current, and are any paragraphs not in SAM completed in the offer?"],
+      "expected_evidence": ["company_registration", "signed_form"], "default_risk_level": "critical",
+      "source_url": "https://www.acquisition.gov/far/52.212-3", "source_version_date": "2025-10-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.219-6", "title": "Notice of Total Small Business Set-Aside", "category": "representations_certifications",
+      "summary": "Only small business concerns under the stated size standard may compete.",
+      "typical_effects": ["An offeror that is not small under the NAICS size standard is ineligible."],
+      "verification_questions": ["Is the company small under the solicitation's NAICS size standard?"],
+      "expected_evidence": ["company_registration"], "default_risk_level": "critical",
+      "source_url": "https://www.acquisition.gov/far/52.219-6", "source_version_date": "2020-11-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.219-14", "title": "Limitations on Subcontracting", "category": "representations_certifications",
+      "summary": "Limits the share of contract amount that may be paid to non-similarly-situated subcontractors on set-aside awards.",
+      "typical_effects": ["Supply reseller models may need a nonmanufacturer-rule analysis."],
+      "verification_questions": ["Does the sourcing plan comply with the limitation (or a nonmanufacturer rule applies)?"],
+      "expected_evidence": ["company_record", "supplier_quote"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/far/52.219-14", "source_version_date": "2022-10-01"
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.225-1", "title": "Buy American-Supplies", "category": "country_of_origin",
+      "summary": "Domestic end products are required unless an exception applies.",
+      "typical_effects": ["Foreign-origin products may be unacceptable or evaluated with a price penalty."],
+      "verification_questions": ["What is the country of origin of each offered end product?"],
+      "expected_evidence": ["supplier_spec_sheet", "supplier_quote"], "default_risk_level": "critical",
+      "source_url": "https://www.acquisition.gov/far/52.225-1", "source_version_date": null
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.225-5", "title": "Trade Agreements", "category": "country_of_origin",
+      "summary": "Only U.S.-made or designated-country end products may be delivered for covered acquisitions.",
+      "typical_effects": ["Products from non-designated countries may be unacceptable."],
+      "verification_questions": ["Is each end product from the U.S. or a designated country?"],
+      "expected_evidence": ["supplier_spec_sheet", "supplier_quote"], "default_risk_level": "critical",
+      "source_url": "https://www.acquisition.gov/far/52.225-5", "source_version_date": null
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.246-2", "title": "Inspection of Supplies-Fixed-Price", "category": "inspection",
+      "summary": "Government inspection and acceptance rights for supplies under fixed-price contracts.",
+      "typical_effects": ["Nonconforming supplies may be rejected or require correction."],
+      "verification_questions": ["Can the supplier meet the stated inspection and acceptance point?"],
+      "expected_evidence": ["supplier_quote"], "default_risk_level": "medium",
+      "source_url": "https://www.acquisition.gov/far/52.246-2", "source_version_date": null
+    },
+    {
+      "clause_family": "FAR", "clause_number": "52.247-34", "title": "F.o.b. Destination", "category": "delivery",
+      "summary": "Contractor delivers to the stated destination and bears transportation cost and risk until delivery.",
+      "typical_effects": ["Price must include freight to destination; transit time counts against the delivery date."],
+      "verification_questions": ["Does the quote include delivery to destination and account for transit time?"],
+      "expected_evidence": ["supplier_quote"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/far/52.247-34", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.204-7012", "title": "Safeguarding Covered Defense Information and Cyber Incident Reporting", "category": "cybersecurity",
+      "summary": "Requires adequate security for covered defense information and cyber incident reporting.",
+      "typical_effects": ["Handling covered defense information requires NIST SP 800-171 security controls."],
+      "verification_questions": ["Will covered defense information be handled, and are required controls in place?"],
+      "expected_evidence": ["company_record"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/dfars/252.204-7012", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.204-7019", "title": "Notice of NIST SP 800-171 DoD Assessment Requirements", "category": "cybersecurity",
+      "summary": "Offeror must have a current NIST SP 800-171 DoD assessment posted when the requirement applies.",
+      "typical_effects": ["Missing assessment can make the offeror ineligible for award."],
+      "verification_questions": ["Is a current assessment summary posted in SPRS when required?"],
+      "expected_evidence": ["company_record"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/dfars/252.204-7019", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.204-7020", "title": "NIST SP 800-171 DoD Assessment Requirements", "category": "cybersecurity",
+      "summary": "Contract clause on NIST SP 800-171 DoD assessments and access for assessment.",
+      "typical_effects": ["Assessment obligations flow during performance."],
+      "verification_questions": ["Are assessment obligations understood for this award?"],
+      "expected_evidence": ["company_record"], "default_risk_level": "medium",
+      "source_url": "https://www.acquisition.gov/dfars/252.204-7020", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.211-7003", "title": "Item Unique Identification and Valuation", "category": "packaging",
+      "summary": "Requires unique item identification marking for specified items.",
+      "typical_effects": ["Items may need IUID marking before delivery."],
+      "verification_questions": ["Do any delivered items require IUID marking, and can the supplier provide it?"],
+      "expected_evidence": ["supplier_quote", "supplier_spec_sheet"], "default_risk_level": "medium",
+      "source_url": "https://www.acquisition.gov/dfars/252.211-7003", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.225-7001", "title": "Buy American and Balance of Payments Program", "category": "country_of_origin",
+      "summary": "DoD domestic-end-product requirements with qualifying-country provisions.",
+      "typical_effects": ["Nonqualifying foreign end products may be unacceptable or penalized."],
+      "verification_questions": ["Is each end product domestic or from a qualifying country?"],
+      "expected_evidence": ["supplier_spec_sheet", "supplier_quote"], "default_risk_level": "critical",
+      "source_url": "https://www.acquisition.gov/dfars/252.225-7001", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.225-7009", "title": "Restriction on Acquisition of Certain Articles Containing Specialty Metals", "category": "country_of_origin",
+      "summary": "Specialty metals in covered items must be melted or produced in the U.S. or a qualifying country unless an exception applies.",
+      "typical_effects": ["Supplier certification of specialty-metal origin may be required."],
+      "verification_questions": ["Do offered items contain specialty metals, and what is their melt origin?"],
+      "expected_evidence": ["supplier_spec_sheet"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/dfars/252.225-7009", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.232-7006", "title": "Wide Area WorkFlow Payment Instructions", "category": "administrative",
+      "summary": "Payment requests are submitted electronically through Wide Area WorkFlow (WAWF / PIEE).",
+      "typical_effects": ["Invoicing requires a PIEE/WAWF account after award."],
+      "verification_questions": ["Is a PIEE/WAWF vendor account available for invoicing?"],
+      "expected_evidence": ["company_record"], "default_risk_level": "low",
+      "source_url": "https://www.acquisition.gov/dfars/252.232-7006", "source_version_date": null
+    },
+    {
+      "clause_family": "DFARS", "clause_number": "252.246-7008", "title": "Sources of Electronic Parts", "category": "inspection",
+      "summary": "Electronic parts must come from authorized or trusted suppliers to reduce counterfeit risk.",
+      "typical_effects": ["Supplier traceability documentation may be required for electronic parts."],
+      "verification_questions": ["Are electronic parts sourced from the original manufacturer or an authorized/trusted supplier?"],
+      "expected_evidence": ["supplier_spec_sheet", "supplier_quote"], "default_risk_level": "high",
+      "source_url": "https://www.acquisition.gov/dfars/252.246-7008", "source_version_date": null
+    },
+    {
+      "clause_family": "DLAD", "clause_number": "5452.233-9001", "title": "Disputes – Agreement to Use Alternative Dispute Resolution (ADR)", "category": "dla_specific",
+      "summary": "DLA provision on agreeing to use alternative dispute resolution; includes an opt-out checkbox.",
+      "typical_effects": ["The opt-out election is an offeror choice to confirm before submission."],
+      "verification_questions": ["Has the offeror decided whether to opt out of the ADR agreement?"],
+      "expected_evidence": ["signed_form"], "default_risk_level": "low",
+      "source_url": "https://www.acquisition.gov/dlad/part-52-%E2%80%93-solicitation-provisions-and-contract-clauses", "source_version_date": "2020-06-01"
+    }
+  ]
+}

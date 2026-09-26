@@ -1,0 +1,7 @@
+ATTACHMENT 7 PACKAGING AND MARKING
+
+[Table 1]
+Item	Requirement
+Packaging	Items shall be packaged in accordance with MIL-STD-2073-1, Level A.
+Marking	Each unit pack shall be marked with the NSN and contract number.
+Shelf life	Shelf-life items must have at least 85 percent shelf life remaining at delivery.

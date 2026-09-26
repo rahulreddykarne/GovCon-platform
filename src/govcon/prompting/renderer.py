@@ -36,6 +36,38 @@ def render_system_prompt(asset: PromptAsset, prompt_root: Path) -> str:
     return "\n\n".join(parts)
 
 
+class PromptRenderError(ValueError):
+    """A required prompt variable was missing or the prompt could not be rendered."""
+
+
+def required_variables(asset: PromptAsset) -> list[str]:
+    """Return the ``required_variables`` names declared in front matter."""
+    return _parse_includes(asset.metadata.get("required_variables", ""))
+
+
+def render_user_context(asset: PromptAsset, variables: dict[str, object]) -> str:
+    """Render bounded structured context as the user message.
+
+    Source content is untrusted data, so it is delivered in delimited data
+    blocks in the user message and never concatenated into system
+    instructions (§37.2). Every name listed in ``required_variables`` must be
+    present; a missing variable is a render error (§37.3).
+    """
+    import json
+
+    required = required_variables(asset)
+    missing = [name for name in required if name not in variables or variables[name] is None]
+    if missing:
+        raise PromptRenderError(f"prompt {asset.name}@{asset.version} missing required variables: {', '.join(missing)}")
+    ordered = required + sorted(name for name in variables if name not in required)
+    blocks: list[str] = []
+    for name in ordered:
+        value = variables[name]
+        body = value if isinstance(value, str) else json.dumps(value, indent=2, sort_keys=True, default=str)
+        blocks.append(f"<<<BEGIN {name}>>>\n{body}\n<<<END {name}>>>")
+    return "\n\n".join(blocks)
+
+
 def _parse_includes(raw: str) -> list[str]:
     """Parse the includes value from front-matter YAML.
 

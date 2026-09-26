@@ -10,6 +10,7 @@ Normal tests do not call the network.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -373,8 +374,10 @@ def test_cli_file_ingest_is_idempotent(session: Session, tmp_path: Path, monkeyp
     assert rejected.exit_code == 2
     help_text = runner.invoke(app, ["ingest", "dibbs", "--help"])
     assert help_text.exit_code == 0
-    assert "--file" in help_text.output
-    assert "--date" in help_text.output
+    # CI terminals can force Rich styling; compare the help text without SGR codes.
+    plain_help = re.sub(r"\x1b\[[0-9;]*m", "", help_text.output)
+    assert "--file" in plain_help
+    assert "--date" in plain_help
     _purge_dibbs(session)
 
 

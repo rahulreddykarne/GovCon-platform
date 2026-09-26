@@ -30,6 +30,7 @@ contacts_app = typer.Typer(help="Buyer contact search.")
 enrich_app = typer.Typer(help="Attachment download and AI analysis.")
 prompts_app = typer.Typer(help="Prompt registry administration.")
 decision_app = typer.Typer(help="JEV decision bundles and package generation.")
+compliance_app = typer.Typer(help="High-reliability compliance matrix, validation, and pre-flight.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -42,6 +43,7 @@ app.add_typer(contacts_app, name="contacts")
 app.add_typer(enrich_app, name="enrich")
 app.add_typer(prompts_app, name="prompts")
 app.add_typer(decision_app, name="decision")
+app.add_typer(compliance_app, name="compliance")
 
 
 def main() -> None:
@@ -1208,8 +1210,8 @@ def prompts_activate(
     prompt_name: str = typer.Option(..., help="Prompt name."),
     version: str = typer.Option(..., help="Version to activate."),
 ) -> None:
-    """Activate a specific prompt version."""
-    from govcon.prompting.registry import activate_version
+    """Activate a prompt version; safety-critical prompts must pass their regression gate."""
+    from govcon.prompting.registry import PromptActivationBlocked, activate_prompt
 
     try:
         settings = _settings()
@@ -1217,9 +1219,37 @@ def prompts_activate(
     except ConfigError as exc:
         _fail_config(exc)
         return
-    with session_scope() as session:
-        activate_version(session, prompt_name, version)
-    typer.echo(f"activated: {prompt_name}@{version}")
+    try:
+        with session_scope() as session:
+            result = activate_prompt(session, prompt_name, version, prompt_root=settings.resolved_prompt_root(), settings=settings)
+    except PromptActivationBlocked as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"activated: {prompt_name}@{version} (previous: {result['previous_version'] or 'none'})")
+    typer.echo(f"gate_required: {result['gate']['required']} gate_passed: {result['gate']['passed']}")
+
+
+@prompts_app.command("rollback")
+def prompts_rollback(prompt_name: str = typer.Option(..., help="Prompt name.")) -> None:
+    """Restore the version that was active before the latest activation."""
+    from govcon.prompting.registry import rollback_prompt
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    try:
+        with session_scope() as session:
+            result = rollback_prompt(session, prompt_name)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"rolled_back: {prompt_name} {result['rolled_back_from']} -> {result['active_version']}")
 
 
 # ── Decision engine CLI ──
@@ -1340,3 +1370,333 @@ def decision_runs(
     for row in rows:
         _echo_decision_run(row)
         typer.echo("---")
+
+
+# ── Compliance CLI ──
+
+
+def _compliance_settings() -> Settings | None:
+    try:
+        settings = _settings()
+        settings.require_database_url()
+        return settings
+    except ConfigError as exc:
+        _fail_config(exc)
+        return None
+
+
+def _load_json_file(path: str | None) -> dict | None:
+    import json as _json
+    from pathlib import Path as _Path
+
+    if not path:
+        return None
+    return _json.loads(_Path(path).read_text(encoding="utf-8"))
+
+
+def _actor(session, email: str) -> User:
+    user = session.scalar(select(User).where(User.email == email.strip().lower(), User.is_active.is_(True)))
+    if user is None:
+        typer.echo(f"no active user {email}", err=True)
+        raise typer.Exit(code=2)
+    return user
+
+
+@compliance_app.command("run")
+def compliance_run(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    no_ai: bool = typer.Option(False, "--no-ai", help="Deterministic stages only (run is marked incomplete)."),
+    force: bool = typer.Option(False, help="Re-extract even when the source inventory is unchanged."),
+    company_facts: str | None = typer.Option(None, help="JSON file of approved company facts (default COMPANY_FACTS_PATH)."),
+    supplier: str | None = typer.Option(None, help="JSON file of supplier facts (lead_time_days, transit_days)."),
+    package: str | None = typer.Option(None, help="JSON submission package manifest."),
+) -> None:
+    """Run inventory → dual extraction → reconciliation → validators → red team → JEV routing."""
+    from govcon.compliance.deterministic import SubmissionPackage
+    from govcon.compliance.metrics import format_coverage
+    from govcon.compliance.pipeline import run_compliance_pipeline
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    package_data = _load_json_file(package)
+    with session_scope(settings) as session:
+        result = run_compliance_pipeline(
+            session,
+            opportunity_id,
+            use_ai=not no_ai,
+            force=force,
+            company_facts=_load_json_file(company_facts),
+            supplier=_load_json_file(supplier),
+            package=SubmissionPackage.from_dict(package_data) if package_data else None,
+            settings=settings,
+        )
+    typer.echo(f"status: {result['status']}")
+    typer.echo(f"matrix_run_id: {result['matrix_run_id']}")
+    for warning in result["warnings"]:
+        typer.echo(f"WARNING [{warning.get('code')}]: {warning.get('message')}")
+    for line in format_coverage(result["counts"]):
+        typer.echo(line)
+
+
+@compliance_app.command("inventory")
+def compliance_inventory(opportunity_id: int = typer.Option(..., help="Stored opportunity id.")) -> None:
+    """Build and print the document inventory with warnings."""
+    from govcon.compliance.inventory import build_document_inventory
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        inventory, run = build_document_inventory(session, opportunity_id)
+        typer.echo(f"inventory_run_id: {run.id} status: {run.status}")
+        for doc in inventory.documents:
+            m = doc.manifest()
+            typer.echo(
+                f"- file {m['file_id']} {m['filename']} type={m['document_type']} sha256={(m['sha256'] or '')[:12]} "
+                f"pages={m['page_count']} text={m['text_extraction_status']} tables={m['table_extraction_status']} ocr_needed={m['ocr_needed']}"
+            )
+        for warning in inventory.warnings:
+            typer.echo(f"WARNING {warning.severity} [{warning.code}]{' BLOCKING' if warning.blocking else ''}: {warning.message}")
+
+
+@compliance_app.command("matrix")
+def compliance_matrix_cmd(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    filter_: list[str] = typer.Option([], "--filter", help="critical_only, missing, unknown, needs_review, stale, submission_blockers, recently_changed_by_amendment, not_independently_confirmed"),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON rows."),
+) -> None:
+    """Print the source-backed compliance matrix."""
+    import json as _json
+
+    from govcon.compliance.matrix import compliance_matrix
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        try:
+            rows = compliance_matrix(session, opportunity_id, filters=filter_)
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
+    if as_json:
+        typer.echo(_json.dumps(rows, indent=2, default=str))
+        return
+    typer.echo(f"count: {len(rows)}")
+    for row in rows:
+        src = row["source"]
+        typer.echo(
+            f"[{row['requirement_id']}] {row['status'].upper()} sev={row['severity']} mandatory={row['mandatory']} "
+            f"confirmed={row['independently_confirmed']} blocking={row['blocking']} stale={row['amendment_freshness']['stale']}"
+        )
+        typer.echo(f"    {row['requirement'][:160]}")
+        typer.echo(f"    source: file {src['file_id']} ({src['filename']}) page {src['page']} section {src['section']}")
+        typer.echo(f"    evidence: {len(row['evidence'])} rows; validators: {', '.join(v['validator'] + '=' + v['status'] for v in row['validator_output']) or 'none'}")
+        if row["status_reason"]:
+            typer.echo(f"    reason: {row['status_reason']}")
+
+
+@compliance_app.command("coverage")
+def compliance_coverage(opportunity_id: int = typer.Option(..., help="Stored opportunity id.")) -> None:
+    """Print coverage counts by status and category."""
+    from govcon.compliance.metrics import format_coverage, record_matrix_run
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        counts, run_id = record_matrix_run(session, opportunity_id)
+    typer.echo(f"matrix_run_id: {run_id}")
+    for line in format_coverage(counts):
+        typer.echo(line)
+
+
+@compliance_app.command("findings")
+def compliance_findings(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    blocking: bool = typer.Option(False, help="Only submission blockers."),
+) -> None:
+    """List open compliance findings (red team, conflicts, inventory, pre-flight)."""
+    from govcon.compliance.matrix import open_findings
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        rows = open_findings(session, opportunity_id, blocking_only=blocking)
+        typer.echo(f"count: {len(rows)}")
+        for f in rows:
+            typer.echo(f"[{f.id}] {f.severity} {f.finding_type} ({f.certainty}, {f.detected_by}){' BLOCKING' if f.blocks_submission else ''}: {f.description}")
+
+
+@compliance_app.command("clauses-seed")
+def compliance_clauses_seed() -> None:
+    """Upsert the verified clause-library seed."""
+    from govcon.compliance.clauses import seed_clause_library
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        count = seed_clause_library(session)
+    typer.echo(f"clauses_upserted: {count}")
+
+
+@compliance_app.command("evidence-add")
+def compliance_evidence_add(
+    requirement_id: int = typer.Option(...),
+    evidence_type: str = typer.Option(..., help="e.g. supplier_quote, company_registration, signed_form"),
+    method: str = typer.Option(..., help="verification method, e.g. supplier_document, company_record"),
+    status: str = typer.Option("unverified", help="unverified | verified | conflicting | insufficient"),
+    description: str = typer.Option(...),
+    source_file_id: int | None = typer.Option(None),
+    page: int | None = typer.Option(None),
+    quote: str | None = typer.Option(None),
+) -> None:
+    """Record evidence for a requirement (does not change its status until validation runs)."""
+    from govcon.compliance.matrix import add_evidence
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            row = add_evidence(
+                session, requirement_id=requirement_id, evidence_type=evidence_type, verification_method=method,
+                verification_status=status, description=description, source_file_id=source_file_id, source_page=page, source_quote=quote,
+            )
+            typer.echo(f"evidence_id: {row.id}")
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@compliance_app.command("override")
+def compliance_override(
+    requirement_id: int = typer.Option(...),
+    status: str = typer.Option(..., help="satisfied | missing | unknown | needs_review | not_applicable"),
+    reason: str = typer.Option(..., help="Explicit reason (recorded in audit history)."),
+    actor_email: str = typer.Option(..., help="Authorized owner/approver email."),
+    expected_version: int = typer.Option(..., help="Requirement version you reviewed (optimistic concurrency)."),
+    acknowledge_deterministic_failure: bool = typer.Option(False, help="Required to override a failed deterministic validator."),
+) -> None:
+    """Authorized human override of one requirement's compliance state."""
+    from govcon.collaboration.users import PermissionDenied
+    from govcon.compliance.matrix import ComplianceInvariantError, override_requirement
+    from govcon.concurrency import StaleRecordError
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            req = override_requirement(
+                session, requirement_id=requirement_id, status=status, actor=_actor(session, actor_email), reason=reason,
+                expected_version=expected_version, acknowledge_deterministic_failure=acknowledge_deterministic_failure,
+            )
+            typer.echo(f"requirement {req.id}: {req.status} (version {req.version})")
+    except (PermissionDenied, ComplianceInvariantError, StaleRecordError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@compliance_app.command("proposal-coverage")
+def compliance_proposal_coverage(
+    opportunity_id: int = typer.Option(...),
+    proposal_version_id: int = typer.Option(...),
+    ai: bool = typer.Option(False, help="Also run the proposal_coverage AI auditor."),
+) -> None:
+    """Map response requirements to a selected proposal version; gaps become blocking findings."""
+    from govcon.compliance.proposal_coverage import check_proposal_coverage
+    from govcon.compliance.validator import run_validation
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        result = check_proposal_coverage(session, opportunity_id, proposal_version_id, use_ai=ai, settings=settings)
+        run_validation(session, opportunity_id, use_ai=False, settings=settings)
+    typer.echo(f"coverage_run_id: {result['run_id']} summary: {result['summary']}")
+    for rid, item in result["results"].items():
+        typer.echo(f"- requirement {rid}: {item['coverage_status']} section={item['section_key']} {item['issue'] or ''}")
+
+
+@compliance_app.command("preflight")
+def compliance_preflight(
+    opportunity_id: int = typer.Option(...),
+    package: str = typer.Option(..., help="JSON submission package manifest."),
+    submission_id: int | None = typer.Option(None),
+    ai: bool = typer.Option(False, help="Also run the AI pre-flight reviewer."),
+) -> None:
+    """Final submission-package pre-flight. Exit 1 unless every item is green."""
+    from govcon.compliance.deterministic import SubmissionPackage
+    from govcon.compliance.submission_preflight import run_submission_preflight
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        result = run_submission_preflight(
+            session, opportunity_id, SubmissionPackage.from_dict(_load_json_file(package) or {}),
+            submission_id=submission_id, use_ai=ai, settings=settings,
+        )
+    typer.echo(f"preflight_run_id: {result['run_id']} status: {result['status']}")
+    for item in result["items"]:
+        typer.echo(f"- {item['status'].upper():<14} {item['check']}: {item['reason']}")
+    if not result["ready"]:
+        raise typer.Exit(code=1)
+
+
+@compliance_app.command("ready")
+def compliance_ready(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str = typer.Option(..., help="Approver/owner email."),
+    override_reason: str | None = typer.Option(None, help="Explicit override reason when blockers remain (audited)."),
+) -> None:
+    """Move the pursuit to ready_to_submit only when no compliance blocker remains."""
+    from govcon.collaboration.users import PermissionDenied
+    from govcon.compliance.submission_preflight import ReadinessBlocked, move_to_ready_to_submit
+
+    settings = _compliance_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            pursuit = move_to_ready_to_submit(session, opportunity_id, actor=_actor(session, actor_email), override_reason=override_reason)
+            typer.echo(f"pursuit {pursuit.id}: {pursuit.stage}")
+    except ReadinessBlocked as exc:
+        typer.echo("NOT READY:", err=True)
+        for blocker in exc.blockers:
+            typer.echo(f"- {blocker['description']}", err=True)
+        raise typer.Exit(code=1) from exc
+    except (PermissionDenied, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@compliance_app.command("benchmark")
+def compliance_benchmark(
+    fixtures: str | None = typer.Option(None, help="Benchmark root (default tests/fixtures/compliance)."),
+    live: bool = typer.Option(False, help="Re-run AI passes against the configured provider instead of recorded outputs."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the compliance benchmark; exit 1 when the release gate fails."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+
+    settings = _settings()
+    suite = run_benchmark_suite(_Path(fixtures) if fixtures else default_fixture_root(), live=live, settings=settings)
+    if as_json:
+        typer.echo(_json.dumps(suite.as_dict(), indent=2, default=str))
+    else:
+        for case in suite.cases:
+            typer.echo(f"{case.case_id}: {case.metrics}")
+        typer.echo(f"aggregate: {suite.aggregate}")
+        typer.echo(f"gate: {'PASS' if suite.gate.passed else 'FAIL'}")
+        for failure in suite.gate.failures:
+            typer.echo(f"- {failure}")
+    if not suite.gate.passed:
+        raise typer.Exit(code=1)

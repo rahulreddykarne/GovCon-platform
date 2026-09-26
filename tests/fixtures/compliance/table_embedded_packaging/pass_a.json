@@ -1,0 +1,7 @@
+{
+  "requirements": [
+    {"requirement_text": "Quotes due November 3, 2026 at 3:00 PM ET.", "requirement_type": "submission", "mandatory": true, "severity": "critical", "source_file_id": 1, "source_page": null, "source_section": "SECTION A INSTRUCTIONS", "supporting_quote": "Quotes are due no later than November 3, 2026 3:00 PM ET.", "confidence": 0.96},
+    {"requirement_text": "Submit quotes through DIBBS.", "requirement_type": "submission", "mandatory": true, "severity": "high", "source_file_id": 1, "source_page": null, "source_section": "SECTION A INSTRUCTIONS", "supporting_quote": "Quoters shall submit quotes through DIBBS.", "confidence": 0.95}
+  ],
+  "extraction_notes": ["Attachment 7 table content was not parsed."]
+}

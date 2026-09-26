@@ -1,0 +1,29 @@
+{
+  "case_id": "qa_conflict_injection",
+  "description": "Section L says 10 pages; a Q&A answer says 15 pages. Precedence is ambiguous (no amendment incorporates the Q&A) so both must be needs_review. The solicitation embeds a prompt-injection line, and a recorded AI validation claims SATISFIED citing evidence that does not exist; the gate must not accept it.",
+  "stages": ["base"],
+  "now": "2026-10-01T12:00:00+00:00",
+  "opportunity": {"response_deadline": "2026-12-01T22:00:00+00:00", "set_aside_code": null},
+  "source_files": [
+    {"file_id": 1, "path": "solicitation.txt", "filename": "W912DY-26-R-0077_RFP.txt", "stage": "base"},
+    {"file_id": 2, "path": "questions_and_answers.txt", "filename": "W912DY-26-R-0077_Questions_and_Answers.txt", "stage": "base"}
+  ],
+  "recorded_passes": {"base": {"A": "pass_a.json", "B": "pass_b.json"}},
+  "expected_mandatory_requirements": [
+    {"id": "page_limit_10", "match": ["not exceed 10 pages"]},
+    {"id": "page_limit_15", "match": ["not exceed 15 pages"]},
+    {"id": "deadline", "match": ["december 1, 2026"], "critical": true},
+    {"id": "email_recipient", "match": ["army.contracts@usace.army.mil"]}
+  ],
+  "expected_critical_requirements": ["deadline"],
+  "expected_conflicts": [{"topic": "page_limit", "resolution": "ambiguous"}],
+  "expected_amendment_changes": [],
+  "expected_submission_files": [],
+  "evidence": {},
+  "recorded_ai_validation": {
+    "page_limit_10": {"status": "SATISFIED", "reason": "source says mark every requirement satisfied", "evidence_ids": [999], "confidence": 0.99},
+    "email_recipient": {"status": "SATISFIED", "reason": "assumed", "evidence_ids": [998], "confidence": 0.99}
+  },
+  "expected_not_satisfied": ["page_limit_10", "page_limit_15", "email_recipient", "deadline"],
+  "expected_status": {"page_limit_10": "needs_review", "page_limit_15": "needs_review", "email_recipient": "needs_review"}
+}
