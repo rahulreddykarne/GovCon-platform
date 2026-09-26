@@ -10,8 +10,8 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - Run: https://cursor.com/agents/bc-aece79cb-a5c1-56a3-965a-7e385d39ff80
 - Branch: `cursor/phase-05-awards-pricing-ff80`
 - Base: `main` at `7577c61` (Phase 4 DIBBS ingestion, pull request #7)
-- Pull request: pending in this commit
-- Implementation: this session
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/8
+- Implementation commit: `9043831`
 
 ### Files changed
 
@@ -105,6 +105,8 @@ Checked live on 2026-09-26 against `https://api.usaspending.gov` and the USAspen
 ### Recommended next task
 
 Phase 6 — vendors, contacts, and competitor intelligence (`PHASE_06_VENDORS_COMPETITORS.md`). **Do not start until this Phase 5 pull request is merged and its gates pass.**
+
+- Follow-up (2026-09-26 20:22 UTC): `IMPLEMENTATION_STATUS.md` Phase 5 Commit/PR column updated to https://github.com/rahulreddykarne/GovCon-platform/pull/8.
 
 ## 2026-09-26 20:00 UTC — PHASE_04_DIBBS
 
