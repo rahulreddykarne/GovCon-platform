@@ -22,6 +22,7 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - `src/govcon/enrich/extract.py` (DOCX tables, per-page PDF text)
 - `src/govcon/cli.py` (`govcon compliance …`, gated `prompts activate`, `prompts rollback`)
 - `tests/test_compliance.py`, `tests/fixtures/compliance/` (3 cases + `baseline_metrics.json`), `tests/test_http_prompts.py`
+- `tests/test_dibbs.py`: strip ANSI styling before the `--help` substring check. This pre-existing test failed on GitHub Actions (also on `main` after #11) because Rich forces styled output there.
 - `pyproject.toml` (package data), `.env.example`, `IMPLEMENTATION_STATUS.md`, `SPEC_DEVIATIONS.md`, `DECISIONS.md`, this file
 
 ### What shipped
@@ -56,6 +57,7 @@ Local PostgreSQL 16 + pgvector on `localhost:5432` (installed on the VM; same im
 - Dependency check before coding: `python3 -m pytest` → 147 passed, 1 skipped (Phases 0, 1, 7, 8 suites all green).
 - `python3 -m pytest tests/test_compliance.py` → 25 passed (DB-backed; passes a second time against a populated database).
 - `python3 -m pytest` → 172 passed, 1 skipped (SAM live pull; no `SAM_API_KEY`).
+- GitHub Actions `pytest` on PR #12: pass (both push and pull_request runs).
 - `govcon compliance benchmark` → gate PASS. Aggregate: mandatory recall 1.0, critical recall 1.0, AI citation accuracy 0.9688 (one fixture citation is deliberately paraphrased), canonical citation accuracy 1.0, false-satisfied rate 0.0, amendment-change detection 1.0, conflict recall 1.0, submission-file completeness 1.0, expected-status accuracy 1.0.
 
 ### Acceptance criteria (§15.22)
