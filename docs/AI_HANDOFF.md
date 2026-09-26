@@ -2,17 +2,17 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
-`main` was read at `e7ba0b1` (Phase 0 complete) before this entry. This branch is `cursor/phase-01-sam-ingestion-43a0`.
+`main` was re-read at 2026-09-26 18:50 UTC and is still `e7ba0b1` (Phase 0 merged, pull request #1). No other agent commits were on this branch. This branch is `cursor/phase-01-sam-ingestion-43a0`. One pull request: #3.
 
-## 2026-09-26 18:49 UTC — Phase 1 SAM ingestion
+## 2026-09-26 18:50 UTC — PHASE_01_SAM_INGESTION
 
-- Agent: Cursor cloud
-- Model: grok-4.7-high-fast
+- Agent/model identity: Cursor cloud, model `grok-4.7-high-fast`
+- Datetime (UTC): 2026-09-26 18:50 UTC
+- Phase/task: PHASE_01_SAM_INGESTION
 - Run: https://cursor.com/agents/bc-9e68ed03-0d1b-5e9f-899c-3926d53343a0
-- Phase: Phase 1 SAM ingestion
 - Branch: `cursor/phase-01-sam-ingestion-43a0`
 - Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/3
-- Implementation commits: `bba0ca2`, `f9ad00d`
+- Commits: `bba0ca2`, `f9ad00d`, `dbce6ce`
 
 ### Files changed
 
@@ -33,7 +33,7 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - `.env.example`
 - `docs/AI_HANDOFF.md` (this file)
 
-### Functionality
+### What shipped
 
 - `govcon ingest sam` calls the SAM.gov Get Opportunities search. The default posted window is the last 3 UTC days, inclusive of today. The command pages until `totalRecords`, using `offset` as a page index.
 - `govcon ingest sam-backfill` splits a longer posted-date range into windows of at most one year.
@@ -44,11 +44,13 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - NSN, quantity, and estimated value are parsed only from explicit labels or explicit value fields. `award.amount` is not copied into estimated value.
 - Description and attachment URLs are kept on the raw payload and `links`. Their bytes are not downloaded.
 
-### Architectural decisions
+### ADRs / DECISIONS touched
 
-- ADR-015: production search URL, auth, pagination, notice id, attachment fields, and retry behavior.
-- ADR-016: one SHA-256 for `raw_hash` and `opportunity_snapshots.content_hash`; archive sweep is local and does not snapshot.
-- ADR-017: contact unique key, NSN shape, and the rule that quantity and estimated value stay null unless the source states them.
+- ADR-015 in `DECISIONS.md`: production search URL, auth, pagination, notice id, attachment fields, and retry behavior.
+- ADR-016 in `DECISIONS.md`: one SHA-256 for `raw_hash` and `opportunity_snapshots.content_hash`; archive sweep is local and does not snapshot.
+- ADR-017 in `DECISIONS.md`: contact unique key, NSN shape, and the rule that quantity and estimated value stay null unless the source states them.
+- `SPEC_DEVIATIONS.md` Phase 1: no behavior deviation from `MASTER_SPEC_v2.5.md`. The missing live key is recorded there as an environment limit, not a product change.
+- Phase 0 ADR-001 through ADR-014 were not changed.
 - HTTP retries stay in `govcon.http.request_with_retry`. SAM passes a longer wait and more attempts. The default wait used by other callers is unchanged.
 - No new table and no Alembic revision.
 
@@ -60,7 +62,7 @@ None. Phase 1 uses the Phase 0 schema (`97cb081e9a8e`).
 
 Command: `pytest`
 
-Result: **37 passed, 1 skipped**.
+Result: **37 passed, 1 skipped** (same tree as this handoff; the 18:50 UTC edit changes only this document).
 
 The skipped test is `test_live_pull_yields_at_least_one_record`. It runs only when `SAM_API_KEY` is set. The key was not set.
 
@@ -71,18 +73,21 @@ Covered acceptance checks:
 - A deadline change creates `deadline_changed`, and that event points at the new snapshot.
 - Raw source JSON is readable from the opportunity and the snapshot after commit.
 
-### SAM VERIFY findings (2026-09-26)
+### VERIFY outcomes
 
-Source: https://open.gsa.gov/api/get-opportunities-public-api/
+Source checked live on 2026-09-26: https://open.gsa.gov/api/get-opportunities-public-api/
 
-- Endpoint/version: production `https://api.sam.gov/opportunities/v2/search`. Alpha is `https://api-alpha.sam.gov/opportunities/v2/search`.
-- Auth: required `api_key` query parameter. Documented errors are "No api_key was supplied" and "An invalid api_key was supplied".
-- Pagination: `limit` max 1000, API default 1. `offset` is documented as the page index starting at 0. Response fields are `totalRecords`, `limit`, `offset`, `opportunitiesData`.
-- Dates: `postedFrom` and `postedTo` are mandatory `MM/dd/yyyy` and must not be more than one year apart.
-- Rate limits: the opportunities page says the daily cap depends on federal, non-federal, or general role and does not list HTTP 429. The SAM.gov System Account User Guide gives default daily caps of 10, 1,000, or 10,000 by account type. This client retries 429 and 5xx, then fails the run.
-- Attachments: `resourceLinks` is the attachment URL list. `description` is a separate download URL, not the body.
-- Notice/amendment ids: `noticeId` (query `noticeid`) identifies the notice. `type` is the current type and `baseType` is the original type. The public API returns only the latest version and has no separate amendment id. `source_version` stores `postedDate` when present.
-- Some third-party guides treat `offset` as a record offset (`offset = page * limit`). This implementation follows the official page-index wording. If a later page repeats at least half of the previous page's notice ids, the run fails instead of saving a short page.
+Every `⚠️ VERIFY` item in `PHASE_01_SAM_INGESTION.md`:
+
+- Current endpoint/version: still `GET https://api.sam.gov/opportunities/v2/search`. Alpha is `https://api-alpha.sam.gov/opportunities/v2/search`. The historical endpoint in the phase spec matches production.
+- Authentication method: required `api_key` query parameter. Documented errors are "No api_key was supplied" and "An invalid api_key was supplied".
+- Pagination behavior: `limit` is records per page, maximum 1000, API default 1. `offset` is documented as the page index starting at 0. The envelope is `totalRecords`, `limit`, `offset`, `opportunitiesData`. This client requests pages 0, 1, 2. A page that repeats at least half of the previous page's notice ids fails the run instead of truncating.
+- Parameter names: required `api_key`, `postedFrom`, `postedTo` (`MM/dd/yyyy`, at most one year apart). Also documented: `limit`, `offset`, `ptype`, `solnum`, `noticeid`, `title`, `state`, `zip`, `organizationCode`, `organizationName`, `typeOfSetAside`, `typeOfSetAsideDescription`, `ncode`, `ccode`, `rdlfrom`, `rdlto`. `deptname` and `subtier` are deprecated. `status` is marked coming soon. The ingest sends `api_key`, `postedFrom`, `postedTo`, `limit`, and `offset`.
+- Rate limits: the opportunities page says the daily cap depends on federal, non-federal, or general role and does not list HTTP 429. The SAM.gov System Account User Guide gives default daily caps of 10, 1,000, or 10,000 by account type. This client retries 429 and 5xx through `govcon.http.request_with_retry`, then fails the run.
+- Attachment fields: `resourceLinks` is the attachment URL list. `description` is a separate download URL, not the body. `links` and `uiLink` are record links. Bytes are not downloaded in Phase 1.
+- Notice/amendment identifiers: `noticeId` (query `noticeid`) is the notice id and is stored as `source_id`. `type` is the current type and `baseType` is the original type. The public API returns only the latest version and has no separate amendment id. `source_version` stores `postedDate` when present.
+
+Some third-party guides treat `offset` as a record offset (`offset = page * limit`). This implementation follows the official page-index wording. That behavior is not yet confirmed with an authenticated second page.
 
 ### Known problems
 
@@ -98,4 +103,4 @@ Source: https://open.gsa.gov/api/get-opportunities-public-api/
 
 ### Recommended next task
 
-Phase 2 — watchlist matching engine (`PHASE_02_MATCHING.md`), after this pull request is merged and its gates pass. Do not start Phase 2 in the Phase 1 pull request.
+Phase 2 — watchlist matching engine (`PHASE_02_MATCHING.md`), only after pull request #3 is merged and its gates pass. Phase 2 is not started. `IMPLEMENTATION_STATUS.md` still marks Phase 2 as NOT STARTED.
