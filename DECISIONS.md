@@ -137,3 +137,19 @@ Record durable architecture/implementation decisions.
 - Decision: Contacts are upserted on `(email, agency_path)` only when both are present, because the unique constraint does not dedupe NULL emails. NSNs are 13-digit numbers with the standard dash groups, or the same shape after an NSN label. Quantity is parsed only from a `qty` or `quantity` label. Estimated values come only from an explicit estimated-value field or from text labeled as an estimated value, cost, amount, or price. `award.amount` is not an estimate.
 - Alternatives considered: Infer quantity from any nearby number. Copy the award amount into `estimated_value_min`.
 - Consequences: Most SAM search records will have null quantity and estimated value until a later source states them. The first NSN candidate is stored on `opportunities.nsn`; the full candidate list is on the snapshot's normalized document.
+
+### ADR-018 — Deterministic watchlist matching semantics
+- Phase: 2
+- Date: 2026-09-26
+- Context: Phase 2 requires deterministic, explainable shortlist generation with AND across non-empty rule groups and OR within each group. Unknown opportunity values must not be fabricated.
+- Decision: Rule evaluation lives in `govcon.matching.rules.evaluate_watchlist`. Empty or null rule groups are wildcards. Non-empty groups must pass. Exclude keywords veto the entire evaluation when any configured term appears in the title or description (case-insensitive substring). Value filters compare against `estimated_value_min` / `estimated_value_max` when present; when both are null the filter records `unknown` in `matched_on` and does not reject. Deadline filters record `unknown` when `response_deadline` is null. Score is the count of passed non-empty groups. Matches upsert on `(opportunity_id, watchlist_id)` and preserve existing `status` on update.
+- Alternatives considered: Reject opportunities with unknown values. Semantic or vector scoring in Phase 2.
+- Consequences: Operators get explainable evidence in `matched_on`. `govcon match rebuild --watchlist N` removes stale rows for that watchlist. Semantic matching stays in Phase 13.
+
+### ADR-019 — Match run scope
+- Phase: 2
+- Date: 2026-09-26
+- Context: The matching CLI must reduce the opportunity set without re-ingesting sources.
+- Decision: `govcon match run` evaluates all enabled watchlists against opportunities whose `status` is not `archived`. `govcon match rebuild --watchlist N` recomputes one enabled watchlist and deletes match rows for opportunities that no longer qualify. Disabled watchlists are skipped.
+- Alternatives considered: Match only opportunities ingested since the last run. Rebuild all watchlists on every run.
+- Consequences: Matching is idempotent and safe to schedule after ingestion. Phase 3 can alert on `new` matches without changing the match table shape.

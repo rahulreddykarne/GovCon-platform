@@ -21,9 +21,13 @@ app = typer.Typer(help="GovCon opportunity and bid management platform.", no_arg
 db_app = typer.Typer(help="Database administration.")
 users_app = typer.Typer(help="Invite-only user administration.")
 ingest_app = typer.Typer(help="Source ingestion.")
+match_app = typer.Typer(help="Watchlist matching.")
+watchlist_app = typer.Typer(help="Watchlist administration.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
+app.add_typer(match_app, name="match")
+app.add_typer(watchlist_app, name="watchlist")
 
 
 def main() -> None:
@@ -344,3 +348,203 @@ def ingest_sam_archive_sweep() -> None:
         finish_run(run, stats, status=status)
         run_id = run.id
     _echo_ingest(run_id, status, stats)
+
+
+def _split_csv(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    items = [part.strip() for part in value.split(",") if part.strip()]
+    return items
+
+
+def _echo_match_stats(stats) -> None:
+    typer.echo(f"watchlists_evaluated: {stats.watchlists_evaluated}")
+    typer.echo(f"opportunities_scanned: {stats.opportunities_scanned}")
+    typer.echo(f"matches_created: {stats.matches_created}")
+    typer.echo(f"matches_updated: {stats.matches_updated}")
+    typer.echo(f"matches_removed: {stats.matches_removed}")
+
+
+@match_app.command("run")
+def match_run() -> None:
+    """Evaluate all enabled watchlists against active opportunities."""
+    from govcon.matching.engine import run_matching
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        stats = run_matching(session)
+    _echo_match_stats(stats)
+
+
+@match_app.command("rebuild")
+def match_rebuild(
+    watchlist: int = typer.Option(..., "--watchlist", help="Watchlist id to rebuild."),
+) -> None:
+    """Recompute matches for one watchlist and remove stale rows."""
+    from govcon.matching.engine import rebuild_watchlist
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    try:
+        with session_scope() as session:
+            stats = rebuild_watchlist(session, watchlist)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_match_stats(stats)
+
+
+@watchlist_app.command("add")
+def watchlist_add(
+    name: str = typer.Option(..., help="Watchlist name."),
+    psc: str | None = typer.Option(None, help="Comma-separated PSC prefixes."),
+    naics: str | None = typer.Option(None, help="Comma-separated NAICS prefixes."),
+    keyword: str | None = typer.Option(None, help="Comma-separated include keywords."),
+    exclude_keyword: str | None = typer.Option(None, help="Comma-separated exclude keywords."),
+    nsn: str | None = typer.Option(None, help="Comma-separated exact NSNs."),
+    set_aside: str | None = typer.Option(None, help="Comma-separated set-aside codes."),
+    source: str | None = typer.Option(None, help="Comma-separated sources. Defaults to sam,dibbs."),
+    min_value: str | None = typer.Option(None, help="Minimum estimated value when known."),
+    max_value: str | None = typer.Option(None, help="Maximum estimated value when known."),
+    min_deadline_days: int | None = typer.Option(None, min=0, help="Minimum days until deadline."),
+    notes: str | None = typer.Option(None, help="Operator notes."),
+) -> None:
+    """Create a watchlist."""
+    from decimal import Decimal
+
+    from govcon.matching.watchlists import create_watchlist
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        row = create_watchlist(
+            session,
+            name=name,
+            psc_codes=_split_csv(psc),
+            naics_codes=_split_csv(naics),
+            keywords=_split_csv(keyword),
+            exclude_keywords=_split_csv(exclude_keyword),
+            nsn_list=_split_csv(nsn),
+            set_asides=_split_csv(set_aside),
+            sources=_split_csv(source),
+            min_value=Decimal(min_value) if min_value is not None else None,
+            max_value=Decimal(max_value) if max_value is not None else None,
+            min_deadline_days=min_deadline_days,
+            notes=notes,
+        )
+        watchlist_id = row.id
+    typer.echo(f"watchlist_id: {watchlist_id}")
+    typer.echo(f"name: {name}")
+
+
+@watchlist_app.command("list")
+def watchlist_list() -> None:
+    """List watchlists."""
+    from govcon.matching.watchlists import list_watchlists
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        rows = list_watchlists(session)
+    for row in rows:
+        state = "enabled" if row.enabled else "disabled"
+        typer.echo(
+            f"{row.id}\t{row.name}\t{state}\tpsc={row.psc_codes or []}\tnaics={row.naics_codes or []}"
+        )
+
+
+@watchlist_app.command("edit")
+def watchlist_edit(
+    watchlist_id: int = typer.Option(..., help="Watchlist id."),
+    name: str | None = typer.Option(None, help="New name."),
+    psc: str | None = typer.Option(None, help="Comma-separated PSC prefixes."),
+    naics: str | None = typer.Option(None, help="Comma-separated NAICS prefixes."),
+    keyword: str | None = typer.Option(None, help="Comma-separated include keywords."),
+    exclude_keyword: str | None = typer.Option(None, help="Comma-separated exclude keywords."),
+    nsn: str | None = typer.Option(None, help="Comma-separated exact NSNs."),
+    set_aside: str | None = typer.Option(None, help="Comma-separated set-aside codes."),
+    source: str | None = typer.Option(None, help="Comma-separated sources."),
+    min_value: str | None = typer.Option(None, help="Minimum estimated value when known."),
+    max_value: str | None = typer.Option(None, help="Maximum estimated value when known."),
+    min_deadline_days: int | None = typer.Option(None, min=0, help="Minimum days until deadline."),
+    notes: str | None = typer.Option(None, help="Operator notes."),
+    enable: bool = typer.Option(False, help="Re-enable a disabled watchlist."),
+) -> None:
+    """Edit a watchlist."""
+    from decimal import Decimal
+
+    from govcon.matching.watchlists import get_watchlist, update_watchlist
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        row = get_watchlist(session, watchlist_id)
+        if row is None:
+            typer.echo("watchlist not found", err=True)
+            raise typer.Exit(code=2)
+        fields = {}
+        if name is not None:
+            fields["name"] = name.strip()
+        if psc is not None:
+            fields["psc_codes"] = _split_csv(psc)
+        if naics is not None:
+            fields["naics_codes"] = _split_csv(naics)
+        if keyword is not None:
+            fields["keywords"] = _split_csv(keyword)
+        if exclude_keyword is not None:
+            fields["exclude_keywords"] = _split_csv(exclude_keyword)
+        if nsn is not None:
+            fields["nsn_list"] = _split_csv(nsn)
+        if set_aside is not None:
+            fields["set_asides"] = _split_csv(set_aside)
+        if source is not None:
+            fields["sources"] = _split_csv(source)
+        if min_value is not None:
+            fields["min_value"] = Decimal(min_value)
+        if max_value is not None:
+            fields["max_value"] = Decimal(max_value)
+        if min_deadline_days is not None:
+            fields["min_deadline_days"] = min_deadline_days
+        if notes is not None:
+            fields["notes"] = notes
+        if enable:
+            fields["enabled"] = True
+        update_watchlist(session, row, **fields)
+    typer.echo(f"watchlist_updated: {watchlist_id}")
+
+
+@watchlist_app.command("disable")
+def watchlist_disable(
+    watchlist_id: int = typer.Option(..., help="Watchlist id to disable."),
+) -> None:
+    """Disable a watchlist."""
+    from govcon.matching.watchlists import disable_watchlist, get_watchlist
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        row = get_watchlist(session, watchlist_id)
+        if row is None:
+            typer.echo("watchlist not found", err=True)
+            raise typer.Exit(code=2)
+        disable_watchlist(session, row)
+    typer.echo(f"watchlist_disabled: {watchlist_id}")

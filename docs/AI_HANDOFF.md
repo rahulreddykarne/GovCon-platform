@@ -104,3 +104,78 @@ Some third-party guides treat `offset` as a record offset (`offset = page * limi
 ### Recommended next task
 
 Phase 2 — watchlist matching engine (`PHASE_02_MATCHING.md`), only after pull request #3 is merged and its gates pass. Phase 2 is not started. `IMPLEMENTATION_STATUS.md` still marks Phase 2 as NOT STARTED.
+
+## 2026-09-26 19:05 UTC — PHASE_02_MATCHING
+
+- Agent/model identity: Cursor cloud, model `composer-2.5`
+- Datetime (UTC): 2026-09-26 19:05 UTC
+- Phase/task: PHASE_02_MATCHING
+- Branch: `cursor/phase-02-matching-67ba`
+
+### Files changed
+
+- `src/govcon/matching/rules.py` (new)
+- `src/govcon/matching/engine.py`
+- `src/govcon/matching/dedup.py`
+- `src/govcon/matching/watchlists.py` (new)
+- `src/govcon/matching/__init__.py`
+- `src/govcon/cli.py`
+- `tests/test_matching.py` (new)
+- `IMPLEMENTATION_STATUS.md`
+- `DECISIONS.md`
+- `SPEC_DEVIATIONS.md`
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- Deterministic watchlist matching: every non-empty rule group must pass; values inside a group are OR'd. Empty groups are wildcards.
+- Rule groups: PSC prefix, NAICS prefix, keywords, exclude keywords (veto), exact NSN list, set-asides, source filters, min/max estimated value when known, minimum days until deadline.
+- Unknown opportunity values are not fabricated. When `max_value` or `min_value` is configured but the opportunity has no estimated value, the filter records `unknown` in `matched_on` and does not reject.
+- Score is rule-hit based (count of passed non-empty groups). Explainable evidence is stored in `matched_on`.
+- Idempotent match upsert on `(opportunity_id, watchlist_id)`; existing `status` is preserved on update.
+- CLI: `govcon match run`, `govcon match rebuild --watchlist N`, `govcon watchlist add`, `govcon watchlist list`, `govcon watchlist edit`, `govcon watchlist disable`.
+
+### ADRs / DECISIONS touched
+
+- ADR-018 in `DECISIONS.md`: deterministic matching semantics, unknown-value handling, exclude veto, score, and upsert behavior.
+- ADR-019 in `DECISIONS.md`: match run scope (non-archived opportunities, rebuild removes stale rows).
+- Phase 0 ADR-001 through ADR-017 and Phase 1 ADR-015 through ADR-017 were not changed.
+- `SPEC_DEVIATIONS.md` Phase 2: no behavior deviation. No `⚠️ VERIFY` items in the phase spec.
+
+### Migrations
+
+None. Phase 2 uses the Phase 0 schema (`97cb081e9a8e`).
+
+### Tests
+
+Command: `pytest`
+
+Result: **47 passed, 1 skipped** (full suite).
+
+Covered acceptance checks:
+
+- PSC prefix matching (`test_psc_prefix_match`)
+- NAICS prefix matching (`test_naics_prefix_match`)
+- Exclude keyword veto (`test_exclude_keyword_veto`)
+- Wildcard empty group (`test_wildcard_empty_group`)
+- Unknown estimated value does not reject (`test_unknown_estimated_value_does_not_reject`)
+- Idempotent match upsert (`test_idempotent_match_upsert`, `test_match_run_is_idempotent`)
+- Integration: match run, rebuild, and CLI commands (`test_match_run_and_rebuild`, `test_cli_watchlist_and_match_commands`)
+
+### VERIFY outcomes
+
+`PHASE_02_MATCHING.md` contains no `⚠️ VERIFY` items. No external interface verification was required.
+
+### Known problems
+
+None identified in this run.
+
+### Unfinished work
+
+- Phase 3 alert digests (`PHASE_03_ALERTS.md`) — not started in this run.
+- Semantic/vector matching remains Phase 13.
+- AI bid decisions and proposal workflow remain later phases.
+
+### Recommended next task
+
+Phase 3 — alert digests (`PHASE_03_ALERTS.md`). Requires Phase 2 merged and gates passing. Collect unalerted `new` matches, group by watchlist, render HTML digest, SMTP or outbox delivery.
