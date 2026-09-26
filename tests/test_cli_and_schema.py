@@ -41,6 +41,8 @@ def test_help_shows_command_groups() -> None:
     output = result.stdout
     assert "db" in output
     assert "users" in output
+    assert "match" in output
+    assert "watchlist" in output
     assert "status" in output
     db_help = runner.invoke(app, ["db", "--help"])
     assert db_help.exit_code == 0

@@ -137,3 +137,11 @@ Record durable architecture/implementation decisions.
 - Decision: Contacts are upserted on `(email, agency_path)` only when both are present, because the unique constraint does not dedupe NULL emails. NSNs are 13-digit numbers with the standard dash groups, or the same shape after an NSN label. Quantity is parsed only from a `qty` or `quantity` label. Estimated values come only from an explicit estimated-value field or from text labeled as an estimated value, cost, amount, or price. `award.amount` is not an estimate.
 - Alternatives considered: Infer quantity from any nearby number. Copy the award amount into `estimated_value_min`.
 - Consequences: Most SAM search records will have null quantity and estimated value until a later source states them. The first NSN candidate is stored on `opportunities.nsn`; the full candidate list is on the snapshot's normalized document.
+
+### ADR-018 — Deterministic watchlist matching semantics
+- Phase: 2
+- Date: 2026-09-26
+- Context: Phase 2 requires explainable shortlist generation without semantic search, AI bid decisions, or proposal workflow.
+- Decision: Matching is rule-hit based. Every non-empty watchlist rule group must pass; values inside a group are OR'd. An empty group is a wildcard and is omitted from the AND chain. Keyword and exclude-keyword checks use case-insensitive whole-word matching so `classified` does not veto `unclassified`. Unknown opportunity estimated values do not fail min/max filters; the value group records `status: unknown` in `matched_on`. Score is the count of passing active groups. `govcon match run` evaluates all enabled watchlists. `govcon match rebuild --watchlist N` re-evaluates one watchlist and deletes stale matches for that watchlist. Match upserts are idempotent on `(opportunity_id, watchlist_id)` and preserve existing `status` on update.
+- Alternatives considered: Substring keyword matching. Reject opportunities when value is unknown. Reset match status to `new` on every re-evaluation.
+- Consequences: A sources-only watchlist matches every opportunity from the configured sources until targeting arrays are filled in. Phase 3 can alert on `status='new'` matches without reimplementing the engine.
