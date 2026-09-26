@@ -2,6 +2,100 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 20:35 UTC — PHASE_06_VENDORS_COMPETITORS
+
+- Agent/model identity: Cursor cloud, model `composer-2.5` (fast=true)
+- Datetime (UTC): 2026-09-26 20:35 UTC
+- Phase/task: PHASE_06_VENDORS_COMPETITORS
+- Run: https://cursor.com/agents/bc-6fe4f410-96c7-51c7-8cdd-3d627e17619f
+- Branch: `cursor/phase-06-vendors-competitors-619f`
+- Base: `main` at `8825ea0` (Phase 5 USAspending awards and pricing, pull request #8)
+- Pull request: pending
+
+### Files changed
+
+- `src/govcon/ingest/sam_entities.py`
+- `src/govcon/intelligence/vendors.py`
+- `src/govcon/intelligence/competitors.py`
+- `src/govcon/intelligence/contacts.py`
+- `src/govcon/intelligence/__init__.py`
+- `src/govcon/ingest/__init__.py`
+- `src/govcon/cli.py`
+- `src/govcon/config.py`
+- `tests/test_vendors.py`
+- `tests/fixtures/sam_entity_v3.json`
+- `.env.example`
+- `README.md`
+- `IMPLEMENTATION_STATUS.md`
+- `DECISIONS.md`
+- `SPEC_DEVIATIONS.md`
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- Lazy SAM entity lookup via `ensure_vendor` / `vendor_profile`. Maps registration status, CAGE/UEI, business types, NAICS, PSC, and points of contact into the Phase 0 `vendors` table.
+- Cache keyed on `fetched_at` and `SAM_VENDOR_CACHE_HOURS` (default 24). `--refresh` bypasses a fresh cache row.
+- Vendor profile adds computed award stats from stored USAspending rows: award count, total obligations, top agencies, top PSCs.
+- `competitor_summary` returns top winners for the same NSN, PSC, agency path segments, and office on an opportunity.
+- `search_contacts` finds harvested buyer contacts by name, agency path, or email substring.
+- CLI: `govcon vendors show`, `govcon vendors competitors`, `govcon contacts search`.
+- Buyer contact harvesting from opportunities remains the Phase 1 upsert path; Phase 6 adds search only.
+
+### ADRs / DECISIONS touched
+
+- ADR-022 in `DECISIONS.md`: SAM entity v3 contract, cache window, award-stat computation, agency-segment and office competitor matching, contact search.
+- `SPEC_DEVIATIONS.md` Phase 6: no behavior deviation from `MASTER_SPEC_v2.5.md`.
+- Phase 0 ADR-001 through ADR-014, Phase 1 ADR-015 through ADR-017, Phase 2 ADR-018, Phase 3 ADR-019, Phase 4 ADR-020, and Phase 5 ADR-021 were not changed.
+- No new table and no Alembic revision.
+
+### Migrations
+
+None. Phase 6 uses the Phase 0 `vendors` and `contacts` tables and Phase 5 `awards` rows.
+
+### Tests
+
+Command: `pytest`
+
+Result: **104 passed, 1 skipped** (Phase 1 live-pull skip unchanged).
+
+Covered acceptance checks:
+
+- Vendor lookup returns SAM registration fields plus computed award count, obligations, top agencies, and top PSCs.
+- A cached vendor within `SAM_VENDOR_CACHE_HOURS` does not trigger a second SAM HTTP call; `--refresh` does.
+- Competitor summary includes NSN, PSC, agency, and office buckets when matching awards exist.
+- Contact search matches harvested contacts by name, agency path, and email.
+- CLI `vendors show`, `vendors competitors`, and `contacts search` print the stored facts.
+
+### VERIFY outcomes
+
+Checked on 2026-09-26 against https://open.gsa.gov/api/entity-api/
+
+- Endpoint: production `GET https://api.sam.gov/entity-information/v3/entities` (v4 also documented; v3 used for stability with published examples).
+- Authentication: required `api_key` query parameter, same key family as Get Opportunities.
+- Lookup parameter: `ueiSAM` accepts one 12-character UEI.
+- Sections requested: `entityRegistration`, `coreData`, `assertions`, `pointsOfContact`. NAICS and PSC come from `assertions.naicsList` and `assertions.pscList`.
+- Response envelope: `entityData` array. Public tier exposes registration, address, business types, NAICS, PSC, and POC names; FOUO email/phone require a higher-tier key.
+- Rate limits: 10 / 1,000 / 10,000 requests per day by account type (documented on the entity API page). HTTP 429 is retried through `govcon.http.request_with_retry`.
+- Fixture: `tests/fixtures/sam_entity_v3.json` follows the documented response shape for UEI `ZJEUBM5FYLQ2` (Cardinal Health from the Phase 5 USAspending fixture).
+- No live `SAM_API_KEY` was available in this run. Network verification used the official documentation and mocked HTTP in tests.
+
+### Known problems
+
+- Public API keys may omit FOUO contact email and phone even when POC names are present.
+- Agency competitor matching tries dot-separated `agency_path` segments against `awarding_agency`; mismatched naming between SAM notices and USAspending labels can leave the agency bucket empty.
+- Office matching uses SAM `office` or the last `agency_path` segment against `Awarding Sub Agency` and `awarding_agency`; DIBBS rows have no office field.
+- Opted-out entities return placeholder strings; those fields are stored as null rather than the placeholder text.
+
+### Unfinished work
+
+- Phase 7 attachments and structured solicitation analysis (`PHASE_07_ATTACHMENTS_AI_ANALYSIS.md`) — not started in this run.
+- MCP `vendor_profile` / `competitor_summary` tools, semantic search, web UI opportunity pages, and digest competitor enrichment stay in later phases.
+- Live SAM entity pull after `SAM_API_KEY` is set was not executed here.
+
+### Recommended next task
+
+**Checkpoint A** — after this Phase 6 pull request merges and CI gates pass, verify that live federal data, search, historical awards, and vendor intelligence are genuinely useful before investing in Phase 7+. Do not start Phase 7 until Checkpoint A is complete and the user approves further investment.
+
 ## 2026-09-26 20:20 UTC — PHASE_05_AWARDS_PRICING
 
 - Agent/model identity: Cursor cloud, model `grok-4.7` (reasoning_effort=high, fast=true)
