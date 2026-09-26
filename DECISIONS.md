@@ -113,3 +113,27 @@ Record durable architecture/implementation decisions.
 - Decision: Callers record only non-secret fields such as email, role, and ids. `record_audit` drops keys whose names contain password, token, secret, cookie, or credential markers, including nested objects, before insert. The invite audit stores email and role only.
 - Alternatives considered: Keep the secret key with a `[REDACTED]` placeholder.
 - Consequences: A mistaken caller cannot persist a password, password hash, or raw token in the audit table.
+
+### ADR-015 — SAM.gov Get Opportunities contract verified 2026-09-26
+- Phase: 1
+- Date: 2026-09-26
+- Context: Phase 1 requires a live check of the SAM.gov Get Opportunities Public API before coding.
+- Decision: Use `GET https://api.sam.gov/opportunities/v2/search`. Authentication is the required `api_key` query parameter. `postedFrom` and `postedTo` are mandatory `MM/dd/yyyy` dates at most one year apart. `limit` is records per page, maximum 1000, and the API default is 1. `offset` is the documented page index starting at 0, so pages are requested as 0, 1, 2. The response envelope is `totalRecords`, `limit`, `offset`, and `opportunitiesData`. `noticeId` is the notice identifier (`noticeid` as a query parameter). `type` is the current notice type and `baseType` is the original type. The public API returns only the latest version and does not publish a separate amendment id. `resourceLinks` are attachment URLs. `description` is a URL that requires the API key to download, not the description body. The opportunities page says daily request limits depend on federal, non-federal, or general roles and does not list HTTP 429. The SAM.gov System Account User Guide states default daily limits of 10, 1,000, or 10,000 requests depending on account type. This client still retries 429 and 5xx through the shared HTTP helper, then fails the run. A page that repeats at least half of the previous page's notice ids fails the run instead of truncating.
+- Alternatives considered: Treat `offset` as a record offset because some third-party guides do. Download every description body during the search pull.
+- Consequences: Default page size is 1000 so a small daily quota is not spent on the API's one-record default. Description and attachment bytes are not downloaded in Phase 1; the raw search record keeps their URLs. `source_id` is `noticeId`. `source_version` is `postedDate` when SAM sends it. An empty HTTP 404 without a search payload is an error, not an empty success.
+
+### ADR-016 — Snapshot hash and archive sweep
+- Phase: 1
+- Date: 2026-09-26
+- Context: Re-running an unchanged SAM payload must not duplicate opportunities or snapshots, and a changed payload must keep the previous observation.
+- Decision: `raw_hash` and `opportunity_snapshots.content_hash` are the same SHA-256 of canonical JSON (`sort_keys`, compact separators) of the opportunity object. An unchanged hash does not insert a snapshot and does not update the current row. A changed hash inserts the snapshot and field-diff events, then updates the current row. The archive sweep is a separate database task: SAM rows still `open` whose `archive_date` is before today UTC become `archived` with a `status_changed` event and no new snapshot, because no payload was fetched.
+- Alternatives considered: Write a snapshot for the local archive transition. Hash only a subset of fields.
+- Consequences: Source fidelity is the stored raw object. Time passing can archive a row without pretending SAM sent a new payload.
+
+### ADR-017 — Contacts, NSN, quantity, and estimated value
+- Phase: 1
+- Date: 2026-09-26
+- Context: Buyer contacts, NSNs, quantities, and values must be extracted without inventing numbers the notice does not state.
+- Decision: Contacts are upserted on `(email, agency_path)` only when both are present, because the unique constraint does not dedupe NULL emails. NSNs are 13-digit numbers with the standard dash groups, or the same shape after an NSN label. Quantity is parsed only from a `qty` or `quantity` label. Estimated values come only from an explicit estimated-value field or from text labeled as an estimated value, cost, amount, or price. `award.amount` is not an estimate.
+- Alternatives considered: Infer quantity from any nearby number. Copy the award amount into `estimated_value_min`.
+- Consequences: Most SAM search records will have null quantity and estimated value until a later source states them. The first NSN candidate is stored on `opportunities.nsn`; the full candidate list is on the snapshot's normalized document.

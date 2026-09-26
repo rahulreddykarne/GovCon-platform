@@ -129,6 +129,11 @@ class Settings(BaseSettings):
             raise ConfigError("DATABASE_URL is required for this command")
         return self.database_url
 
+    def require_sam_api_key(self) -> str:
+        if not self.sam_api_key:
+            raise ConfigError("SAM_API_KEY is required for this command")
+        return self.sam_api_key
+
     def resolved_prompt_root(self) -> Path:
         if self.prompt_root.is_absolute():
             return self.prompt_root

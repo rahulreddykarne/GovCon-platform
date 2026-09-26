@@ -20,8 +20,10 @@ from govcon.seed import demo_watchlist_count, seed_demo_watchlist
 app = typer.Typer(help="GovCon opportunity and bid management platform.", no_args_is_help=True)
 db_app = typer.Typer(help="Database administration.")
 users_app = typer.Typer(help="Invite-only user administration.")
+ingest_app = typer.Typer(help="Source ingestion.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
+app.add_typer(ingest_app, name="ingest")
 
 
 def main() -> None:
@@ -175,3 +177,170 @@ def users_list() -> None:
     for email, display_name, role, is_active in rows:
         state = "active" if is_active else "inactive"
         typer.echo(f"{email}\t{display_name}\t{role}\t{state}")
+
+
+def _echo_ingest(run_id: int, status: str, stats) -> None:
+    typer.echo(f"fetched: {stats.fetched}")
+    typer.echo(f"inserted: {stats.inserted}")
+    typer.echo(f"updated: {stats.updated}")
+    typer.echo(f"unchanged: {stats.unchanged}")
+    typer.echo(f"errors: {len(stats.errors)}")
+    typer.echo(f"run_id: {run_id}")
+    typer.echo(f"status: {status}")
+
+
+def _posted_window_from_options(posted_from: str | None, posted_to: str | None, *, default_recent: bool):
+    from govcon.ingest.sam_opportunities import default_posted_window, parse_user_date
+
+    if posted_from is None and posted_to is None:
+        if not default_recent:
+            typer.echo("posted-from and posted-to are required", err=True)
+            raise typer.Exit(code=2)
+        return default_posted_window()
+    if posted_from is None or posted_to is None:
+        typer.echo("posted-from and posted-to must be provided together", err=True)
+        raise typer.Exit(code=2)
+    try:
+        return parse_user_date(posted_from), parse_user_date(posted_to)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+
+def _run_status(stats) -> str:
+    if stats.errors:
+        return "completed_with_errors"
+    return "succeeded"
+
+
+@ingest_app.command("sam")
+def ingest_sam(
+    posted_from: str | None = typer.Option(
+        None,
+        help="Posted-from date (MM/dd/yyyy or YYYY-MM-DD). Defaults to the last 3 UTC days.",
+    ),
+    posted_to: str | None = typer.Option(
+        None,
+        help="Posted-to date (MM/dd/yyyy or YYYY-MM-DD). Defaults to today UTC.",
+    ),
+    limit: int = typer.Option(1000, min=1, max=1000, help="Records per page. SAM.gov maximum is 1000."),
+) -> None:
+    """Ingest SAM.gov opportunities. The default window is the last 3 days."""
+    from govcon.ingest.runs import IngestStats, finish_run, start_run
+    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, pull_sam_opportunities
+    from govcon.logging import redact
+
+    window_from, window_to = _posted_window_from_options(posted_from, posted_to, default_recent=True)
+    try:
+        assert_search_window(window_from, window_to)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    try:
+        settings = _settings()
+        settings.require_database_url()
+        api_key = settings.require_sam_api_key()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    status = "succeeded"
+    stats = IngestStats()
+    with session_scope(settings) as session:
+        run = start_run(session, "sam_opportunities")
+        try:
+            stats = pull_sam_opportunities(
+                session,
+                api_key=api_key,
+                posted_from=window_from,
+                posted_to=window_to,
+                limit=limit,
+                settings=settings,
+            )
+        except (SamApiError, ValueError) as exc:
+            stats = IngestStats(errors=[redact(str(exc))])
+            status = "failed"
+        status = status if status == "failed" else _run_status(stats)
+        finish_run(run, stats, status=status)
+        run_id = run.id
+    _echo_ingest(run_id, status, stats)
+    if status != "succeeded":
+        raise typer.Exit(code=1)
+
+
+@ingest_app.command("sam-backfill")
+def ingest_sam_backfill(
+    posted_from: str = typer.Option(..., help="Posted-from date (MM/dd/yyyy or YYYY-MM-DD)."),
+    posted_to: str = typer.Option(..., help="Posted-to date (MM/dd/yyyy or YYYY-MM-DD)."),
+    limit: int = typer.Option(1000, min=1, max=1000, help="Records per page. SAM.gov maximum is 1000."),
+) -> None:
+    """Backfill SAM.gov opportunities in posted-date windows of at most one year."""
+    from govcon.ingest.runs import IngestStats, finish_run, start_run
+    from govcon.ingest.sam_opportunities import (
+        SamApiError,
+        backfill_sam_opportunities,
+        iter_backfill_windows,
+        parse_user_date,
+    )
+    from govcon.logging import redact
+
+    try:
+        window_from = parse_user_date(posted_from)
+        window_to = parse_user_date(posted_to)
+        iter_backfill_windows(window_from, window_to)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    try:
+        settings = _settings()
+        settings.require_database_url()
+        api_key = settings.require_sam_api_key()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    totals = IngestStats()
+    run_id = 0
+    status = "succeeded"
+    with session_scope(settings) as session:
+        run = start_run(session, "sam_backfill")
+        try:
+            totals = backfill_sam_opportunities(
+                session,
+                api_key=api_key,
+                posted_from=window_from,
+                posted_to=window_to,
+                limit=limit,
+                settings=settings,
+            )
+        except (SamApiError, ValueError) as exc:
+            totals.errors.append(redact(str(exc)))
+            finish_run(run, totals, status="failed")
+            run_id = run.id
+            status = "failed"
+        else:
+            status = _run_status(totals)
+            finish_run(run, totals, status=status)
+            run_id = run.id
+    _echo_ingest(run_id, status, totals)
+    if status != "succeeded":
+        raise typer.Exit(code=1)
+
+
+@ingest_app.command("sam-archive-sweep")
+def ingest_sam_archive_sweep() -> None:
+    """Archive SAM rows whose archive date has passed. Does not call the network."""
+    from govcon.ingest.runs import finish_run, start_run
+    from govcon.ingest.sam_opportunities import archive_expired_sam_opportunities
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope(settings) as session:
+        run = start_run(session, "sam_archive_sweep")
+        stats = archive_expired_sam_opportunities(session)
+        status = _run_status(stats)
+        finish_run(run, stats, status=status)
+        run_id = run.id
+    _echo_ingest(run_id, status, stats)
