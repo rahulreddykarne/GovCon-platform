@@ -4,7 +4,7 @@ Use one row per phase. Update after every implementation session.
 
 | Phase | Name | Status | Tests | Acceptance Criteria | Commit/PR | Notes |
 |---:|---|---|---|---|---|---|
-| 0 | 6. Phase 0 — Scaffolding | NOT STARTED | — | — | — | — |
+| 0 | 6. Phase 0 — Scaffolding | COMPLETE | pytest: 19 passed | All five Phase 0 criteria pass | cursor/phase-0-foundation-bf2e | Auth, audit, classification, and AI gateway baseline are in place. Review quorum workflow stays in Phase 10. Prompt and JEV files are inactive placeholders. No Phase 0 `⚠️ VERIFY` markers; DeepSeek model ids were checked and left unset (ADR-008). |
 | 1 | 7. Phase 1 — SAM.gov opportunity ingestion + snapshot history | NOT STARTED | — | — | — | — |
 | 2 | 8. Phase 2 — Watchlist matching engine | NOT STARTED | — | — | — | — |
 | 3 | 9. Phase 3 — Alert digests | NOT STARTED | — | — | — | — |
