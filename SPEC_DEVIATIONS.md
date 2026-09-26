@@ -28,6 +28,18 @@ On 2026-09-26 this environment had no `SAM_API_KEY`. Unauthenticated and invalid
 
 No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. Matching semantics and keyword boundary handling are recorded in ADR-018.
 
+## Phase 4
+
+### DEV-002 — DIBBS v1 retains the index file, not the PDF zip or quote template
+- Phase: 4
+- Date: 2026-09-26
+- Spec requirement: Download source batch files and retain the originals. Parse solicitation number, NSN, nomenclature, quantity, unit, return-by date, set-aside, buyer details, and source URL. Do not scrape individual HTML pages unless required and documented.
+- Verified external/repository reality: On 2026-09-26 the recent RFQ page listed three files per post date. `inYYMMDD.txt` is the 140-character index and contains every field above except a buyer name or email (it has a 5-character buyer code and AMSC). `caYYMMDD.zip` is the bundle of that day's solicitation PDF/HTML files. `bqYYMMDD.zip` is the prefilled quote-upload template. `RfqRec.aspx?sn=` is a per-solicitation HTML page. Neither `https://www.dibbs.bsm.dla.mil/robots.txt` nor `https://dibbs2.bsm.dla.mil/robots.txt` is published. The newest index listed that day was `in260925.txt` (523 records). Help text says the current day's file is posted the next day.
+- Decision: Download and retain `inYYMMDD.txt` only. Store the record-page URL without requesting it. Do not download `caYYMMDD.zip` or `bqYYMMDD.zip`.
+- Reason: The index is the structured batch export. The zip files are per-solicitation documents and a quote template. Fetching them would pull individual solicitation files the phase says not to scrape.
+- Impact: Buyer details are the buyer code and AMSC. Message digests can link to the RFQ record URL. PDF bytes are absent until a later attachment phase.
+- Follow-up: None in Phase 4. Attachment download stays in Phase 7.
+
 ## Phase 3
 
 No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. Digest delivery, the deadline re-alert watermark, and calendar-day display are recorded in ADR-019. `PHASE_03_ALERTS.md` has no `⚠️ VERIFY` item.

@@ -1,6 +1,6 @@
 # GovCon platform
 
-Collaborative federal-first opportunity and bid workspace. Phase 0 is the foundation (schema, auth, CLI). Phase 1 ingests SAM.gov opportunities with immutable snapshots. DIBBS, USAspending, solicitation analysis, and proposals are later phases.
+Collaborative federal-first opportunity and bid workspace. Phase 0 is the foundation (schema, auth, CLI). Phase 1 ingests SAM.gov opportunities with immutable snapshots. Phase 4 ingests DIBBS daily index files into the same opportunity table. USAspending, solicitation analysis, and proposals are later phases.
 
 ## Prerequisites
 
@@ -45,8 +45,18 @@ pytest
 |---|---|
 | `govcon alerts digest` | Send one HTML digest of unalerted `new` matches, grouped by watchlist. Uses SMTP when `SMTP_HOST` and `ALERT_EMAIL_TO` are set; otherwise writes HTML under `OUTBOX_DIR`. An empty run sends nothing. A repeat run does not alert the same match again. When `ALERT_ON_MATERIAL_DEADLINE_CHANGE` is true, a `deadline_changed` event after `alerted_at` can send one amendment alert. |
 
+## Phase 4 commands
+
+| Command | Purpose |
+|---|---|
+| `govcon ingest dibbs` | Download the newest DIBBS index file (`inYYMMDD.txt`) from the recent RFQ page and upsert it. |
+| `govcon ingest dibbs --date YYYY-MM-DD` | Download that post date's index file. |
+| `govcon ingest dibbs --file path` | Ingest a local index file. Does not call the network. |
+
+The original index bytes are kept under `DATA_DIR/dibbs/`. Re-running an unchanged file does not add snapshots. NSN and quantity coverage are logged. The per-solicitation PDF zip and the batch-quote template are not downloaded. Set `DIBBS_REQUEST_INTERVAL_SECONDS` to space requests (default 2).
+
 Set `SAM_API_KEY` from the SAM.gov Account Details page. The client calls `https://api.sam.gov/opportunities/v2/search` and never prints the key. Description files and attachment downloads are not part of this ingest.
 
 ## Not in this phase
 
-DIBBS and USAspending ingestion, solicitation analysis, JEV decisions, proposal generation, the review quorum workflow, and the web UI are later phases. Prompt and JEV files under `src/govcon/prompts/` are inactive placeholders.
+USAspending ingestion, solicitation analysis, JEV decisions, proposal generation, the review quorum workflow, and the web UI are later phases. Prompt and JEV files under `src/govcon/prompts/` are inactive placeholders.
