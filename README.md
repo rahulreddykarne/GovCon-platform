@@ -1,6 +1,6 @@
 # GovCon platform
 
-Collaborative federal-first opportunity and bid workspace. Phase 0 is the foundation (schema, auth, CLI). Phase 1 ingests SAM.gov opportunities with immutable snapshots. Phase 4 ingests DIBBS daily index files into the same opportunity table. Phase 5 stores USAspending contract awards and pricing history. Solicitation analysis and proposals are later phases.
+Collaborative federal-first opportunity and bid workspace. Phase 0 is the foundation (schema, auth, CLI). Phase 1 ingests SAM.gov opportunities with immutable snapshots. Phase 4 ingests DIBBS daily index files into the same opportunity table. Phase 5 stores USAspending contract awards and pricing history. Phase 6 adds SAM entity vendor profiles, competitor intelligence, and buyer contact search. Solicitation analysis and proposals are later phases.
 
 ## Prerequisites
 
@@ -73,6 +73,17 @@ Set `SAM_API_KEY` from the SAM.gov Account Details page. The client calls `https
 
 USAspending search does not use an API key. The client calls `https://api.usaspending.gov/api/v2/search/spending_by_award/`. Award amount is not turned into a unit price. A digest includes recent comps when stored awards match the opportunity NSN or PSC.
 
+## Phase 6 commands
+
+| Command | Purpose |
+|---|---|
+| `govcon vendors show --uei` | Lazy SAM entity lookup with cache. Prints registration data plus computed award stats from stored USAspending rows. |
+| `govcon vendors show --uei --refresh` | Ignore the cache and call SAM.gov again. |
+| `govcon vendors competitors --opportunity-id` | Likely historical competitors by NSN, PSC, agency path segments, and office. |
+| `govcon contacts search --name --agency --email` | Search buyer contacts harvested from opportunities. |
+
+Vendor lookup calls `https://api.sam.gov/entity-information/v3/entities` and requires `SAM_API_KEY`. Cached rows are reused for `SAM_VENDOR_CACHE_HOURS` (default 24). Competitor intelligence reads stored awards only; it does not predict future winners.
+
 ## Not in this phase
 
-Vendor profiles, solicitation analysis, JEV decisions, proposal generation, the review quorum workflow, and the web UI are later phases. Prompt and JEV files under `src/govcon/prompts/` are inactive placeholders.
+Solicitation analysis, JEV decisions, proposal generation, the review quorum workflow, MCP, semantic search, and the web UI are later phases. Prompt and JEV files under `src/govcon/prompts/` are inactive placeholders.

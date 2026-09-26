@@ -47,3 +47,9 @@ No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. Digest 
 ## Phase 5
 
 No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. The live search contract, the null unit-price rule, incremental windows, and the 18-month recompete view are recorded in ADR-021.
+
+## Phase 6
+
+No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. SAM entity v3 lookup, the vendor cache window, agency-segment matching, and office matching are recorded in ADR-022.
+
+On 2026-09-26 this environment had no live `SAM_API_KEY`. The committed fixture is derived from the official Entity Management API documentation example shape. A live entity pull runs only when `SAM_API_KEY` is set.

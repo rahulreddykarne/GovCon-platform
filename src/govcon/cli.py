@@ -25,6 +25,8 @@ match_app = typer.Typer(help="Watchlist matching.")
 watchlist_app = typer.Typer(help="Watchlist administration.")
 alerts_app = typer.Typer(help="Alert digests.")
 awards_app = typer.Typer(help="Award history and pricing.")
+vendors_app = typer.Typer(help="Vendor profiles and competitor intelligence.")
+contacts_app = typer.Typer(help="Buyer contact search.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -32,6 +34,8 @@ app.add_typer(match_app, name="match")
 app.add_typer(watchlist_app, name="watchlist")
 app.add_typer(alerts_app, name="alerts")
 app.add_typer(awards_app, name="awards")
+app.add_typer(vendors_app, name="vendors")
+app.add_typer(contacts_app, name="contacts")
 
 
 def main() -> None:
@@ -888,6 +892,129 @@ def awards_recompete(
         typer.echo(f"action_date: {row.action_date.isoformat() if row.action_date else ''}")
         typer.echo(f"period_end: {row.period_end.isoformat() if row.period_end else ''}")
         typer.echo(f"vendor: {row.recipient_name or ''}")
+        typer.echo("---")
+
+
+def _echo_vendor_profile(profile) -> None:
+    typer.echo(f"uei: {profile.uei}")
+    typer.echo(f"cage: {profile.cage_code or ''}")
+    typer.echo(f"legal_name: {profile.legal_name or ''}")
+    typer.echo(f"dba_name: {profile.dba_name or ''}")
+    typer.echo(f"registration_status: {profile.registration_status or ''}")
+    typer.echo(f"fetched_at: {profile.fetched_at.isoformat() if profile.fetched_at else ''}")
+    typer.echo(f"from_cache: {'yes' if profile.from_cache else 'no'}")
+    if profile.business_types:
+        typer.echo(f"business_types: {profile.business_types}")
+    if profile.naics_codes:
+        typer.echo(f"naics_codes: {profile.naics_codes}")
+    if profile.psc_codes:
+        typer.echo(f"psc_codes: {profile.psc_codes}")
+    stats = profile.award_stats
+    typer.echo(f"award_count: {stats.award_count}")
+    typer.echo(f"total_obligation: {_decimal_text(stats.total_obligation)}")
+    for agency in stats.top_agencies:
+        typer.echo(
+            f"top_agency: {agency.label}\tcount={agency.count}\t"
+            f"obligation={_decimal_text(agency.total_obligation)}"
+        )
+    for psc in stats.top_pscs:
+        typer.echo(
+            f"top_psc: {psc.label}\tcount={psc.count}\t"
+            f"obligation={_decimal_text(psc.total_obligation)}"
+        )
+
+
+@vendors_app.command("show")
+def vendors_show(
+    uei: str = typer.Option(..., "--uei", help="12-character Unique Entity Identifier."),
+    refresh: bool = typer.Option(False, help="Ignore the cache and call SAM.gov."),
+) -> None:
+    """Show a vendor profile with computed historical award statistics."""
+    from govcon.intelligence.vendors import SamEntityError, vendor_profile
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except (ConfigError, ValidationError) as exc:
+        if isinstance(exc, ConfigError):
+            _fail_config(exc)
+        else:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
+        return
+    try:
+        with session_scope() as session:
+            profile = vendor_profile(session, uei, refresh=refresh, settings=settings)
+    except SamEntityError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_vendor_profile(profile)
+
+
+def _echo_competitor_summary(summary) -> None:
+    typer.echo(f"opportunity_id: {summary.opportunity_id}")
+    typer.echo(f"bucket_count: {len(summary.buckets)}")
+    for bucket in summary.buckets:
+        typer.echo(f"dimension: {bucket.dimension}")
+        typer.echo(f"label: {bucket.label}")
+        for winner in bucket.winners:
+            typer.echo(f"recipient_uei: {winner.recipient_uei or ''}")
+            typer.echo(f"recipient_name: {winner.recipient_name or ''}")
+            typer.echo(f"award_count: {winner.award_count}")
+            typer.echo(f"total_obligation: {_decimal_text(winner.total_obligation)}")
+        typer.echo("---")
+
+
+@vendors_app.command("competitors")
+def vendors_competitors(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    limit: int = typer.Option(5, min=1, help="Maximum winners per dimension."),
+) -> None:
+    """Show likely historical competitors for one opportunity."""
+    from govcon.intelligence.competitors import competitor_summary
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        summary = competitor_summary(session, opportunity_id, limit=limit)
+    if summary is None:
+        typer.echo("opportunity not found", err=True)
+        raise typer.Exit(code=2)
+    _echo_competitor_summary(summary)
+
+
+@contacts_app.command("search")
+def contacts_search(
+    name: str | None = typer.Option(None, help="Contact name substring."),
+    agency: str | None = typer.Option(None, help="Agency path substring."),
+    email: str | None = typer.Option(None, help="Email substring."),
+    limit: int = typer.Option(50, min=1, help="Maximum rows to print."),
+) -> None:
+    """Search buyer contacts harvested from opportunities."""
+    from govcon.intelligence.contacts import search_contacts
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        rows = search_contacts(session, name=name, agency=agency, email=email, limit=limit)
+    typer.echo(f"count: {len(rows)}")
+    for row in rows:
+        typer.echo(f"id: {row.id}")
+        typer.echo(f"name: {row.name or ''}")
+        typer.echo(f"email: {row.email or ''}")
+        typer.echo(f"phone: {row.phone or ''}")
+        typer.echo(f"title: {row.title or ''}")
+        typer.echo(f"agency_path: {row.agency_path or ''}")
+        typer.echo(f"contact_type: {row.contact_type or ''}")
         typer.echo("---")
 
 

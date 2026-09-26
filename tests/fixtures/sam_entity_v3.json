@@ -1,0 +1,61 @@
+{
+  "totalRecords": 1,
+  "entityData": [
+    {
+      "entityRegistration": {
+        "samRegistered": "Yes",
+        "ueiSAM": "ZJEUBM5FYLQ2",
+        "cageCode": "1ABC2",
+        "legalBusinessName": "CARDINAL HEALTH 200, LLC",
+        "dbaName": "Cardinal Health",
+        "registrationStatus": "Active",
+        "registrationDate": "2020-01-15",
+        "lastUpdateDate": "2025-06-01",
+        "registrationExpirationDate": "2026-01-15",
+        "ueiStatus": "Active"
+      },
+      "coreData": {
+        "physicalAddress": {
+          "addressLine1": "7000 Cardinal Place",
+          "city": "Dublin",
+          "stateOrProvinceCode": "OH",
+          "zipCode": "43017",
+          "countryCode": "USA"
+        },
+        "businessTypes": {
+          "businessTypeList": [
+            {
+              "businessTypeCode": "2X",
+              "businessTypeDesc": "For Profit Organization"
+            },
+            {
+              "businessTypeCode": "F",
+              "businessTypeDesc": "Business or Organization"
+            }
+          ]
+        }
+      },
+      "assertions": {
+        "naicsList": [
+          {
+            "naicsCode": "423450",
+            "naicsDescription": "Medical Equipment Merchant Wholesalers"
+          }
+        ],
+        "pscList": [
+          {
+            "pscCode": "6515",
+            "pscDescription": "Medical and Surgical Instruments"
+          }
+        ]
+      },
+      "pointsOfContact": [
+        {
+          "firstName": "Alex",
+          "lastName": "Vendor",
+          "title": "Contracts"
+        }
+      ]
+    }
+  ]
+}
