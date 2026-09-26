@@ -35,10 +35,23 @@ def test_placeholder_prompts_load() -> None:
     names = {asset.name for asset in assets}
     assert "solicitation_analysis" in names
     assert "source_security_rules" in names
+
+    activated_phase7 = {
+        "solicitation_analysis",
+        "source_security_rules",
+        "no_fabrication_rules",
+        "evidence_rules",
+        "company_facts_policy",
+    }
     for asset in assets:
-        assert asset.metadata["status"] == "placeholder"
         assert asset.version == "v1"
         assert len(asset.content_hash) == 64
-        assert "Do not activate." in asset.body
+        if asset.name in activated_phase7:
+            assert asset.metadata["status"] == "active", f"{asset.name} should be active"
+            assert "Do not activate." not in asset.body
+        else:
+            assert asset.metadata["status"] == "placeholder", f"{asset.name} should be placeholder"
+            assert "Do not activate." in asset.body
+
     jev = list((root / "jev").glob("*.yaml"))
     assert len(jev) == 13

@@ -13,7 +13,7 @@ from sqlalchemy import select
 from govcon.config import ConfigError, Settings, get_settings
 from govcon.db import check_connectivity, make_engine, session_scope
 from govcon.logging import configure_logging, redact
-from govcon.models import User
+from govcon.models import Opportunity, User
 from govcon.paths import repo_root
 from govcon.seed import demo_watchlist_count, seed_demo_watchlist
 
@@ -27,6 +27,8 @@ alerts_app = typer.Typer(help="Alert digests.")
 awards_app = typer.Typer(help="Award history and pricing.")
 vendors_app = typer.Typer(help="Vendor profiles and competitor intelligence.")
 contacts_app = typer.Typer(help="Buyer contact search.")
+enrich_app = typer.Typer(help="Attachment download and AI analysis.")
+prompts_app = typer.Typer(help="Prompt registry administration.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -36,6 +38,8 @@ app.add_typer(alerts_app, name="alerts")
 app.add_typer(awards_app, name="awards")
 app.add_typer(vendors_app, name="vendors")
 app.add_typer(contacts_app, name="contacts")
+app.add_typer(enrich_app, name="enrich")
+app.add_typer(prompts_app, name="prompts")
 
 
 def main() -> None:
@@ -1037,3 +1041,180 @@ def watchlist_disable(
             raise typer.Exit(code=2)
         disable_watchlist(session, row)
     typer.echo(f"watchlist_disabled: {watchlist_id}")
+
+
+# ── Enrichment CLI ──
+
+
+@enrich_app.command("download")
+def enrich_download(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+) -> None:
+    """Download and extract text from attachments for an opportunity."""
+    from govcon.enrich.attachments import download_attachments
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        opp = session.get(Opportunity, opportunity_id)
+        if opp is None:
+            typer.echo("opportunity not found", err=True)
+            raise typer.Exit(code=2)
+        files = download_attachments(session, opp, settings=settings)
+    typer.echo(f"files_downloaded: {len(files)}")
+    for f in files:
+        typer.echo(f"file_id: {f.id}")
+        typer.echo(f"filename: {f.filename}")
+        typer.echo(f"sha256: {f.sha256}")
+        typer.echo(f"extraction_status: {f.extraction_status}")
+        if f.extraction_error:
+            typer.echo(f"extraction_error: {f.extraction_error}")
+        typer.echo("---")
+
+
+@enrich_app.command("analyze")
+def enrich_analyze(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    force: bool = typer.Option(False, help="Re-run even if an analysis exists."),
+) -> None:
+    """Run structured solicitation analysis on an opportunity."""
+    from govcon.enrich.summarize import run_solicitation_analysis
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        opp = session.get(Opportunity, opportunity_id)
+        if opp is None:
+            typer.echo("opportunity not found", err=True)
+            raise typer.Exit(code=2)
+        analysis = run_solicitation_analysis(session, opp, settings=settings, force=force)
+    if analysis is None:
+        typer.echo("analysis_skipped: true")
+        typer.echo(
+            "reason: no extracted files, no AI provider, or analysis already exists"
+        )
+    else:
+        import json as _json
+
+        typer.echo(f"analysis_id: {analysis.id}")
+        typer.echo(f"provider: {analysis.provider}")
+        typer.echo(f"model: {analysis.model}")
+        typer.echo(f"prompt_name: {analysis.prompt_name}")
+        typer.echo(f"prompt_version: {analysis.prompt_version}")
+        typer.echo(f"schema_version: {analysis.schema_version}")
+        typer.echo(f"latency_ms: {analysis.latency_ms}")
+        typer.echo("output_json:")
+        typer.echo(_json.dumps(analysis.output_json, indent=2))
+
+
+@enrich_app.command("process")
+def enrich_process(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    force: bool = typer.Option(False, help="Re-run analysis even if one exists."),
+) -> None:
+    """Download attachments, extract text, and run AI analysis end to end."""
+    from govcon.enrich.attachments import download_attachments
+    from govcon.enrich.summarize import run_solicitation_analysis
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        opp = session.get(Opportunity, opportunity_id)
+        if opp is None:
+            typer.echo("opportunity not found", err=True)
+            raise typer.Exit(code=2)
+        files = download_attachments(session, opp, settings=settings)
+        typer.echo(f"files_downloaded: {len(files)}")
+        analysis = run_solicitation_analysis(session, opp, settings=settings, force=force)
+    if analysis:
+        typer.echo(f"analysis_id: {analysis.id}")
+        typer.echo(f"schema_version: {analysis.schema_version}")
+    else:
+        typer.echo("analysis_skipped: true")
+
+
+@enrich_app.command("ingest-file")
+def enrich_ingest_file(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    file_path: str = typer.Option(..., "--file", help="Local file path."),
+) -> None:
+    """Process a local file: compute SHA-256, extract text, and persist."""
+    from pathlib import Path as _Path
+
+    from govcon.enrich.attachments import process_local_file
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    p = _Path(file_path)
+    if not p.exists():
+        typer.echo(f"file not found: {file_path}", err=True)
+        raise typer.Exit(code=2)
+    with session_scope() as session:
+        opp = session.get(Opportunity, opportunity_id)
+        if opp is None:
+            typer.echo("opportunity not found", err=True)
+            raise typer.Exit(code=2)
+        sf = process_local_file(session, opp, p)
+    typer.echo(f"file_id: {sf.id}")
+    typer.echo(f"filename: {sf.filename}")
+    typer.echo(f"sha256: {sf.sha256}")
+    typer.echo(f"extraction_status: {sf.extraction_status}")
+    if sf.extraction_error:
+        typer.echo(f"extraction_error: {sf.extraction_error}")
+
+
+# ── Prompt registry CLI ──
+
+
+@prompts_app.command("sync")
+def prompts_sync() -> None:
+    """Sync source-controlled prompts to the database registry."""
+    from govcon.prompting.registry import sync_prompts
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    prompt_root = settings.resolved_prompt_root()
+    with session_scope() as session:
+        synced = sync_prompts(session, prompt_root)
+    for name, versions in synced.items():
+        typer.echo(f"synced: {name} [{', '.join(versions)}]")
+    typer.echo(f"total_prompts_synced: {sum(len(v) for v in synced.values())}")
+
+
+@prompts_app.command("activate")
+def prompts_activate(
+    prompt_name: str = typer.Option(..., help="Prompt name."),
+    version: str = typer.Option(..., help="Version to activate."),
+) -> None:
+    """Activate a specific prompt version."""
+    from govcon.prompting.registry import activate_version
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        activate_version(session, prompt_name, version)
+    typer.echo(f"activated: {prompt_name}@{version}")
