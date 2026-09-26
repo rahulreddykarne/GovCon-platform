@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     web_bind_host: str = "127.0.0.1"
     web_bind_allow_public: bool = False
     session_ttl_hours: int = Field(default=12, ge=1)
+    review_conditional_triggers: str = (
+        "critical_compliance_risk,low_jev_confidence,reviewer_ai_disagreement,"
+        "reviewer_requested_second_review,material_amendment"
+    )
+    review_high_value_threshold: float | None = None
+    review_short_deadline_days: int = Field(default=5, ge=0)
+    review_override_allowed: bool = True
 
     @field_validator(
         "database_url",
@@ -129,6 +136,7 @@ class Settings(BaseSettings):
         "compliance_escalation_min_value",
         "compliance_high_confidence_threshold",
         "compliance_low_confidence_threshold",
+        "review_high_value_threshold",
         mode="before",
     )
     @classmethod

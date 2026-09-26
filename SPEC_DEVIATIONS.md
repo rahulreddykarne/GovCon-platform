@@ -109,3 +109,10 @@ No product-behavior deviation from `MASTER_SPEC_v2.5.md` was required. `PHASE_09
 - Follow-up: Add recorded live outputs as new cases once `DEEPSEEK_API_KEY` is available.
 
 On 2026-09-26 this environment had no `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `JEV_API_KEY`. AI steps were tested with a mocked provider; JEV routing used the Phase 8 rule fallback.
+
+## Phase 10
+
+No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
+
+Follow-up closure from Phase 9:
+- DEV-004 (`review_reopen_required` after a material amendment) is now implemented in Phase 10 via collaborative review reopen orchestration (`apply_material_amendment_reopen`) and is covered by DB-backed tests.

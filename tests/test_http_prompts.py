@@ -54,10 +54,14 @@ def test_placeholder_prompts_load() -> None:
         "proposal_coverage",
         "submission_preflight_ai",
     }
+    activated_phase10 = {
+        "reviewer_comment_validation",
+        "consolidated_review",
+    }
     for asset in assets:
         assert asset.version == "v1"
         assert len(asset.content_hash) == 64
-        if asset.name in activated_phase7 | activated_phase9:
+        if asset.name in activated_phase7 | activated_phase9 | activated_phase10:
             assert asset.metadata["status"] == "active", f"{asset.name} should be active"
             assert "Do not activate." not in asset.body
         else:

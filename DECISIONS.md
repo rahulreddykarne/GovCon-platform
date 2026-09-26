@@ -297,3 +297,19 @@ Record durable architecture/implementation decisions.
 - Context: §15.8; clause text is legal reference data.
 - Decision: Seed 24 FAR/DFARS/DLAD entries whose titles (and dates where recorded) were checked on acquisition.gov on 2026-09-26. Dates not verified are null and skip version checks. Current DLAD Part 52 (rev. PROCLTR 2021-03) contains only 5452.233-9001; legacy DLAD 52.211-9xxx references are therefore surfaced as unknown clauses for review. Summaries are routing aids, marked as not legal interpretation.
 - Consequences: Unknown, re-dated, alternate, or deviation clauses produce review findings; known clauses attach verification questions and expected evidence to a requirement.
+
+### ADR-038 — Reviewer AI validation is sidecar-only and fail-open
+- Phase: 10
+- Date: 2026-09-26
+- Context: Phase 10 requires AI evaluation for substantive reviewer comments, while preserving exact human text and attribution.
+- Decision: `review_comments.body` is immutable user-authored content. AI output is stored only in sidecar fields (`ai_position`, `ai_confidence`, `ai_reason`, evidence, missing information, suggested action). If AI validation fails (provider/render/schema/no-provider), the human comment is still persisted and audited; AI fields remain empty and include an explicit failure reason.
+- Alternatives considered: Block comment creation when AI validation fails; rewrite comment text into normalized AI wording.
+- Consequences: Human collaboration never stalls on model availability and reviewer wording is never silently altered or replaced.
+
+### ADR-039 — Quorum/reopen/approval are policy-driven with audited override
+- Phase: 10
+- Date: 2026-09-26
+- Context: §16 and §24A require configurable single/dual/conditional quorum, reviewer-requested second review, amendment-driven reopen, consolidated synthesis, and a human-only approval gate with optimistic concurrency.
+- Decision: `review_sessions` is the workflow anchor. Quorum is recomputed from assignment state plus configurable conditional triggers (`review_conditional_triggers`, deadline/value thresholds). On quorum satisfaction, consolidated review synthesis is generated and routed through the Phase 8 `collaborative_review_synthesis` bundle. Final `approved_to_bid` is blocked until quorum unless an authorized `override_review` user records an explicit reason; all transitions are audited. Phase 9 `review_reopen_required` findings reopen completed assignments via `apply_material_amendment_reopen`.
+- Alternatives considered: Hard-code dual review for all opportunities; permit silent auto-approval based on AI/JEV recommendation; reopen only as a manual out-of-band process.
+- Consequences: One-review opportunities can progress without waiting for optional reviewers, mandatory second-review cases remain blocked unless explicitly overridden, and material amendments re-open review deterministically.
