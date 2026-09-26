@@ -5,8 +5,9 @@ when ``SMTP_HOST`` and ``ALERT_EMAIL_TO`` are both set. Otherwise the HTML
 file is written under ``OUTBOX_DIR``. An empty run writes nothing and sends
 nothing.
 
-Later phases may add historical awards, competitors, and bid recommendations.
-This renderer does not.
+Phase 5 adds recent award comps when a stored award matches the opportunity
+NSN, or the PSC when no NSN history exists. Unit price is shown only when the
+award row has one. Competitors and bid recommendations stay in later phases.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session
 from govcon.audit import record_audit
 from govcon.config import Settings, get_settings
 from govcon.logging import redact
+from govcon.matching.pricing import PricePoint, recent_award_comps
 from govcon.models import Match, Opportunity, OpportunityEvent, Watchlist
 
 logger = logging.getLogger("govcon.alerts.digest")
@@ -64,6 +66,7 @@ class _Item:
     previous_deadline_text: str | None
     event_detected_at: datetime | None
     match_status: str
+    award_comps: list[PricePoint]
 
 
 def run_digest(
@@ -280,7 +283,16 @@ def _collect_new(session: Session, now: datetime) -> list[_Item]:
         .with_for_update(of=Match)
     ).all()
     items = [
-        _item_from_row(match, watchlist, opportunity, kind="new", now=now, previous=None, detected_at=None)
+        _item_from_row(
+            session,
+            match,
+            watchlist,
+            opportunity,
+            kind="new",
+            now=now,
+            previous=None,
+            detected_at=None,
+        )
         for match, watchlist, opportunity in rows
         if match.status == "new" and match.alerted_at is None
     ]
@@ -326,6 +338,7 @@ def _collect_amendments(session: Session, *, enabled: bool, now: datetime) -> li
             continue
         items.append(
             _item_from_row(
+                session,
                 match,
                 watchlist,
                 opportunity,
@@ -340,6 +353,7 @@ def _collect_amendments(session: Session, *, enabled: bool, now: datetime) -> li
 
 
 def _item_from_row(
+    session: Session,
     match: Match,
     watchlist: Watchlist,
     opportunity: Opportunity,
@@ -368,6 +382,7 @@ def _item_from_row(
         previous_deadline_text=previous,
         event_detected_at=_aware(detected_at) if detected_at is not None else None,
         match_status=match.status,
+        award_comps=recent_award_comps(session, nsn=opportunity.nsn, psc_code=opportunity.psc_code),
     )
 
 
@@ -407,7 +422,9 @@ def _render_groups(items: list[_Item], *, kind: str) -> list[str]:
                 html.extend(_row("Previous deadline", item.previous_deadline_text or "not stated"))
                 html.extend(_row("Change", "material deadline change"))
                 html.extend(_row("Match status", item.match_status))
-            html.append("</dl></article>")
+            html.append("</dl>")
+            html.extend(_award_comp_html(item.award_comps))
+            html.append("</article>")
         html.append("</section>")
     return html
 
@@ -431,6 +448,7 @@ def _plain_groups(items: list[_Item]) -> list[str]:
                 lines.append(f"Previous deadline: {item.previous_deadline_text or 'not stated'}")
                 lines.append("Change: material deadline change")
                 lines.append(f"Match status: {item.match_status}")
+            lines.extend(_award_comp_plain(item.award_comps))
             lines.append("")
     return lines
 
@@ -443,6 +461,34 @@ def _groups(items: list[_Item]) -> list[tuple[int, str, list[_Item]]]:
         else:
             grouped[-1][2].append(item)
     return grouped
+
+
+def _comp_text(comp: PricePoint) -> str:
+    vendor = comp.vendor_name or "not stated"
+    when = comp.action_date.isoformat() if comp.action_date else "not stated"
+    amount = _format_decimal(comp.amount) if comp.amount is not None else "not stated"
+    text = f"Vendor: {vendor}; Date: {when}; Amount: {amount}"
+    if comp.unit_price is not None:
+        text += f"; Unit price: {_format_decimal(comp.unit_price)}"
+    return text
+
+
+def _award_comp_html(comps: list[PricePoint]) -> list[str]:
+    if not comps:
+        return []
+    html = ['<section class="award-comps">', "<h5>Recent award comps</h5>", "<ul>"]
+    for comp in comps:
+        html.append(f'<li data-award-id="{_esc(comp.award_id)}">{_esc(_comp_text(comp))}</li>')
+    html.append("</ul></section>")
+    return html
+
+
+def _award_comp_plain(comps: list[PricePoint]) -> list[str]:
+    if not comps:
+        return []
+    lines = ["Recent award comps:"]
+    lines.extend(_comp_text(comp) for comp in comps)
+    return lines
 
 
 def _row(label: str, value: str) -> list[str]:

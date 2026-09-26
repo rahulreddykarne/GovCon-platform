@@ -43,3 +43,7 @@ No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. Matchin
 ## Phase 3
 
 No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. Digest delivery, the deadline re-alert watermark, and calendar-day display are recorded in ADR-019. `PHASE_03_ALERTS.md` has no `⚠️ VERIFY` item.
+
+## Phase 5
+
+No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. The live search contract, the null unit-price rule, incremental windows, and the 18-month recompete view are recorded in ADR-021.
