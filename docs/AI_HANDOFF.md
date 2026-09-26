@@ -4,7 +4,7 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 
 ## 2026-09-26 22:30 UTC — PHASE_09_COMPLIANCE
 
-- Agent/model identity: Cursor cloud agent, Claude Opus 5.5
+- Agent/model identity: Cursor cloud agent, model `claude-opus-5-5`
 - Datetime (UTC): 2026-09-26 22:30 UTC
 - Phase/task: PHASE_09_COMPLIANCE (master §15). Resumed after an interrupted run; the in-progress work was kept and completed.
 - Branch: `cursor/phase-09-compliance-e5e4`
@@ -102,6 +102,8 @@ None for Phase 9 scope. The compliance UI (DEV-003) and review reopen (DEV-004) 
 ### Recommended next task
 
 **Phase 10 — Collaborative review, AI comment validation, and approval (`PHASE_10_COLLABORATIVE_REVIEW.md`).** Start only after this draft PR passes the Spec/QA gate and merges. Phase 10 should consume `review_reopen_required` findings and the compliance matrix/coverage counts in the review workspace.
+
+- Follow-up (2026-09-26 22:25 UTC, `claude-opus-5-5`): resume check after a reported interruption. Branch head matched the remote and draft PR #12. Re-ran on local PostgreSQL: `pytest` → 172 passed, 1 skipped; `tests/test_compliance.py` → 25 passed; `govcon compliance benchmark` → gate PASS. No code changes were needed.
 
 ## 2026-09-26 21:35 UTC — PHASE_08_JEV_DECISION_PACKAGE
 
