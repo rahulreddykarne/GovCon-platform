@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     smtp_user: str | None = None
     smtp_pass: str | None = None
     alert_email_to: str | None = None
+    alert_on_material_deadline_change: bool = True
 
     embedding_model: str = "all-MiniLM-L6-v2"
     data_dir: Path = Path("./data")

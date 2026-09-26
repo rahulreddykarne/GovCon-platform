@@ -23,11 +23,13 @@ users_app = typer.Typer(help="Invite-only user administration.")
 ingest_app = typer.Typer(help="Source ingestion.")
 match_app = typer.Typer(help="Watchlist matching.")
 watchlist_app = typer.Typer(help="Watchlist administration.")
+alerts_app = typer.Typer(help="Alert digests.")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(match_app, name="match")
 app.add_typer(watchlist_app, name="watchlist")
+app.add_typer(alerts_app, name="alerts")
 
 
 def main() -> None:
@@ -541,6 +543,34 @@ def watchlist_edit(
             raise typer.Exit(code=2)
         update_watchlist(session, row, **updates)
     typer.echo(f"watchlist_updated: {watchlist_id}")
+
+
+def _echo_digest(result) -> None:
+    typer.echo(f"message: {'yes' if result.sent else 'no'}")
+    typer.echo(f"channel: {result.channel}")
+    if result.path:
+        typer.echo(f"path: {result.path}")
+    typer.echo(f"new_matches: {result.new_count}")
+    typer.echo(f"amendment_alerts: {result.amendment_count}")
+
+
+@alerts_app.command("digest")
+def alerts_digest() -> None:
+    """Send unalerted new matches, grouped by watchlist, and optional deadline re-alerts."""
+    from govcon.alerts.digest import DigestDeliveryError, run_digest
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    try:
+        with session_scope() as session:
+            result = run_digest(session, settings=_settings())
+    except DigestDeliveryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo_digest(result)
 
 
 @watchlist_app.command("disable")
