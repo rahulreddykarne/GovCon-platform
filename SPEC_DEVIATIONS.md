@@ -27,3 +27,7 @@ On 2026-09-26 this environment had no `SAM_API_KEY`. Unauthenticated and invalid
 ## Phase 2
 
 No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. Matching semantics and keyword boundary handling are recorded in ADR-018.
+
+## Phase 3
+
+No confirmed behavior deviation from `MASTER_SPEC_v2.5.md` was required. Digest delivery, the deadline re-alert watermark, and calendar-day display are recorded in ADR-019. `PHASE_03_ALERTS.md` has no `⚠️ VERIFY` item.

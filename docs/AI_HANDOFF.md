@@ -2,6 +2,87 @@
 
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
+## 2026-09-26 19:10 UTC — PHASE_03_ALERTS
+
+- Agent/model identity: Cursor cloud, model `grok-4.7-high-fast`
+- Datetime (UTC): 2026-09-26 19:10 UTC
+- Phase/task: PHASE_03_ALERTS
+- Run: https://cursor.com/agents/bc-24fe0acb-591b-53a4-ab81-71fab101b177
+- Branch: `cursor/phase-03-alerts-b177`
+- Base: `main` at `91bdc73` (Phase 2 watchlist matching, pull request #5)
+- Pull request: pending in this session
+
+### Files changed
+
+- `src/govcon/alerts/digest.py`
+- `src/govcon/alerts/__init__.py`
+- `src/govcon/cli.py`
+- `src/govcon/config.py`
+- `tests/test_alerts.py`
+- `.env.example`
+- `README.md`
+- `IMPLEMENTATION_STATUS.md`
+- `DECISIONS.md`
+- `SPEC_DEVIATIONS.md`
+- `docs/AI_HANDOFF.md` (this file)
+
+### What shipped
+
+- `govcon alerts digest` collects unalerted `new` matches on enabled watchlists and groups them by watchlist in one HTML message.
+- The message includes title, agency, source, PSC, NAICS, set-aside, deadline, UTC calendar days remaining, estimated value when stored, and a direct http(s) source link.
+- SMTP is used when `SMTP_HOST` and `ALERT_EMAIL_TO` are both set. Otherwise the HTML file is written under `OUTBOX_DIR`.
+- An empty run sends no message and writes no file.
+- A repeat run does not alert the same match. Delivery sets `alerted_at` and moves `new` to `seen`.
+- When `ALERT_ON_MATERIAL_DEADLINE_CHANGE` is true (the default), a `deadline_changed` event newer than `alerted_at` can send one amendment alert. The same event is not sent again. Other field changes do not re-alert. Setting the flag false turns the amendment alert off.
+- Historical awards, competitors, and bid recommendation status are not rendered. DIBBS, USAspending, vendors, AI analysis, JEV, MCP, semantic search, and the web UI were not started.
+
+### ADRs / DECISIONS touched
+
+- ADR-019 in `DECISIONS.md`: one digest per run, SMTP versus outbox, `alerted_at` watermark, deadline-only re-alert, no new table.
+- Phase 0 ADR-001 through ADR-014, Phase 1 ADR-015 through ADR-017, and Phase 2 ADR-018 were not changed.
+
+### Migrations
+
+None. Phase 3 uses the Phase 0 schema (`97cb081e9a8e`).
+
+### Tests
+
+Command: `pytest`
+
+Result: **67 passed, 1 skipped** (Phase 1 live-pull skip unchanged). The same command passed a second time against the database left by the first run.
+
+Covered acceptance checks:
+
+- Empty day sends nothing and writes no outbox file.
+- Repeat run does not write a second file and does not move `alerted_at`.
+- A material deadline change generates an amendment alert when `ALERT_ON_MATERIAL_DEADLINE_CHANGE` is true, and a third run does not repeat it.
+- The same deadline change sends nothing when the flag is false.
+- A non-deadline field change does not re-alert.
+- HTML includes the required fields, escapes text, and ignores non-http(s) links.
+- SMTP delivery is mocked; a failed send leaves the match unalerted and redacts the SMTP password.
+- `govcon alerts digest` writes the outbox and a second invocation reports no message.
+
+### VERIFY outcomes
+
+`PHASE_03_ALERTS.md` contains no `⚠️ VERIFY` items. No live external interface was required. Master §2 already names `smtplib`, and the SMTP and `OUTBOX_DIR` settings were added in Phase 0. SMTP behavior was checked with a fake client, not a live mail server.
+
+### Known problems
+
+- If the process dies after SMTP accepts the message, or after the outbox file is written, and before the database commit, the next run can deliver that digest once more.
+- A sources-only watchlist still matches every opportunity from its sources, so the digest can be broad until targeting codes are set.
+- Days remaining are whole UTC calendar days. The matcher still uses exact 86400-second spans for `min_deadline_days`.
+- Digest scheduling is not wired. Phase 17 owns the job clock.
+
+### Unfinished work
+
+- Phase 4 DIBBS ingestion (`PHASE_04_DIBBS.md`) — not started in this run.
+- Later digest enrichment (historical awards, likely competitors, bid recommendation status) stays in later phases.
+- In-app notification center and bid/proposal notifications were not built.
+
+### Recommended next task
+
+Phase 4 — DIBBS ingestion (`PHASE_04_DIBBS.md`). **Do not start until this Phase 3 pull request is merged and its gates pass.**
+
 `main` was re-read at 2026-09-26 18:58 UTC and is `26ed863` (Phase 0 and Phase 1 merged). This branch is `cursor/phase-02-matching-d53f`. One pull request: #5.
 
 ## 2026-09-26 18:58 UTC — PHASE_02_MATCHING

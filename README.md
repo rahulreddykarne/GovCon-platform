@@ -39,6 +39,12 @@ pytest
 
 `scripts/smoke.sh` runs upgrade, the demo seed, and status. It does not call SAM.gov.
 
+## Phase 3 commands
+
+| Command | Purpose |
+|---|---|
+| `govcon alerts digest` | Send one HTML digest of unalerted `new` matches, grouped by watchlist. Uses SMTP when `SMTP_HOST` and `ALERT_EMAIL_TO` are set; otherwise writes HTML under `OUTBOX_DIR`. An empty run sends nothing. A repeat run does not alert the same match again. When `ALERT_ON_MATERIAL_DEADLINE_CHANGE` is true, a `deadline_changed` event after `alerted_at` can send one amendment alert. |
+
 Set `SAM_API_KEY` from the SAM.gov Account Details page. The client calls `https://api.sam.gov/opportunities/v2/search` and never prints the key. Description files and attachment downloads are not part of this ingest.
 
 ## Not in this phase
