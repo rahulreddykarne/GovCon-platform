@@ -10,6 +10,7 @@ Append a new entry after each implementation session. Do not rewrite earlier ent
 - Branch: `cursor/phase-08-jev-decision-package-6495`
 - Base: `main` at `d0ee176` (Phase 7 squash merge target)
 - Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/11
+- Head SHA (gate-unblock rerun): `59242f4ae45776f1c78d10a970546c007879878e`
 
 ### Files changed
 
@@ -68,7 +69,10 @@ None. `decision_runs` already exists from Phase 0 schema (ADR-002), so Phase 8 r
 
 - ✅ `python3 -m pytest tests/test_decision_engine.py::test_decision_fixture_contract_and_boundaries tests/test_http_prompts.py -q`
 - ✅ `python3 -m compileall src/govcon/decision src/govcon/cli.py`
-- ⚠️ `python3 -m pytest tests/test_decision_engine.py -q` could not execute DB-backed cases in this environment because no local PostgreSQL service/binaries are available (`connection refused localhost:5432`).
+- ✅ Gate-unblock rerun with local PostgreSQL on `localhost:5432`:
+  - `python3 -m pytest tests/test_decision_engine.py` → **9 passed, 0 skipped, 0 failed**
+  - `python3 -m pytest` → **147 passed, 1 skipped, 0 failed**
+  - DB-backed Phase 8 acceptance tests in `tests/test_decision_engine.py` executed (not skipped).
 
 ### VERIFY outcomes
 
@@ -83,7 +87,6 @@ Live probes on 2026-09-26:
 ### Known problems
 
 - Full authenticated JEV execution is unverified in this environment due missing key.
-- DB-backed Phase 8 integration tests require local Postgres service availability.
 - LLM fallback behavior remains configuration-dependent and is intentionally conservative.
 
 ### Unfinished work
