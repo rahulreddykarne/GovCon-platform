@@ -1,10 +1,10 @@
 <!-- Submission tab -->
-{% if review_session and review_session.status == 'approved_to_bid' and proposal and proposal.status == 'final_approved' %}
+{% if review_session and review_session.status == 'approved_to_bid' and proposal and proposal.status in ('ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix', 'draft') %}
   {% if submission %}
   <div class="card">
     <div class="card-header">
       <span class="card-title">Submission Package</span>
-      <span class="badge badge-{% if submission.status == 'ready' %}success{% elif submission.status == 'submitted' %}primary{% else %}secondary{% endif %}">{{ submission.status|replace('_',' ') }}</span>
+      <span class="badge badge-{% if submission.status == 'ready' %}success{% elif submission.status == 'submitted' %}primary{% elif submission.status == 'confirmed' %}success{% else %}secondary{% endif %}">{{ submission.status|replace('_',' ') }}</span>
     </div>
 
     {% if submission.required_actions %}

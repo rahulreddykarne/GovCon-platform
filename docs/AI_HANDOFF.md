@@ -1154,7 +1154,7 @@ None.
 - Phase/task: PHASE_14_WEB_UI (master §20)
 - Branch: `cursor/phase-14-web-ui-2f9c`
 - Base: `main` at `ff8abee` (Phase 12 squash merge)
-- Pull request: (draft, to be opened)
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/17 (draft)
 
 ### Files changed
 
@@ -1258,3 +1258,40 @@ All §20 acceptance criteria verified:
 - By-agency and by-PSC breakdown in learning page is empty until Phase 15 analytics
 - `common_compliance_issues` in learning is empty until Phase 15
 - Semantic search recommendations (Phase 13) not wired into search page yet
+
+## 2026-09-27 02:00 UTC — PHASE_14_WEB_UI_FIX1
+
+- Agent/model identity: cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27 02:00 UTC
+- Phase/task: PHASE_14_WEB_UI (master §20) — fix round after Spec/QA gate failure
+- Branch: `cursor/phase-14-web-ui-2f9c`
+- PR: https://github.com/rahulreddykarne/GovCon-platform/pull/17 (draft)
+
+### Changes in this round
+
+1. **Rebased onto `main` @ `49ce9fd`** (Phase 13 now intact; Phase 14 builds on top).
+
+2. **ADR/DEV renumbering**: Phase 13 used ADR-044–046 and DEV-008. Phase 14 ADRs renumbered to ADR-047–049; DEV-008→DEV-009, DEV-009→DEV-010.
+
+3. **Approve to Bid → auto-generate** (primary fix): `workspace_approve(approve_to_bid)` now calls Phase 11 `generate_proposal(..., skip_ai=True-when-no-key)` and `generate_submission_package(...)` immediately after setting `approved_to_bid`. The proposal and submission tabs no longer show "forever generating…" after approval.
+   - `_trigger_proposal_generation` helper added; gracefully logs on service failure.
+   - Workspace submission-tab loading updated to find `Submission` by `opportunity_id` (Phase 11 links it that way), not `proposal.submission_id`.
+   - Proposal/submission tab condition widened to show real state for any post-generation status.
+
+4. **New tests** in `TestApproveToGenerates` (5 tests):
+   - `test_approve_to_bid_creates_proposal` — Proposal row exists after approve
+   - `test_approve_to_bid_creates_submission_package` — Submission row exists after approve
+   - `test_proposal_tab_shows_real_state_after_approve` — No "forever generating" text
+   - `test_submission_tab_shows_real_state_after_approve` — Tab shows real package
+   - `test_full_workflow_approve_then_record_outcome` — E2E: approve → final-approve → authorize → record won
+
+5. **MCP test fix**: `test_acceptance_e2e_mcp_workflow` was failing pre-existing on Phase 13 due to DB accumulation from test runs filling the `limit(50)` result set. Fixed by adding `watchlist_id` filter to narrow to the test's own watchlist.
+
+### Test results
+
+- `tests/test_web_ui.py`: 39 passed
+- Full suite: **276 passed, 1 skipped**
+
+### Acceptance criteria status
+
+All §20 criteria confirmed passing. Phase 14 status: **COMPLETE**.

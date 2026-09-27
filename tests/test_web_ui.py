@@ -378,6 +378,169 @@ class TestApprovalPermissions:
         assert rs.approved_by_user_id == approver.id
 
 
+
+class TestApproveToGenerates:
+    """AC: Approve to Bid auto-generates proposal and submission package.
+
+    §20 requires the full workflow to complete in the UI.  The Phase 11 services
+    (generate_proposal + generate_submission_package) must be called when an
+    approver clicks 'Approve to Bid' so that tabs show real draft/package state.
+    """
+
+    def _make_opp_for_generate(self, db_session, suffix: str):
+        """Return (opp, pursuit, review_session, approver, token).
+        Uses a random token to avoid unique constraint violations on re-runs."""
+        from govcon.models import Pursuit, ReviewSession
+        uid = secrets.token_hex(6)
+        approver, token = _make_user(db_session, f"approve_gen_{suffix}_{uid}@example.com", "approver")
+        opp = Opportunity(
+            source="test",
+            source_id=f"WEB-UI-GEN-{suffix}-{uid}",
+            title=f"Phase 14 Generate Test {suffix}",
+            psc_code="9999",
+            status="open",
+            raw={},
+        )
+        db_session.add(opp)
+        db_session.flush()
+        pursuit = Pursuit(opportunity_id=opp.id, stage="evaluating")
+        db_session.add(pursuit)
+        db_session.flush()
+        rs = ReviewSession(
+            opportunity_id=opp.id,
+            status="approval_pending",
+            review_policy="conditional",
+            required_review_count=1,
+            completed_review_count=1,
+        )
+        db_session.add(rs)
+        db_session.commit()
+        return opp, pursuit, rs, approver, token
+
+    def test_approve_to_bid_creates_proposal(self, client, db_session):
+        """Approving creates a Proposal row (skip_ai=True path)."""
+        from govcon.models import Proposal
+        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A01")
+
+        resp = client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid"},
+            cookies={"govcon_session": token},
+        )
+        assert resp.status_code in (200, 303)
+
+        proposal = db_session.scalar(
+            select(Proposal).where(Proposal.opportunity_id == opp.id)
+        )
+        assert proposal is not None, "Proposal must be created on Approve to Bid"
+        assert proposal.status in ("draft", "ai_generated"), \
+            f"Unexpected proposal status: {proposal.status!r}"
+
+    def test_approve_to_bid_creates_submission_package(self, client, db_session):
+        """Approving creates a Submission row."""
+        from govcon.models import Submission
+        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A02")
+
+        client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid"},
+            cookies={"govcon_session": token},
+        )
+
+        sub = db_session.scalar(
+            select(Submission).where(Submission.opportunity_id == opp.id)
+        )
+        assert sub is not None, "Submission must be created on Approve to Bid"
+
+    def test_proposal_tab_shows_real_state_after_approve(self, client, db_session):
+        """Proposal tab renders real content (not forever-generating) after approve."""
+        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A03")
+
+        client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid"},
+            cookies={"govcon_session": token},
+        )
+
+        resp = client.get(
+            f"/workspace/{opp.id}?tab=proposal",
+            cookies={"govcon_session": token},
+        )
+        assert resp.status_code == 200
+        assert b"generation in progress or not yet triggered" not in resp.content, \
+            "Proposal tab should show real draft state after Approve to Bid"
+
+    def test_submission_tab_shows_real_state_after_approve(self, client, db_session):
+        """Submission tab renders real package (not locked) after approve."""
+        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A04")
+
+        client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid"},
+            cookies={"govcon_session": token},
+        )
+
+        resp = client.get(
+            f"/workspace/{opp.id}?tab=submission",
+            cookies={"govcon_session": token},
+        )
+        assert resp.status_code == 200
+        assert b"Submission package available after proposal is approved" not in resp.content, \
+            "Submission tab should show real package state after Approve to Bid"
+
+    def test_full_workflow_approve_then_record_outcome(self, client, db_session):
+        """Full workflow: approve_to_bid → proposal final-approve → authorize submission → record won."""
+        from govcon.models import Proposal, Submission, Pursuit
+        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A05")
+
+        # Step 1: Approve to bid (auto-generates proposal + submission)
+        client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid"},
+            cookies={"govcon_session": token},
+        )
+
+        proposal = db_session.scalar(select(Proposal).where(Proposal.opportunity_id == opp.id))
+        assert proposal is not None
+
+        # Step 2: Set proposal to red_teamed so final-approve is allowed
+        proposal.status = "red_teamed"
+        db_session.commit()
+
+        # Step 3: Final-approve proposal
+        client.post(
+            f"/workspace/{opp.id}/proposal/approve",
+            data={"decision": "APPROVE_FOR_SUBMISSION"},
+            cookies={"govcon_session": token},
+        )
+        db_session.expire(proposal)
+        assert proposal.status == "final_approved"
+
+        # Step 4: Set submission to ready, authorize
+        sub = db_session.scalar(select(Submission).where(Submission.opportunity_id == opp.id))
+        assert sub is not None
+        sub.status = "ready"
+        db_session.commit()
+
+        client.post(
+            f"/workspace/{opp.id}/submission/approve",
+            data={"decision": "approve"},
+            cookies={"govcon_session": token},
+        )
+        db_session.expire(sub)
+        assert sub.status == "submitted"
+
+        # Step 5: Record outcome
+        client.post(
+            f"/workspace/{opp.id}/record-outcome",
+            data={"outcome": "won", "notes": "E2E test win"},
+            cookies={"govcon_session": token},
+        )
+        db_session.expire(pursuit)
+        assert pursuit.stage == "won"
+        assert pursuit.outcome_notes == "E2E test win"
+
+
 class TestAuditTrail:
     """AC: Audit history shows who changed what and when."""
 

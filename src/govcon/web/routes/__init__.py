@@ -532,8 +532,13 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
         if active_tab == "submission":
             proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
             tab_ctx["proposal"] = proposal
-            sub = None
-            if proposal and proposal.submission_id:
+            # Load submission by opportunity_id (Phase 11 generates it that way)
+            sub = db.scalar(
+                select(Submission).where(Submission.opportunity_id == opp_id)
+                .order_by(desc(Submission.created_at))
+            )
+            # Also check proposal.submission_id as fallback
+            if sub is None and proposal and proposal.submission_id:
                 sub = db.get(Submission, proposal.submission_id)
             tab_ctx["submission"] = sub
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
@@ -697,9 +702,18 @@ def workspace_approve(
                 if not pursuit:
                     pursuit = Pursuit(opportunity_id=opp_id, stage="bid_approved")
                     db.add(pursuit)
+                    db.flush()
                 else:
                     pursuit.stage = "bid_approved"
                     pursuit.approved_to_bid_at = datetime.now(UTC)
+                    db.flush()
+
+                # ── Phase 11 auto-generation ──────────────────────────────────
+                # Generate proposal draft immediately; skip_ai=True when no key
+                # is configured so the UI always shows real draft state, not
+                # "forever generating…".
+                _trigger_proposal_generation(db, opp_id=opp_id, actor=user)
+
             elif decision == "return_for_review":
                 rs.status = "returned_for_review"
                 rs.final_approval_status = "returned_for_review"
@@ -707,6 +721,33 @@ def workspace_approve(
                 rs.status = "no_bid"
                 rs.final_approval_status = "no_bid"
     return RedirectResponse(f"/workspace/{opp_id}?tab=review", status_code=303)
+
+
+def _trigger_proposal_generation(db: Any, *, opp_id: int, actor: Any) -> None:
+    """Call Phase 11 generate_proposal + generate_submission_package.
+
+    Uses skip_ai=True so the UI always shows a real draft (with BLOCKER
+    placeholders for missing requirements) even when no AI key is configured.
+    Falls back gracefully if the services raise; errors are logged, not raised.
+    """
+    import logging
+    _log = logging.getLogger("govcon.web.routes")
+    try:
+        from govcon.proposals.service import generate_proposal
+        from govcon.submissions.service import generate_submission_package
+        from govcon.config import get_settings
+        settings = get_settings()
+        # skip_ai=True → placeholder draft with [[BLOCKER:...]] markers;
+        # real AI generation happens if a key is available.
+        skip = not bool(
+            getattr(settings, "deepseek_api_key", None)
+            or getattr(settings, "anthropic_api_key", None)
+            or getattr(settings, "openai_api_key", None)
+        )
+        generate_proposal(db, opportunity_id=opp_id, actor=actor, skip_ai=skip)
+        generate_submission_package(db, opportunity_id=opp_id, actor=actor)
+    except Exception as exc:
+        _log.warning("auto-generate on approve_to_bid failed for opp %s: %s", opp_id, exc)
 
 
 def workspace_proposal_approve(
@@ -750,12 +791,18 @@ def workspace_submission_approve(
         return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
 
     with session_scope() as db:
-        proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
-        if proposal and proposal.submission_id:
-            sub = db.get(Submission, proposal.submission_id)
-            if sub and decision == "approve":
-                sub.status = "submitted"
-                sub.submitted_at = datetime.now(UTC)
+        # Find submission by opportunity_id (preferred) or proposal.submission_id
+        sub = db.scalar(
+            select(Submission).where(Submission.opportunity_id == opp_id)
+            .order_by(desc(Submission.created_at))
+        )
+        if sub is None:
+            proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
+            if proposal and proposal.submission_id:
+                sub = db.get(Submission, proposal.submission_id)
+        if sub and decision == "approve":
+            sub.status = "submitted"
+            sub.submitted_at = datetime.now(UTC)
     return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
 
 

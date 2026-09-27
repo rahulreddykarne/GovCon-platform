@@ -1,6 +1,6 @@
 <!-- Proposal tab -->
 {% if review_session and review_session.status in ('approved_to_bid',) %}
-  {% if proposal %}
+  {% if proposal and proposal.status in ('draft', 'ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix') %}
   <div class="card">
     <div class="card-header">
       <span class="card-title">Proposal <span class="label-ai">AI generated</span></span>
