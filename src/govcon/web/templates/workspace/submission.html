@@ -41,21 +41,150 @@
     <div class="alert alert-success mt-2">
       Submitted {% if submission.submitted_at %}on {{ submission.submitted_at.strftime('%Y-%m-%d') }}{% endif %}.
     </div>
-    <!-- Outcome recording -->
-    {% if pursuit and pursuit.stage not in ('won','lost','cancelled') %}
-    <form method="post" action="/workspace/{{ opp.id }}/record-outcome" class="mt-2">
-      <div class="d-flex gap-1 align-center flex-wrap">
-        <select name="outcome" required>
-          <option value="">Record outcome…</option>
-          <option value="won">Won</option>
-          <option value="lost">Lost</option>
-          <option value="cancelled">Cancelled / No Award</option>
-        </select>
-        <input type="text" name="notes" placeholder="Notes / lessons learned" style="flex:1; min-width:200px;">
-        <button type="submit" class="btn btn-primary">Record</button>
+
+    <!-- Structured outcome recording form (Phase 15) -->
+    {% if pursuit and pursuit.stage not in ('won','lost','no_bid','cancelled') %}
+    <div class="card" style="margin-top:1rem; border:1px solid var(--color-border);">
+      <div class="card-header">
+        <span class="card-title">Record Outcome</span>
+        <span class="text-muted" style="font-size:12px;">Structured capture — used for analytics and future learning</span>
       </div>
-    </form>
+      <form method="post" action="/workspace/{{ opp.id }}/record-outcome" id="outcome-form">
+        <div class="d-flex gap-1 align-center flex-wrap" style="margin-bottom:0.5rem;">
+          <select name="outcome" id="outcome-select" required onchange="showOutcomeFields(this.value)" style="width:180px;">
+            <option value="">Select outcome…</option>
+            <option value="won">Won</option>
+            <option value="lost">Lost</option>
+            <option value="no_bid">No Bid</option>
+            <option value="cancelled">Cancelled / No Award</option>
+          </select>
+        </div>
+
+        <!-- Won fields -->
+        <div id="fields-won" style="display:none;">
+          <div class="d-flex gap-1 flex-wrap" style="margin-top:0.5rem;">
+            <div>
+              <label style="font-size:12px; font-weight:600;">Award Value ($)</label>
+              <input type="number" name="award_amount" placeholder="e.g. 95000" style="width:140px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Win Margin (%)</label>
+              <input type="number" name="win_margin_pct" step="0.1" placeholder="e.g. 18.5" style="width:120px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Supplier</label>
+              <input type="text" name="win_supplier" placeholder="Supplier name" style="width:180px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Delivery Terms</label>
+              <input type="text" name="win_delivery_terms" placeholder="e.g. FOB Dest, Net 30" style="width:180px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Proposal Version</label>
+              <input type="text" name="win_proposal_version" placeholder="e.g. v3" style="width:120px;">
+            </div>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Key Strengths / Win Reason</label>
+            <textarea name="win_reason" rows="2" placeholder="What made this bid successful?" style="width:100%;"></textarea>
+          </div>
+        </div>
+
+        <!-- Lost fields -->
+        <div id="fields-lost" style="display:none;">
+          <div class="d-flex gap-1 flex-wrap" style="margin-top:0.5rem;">
+            <div>
+              <label style="font-size:12px; font-weight:600;">Winner / Awardee</label>
+              <input type="text" name="awarded_vendor_name" placeholder="Company name" style="width:200px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Award Amount ($)</label>
+              <input type="number" name="award_amount" placeholder="If known" style="width:140px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Known Winning Price ($)</label>
+              <input type="number" name="known_winning_price" placeholder="If different" style="width:160px;">
+            </div>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Suspected/Known Loss Reason</label>
+            <select name="loss_reason">
+              <option value="">Select if known…</option>
+              <option value="pricing">Pricing too high</option>
+              <option value="technical">Technical / compliance issue</option>
+              <option value="incumbent">Incumbent advantage</option>
+              <option value="sourcing">Sourcing / supply chain</option>
+              <option value="deadline">Missed deadline</option>
+              <option value="strategic">Strategic withdrawal</option>
+              <option value="other">Other</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Government Feedback / Debrief</label>
+            <textarea name="government_feedback" rows="2" placeholder="Paste debrief text or summary (strongest evidence — distinguish from speculation)" style="width:100%;"></textarea>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Debrief Notes</label>
+            <textarea name="debrief_notes" rows="2" placeholder="Additional notes from debrief" style="width:100%;"></textarea>
+          </div>
+        </div>
+
+        <!-- No-bid fields -->
+        <div id="fields-no_bid" style="display:none;">
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">No-Bid Category</label>
+            <select name="no_bid_category">
+              <option value="">Select category…</option>
+              <option value="missing_capability">Missing capability</option>
+              <option value="margin">Margin / pricing</option>
+              <option value="deadline">Deadline constraint</option>
+              <option value="supplier_availability">Supplier availability</option>
+              <option value="eligibility">Eligibility issue</option>
+              <option value="compliance_issue">Compliance issue</option>
+              <option value="competition">Competition too strong</option>
+              <option value="strategic_choice">Strategic choice</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Details</label>
+            <textarea name="no_bid_reason" rows="2" placeholder="Describe the reason for not bidding" style="width:100%;"></textarea>
+          </div>
+        </div>
+
+        <!-- Lessons learned (always visible when outcome selected) -->
+        <div id="fields-common" style="display:none; margin-top:0.5rem;">
+          <label style="font-size:12px; font-weight:600;">Lessons Learned</label>
+          <textarea name="lessons_learned" rows="2" placeholder="What would you do differently?" style="width:100%;"></textarea>
+        </div>
+
+        <div style="margin-top:0.75rem;">
+          <button type="submit" class="btn btn-primary">Record Outcome</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+    function showOutcomeFields(outcome) {
+      ['won', 'lost', 'no_bid'].forEach(function(o) {
+        var el = document.getElementById('fields-' + o);
+        if (el) el.style.display = (outcome === o) ? '' : 'none';
+      });
+      var common = document.getElementById('fields-common');
+      if (common) common.style.display = outcome ? '' : 'none';
+    }
+    </script>
     {% endif %}
+
+    {% if pursuit and pursuit.stage in ('won','lost','no_bid','cancelled') %}
+    <div class="alert alert-success mt-2" style="background:var(--color-bg-card); border:1px solid var(--color-border); padding:0.75rem; font-size:13px;">
+      Outcome recorded: <strong>{{ pursuit.stage }}</strong>
+      {% if pursuit.outcome_at %} on {{ pursuit.outcome_at.strftime('%Y-%m-%d') }}{% endif %}
+      {% if pursuit.outcome_notes %} — {{ pursuit.outcome_notes[:200] }}{% endif %}
+    </div>
+    {% endif %}
+
     {% endif %}
   </div>
   {% else %}

@@ -172,3 +172,30 @@ Implementation notes:
 - Decision: Summary stats (submitted/won/lost/win-rate/avg-margin) are computed. Grouped analytics rows are empty list pending Phase 15 analytics engine.
 - Impact: Top-level learning stats work; drill-down tables show "no data" until Phase 15.
 - Follow-up: Phase 15.
+
+## Phase 15
+
+### DEV-010 RESOLVED — Learning by-agency/by-PSC analytics now implemented
+- Phase: 14→15
+- Resolved: 2026-09-27
+- Original deviation: Phase 14 `learning` page returned empty `by_agency` and `by_psc` lists pending Phase 15 analytics.
+- Resolution: `learning/analytics.py` implements `win_rate_by_psc`, `win_rate_by_agency`, `win_rate_by_size`, `no_bid_reason_counts`, `loss_reason_counts`, `common_competitors`, `reliable_suppliers`, and `avg_cycle_times`. The `learning` web route now calls `outcome_analytics(session)` and renders the full tables. The MCP `op_learning_summary` returns real analytics.
+- Impact: Learning page now shows all analytics on every page load. No manual SQL required.
+
+### DEV-011 — `denorm_agency` stores full agency_path (not abbreviated name)
+- Phase: 15
+- Date: 2026-09-27
+- Spec requirement: §21 says capture "agency" on won outcomes.
+- Verified reality: `Opportunity.agency_path` stores a full path string (e.g., "DEPT OF DEFENSE > DLA > TROOP SUPPORT"). There is no separate normalized `agency` column.
+- Decision: `denorm_agency` stores `agency_path` verbatim. Win-rate-by-agency groups on the full path. This is accurate but may produce more rows than expected in analytics since sub-agencies differ from parents.
+- Impact: Analytics are precise, not aggregated by department. Future enhancement could parse the top-level agency from `agency_path`.
+- Follow-up: Phase 17 or analytics enhancement.
+
+### DEV-012 — outcome_analysis AI classification not called automatically on record
+- Phase: 15
+- Date: 2026-09-27
+- Spec requirement: §39.8 says `outcome_analysis_v1` is used for evidence-constrained classification.
+- Verified reality: No AI key is configured in the test/dev environment. The AI gateway would fail or be mocked.
+- Decision: `outcome_analysis_v1.md` is activated and registered. The `outcome_analysis_id` FK in `outcome_feedback` provides the hook for AI classification. Automatic invocation at record time is deferred until an AI key is available. The prompt is production-ready and correctly structures the evidence constraints per §39.8.
+- Impact: Analytics do not depend on AI classification (descriptive stats use recorded fields). AI classification is additive and can be run as a batch job when a key is available.
+- Follow-up: Wire AI classification call in `record_outcome` when AI key is set.

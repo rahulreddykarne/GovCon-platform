@@ -1295,3 +1295,71 @@ All §20 acceptance criteria verified:
 ### Acceptance criteria status
 
 All §20 criteria confirmed passing. Phase 14 status: **COMPLETE**.
+
+## 2026-09-27 — PHASE_15_OUTCOME_LEARNING
+
+- Agent/model identity: cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27
+- Phase/task: PHASE_15_OUTCOME_LEARNING (master §21) — Outcome learning & analytics
+- Branch: `cursor/phase-15-outcome-learning-8b91`
+
+### Summary
+
+Phase 15 implements win/loss/no-bid outcome capture with structured fields, descriptive analytics, and evidence-constrained AI classification.
+
+### Files changed
+
+**New files:**
+- `alembic/versions/b5c6d7e8f9a0_phase15_outcome_learning.py` — migration adding 11 structured columns to `outcome_feedback`
+- `src/govcon/learning/analytics.py` — full analytics engine (win rate by PSC/agency/size, margins, reasons, competitors, suppliers, cycle times, similar_past_outcomes)
+- `src/govcon/learning/outcomes.py` — `record_outcome()` service with auto-denorm + `outcome_to_dict()`
+- `tests/test_outcome_learning.py` — 37 Phase 15 tests
+
+**Modified files:**
+- `src/govcon/models.py` — `OutcomeFeedback` extended with 11 new columns
+- `src/govcon/prompts/deepseek/outcome_analysis_v1.md` — activated (was placeholder)
+- `src/govcon/mcp/operations.py` — `op_record_outcome` full structured fields; `op_learning_summary` real analytics + similar_past_outcomes per-opportunity
+- `src/govcon/web/routes/__init__.py` — `workspace_record_outcome` structured form; `learning` route uses `outcome_analytics()`
+- `src/govcon/web/templates/learning.html` — full analytics tables (by PSC, agency, size, reasons, competitors, suppliers, recent outcomes)
+- `src/govcon/web/templates/workspace/submission.html` — structured outcome form (type-specific fields for won/lost/no_bid)
+- `tests/test_http_prompts.py` — added `outcome_analysis` to activated set
+- `tests/test_mcp.py` — updated `learning_summary` assertion for Phase 15 structure
+- `tests/test_web_ui.py` — updated `record-outcome` call to use `lessons_learned`
+- `tests/test_semantic_search.py` — fixed `test_win_profile_needs_min_wins` for data accumulated from Phase 15
+
+### Acceptance criteria status
+
+- ✅ AC-1: Outcome can be recorded in UI and MCP — full structured form (won/lost/no_bid/cancelled) in workspace submission tab; `op_record_outcome` MCP tool with 14 structured parameters
+- ✅ AC-2: Analytics update without manual SQL — `outcome_analytics()` service; learning page shows win rate by PSC/agency/size, margins, no-bid reasons, loss reasons, competitors, suppliers, recent outcomes
+- ✅ AC-3: Future decision report can reference prior similar wins/losses — `similar_past_outcomes(session, opportunity_id)` returns descriptive records matching PSC/agency; MCP `op_learning_summary(opportunity_id=...)` includes `similar_past_outcomes`
+
+### Win-profile guard
+
+- `WIN_PROFILE_MINIMUM = 3` — no win profile before 3 recorded wins
+- `SMALL_SAMPLE_THRESHOLD = 3` — win-rate rows with < 3 bids are labeled `small_sample=True`
+- Learning page renders a visible banner when `win_profile_available=False`
+- Tests assert guard is enforced and no causal overclaims are made
+
+### outcome_analysis_v1
+
+- Prompt activated per §39.8: evidence-constrained classifier
+- Returns UNKNOWN when cause not established
+- Preserves direct feedback separately from inferred signals
+- `outcome_analysis_id` FK on `outcome_feedback` ready for wiring when AI key is available (DEV-012)
+
+### DB migration
+
+- `b5c6d7e8f9a0` applies cleanly after `f2a3b4c5d6e7` (Phase 13)
+- New columns: `no_bid_category`, `known_winning_price`, `win_margin_pct`, `win_supplier`, `win_delivery_terms`, `win_proposal_version`, `denorm_agency`, `denorm_psc`, `denorm_naics`, `denorm_estimated_value`, `outcome_analysis_id`
+- All nullable — existing rows unaffected
+
+### Known follow-up (not blocking)
+
+- DEV-012: AI classification (`outcome_analysis_v1`) not auto-invoked at record time (no AI key in dev/test). Wire when key is available.
+- DEV-011: `denorm_agency` stores full `agency_path` (e.g. "DEPT OF DEFENSE > DLA") — future enhancement could aggregate by top-level department.
+
+### Test results
+
+- `tests/test_outcome_learning.py`: 37 passed
+- Full suite: **313 passed, 1 skipped**
+

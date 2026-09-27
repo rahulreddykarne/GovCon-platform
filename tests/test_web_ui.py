@@ -530,10 +530,10 @@ class TestApproveToGenerates:
         db_session.expire(sub)
         assert sub.status == "submitted"
 
-        # Step 5: Record outcome
+        # Step 5: Record outcome (Phase 15 structured capture — use lessons_learned)
         client.post(
             f"/workspace/{opp.id}/record-outcome",
-            data={"outcome": "won", "notes": "E2E test win"},
+            data={"outcome": "won", "lessons_learned": "E2E test win"},
             cookies={"govcon_session": token},
         )
         db_session.expire(pursuit)

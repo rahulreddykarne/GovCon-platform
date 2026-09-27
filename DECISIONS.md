@@ -394,3 +394,27 @@ Record durable architecture/implementation decisions.
 - Decision: Tab-specific data is loaded inside `if active_tab == "..."` branches, so only the active tab's data is fetched per request. All DB access happens inside a single `session_scope()` to avoid N+1 issues.
 - Alternatives considered: Lazy loading via HTMX tab triggers (future enhancement for Phase 17+ optimization).
 - Consequences: Minimal DB load per page request. All data for one tab fetched once.
+
+### ADR-050 — Denormalize agency/PSC/NAICS/estimated_value at outcome recording time
+- Phase: 15
+- Date: 2026-09-27
+- Context: Analytics queries like "win rate by PSC" require joining outcome_feedback with opportunities. For historical accuracy (opportunity data can change after recording), analytics should use field values at the time of outcome recording.
+- Decision: `record_outcome` reads `agency_path`, `psc_code`, `naics_code`, and the average of `estimated_value_min/max` from the opportunity at recording time and stores them in `denorm_agency`, `denorm_psc`, `denorm_naics`, `denorm_estimated_value` on the `outcome_feedback` row. Analytics queries use these denormalized fields directly.
+- Alternatives considered: Join to opportunities at query time; store opportunity FK only.
+- Consequences: Analytics are accurate to the state at recording time. Migration `b5c6d7e8f9a0` adds the columns. Rows recorded via the legacy Phase 12 `op_record_outcome` (which did not denormalize) have NULL denorm fields and are excluded from grouped analytics.
+
+### ADR-051 — Win-profile guard enforced in analytics and recommendations
+- Phase: 15
+- Date: 2026-09-27
+- Context: §21 rule: do not create "win profile" before < 3 wins. Phase 13 already has this guard in `compute_win_profile`. Phase 15 adds the same rule to the analytics layer.
+- Decision: `analytics.win_profile_note()` returns `(available=False, note=...)` when `win_count < WIN_PROFILE_MINIMUM (3)`. The learning page renders a visible banner when `win_profile_available=False`. The MCP `learning_summary` includes `win_profile_note` in the response. No analytics function returns a win profile or win-pattern claim until 3 wins exist. Small-sample rows (< `SMALL_SAMPLE_THRESHOLD=3`) are flagged with `small_sample=True`.
+- Alternatives considered: Skip the guard; show a footnote only.
+- Consequences: Users with < 3 wins see the guard banner. Analytics by PSC/agency/size are still shown (they are descriptive counts, not win-profile claims).
+
+### ADR-052 — Outcome analytics are descriptive; no causal claims
+- Phase: 15
+- Date: 2026-09-27
+- Context: §21 says "provide descriptive history, not unsupported causal claims." §39.8 requires the AI classifier to return UNKNOWN when cause is not established.
+- Decision: All analytics functions return counts and rates without causal language. The `win_profile_note` string is checked in tests to not contain causal phrases ("caused by", "because of", "therefore", etc.). The `outcome_analysis_v1.md` prompt explicitly states "Do not claim the business lost because of price merely because another award value differs" and "If the cause is not established, return UNKNOWN." The MCP `analytics_note` field surfaces the descriptive-only guarantee to API consumers.
+- Alternatives considered: Generate narrative explanations of loss patterns (rejected — would invent causal stories without evidence).
+- Consequences: Analytics surface useful patterns (pricing losses 3/5 times) without implying causation. Government feedback and debrief notes are preserved as evidence separately from inferred signals.

@@ -5,7 +5,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Learning &amp; Analytics</h1>
-    <div class="page-subtitle">Outcome analytics — wins, losses, and lessons learned</div>
+    <div class="page-subtitle">Descriptive outcome history — all figures are from recorded data, not causal inference.</div>
   </div>
 </div>
 
@@ -33,47 +33,45 @@
     </div>
   </div>
   <div class="stat-card">
-    <div class="label">Avg Margin</div>
+    <div class="label">Avg Win Margin</div>
     <div class="value {% if stats.avg_margin and stats.avg_margin > 0 %}success{% endif %}">
       {% if stats.avg_margin %}{{ "%.1f"|format(stats.avg_margin) }}%{% else %}—{% endif %}
     </div>
   </div>
+  {% if stats.avg_days_cycle %}
+  <div class="stat-card">
+    <div class="label">Avg Cycle (days)</div>
+    <div class="value">{{ "%.0f"|format(stats.avg_days_cycle) }}</div>
+  </div>
+  {% endif %}
 </div>
 
-{% if by_agency %}
-<div class="card">
-  <div class="card-header"><span class="card-title">By Agency</span></div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Agency</th><th>Submitted</th><th>Won</th><th>Win Rate</th></tr></thead>
-      <tbody>
-        {% for row in by_agency %}
-        <tr>
-          <td>{{ row.agency or "—" }}</td>
-          <td>{{ row.submitted }}</td>
-          <td>{{ row.won }}</td>
-          <td>{{ "%.0f"|format(row.win_rate) }}%</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+<!-- Win profile guard banner -->
+{% if not stats.win_profile_available %}
+<div class="alert" style="background:var(--color-bg-card); border:1px solid var(--color-border); border-left: 4px solid var(--color-warning, #f59e0b); padding:0.75rem 1rem; margin-bottom:1rem; font-size:13px;">
+  <strong>Win-profile recommendations not available.</strong>
+  {{ stats.win_profile_note }}
+  Small-sample patterns are not displayed to avoid misleading recommendations.
 </div>
 {% endif %}
 
 {% if by_psc %}
 <div class="card">
-  <div class="card-header"><span class="card-title">By PSC</span></div>
+  <div class="card-header"><span class="card-title">Win Rate by PSC</span><span class="text-muted" style="font-size:12px;">Descriptive history only</span></div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>PSC</th><th>Submitted</th><th>Won</th><th>Win Rate</th></tr></thead>
+      <thead><tr><th>PSC</th><th>Submitted</th><th>Won</th><th>Lost</th><th>Win Rate</th></tr></thead>
       <tbody>
         {% for row in by_psc %}
         <tr>
-          <td>{{ row.psc or "—" }}</td>
+          <td>{{ row.key }}</td>
           <td>{{ row.submitted }}</td>
           <td>{{ row.won }}</td>
-          <td>{{ "%.0f"|format(row.win_rate) }}%</td>
+          <td>{{ row.lost }}</td>
+          <td>
+            {% if row.win_rate_pct is not none %}{{ "%.0f"|format(row.win_rate_pct) }}%{% else %}—{% endif %}
+            {% if row.small_sample %}<span class="badge badge-secondary" title="Fewer than 3 bids — interpret with caution">small sample</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -82,41 +80,145 @@
 </div>
 {% endif %}
 
-{% if no_bid_reasons %}
+{% if by_agency %}
 <div class="card">
-  <div class="card-header"><span class="card-title">No-Bid Reasons</span></div>
-  <ul style="list-style:none; padding:0;">
-    {% for r in no_bid_reasons %}
-    <li style="padding:0.3rem 0; border-bottom:1px solid var(--color-border);">{{ r }}</li>
-    {% endfor %}
-  </ul>
+  <div class="card-header"><span class="card-title">Win Rate by Agency</span><span class="text-muted" style="font-size:12px;">Descriptive history only</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Agency</th><th>Submitted</th><th>Won</th><th>Lost</th><th>Win Rate</th></tr></thead>
+      <tbody>
+        {% for row in by_agency %}
+        <tr>
+          <td>{{ row.key or "—" }}</td>
+          <td>{{ row.submitted }}</td>
+          <td>{{ row.won }}</td>
+          <td>{{ row.lost }}</td>
+          <td>
+            {% if row.win_rate_pct is not none %}{{ "%.0f"|format(row.win_rate_pct) }}%{% else %}—{% endif %}
+            {% if row.small_sample %}<span class="badge badge-secondary" title="Fewer than 3 bids — interpret with caution">small sample</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 
-{% if common_compliance_issues %}
+{% if by_size %}
 <div class="card">
-  <div class="card-header"><span class="card-title">Common Compliance Issues</span></div>
-  <ul>
-    {% for issue in common_compliance_issues %}
-    <li>{{ issue }}</li>
-    {% endfor %}
-  </ul>
+  <div class="card-header"><span class="card-title">Win Rate by Bid Size</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Value Range</th><th>Submitted</th><th>Won</th><th>Win Rate</th></tr></thead>
+      <tbody>
+        {% for row in by_size %}
+        <tr>
+          <td>{{ row.key }}</td>
+          <td>{{ row.submitted }}</td>
+          <td>{{ row.won }}</td>
+          <td>
+            {% if row.win_rate_pct is not none %}{{ "%.0f"|format(row.win_rate_pct) }}%{% else %}—{% endif %}
+            {% if row.small_sample %}<span class="badge badge-secondary">small sample</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+
+{% if no_bid_reasons %}
+<div class="card">
+  <div class="card-header"><span class="card-title">No-Bid Reasons</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for r in no_bid_reasons %}
+        <tr><td>{{ r.reason }}</td><td>{{ r.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if loss_reasons %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Loss Reasons</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for r in loss_reasons %}
+        <tr><td>{{ r.reason }}</td><td>{{ r.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if common_competitors %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Most Common Competitors</span><span class="text-muted" style="font-size:12px;">Vendors we lost to most</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Competitor</th><th>Times Lost To</th></tr></thead>
+      <tbody>
+        {% for r in common_competitors %}
+        <tr><td>{{ r.reason }}</td><td>{{ r.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if reliable_suppliers %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Most Reliable Suppliers</span><span class="text-muted" style="font-size:12px;">Sourcing partners on winning bids</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Supplier</th><th>Wins</th></tr></thead>
+      <tbody>
+        {% for r in reliable_suppliers %}
+        <tr><td>{{ r.supplier }}</td><td>{{ r.wins }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+</div>
 
 {% if recent_outcomes %}
 <div class="card">
   <div class="card-header"><span class="card-title">Recent Outcomes</span></div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Opportunity</th><th>Outcome</th><th>When</th><th>Notes</th></tr></thead>
+      <thead><tr><th>Opportunity</th><th>Outcome</th><th>When</th><th>Amount</th><th>Notes</th></tr></thead>
       <tbody>
         {% for o in recent_outcomes %}
         <tr>
           <td><a href="/workspace/{{ o.opp_id }}">{{ o.title or o.source_id or o.opp_id }}</a></td>
-          <td><span class="badge badge-{% if o.stage == 'won' %}success{% elif o.stage == 'lost' %}danger{% else %}secondary{% endif %}">{{ o.stage }}</span></td>
+          <td>
+            <span class="badge badge-{% if o.outcome == 'won' %}success{% elif o.outcome == 'lost' %}danger{% elif o.outcome == 'no_bid' %}secondary{% else %}secondary{% endif %}">
+              {{ o.outcome or '—' }}
+            </span>
+          </td>
           <td>{{ o.outcome_at.strftime('%Y-%m-%d') if o.outcome_at else '—' }}</td>
-          <td>{{ o.outcome_notes or '—' }}</td>
+          <td>
+            {% if o.award_amount %}${{ "{:,.0f}".format(o.award_amount) }}{% else %}—{% endif %}
+          </td>
+          <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ o.lessons_learned or o.loss_reason or o.win_reason or o.no_bid_reason or '' }}">
+            {{ (o.lessons_learned or o.loss_reason or o.win_reason or o.no_bid_reason or '—')[:80] }}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

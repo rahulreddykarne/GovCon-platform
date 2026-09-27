@@ -51,6 +51,8 @@ from govcon.models import (
     Vendor,
     Watchlist,
 )
+from govcon.learning.analytics import WIN_PROFILE_MINIMUM, outcome_analytics, similar_past_outcomes
+from govcon.learning.outcomes import NO_BID_CATEGORIES, record_outcome
 from govcon.web.helpers import deadline_info, format_value
 
 import pathlib
@@ -810,23 +812,65 @@ def workspace_record_outcome(
     request: Request,
     opp_id: int,
     outcome: Annotated[str, Form()],
-    notes: Annotated[str | None, Form()] = None,
+    # No-bid
+    no_bid_reason: Annotated[str | None, Form()] = None,
+    no_bid_category: Annotated[str | None, Form()] = None,
+    # Loss
+    loss_reason: Annotated[str | None, Form()] = None,
+    known_winning_price: Annotated[str | None, Form()] = None,
+    # Win
+    win_reason: Annotated[str | None, Form()] = None,
+    win_margin_pct: Annotated[str | None, Form()] = None,
+    win_supplier: Annotated[str | None, Form()] = None,
+    win_delivery_terms: Annotated[str | None, Form()] = None,
+    win_proposal_version: Annotated[str | None, Form()] = None,
+    # Common
+    awarded_vendor_name: Annotated[str | None, Form()] = None,
+    awarded_vendor_uei: Annotated[str | None, Form()] = None,
+    award_amount: Annotated[str | None, Form()] = None,
+    government_feedback: Annotated[str | None, Form()] = None,
+    debrief_notes: Annotated[str | None, Form()] = None,
+    lessons_learned: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
     try:
-        user = _require_login(request)
+        _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    valid_outcomes = ("won", "lost", "cancelled")
+    valid_outcomes = ("won", "lost", "no_bid", "cancelled")
     if outcome not in valid_outcomes:
         return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
 
+    def _float(val: str | None) -> float | None:
+        try:
+            return float(val) if val and val.strip() else None
+        except ValueError:
+            return None
+
     with session_scope() as db:
-        pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
-        if pursuit:
-            pursuit.stage = outcome
-            pursuit.outcome_at = datetime.now(UTC)
-            pursuit.outcome_notes = notes or None
+        try:
+            record_outcome(
+                db,
+                opportunity_id=opp_id,
+                outcome=outcome,
+                no_bid_reason=no_bid_reason or None,
+                no_bid_category=no_bid_category or None,
+                loss_reason=loss_reason or None,
+                known_winning_price=_float(known_winning_price),
+                win_reason=win_reason or None,
+                win_margin_pct=_float(win_margin_pct),
+                win_supplier=win_supplier or None,
+                win_delivery_terms=win_delivery_terms or None,
+                win_proposal_version=win_proposal_version or None,
+                awarded_vendor_name=awarded_vendor_name or None,
+                awarded_vendor_uei=awarded_vendor_uei or None,
+                award_amount=_float(award_amount),
+                government_feedback=government_feedback or None,
+                debrief_notes=debrief_notes or None,
+                lessons_learned=lessons_learned or None,
+            )
+        except ValueError:
+            pass
     return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
 
 
@@ -1140,56 +1184,32 @@ def learning(request: Request) -> HTMLResponse:
         return RedirectResponse("/login", status_code=303)
 
     with session_scope() as db:
-        pursuits_all = db.scalars(select(Pursuit)).all()
-        submitted = sum(1 for p in pursuits_all if p.stage in ("submitted", "won", "lost"))
-        won = sum(1 for p in pursuits_all if p.stage == "won")
-        lost = sum(1 for p in pursuits_all if p.stage == "lost")
-        no_bid = sum(1 for p in pursuits_all if p.stage in ("no_bid", "cancelled"))
-        win_rate = (won / submitted * 100) if submitted else 0
-        margins = [float(p.margin_pct) for p in pursuits_all if p.margin_pct is not None]
-        avg_margin = sum(margins) / len(margins) if margins else None
-
-        # No-bid reasons
-        no_bid_notes = [
-            p.outcome_notes for p in pursuits_all
-            if p.stage in ("no_bid", "cancelled") and p.outcome_notes
-        ]
-
-        # Recent outcomes
-        recent = sorted(
-            [p for p in pursuits_all if p.stage in ("won", "lost", "submitted", "cancelled")],
-            key=lambda p: p.outcome_at or p.created_at,
-            reverse=True,
-        )[:20]
-        opp_ids = list({p.opportunity_id for p in recent})
-        opps = {o.id: o for o in db.scalars(select(Opportunity).where(Opportunity.id.in_(opp_ids))).all()} if opp_ids else {}
-        recent_outcomes = []
-        for p in recent:
-            opp = opps.get(p.opportunity_id)
-            recent_outcomes.append(type("O", (), {
-                "opp_id": p.opportunity_id,
-                "stage": p.stage,
-                "outcome_at": p.outcome_at,
-                "outcome_notes": p.outcome_notes,
-                "title": opp.title if opp else None,
-                "source_id": opp.source_id if opp else None,
-            })())
+        analytics = outcome_analytics(db)
 
     stats = type("S", (), {
-        "submitted": submitted,
-        "won": won,
-        "lost": lost,
-        "no_bid": no_bid,
-        "win_rate": win_rate,
-        "avg_margin": avg_margin,
+        "submitted": analytics.total_submitted,
+        "won": analytics.total_won,
+        "lost": analytics.total_lost,
+        "no_bid": analytics.total_no_bid,
+        "win_rate": analytics.overall_win_rate_pct or 0,
+        "avg_margin": analytics.avg_margin_pct_on_wins,
+        "avg_days_cycle": analytics.avg_days_discovery_to_submission,
+        "win_profile_available": analytics.win_profile_available,
+        "win_profile_note": analytics.win_profile_note,
+        "win_profile_minimum": WIN_PROFILE_MINIMUM,
     })()
 
     return _render(request, "learning.html", {
         "stats": stats,
-        "no_bid_reasons": no_bid_notes[:10],
-        "recent_outcomes": recent_outcomes,
-        "by_agency": [],
-        "by_psc": [],
+        "by_psc": analytics.by_psc,
+        "by_agency": analytics.by_agency,
+        "by_size": analytics.by_size_bucket,
+        "no_bid_reasons": analytics.no_bid_reasons,
+        "loss_reasons": analytics.loss_reasons,
+        "common_competitors": analytics.common_competitors,
+        "reliable_suppliers": analytics.reliable_suppliers,
+        "recent_outcomes": analytics.recent_outcomes,
+        "no_bid_categories": sorted(NO_BID_CATEGORIES),
         "common_compliance_issues": [],
         "active_page": "learning",
     }, user)

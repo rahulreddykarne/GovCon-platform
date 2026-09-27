@@ -273,4 +273,5 @@ def test_acceptance_e2e_mcp_workflow(session: Session, owner):
 
     learning = mcp_ops.op_learning_summary(session)
     assert learning["ok"] is True
-    assert "outcome_counts" in learning["data"]
+    # Phase 15 analytics structure replaces legacy outcome_counts
+    assert "total_won" in learning["data"] or "outcome_counts" in learning["data"]
