@@ -1,11 +1,19 @@
-"""Process entrypoint reserved for the scheduling phase.
+"""Scheduler daemon entry point.
 
-Phase 17 wires APScheduler. Importing this module does not start jobs.
+Run ``govcon scheduler start`` (or ``python scheduler.py``) to start the
+APScheduler daemon with all Phase 17 job chains.
 """
+
+from __future__ import annotations
 
 
 def main() -> None:
-    raise SystemExit("Scheduler is implemented in Phase 17.")
+    """Start the blocking APScheduler daemon."""
+    from govcon.config import get_settings
+    from govcon.scheduler.runner import start_blocking_scheduler
+
+    settings = get_settings()
+    start_blocking_scheduler(settings)
 
 
 if __name__ == "__main__":

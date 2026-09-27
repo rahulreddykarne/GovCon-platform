@@ -1,5 +1,107 @@
 # AI handoff
 
+## 2026-09-27 04:45 UTC — PHASE_17_SCHEDULING_OPS
+
+- Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27 04:45 UTC
+- Phase/task: PHASE_17_SCHEDULING_OPS (master §23)
+- Branch: `cursor/phase-17-scheduling-ops-5a43`
+- Base: `main` at `06744e5` (Phase 14 squash merge)
+- Pull request: https://github.com/rahulreddykarne/GovCon-platform/pull/18 (draft)
+
+### Files changed
+
+- `pyproject.toml` — added `apscheduler>=3.10`
+- `scheduler.py` — updated from stub to real entry point
+- `alembic/versions/b1c2d3e4f5a6_phase17_scheduler_job_runs.py` — new migration: `scheduler_job_runs` table + index
+- `src/govcon/models.py` — added `SchedulerJobRun` model
+- `src/govcon/scheduler/__init__.py`, `jobs.py`, `chains.py`, `runner.py` — new scheduler package
+- `src/govcon/cli.py` — `jobs_app` + `scheduler_app` typers; enhanced `govcon status`; `govcon jobs list`, `govcon jobs run`, `govcon scheduler start`
+- `src/govcon/web/routes/__init__.py` — ops route: add `SchedulerJobRun` import, chain summary, job_runs
+- `src/govcon/web/templates/ops.html` — updated to show scheduler chain summary + job runs table
+- `tests/test_scheduler.py` — 39 Phase 17 tests
+- `IMPLEMENTATION_STATUS.md`, `DECISIONS.md` (ADR-050), `SPEC_DEVIATIONS.md` (DEV-011, DEV-012), this file
+
+### What shipped
+
+- **APScheduler daemon** (`govcon scheduler start` / `python scheduler.py`): 6 cron job chains with `BlockingScheduler` + `CronTrigger` (UTC). Chains run independently; failure in one chain never affects another.
+- **Six job chains** matching §23:
+  - `morning_ingest` (06:30): SAM ingest → DIBBS ingest → match → alerts
+  - `usaspending` (07:30): USAspending delta
+  - `embeddings` (08:00): embeddings → semantic match
+  - `midday_check` (12:00): lightweight deadline/amendment check (archive sweep, no network quota)
+  - `evening_ingest` (18:00): SAM ingest → DIBBS ingest → match → alerts
+  - `sunday_sweep` (09:00 Sunday): archive sweep → cache refresh → analytics refresh → VACUUM ANALYZE
+- **Hard predecessor failure aborts dependent steps** within a chain; unrelated chains are unaffected.
+- **No silent failures**: every step failure (including uncaught exceptions) is caught, logged, and recorded to `scheduler_job_runs`. The scheduler never silently swallows errors.
+- **Every run visible in `/ops`**: chain summary panel (latest per chain) + scheduler run history table + ingestion runs table.
+- **CLI commands**:
+  - `govcon status` — enhanced: DB connectivity + schema revision + row counts + last run per chain
+  - `govcon jobs list` — all 6 chains with schedule, steps, last run status
+  - `govcon jobs run <chain>` — synchronous manual execution with per-step results
+  - `govcon scheduler start` — start the blocking APScheduler daemon
+
+### ADRs / DECISIONS touched
+
+- ADR-050 (new): scheduler architecture, chain isolation, VACUUM AUTOCOMMIT, SAM skip vs fail.
+- DEV-011 (new): analytics_refresh is a no-op pending Phase 15.
+- DEV-012 (new): SAM ingest skips (not fails) when `SAM_API_KEY` is unset.
+
+### Migrations
+
+`b1c2d3e4f5a6` revises `f2a3b4c5d6e7`. Adds `scheduler_job_runs` table + index. Upgrade from empty database is covered by `test_upgrade_from_empty_database`.
+
+### Tests
+
+Local PostgreSQL 16 + pgvector:
+
+- Dependency check before coding: `pytest` → 276 passed, 1 skipped (Phases 0–14 green).
+- `pytest tests/test_scheduler.py` → **39 passed**.
+- `pytest` → **315 passed, 1 skipped**.
+
+### Acceptance criteria (§23)
+
+1. Hard predecessor failure aborts dependent steps — `TestChainAbortOnFailure::test_first_step_failure_aborts_remaining_steps`, `test_steps_completed_excludes_failed_step` ✅
+2. Unrelated jobs may still run — `TestIndependentChains::test_failure_in_one_chain_does_not_affect_another` ✅
+3. Every run visible in `/ops` — `TestRunVisibility` (3 tests): persisted to DB; `/ops` route reads `scheduler_job_runs` and `chain_summary` ✅
+4. Status command shows last success/failure and row counts — `TestStatusCommand` (4 tests): connectivity + schema + counts + last runs ✅
+5. No silent scheduler failures — `TestNoSilentFailures` (2 tests): exception and fail-result both recorded ✅
+6. `govcon status` — enhanced: `TestStatusCommand` ✅
+7. `govcon jobs list` — `TestJobsList` (4 tests) ✅
+8. `govcon jobs run <job>` — `TestJobsRun` (5 tests) ✅
+9. Six chains match §23 schedule — `TestChainDefinitions` (9 tests) ✅
+10. Sunday sweep includes VACUUM ANALYZE — `TestSundaySweep` (2 tests): end-to-end CLI run ✅
+11. Reuse existing ingest/match/alert/embedding services — all step functions are thin wrappers over existing modules ✅
+
+### VERIFY outcomes
+
+`PHASE_17_SCHEDULING_OPS.md` has no `⚠️ VERIFY` markers. APScheduler 3.11.3 (installed 2026-09-27) verified — `BlockingScheduler` + `CronTrigger` API unchanged from 3.10.
+
+### Known deviations
+
+- DEV-011: `analytics_refresh` is a no-op (Phase 15 not implemented).
+- DEV-012: `sam_ingest` skips (not fails) when `SAM_API_KEY` is unset so DIBBS/match/alerts still run.
+
+### Phase 16 note
+
+Phase 16 (State & local adapters) is OPTIONAL per user instructions. It is marked DEFERRED in `IMPLEMENTATION_STATUS.md` and was not implemented.
+
+### Known problems
+
+- `govcon jobs run embeddings` loads the `all-MiniLM-L6-v2` model, which takes a few seconds on first run.
+- `govcon jobs run usaspending` is a no-op when no PSC/NAICS codes are configured on watchlists.
+- Live SAM/USAspending calls require API keys not present in this environment.
+
+### Unfinished work
+
+None for Phase 17 scope.
+
+### Recommended next task
+
+**Phase 18 — Security & data handling (`PHASE_18_SECURITY.md`).**
+
+
+
 Append a new entry after each implementation session. Do not rewrite earlier entries. Do not start the next phase in the same session that finishes the current one.
 
 ## 2026-09-26 23:45 UTC — PHASE_12_MCP

@@ -44,6 +44,7 @@ from govcon.models import (
     ReviewAssignment,
     ReviewComment,
     ReviewSession,
+    SchedulerJobRun,
     StoredFile,
     Submission,
     User,
@@ -1143,6 +1144,8 @@ def ops(request: Request) -> HTMLResponse:
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
+    from govcon.scheduler.chains import CHAIN_DEFINITIONS
+
     with session_scope() as db:
         opp_count = db.scalar(select(func.count()).select_from(Opportunity)) or 0
         opp_open = db.scalar(select(func.count()).select_from(Opportunity).where(Opportunity.status == "open")) or 0
@@ -1154,6 +1157,28 @@ def ops(request: Request) -> HTMLResponse:
         runs = db.scalars(
             select(IngestionRun).order_by(desc(IngestionRun.started_at)).limit(30)
         ).all()
+
+        # Scheduler job runs — latest per chain + last 20 overall
+        job_runs = db.scalars(
+            select(SchedulerJobRun).order_by(desc(SchedulerJobRun.started_at)).limit(50)
+        ).all()
+
+        # Latest run per chain for the summary panel
+        chain_summary = []
+        for chain_name, chain_def in CHAIN_DEFINITIONS.items():
+            last = db.scalars(
+                select(SchedulerJobRun)
+                .where(SchedulerJobRun.chain_name == chain_name)
+                .order_by(desc(SchedulerJobRun.started_at))
+                .limit(1)
+            ).first()
+            chain_summary.append({
+                "name": chain_name,
+                "description": chain_def.description,
+                "cron": chain_def.cron,
+                "steps": chain_def.steps,
+                "last_run": last,
+            })
 
         users = db.scalars(select(User).order_by(User.email)).all() if user.role == "owner" else []
 
@@ -1169,6 +1194,8 @@ def ops(request: Request) -> HTMLResponse:
     return _render(request, "ops.html", {
         "stats": stats,
         "runs": list(runs),
+        "job_runs": list(job_runs),
+        "chain_summary": chain_summary,
         "users": list(users),
         "active_page": "ops",
     }, user)
