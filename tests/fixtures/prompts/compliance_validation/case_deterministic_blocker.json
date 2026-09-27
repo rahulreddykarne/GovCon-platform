@@ -1,0 +1,27 @@
+{
+  "description": "Compliance validation — deterministic failure should not be overridden by AI.",
+  "prompt": "compliance_validator",
+  "inputs": {
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "deadline", "text": "Proposals due October 30, 2026", "mandatory": true, "status": "needs_review", "key_value": "2026-10-30"},
+      {"id": 2, "category": "proposal_format", "text": "Page limit 10 pages", "mandatory": true, "status": "needs_review", "key_value": "10"}
+    ],
+    "PROPOSAL_JSON": {
+      "sections": [{"section_key": "technical_response", "content": "Technical response content here with enough text to exceed the page limit when formatted for submission."}],
+      "submitted_at": null,
+      "page_count": 14
+    },
+    "VALIDATION_CONTEXT_JSON": {
+      "current_date": "2026-11-05",
+      "deadline": "2026-10-30",
+      "page_limit": 10,
+      "actual_page_count": 14
+    }
+  },
+  "expected_validations": [
+    {"requirement_id": 1, "result": "fail", "reason": "past_deadline"},
+    {"requirement_id": 2, "result": "fail", "reason": "page_limit_exceeded"}
+  ],
+  "false_satisfied_rate_max": 0.0,
+  "notes": "Deadline has passed and page limit exceeded. Both must be FAIL — AI cannot mark them satisfied."
+}

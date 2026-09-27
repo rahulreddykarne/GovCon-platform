@@ -155,10 +155,32 @@ class ConsolidatedReviewV1(BaseModel):
     summary: str | None = None
 
 
+class OutcomeAnalysisV1(BaseModel):
+    """Schema for outcome_analysis.v1 — evidence-constrained outcome classification."""
+
+    no_bid_reason: str | None = None
+    loss_reason: str | None = None
+    win_reason: str | None = None
+    pricing_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    compliance_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    sourcing_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    deadline_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    eligibility_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    delivery_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    competition_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    administrative_factor: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    strategic_no_bid: Literal["yes", "no", "UNKNOWN"] = "UNKNOWN"
+    direct_feedback_present: bool = False
+    use_for_future_analysis: bool = True
+    confidence: Literal["high", "medium", "low"] = "low"
+    evidence_summary: str | None = None
+
+
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "solicitation_analysis.v1": SolicitationAnalysisV1,
     "reviewer_comment_validation.v1": ReviewerCommentValidationV1,
     "consolidated_review.v1": ConsolidatedReviewV1,
+    "outcome_analysis.v1": OutcomeAnalysisV1,
 }
 
 from govcon.compliance.schemas import COMPLIANCE_SCHEMAS  # noqa: E402

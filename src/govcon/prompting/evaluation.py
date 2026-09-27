@@ -83,7 +83,10 @@ def run_activation_gate(asset: PromptAsset, prompt_root: Path, *, settings=None,
         bool(meta.get("name") and meta.get("version") and meta.get("task_type") and meta.get("schema_version")),
         "name, version, task_type, schema_version required",
     )
-    result.add("not_placeholder", meta.get("status") != "placeholder" and "PLACEHOLDER" not in asset.body, "placeholder prompt")
+    # A prompt is a placeholder if its status field says so, or the body contains the sentinel "Do not activate."
+    # The word "PLACEHOLDER" alone is not sufficient — production prompts may use it as a documentation label.
+    is_placeholder = meta.get("status") == "placeholder" or "Do not activate." in asset.body
+    result.add("not_placeholder", not is_placeholder, "placeholder prompt")
     schema_version = meta.get("schema_version", "")
     result.add("schema_registered", schema_version in SCHEMA_REGISTRY, f"schema {schema_version!r}")
 

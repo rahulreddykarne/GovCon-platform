@@ -1,0 +1,19 @@
+{
+  "description": "Administrative amendment with no material requirement changes.",
+  "prompt": "amendment_analysis",
+  "inputs": {
+    "OPPORTUNITY_JSON": {"id": 21, "title": "Office Supplies", "psc_code": "7510"},
+    "AMENDMENT_JSON": {
+      "amendment_number": 1,
+      "title": "Amendment 1 — POC Update",
+      "text": "The point of contact is updated to Jane Smith, Jane.Smith@agency.gov, (555) 123-4567. All other terms remain unchanged."
+    },
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "delivery", "text": "Delivery within 30 days ARO", "mandatory": true, "status": "satisfied"}
+    ]
+  },
+  "expected_material": false,
+  "expected_changes": [],
+  "false_change_rate_max": 0.0,
+  "notes": "POC update only. No requirement changes expected."
+}

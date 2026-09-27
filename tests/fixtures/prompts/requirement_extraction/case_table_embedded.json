@@ -1,0 +1,29 @@
+{
+  "description": "Requirement embedded in a table row — common miss for Pass A.",
+  "prompt": "requirement_extraction_b",
+  "inputs": {
+    "OPPORTUNITY_JSON": {
+      "id": 11,
+      "title": "Packaging Supply Contract",
+      "psc_code": "8115"
+    },
+    "DOCUMENT_INVENTORY_JSON": [
+      {"file_id": 1, "filename": "solicitation.pdf", "document_type": "base_solicitation", "pages": 30}
+    ],
+    "SOURCE_CHUNKS": [
+      {"file_id": 1, "page": 12, "section": "Packaging Requirements Table", "text": "Item | NSN | Qty | Packaging Req | Mandatory\n---  | --- | --- | ---           | ---\nCLIN 0001 | 8115-01-111-2222 | 200 EA | MIL-STD-2073-1E Method 12 | YES\nCLIN 0002 | 8115-01-333-4444 | 500 EA | Commercial pack acceptable | NO"}
+    ],
+    "AMENDMENT_JSON": []
+  },
+  "expected_requirements": [
+    {
+      "category": "packaging",
+      "mandatory": true,
+      "key_value": "MIL-STD-2073-1E",
+      "source_file_id": 1,
+      "source_section": "Packaging Requirements Table"
+    }
+  ],
+  "mandatory_requirement_recall": 1.0,
+  "notes": "Pass B should extract the table-embedded packaging requirement. A miss here is the §15.20 example miss."
+}

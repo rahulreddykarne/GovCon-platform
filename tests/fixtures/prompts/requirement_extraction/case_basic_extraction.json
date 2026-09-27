@@ -1,0 +1,49 @@
+{
+  "description": "Basic requirement extraction — single solicitation with clear mandatory items.",
+  "prompt": "requirement_extraction_a",
+  "inputs": {
+    "OPPORTUNITY_JSON": {
+      "id": 10,
+      "title": "Medical Supply NSN 6505-01-345-6789",
+      "psc_code": "6505",
+      "set_aside_code": "SDVOSB"
+    },
+    "DOCUMENT_INVENTORY_JSON": [
+      {"file_id": 1, "filename": "rfq.pdf", "document_type": "base_solicitation", "pages": 15, "extraction_status": "success"}
+    ],
+    "SOURCE_CHUNKS": [
+      {"file_id": 1, "page": 2, "section": "Section B", "text": "CLIN 0001: NSN 6505-01-345-6789, Qty 500 BX. Unit price: ___. MANDATORY: Delivery within 30 days ARO."},
+      {"file_id": 1, "page": 5, "section": "Section L", "text": "MANDATORY: Proposals shall not exceed 5 pages. Due by October 30, 2026."},
+      {"file_id": 1, "page": 8, "section": "Section K", "text": "Offeror MUST be registered in SAM.gov. FAR 52.204-7 applies."},
+      {"file_id": 1, "page": 10, "section": "Section M", "text": "Award will be made to lowest price technically acceptable offeror."}
+    ],
+    "AMENDMENT_JSON": []
+  },
+  "expected_requirements": [
+    {
+      "category": "delivery",
+      "mandatory": true,
+      "key_value": "30",
+      "source_file_id": 1
+    },
+    {
+      "category": "proposal_format",
+      "mandatory": true,
+      "key_value": "5",
+      "source_file_id": 1
+    },
+    {
+      "category": "eligibility",
+      "mandatory": true,
+      "source_file_id": 1
+    }
+  ],
+  "forbidden_hallucinations": [
+    "Secret clearance",
+    "Buy American Act",
+    "foreign manufacture"
+  ],
+  "mandatory_requirement_recall": 1.0,
+  "false_requirement_rate_max": 0.15,
+  "notes": "Three mandatory requirements should be found: delivery, page limit, SAM registration. Award criteria (LPTA) is informational."
+}

@@ -347,9 +347,10 @@ def opp_detail(request: Request, opp_id: int) -> HTMLResponse:
         # awards
         awards = db.scalars(
             select(Award).where(
-                or_(Award.nsn == opp.nsn, Award.psc_code == opp.psc_code)
-            ).where(Award.nsn.is_not(None) if opp.nsn else Award.psc_code.is_not(None))
-            .order_by(desc(Award.action_date)).limit(10)
+                # Match by NSN when the opportunity has one; otherwise match by PSC prefix.
+                # Avoid matching all NULL-NSN awards when the opportunity has no NSN.
+                Award.nsn == opp.nsn if opp.nsn else Award.psc_code == opp.psc_code
+            ).order_by(desc(Award.action_date)).limit(10)
         ).all() if (opp.nsn or opp.psc_code) else []
 
         # competitors

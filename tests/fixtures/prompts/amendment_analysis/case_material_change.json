@@ -1,0 +1,35 @@
+{
+  "description": "Amendment materially changes delivery and adds a mandatory certification.",
+  "prompt": "amendment_analysis",
+  "inputs": {
+    "OPPORTUNITY_JSON": {"id": 20, "title": "Medical Device Supply", "psc_code": "6515"},
+    "AMENDMENT_JSON": {
+      "amendment_number": 3,
+      "title": "Amendment 3 — Delivery and Certification Change",
+      "text": "This amendment supersedes Section B paragraph 3. Delivery is changed from 45 days to 30 days ARO. Additionally, offerors MUST provide ISO 13485 certification with their proposal. Page limit remains 10 pages."
+    },
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "delivery", "text": "Delivery within 45 days ARO", "mandatory": true, "status": "satisfied"},
+      {"id": 2, "category": "proposal_format", "text": "Page limit 10 pages", "mandatory": true, "status": "satisfied"},
+      {"id": 3, "category": "eligibility", "text": "SAM.gov registration required", "mandatory": true, "status": "unknown"}
+    ]
+  },
+  "expected_material": true,
+  "expected_changes": [
+    {
+      "type": "delivery_change",
+      "from_value": "45",
+      "to_value": "30",
+      "affected_requirement_ids": [1]
+    },
+    {
+      "type": "new_requirement",
+      "category": "certification",
+      "mandatory": true
+    }
+  ],
+  "expected_affected_requirement_ids": [1],
+  "material_change_recall": 1.0,
+  "false_change_rate_max": 0.1,
+  "notes": "Should detect delivery reduction and new mandatory certification. Page limit is confirmed unchanged."
+}

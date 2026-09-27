@@ -1,0 +1,23 @@
+{
+  "description": "Basic proposal draft — satisfied requirements, company facts present.",
+  "prompt": "proposal_drafting",
+  "inputs": {
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "delivery", "text": "Delivery within 30 days ARO", "mandatory": true, "status": "satisfied", "evidence": "Supplier commit 28 days"},
+      {"id": 2, "category": "proposal_format", "text": "Page limit 10 pages", "mandatory": true, "status": "satisfied"},
+      {"id": 3, "category": "eligibility", "text": "SAM.gov registered", "mandatory": true, "status": "satisfied"}
+    ],
+    "SECTIONS_REQUESTED": ["technical_response", "delivery_plan"],
+    "APPROVED_FACTS_JSON": {
+      "company_name": "Acme Supply Inc.",
+      "uei": "ABCDEF123456",
+      "lead_time_days": 28,
+      "past_performance": [{"contract": "SPE2D-24-C-1234", "nsn": "6515-01-111-2222", "performance": "on_time"}]
+    }
+  },
+  "expected_sections": ["technical_response", "delivery_plan"],
+  "requirement_coverage_min": 0.9,
+  "unsupported_claim_count_max": 0,
+  "blocker_correctness": true,
+  "notes": "All requirements satisfied. No blockers expected. Proposal should reference specific facts."
+}

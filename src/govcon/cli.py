@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import pathlib as _pathlib
 
 import typer
 from alembic import command
@@ -300,11 +301,41 @@ def ingest_sam(
         help="Posted-to date (MM/dd/yyyy or YYYY-MM-DD). Defaults to today UTC.",
     ),
     limit: int = typer.Option(1000, min=1, max=1000, help="Records per page. SAM.gov maximum is 1000."),
+    file: str | None = typer.Option(
+        None,
+        "--file",
+        help="Ingest a local SAM opportunities JSON file (opportunitiesData array). Does not call the network.",
+    ),
 ) -> None:
     """Ingest SAM.gov opportunities. The default window is the last 3 days."""
+    import json as _json
     from govcon.ingest.runs import IngestStats, finish_run, start_run
-    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, pull_sam_opportunities
+    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, ingest_opportunity_records, pull_sam_opportunities
     from govcon.logging import redact
+
+    if file:
+        try:
+            settings = _settings()
+            settings.require_database_url()
+        except ConfigError as exc:
+            _fail_config(exc)
+            return
+        fixture_path = _pathlib.Path(file)
+        if not fixture_path.exists():
+            typer.echo(f"fixture file not found: {file}", err=True)
+            raise typer.Exit(code=2)
+        payload = _json.loads(fixture_path.read_text(encoding="utf-8"))
+        records = payload.get("opportunitiesData", payload) if isinstance(payload, dict) else payload
+        with session_scope(settings) as session:
+            run = start_run(session, "sam_opportunities")
+            stats = ingest_opportunity_records(session, records)
+            status = _run_status(stats)
+            finish_run(run, stats, status=status)
+            run_id = run.id
+        _echo_ingest(run_id, status, stats)
+        if status == "failed":
+            raise typer.Exit(code=1)
+        return
 
     window_from, window_to = _posted_window_from_options(posted_from, posted_to, default_recent=True)
     try:
@@ -1306,6 +1337,239 @@ def prompts_rollback(prompt_name: str = typer.Option(..., help="Prompt name.")) 
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(f"rolled_back: {prompt_name} {result['rolled_back_from']} -> {result['active_version']}")
+
+
+@prompts_app.command("list")
+def prompts_list(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON."),
+) -> None:
+    """List all source-controlled prompts with status and hash."""
+    from govcon.prompting.loader import iter_markdown_prompts
+
+    settings = _settings()
+    prompt_root = settings.resolved_prompt_root()
+    assets = iter_markdown_prompts(prompt_root)
+    if json_output:
+        import json as _json
+        data = [{"name": a.name, "version": a.version, "status": a.metadata.get("status"), "hash": a.content_hash} for a in assets]
+        typer.echo(_json.dumps(data, indent=2))
+    else:
+        for a in assets:
+            typer.echo(f"{a.name}@{a.version}  status={a.metadata.get('status','?')}  hash={a.content_hash[:16]}...")
+
+
+@prompts_app.command("validate")
+def prompts_validate(
+    prompt_name: str = typer.Option(None, help="Prompt name to validate (omit for all active task prompts)."),
+) -> None:
+    """Run the activation gate checks on a prompt without activating it.
+
+    Shared fragments (task_type=shared_rules, provider_family=shared) are
+    skipped by default since they are not callable task prompts.
+    """
+    from govcon.prompting.evaluation import run_activation_gate
+    from govcon.prompting.loader import iter_markdown_prompts
+
+    settings = _settings()
+    prompt_root = settings.resolved_prompt_root()
+    assets = iter_markdown_prompts(prompt_root)
+    if prompt_name:
+        assets = [a for a in assets if a.name == prompt_name]
+        if not assets:
+            typer.echo(f"prompt not found: {prompt_name}", err=True)
+            raise typer.Exit(code=2)
+    else:
+        # Validate active task prompts only; skip shared fragments and placeholders
+        assets = [
+            a for a in assets
+            if a.metadata.get("status") == "active"
+            and a.metadata.get("provider_family") != "shared"
+        ]
+
+    all_passed = True
+    for asset in assets:
+        result = run_activation_gate(asset, prompt_root, settings=settings, run_regression=False)
+        status = "PASS" if result.passed else "FAIL"
+        typer.echo(f"{asset.name}@{asset.version}: {status}")
+        for check in result.checks:
+            icon = "✓" if check["passed"] else "✗"
+            typer.echo(f"  {icon} {check['check']}" + (f": {check['detail']}" if check["detail"] else ""))
+        if not result.passed:
+            all_passed = False
+    if not all_passed:
+        raise typer.Exit(code=1)
+
+
+@prompts_app.command("render")
+def prompts_render(
+    prompt_name: str = typer.Argument(help="Prompt name."),
+    fixture: str = typer.Option(None, "--fixture", help="Path to a JSON fixture file with prompt variables."),
+    version: str = typer.Option(None, "--version", help="Prompt version (default: active/latest)."),
+) -> None:
+    """Render a prompt's system prompt and optionally a user context from a fixture."""
+    import json as _json
+    from govcon.prompting.loader import iter_markdown_prompts
+    from govcon.prompting.renderer import render_system_prompt, render_user_context, required_variables
+
+    settings = _settings()
+    prompt_root = settings.resolved_prompt_root()
+    assets = iter_markdown_prompts(prompt_root)
+    matching = [a for a in assets if a.name == prompt_name]
+    if not matching:
+        typer.echo(f"prompt not found: {prompt_name}", err=True)
+        raise typer.Exit(code=2)
+    if version:
+        matching = [a for a in matching if a.version == version]
+        if not matching:
+            typer.echo(f"version {version} not found for {prompt_name}", err=True)
+            raise typer.Exit(code=2)
+    asset = matching[-1]
+
+    typer.echo(f"=== SYSTEM PROMPT: {asset.name}@{asset.version} ===")
+    system = render_system_prompt(asset, prompt_root)
+    typer.echo(system)
+
+    if fixture:
+        fixture_path = _pathlib.Path(fixture)
+        if not fixture_path.exists():
+            typer.echo(f"fixture not found: {fixture}", err=True)
+            raise typer.Exit(code=2)
+        variables = _json.loads(fixture_path.read_text(encoding="utf-8"))
+        typer.echo(f"\n=== USER CONTEXT (from {fixture}) ===")
+        user = render_user_context(asset, variables)
+        typer.echo(user)
+
+        schema_version = asset.metadata.get("schema_version")
+        if schema_version:
+            from govcon.ai.schemas import SCHEMA_REGISTRY
+            if schema_version in SCHEMA_REGISTRY:
+                typer.echo(f"\n=== SCHEMA: {schema_version} (registered ✓) ===")
+            else:
+                typer.echo(f"\nWARN: schema {schema_version!r} is not registered", err=True)
+
+
+@prompts_app.command("diff")
+def prompts_diff(
+    left: str = typer.Argument(help="Left side: <name>@<version>."),
+    right: str = typer.Argument(help="Right side: <name>@<version>."),
+) -> None:
+    """Show a unified diff between two prompt versions."""
+    import difflib
+    from govcon.prompting.loader import iter_markdown_prompts
+    from govcon.prompting.renderer import render_system_prompt
+
+    def _parse_ref(ref: str):
+        if "@" not in ref:
+            return ref, None
+        n, v = ref.rsplit("@", 1)
+        return n, v
+
+    settings = _settings()
+    prompt_root = settings.resolved_prompt_root()
+    assets = iter_markdown_prompts(prompt_root)
+
+    left_name, left_ver = _parse_ref(left)
+    right_name, right_ver = _parse_ref(right)
+
+    def _find(name, ver):
+        candidates = [a for a in assets if a.name == name]
+        if not candidates:
+            typer.echo(f"prompt not found: {name}", err=True)
+            raise typer.Exit(code=2)
+        if ver:
+            candidates = [a for a in candidates if a.version == ver]
+            if not candidates:
+                typer.echo(f"version {ver} not found for {name}", err=True)
+                raise typer.Exit(code=2)
+        return candidates[-1]
+
+    left_asset = _find(left_name, left_ver)
+    right_asset = _find(right_name, right_ver)
+
+    left_text = render_system_prompt(left_asset, prompt_root).splitlines(keepends=True)
+    right_text = render_system_prompt(right_asset, prompt_root).splitlines(keepends=True)
+
+    diff = difflib.unified_diff(
+        left_text, right_text,
+        fromfile=f"{left_name}@{left_asset.version}",
+        tofile=f"{right_name}@{right_asset.version}",
+        lineterm="",
+    )
+    output = "".join(diff)
+    if output:
+        typer.echo(output)
+    else:
+        typer.echo("(no differences)")
+
+
+@prompts_app.command("eval")
+def prompts_eval(
+    prompt_ref: str = typer.Argument(None, help="<name>@<version> to evaluate; omit with --suite."),
+    suite: str = typer.Option(None, "--suite", help="Named evaluation suite (e.g. 'compliance')."),
+    fixture_dir: str = typer.Option(None, "--fixture-dir", help="Path to fixture directory for evaluation."),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON."),
+) -> None:
+    """Evaluate a prompt or named suite against its regression fixtures (no live model calls)."""
+    import json as _json
+    from govcon.prompting.evaluation import run_activation_gate
+    from govcon.prompting.loader import iter_markdown_prompts
+
+    settings = _settings()
+    prompt_root = settings.resolved_prompt_root()
+
+    if suite == "compliance":
+        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+
+        froot = _pathlib.Path(fixture_dir) if fixture_dir else default_fixture_root()
+        result = run_benchmark_suite(froot)
+        if json_output:
+            typer.echo(_json.dumps({
+                "suite": "compliance",
+                "gate_passed": result.gate.passed,
+                "failures": result.gate.failures,
+                "metrics": result.aggregate,
+            }, indent=2))
+        else:
+            status = "PASS" if result.gate.passed else "FAIL"
+            typer.echo(f"compliance eval suite: {status}")
+            for k, v in result.aggregate.items():
+                typer.echo(f"  {k}: {v}")
+            if result.gate.failures:
+                for f in result.gate.failures:
+                    typer.echo(f"  FAIL: {f}")
+        if not result.gate.passed:
+            raise typer.Exit(code=1)
+        return
+
+    if not prompt_ref:
+        typer.echo("Provide <name>@<version> or --suite <suite>", err=True)
+        raise typer.Exit(code=2)
+
+    name, version = (prompt_ref.rsplit("@", 1) + [None])[:2] if "@" in prompt_ref else (prompt_ref, None)
+    assets = iter_markdown_prompts(prompt_root)
+    matching = [a for a in assets if a.name == name]
+    if version:
+        matching = [a for a in matching if a.version == version]
+    if not matching:
+        typer.echo(f"prompt not found: {prompt_ref}", err=True)
+        raise typer.Exit(code=2)
+    asset = matching[-1]
+
+    gate_result = run_activation_gate(asset, prompt_root, settings=settings, run_regression=True)
+    if json_output:
+        typer.echo(_json.dumps({
+            "prompt": f"{asset.name}@{asset.version}",
+            "passed": gate_result.passed,
+            "checks": gate_result.checks,
+        }, indent=2))
+    else:
+        status = "PASS" if gate_result.passed else "FAIL"
+        typer.echo(f"eval {asset.name}@{asset.version}: {status}")
+        for check in gate_result.checks:
+            icon = "✓" if check["passed"] else "✗"
+            typer.echo(f"  {icon} {check['check']}" + (f": {check['detail']}" if check["detail"] else ""))
+    if not gate_result.passed:
+        raise typer.Exit(code=1)
 
 
 # ── Decision engine CLI ──

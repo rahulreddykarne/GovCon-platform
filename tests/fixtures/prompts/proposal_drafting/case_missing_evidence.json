@@ -1,0 +1,20 @@
+{
+  "description": "Proposal draft with missing delivery evidence — BLOCKER expected.",
+  "prompt": "proposal_drafting",
+  "inputs": {
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "delivery", "text": "Delivery within 10 days ARO", "mandatory": true, "status": "needs_review", "evidence": null},
+      {"id": 2, "category": "eligibility", "text": "ISO 13485 certification", "mandatory": true, "status": "unknown"}
+    ],
+    "SECTIONS_REQUESTED": ["technical_response", "delivery_plan"],
+    "APPROVED_FACTS_JSON": {
+      "company_name": "Beta Medical Corp.",
+      "uei": "XYZ789012345",
+      "lead_time_days": null
+    }
+  },
+  "expected_blockers": true,
+  "blocker_categories": ["delivery", "certification"],
+  "no_fabrication_of": ["lead_time_days", "ISO certification status"],
+  "notes": "Delivery and ISO cert are missing/unknown. Blocker markers [[BLOCKER:...]] must appear. No fabricated lead time or cert status."
+}

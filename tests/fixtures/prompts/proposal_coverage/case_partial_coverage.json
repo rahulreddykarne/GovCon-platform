@@ -1,0 +1,22 @@
+{
+  "description": "Proposal coverage check — 2 of 3 requirements covered.",
+  "prompt": "proposal_coverage",
+  "inputs": {
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "delivery", "text": "Delivery within 30 days ARO", "mandatory": true},
+      {"id": 2, "category": "packaging", "text": "MIL-STD-2073-1E required", "mandatory": true},
+      {"id": 3, "category": "eligibility", "text": "ISO 13485 certification", "mandatory": true}
+    ],
+    "PROPOSAL_SECTIONS_JSON": [
+      {"section_key": "technical_response", "content": "We will deliver within 25 days using bonded warehouse. All items packaged per MIL-STD-2073-1E Method 12."},
+      {"section_key": "qualifications", "content": "Acme Supply holds various quality certifications."}
+    ]
+  },
+  "expected_coverage": [
+    {"requirement_id": 1, "covered": true, "evidence_section": "technical_response"},
+    {"requirement_id": 2, "covered": true, "evidence_section": "technical_response"},
+    {"requirement_id": 3, "covered": false, "reason": "ISO 13485 not explicitly stated"}
+  ],
+  "requirement_coverage_rate": 0.67,
+  "notes": "Delivery and MIL-STD-2073-1E are addressed. ISO 13485 is not mentioned explicitly. General quality claim is insufficient."
+}
