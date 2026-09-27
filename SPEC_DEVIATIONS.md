@@ -221,3 +221,13 @@ Implementation notes:
 - Decision: `outcome_analysis_v1.md` is activated and registered. The `outcome_analysis_id` FK in `outcome_feedback` provides the hook for AI classification. Automatic invocation at record time is deferred until an AI key is available. The prompt is production-ready and correctly structures the evidence constraints per §39.8.
 - Impact: Analytics do not depend on AI classification (descriptive stats use recorded fields). AI classification is additive and can be run as a batch job when a key is available.
 - Follow-up: Wire AI classification call in `record_outcome` when AI key is set.
+
+## Phase 18
+
+No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
+
+Core security infrastructure (data classification, AI gateway, credential rules, localhost bind, log redaction) was implemented in Phase 0 per ADR-006 rather than deferred to Phase 18. This was an intentional architectural decision, not a deviation; Phase 0 required the gateway as a prerequisite for any later AI call. Phase 18 confirms all ACs are satisfied and assembles the compliance evidence in `tests/test_security_hardening.py`.
+
+Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as part of the prompt registry work. Phase 18 confirms their production bodies and `status: active` are correct.
+
+§24A (collaboration, authentication, and concurrency) was fully delivered by Phase 10. Phase 18 does not re-implement any auth/concurrency stack; only the security-data ACs from §24 were in scope for this phase.
