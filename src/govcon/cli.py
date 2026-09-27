@@ -34,6 +34,7 @@ review_app = typer.Typer(help="Collaborative review workspace operations.")
 compliance_app = typer.Typer(help="High-reliability compliance matrix, validation, and pre-flight.")
 proposal_app = typer.Typer(help="Post-approval proposal generation and final approval (Phase 11).")
 submission_app = typer.Typer(help="Submission package generation and tracking (Phase 11).")
+mcp_app = typer.Typer(help="Model Context Protocol server (Phase 12).")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -50,6 +51,7 @@ app.add_typer(review_app, name="review")
 app.add_typer(compliance_app, name="compliance")
 app.add_typer(proposal_app, name="proposal")
 app.add_typer(submission_app, name="submission")
+app.add_typer(mcp_app, name="mcp")
 
 
 def main() -> None:
@@ -2194,6 +2196,14 @@ def submission_email_draft(
         if draft["notes"]:
             for n in draft["notes"]:
                 typer.echo(f"NOTE: {n}", err=True)
+
+
+@mcp_app.command("serve")
+def mcp_serve() -> None:
+    """Start the GovCon MCP server on stdio."""
+    from govcon.mcp.server import main as run_mcp_server
+
+    run_mcp_server()
 
 
 @submission_app.command("confirm")
