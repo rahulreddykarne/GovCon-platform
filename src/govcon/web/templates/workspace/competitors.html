@@ -1,0 +1,30 @@
+<!-- Competitors tab -->
+{% if not competitors %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">No competitor data. Run <code>govcon vendors competitors --opp-id {{ opp.id }}</code>.</p>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Competitors / Vendors</span>
+    <span class="text-sm text-muted">{{ competitors|length }} found</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Vendor</th><th>UEI</th><th>Awards</th><th>Total $</th></tr>
+      </thead>
+      <tbody>
+        {% for c in competitors %}
+        <tr>
+          <td><a href="/vendors?q={{ c.recipient_uei }}">{{ c.recipient_name or "—" }}</a></td>
+          <td><code>{{ c.recipient_uei or "—" }}</code></td>
+          <td>{{ c.award_count }}</td>
+          <td>{{ "$%,.0f"|format(c.total_value|float) if c.total_value else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

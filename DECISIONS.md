@@ -371,3 +371,26 @@ Record durable architecture/implementation decisions.
 - Decision: `compute_win_profile` checks `OutcomeFeedback.outcome = 'won'` count; returns `None` when `< min_wins` (default 3). `win_profile_recommendations` returns an empty list with an explanatory note. This matches the spec's intent to avoid meaningless profile recommendations from a single data point.
 - Alternatives considered: Always compute; compute with any number of wins.
 - Consequences: Systems with fewer than 3 recorded wins skip this recommendation category gracefully.
+### ADR-047 — Starlette 1.7 TemplateResponse new signature
+- Phase: 14
+- Date: 2026-09-27
+- Context: Starlette 1.7 changed `Jinja2Templates.TemplateResponse` from `(name, context)` to `(request, name, context)`. System Jinja2 3.1.2 was being resolved before pip-installed 3.1.6, causing a dict-unhashable cache bug.
+- Decision: Updated all `TemplateResponse` calls to use `(request, template, ctx)`. Pinned `jinja2>=3.1` in pyproject.toml.
+- Alternatives considered: Pin to Starlette <1.7 or add a compatibility shim.
+- Consequences: Correct rendering with Starlette 1.7. Jinja2 must be installed via pip, not system packages.
+
+### ADR-048 — HTMX inbox actions return empty HTML to remove rows
+- Phase: 14
+- Date: 2026-09-27
+- Context: The spec requires HTMX for the inbox action buttons. Returning an empty response causes HTMX `hx-swap="outerHTML"` to remove the target row.
+- Decision: Inbox action route returns `HTMLResponse("")` after updating the match status. The HTMX request removes the row from the DOM.
+- Alternatives considered: Return a "dismissed" state row, or redirect.
+- Consequences: Instant optimistic UI feedback. Match status is updated server-side.
+
+### ADR-049 — Workspace route loads all data in single session_scope
+- Phase: 14
+- Date: 2026-09-27
+- Context: Workspace page has 13 tabs and each tab needs different data. Loading all data for all tabs on every request would be expensive.
+- Decision: Tab-specific data is loaded inside `if active_tab == "..."` branches, so only the active tab's data is fetched per request. All DB access happens inside a single `session_scope()` to avoid N+1 issues.
+- Alternatives considered: Lazy loading via HTMX tab triggers (future enhancement for Phase 17+ optimization).
+- Consequences: Minimal DB load per page request. All data for one tab fetched once.

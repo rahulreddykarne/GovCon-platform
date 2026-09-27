@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Learning — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Learning &amp; Analytics</h1>
+    <div class="page-subtitle">Outcome analytics — wins, losses, and lessons learned</div>
+  </div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Bids Submitted</div>
+    <div class="value primary">{{ stats.submitted }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Won</div>
+    <div class="value success">{{ stats.won }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Lost</div>
+    <div class="value danger">{{ stats.lost }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">No Bid</div>
+    <div class="value">{{ stats.no_bid }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Win Rate</div>
+    <div class="value {% if stats.win_rate >= 50 %}success{% elif stats.win_rate > 0 %}primary{% else %}{% endif %}">
+      {% if stats.submitted > 0 %}{{ "%.0f"|format(stats.win_rate) }}%{% else %}—{% endif %}
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Avg Margin</div>
+    <div class="value {% if stats.avg_margin and stats.avg_margin > 0 %}success{% endif %}">
+      {% if stats.avg_margin %}{{ "%.1f"|format(stats.avg_margin) }}%{% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if by_agency %}
+<div class="card">
+  <div class="card-header"><span class="card-title">By Agency</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Agency</th><th>Submitted</th><th>Won</th><th>Win Rate</th></tr></thead>
+      <tbody>
+        {% for row in by_agency %}
+        <tr>
+          <td>{{ row.agency or "—" }}</td>
+          <td>{{ row.submitted }}</td>
+          <td>{{ row.won }}</td>
+          <td>{{ "%.0f"|format(row.win_rate) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if by_psc %}
+<div class="card">
+  <div class="card-header"><span class="card-title">By PSC</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>PSC</th><th>Submitted</th><th>Won</th><th>Win Rate</th></tr></thead>
+      <tbody>
+        {% for row in by_psc %}
+        <tr>
+          <td>{{ row.psc or "—" }}</td>
+          <td>{{ row.submitted }}</td>
+          <td>{{ row.won }}</td>
+          <td>{{ "%.0f"|format(row.win_rate) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if no_bid_reasons %}
+<div class="card">
+  <div class="card-header"><span class="card-title">No-Bid Reasons</span></div>
+  <ul style="list-style:none; padding:0;">
+    {% for r in no_bid_reasons %}
+    <li style="padding:0.3rem 0; border-bottom:1px solid var(--color-border);">{{ r }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if common_compliance_issues %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Common Compliance Issues</span></div>
+  <ul>
+    {% for issue in common_compliance_issues %}
+    <li>{{ issue }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if recent_outcomes %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Recent Outcomes</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Opportunity</th><th>Outcome</th><th>When</th><th>Notes</th></tr></thead>
+      <tbody>
+        {% for o in recent_outcomes %}
+        <tr>
+          <td><a href="/workspace/{{ o.opp_id }}">{{ o.title or o.source_id or o.opp_id }}</a></td>
+          <td><span class="badge badge-{% if o.stage == 'won' %}success{% elif o.stage == 'lost' %}danger{% else %}secondary{% endif %}">{{ o.stage }}</span></td>
+          <td>{{ o.outcome_at.strftime('%Y-%m-%d') if o.outcome_at else '—' }}</td>
+          <td>{{ o.outcome_notes or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

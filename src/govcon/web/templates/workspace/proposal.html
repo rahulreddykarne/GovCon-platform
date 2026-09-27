@@ -1,0 +1,48 @@
+<!-- Proposal tab -->
+{% if review_session and review_session.status in ('approved_to_bid',) %}
+  {% if proposal %}
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Proposal <span class="label-ai">AI generated</span></span>
+      <span class="badge badge-{% if proposal.status == 'final_approved' %}success{% elif proposal.status == 'red_teamed' %}primary{% else %}secondary{% endif %}">{{ proposal.status|replace('_',' ') }}</span>
+    </div>
+    {% if proposal_version %}
+      <pre style="font-size:12px; background:var(--color-bg); padding:0.75rem; border-radius:var(--radius); overflow:auto; max-height:500px; white-space:pre-wrap;">{{ proposal_version.full_text or "(generating…)" }}</pre>
+    {% endif %}
+
+    <!-- Final approval -->
+    {% if can_approve and proposal.status == 'red_teamed' %}
+    <div class="mt-2 d-flex gap-1">
+      <form method="post" action="/workspace/{{ opp.id }}/proposal/approve">
+        <input type="hidden" name="decision" value="APPROVE_FOR_SUBMISSION">
+        <button type="submit" class="btn btn-success">Approve for Submission</button>
+      </form>
+      <form method="post" action="/workspace/{{ opp.id }}/proposal/approve">
+        <input type="hidden" name="decision" value="RETURN_FOR_FIX">
+        <button type="submit" class="btn btn-secondary">Return for Fix</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- Red team -->
+    {% if proposal.red_team_analysis_id %}
+    <div class="alert alert-info mt-2">AI red-team review complete.</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card">
+    <p class="text-muted text-center" style="padding:2rem 0;">Proposal generation in progress or not yet triggered.</p>
+  </div>
+  {% endif %}
+{% else %}
+<div class="card">
+  <p class="text-muted" style="padding:1rem 0;">
+    Proposal generation begins automatically after <strong>Approve to Bid</strong>.
+    {% if review_session %}
+      Current status: <span class="badge badge-primary">{{ review_session.status|replace('_',' ') }}</span>
+    {% else %}
+      No review session started yet.
+    {% endif %}
+  </p>
+</div>
+{% endif %}

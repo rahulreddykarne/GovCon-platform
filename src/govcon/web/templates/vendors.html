@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Vendors — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Vendors</h1>
+    <div class="page-subtitle">SAM vendor profiles and historical win patterns</div>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" action="/vendors">
+    <div class="d-flex gap-1 flex-wrap align-center">
+      <div class="form-group mb-0" style="flex:1; min-width:220px;">
+        <input type="search" name="q" placeholder="UEI, CAGE, or company name…" value="{{ query or '' }}" autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary">Search</button>
+      {% if query %}<a href="/vendors" class="btn btn-secondary">Clear</a>{% endif %}
+    </div>
+  </form>
+</div>
+
+{% if vendor %}
+<!-- Single vendor profile -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{{ vendor.legal_name or vendor.uei }}</span>
+    <span class="badge badge-{% if vendor.registration_status == 'Active' %}success{% else %}secondary{% endif %}">{{ vendor.registration_status or 'Unknown' }}</span>
+  </div>
+  <dl class="key-val">
+    <dt>UEI</dt><dd>{{ vendor.uei }}</dd>
+    {% if vendor.cage_code %}<dt>CAGE</dt><dd>{{ vendor.cage_code }}</dd>{% endif %}
+    {% if vendor.dba_name %}<dt>DBA</dt><dd>{{ vendor.dba_name }}</dd>{% endif %}
+    {% if vendor.physical_address %}<dt>Address</dt><dd>{{ vendor.physical_address }}</dd>{% endif %}
+    {% if vendor.business_types %}<dt>Business Types</dt><dd>{{ vendor.business_types }}</dd>{% endif %}
+    {% if vendor.psc_codes %}<dt>PSC Codes</dt><dd>{{ vendor.psc_codes }}</dd>{% endif %}
+    {% if vendor.naics_codes %}<dt>NAICS Codes</dt><dd>{{ vendor.naics_codes }}</dd>{% endif %}
+    {% if vendor.fetched_at %}<dt>Last Fetched</dt><dd>{{ vendor.fetched_at.strftime('%Y-%m-%d') }}</dd>{% endif %}
+  </dl>
+</div>
+
+{% if vendor_awards %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Award History ({{ vendor_awards|length }} records)</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Agency</th><th>Amount</th><th>PSC</th><th>Description</th></tr></thead>
+      <tbody>
+        {% for a in vendor_awards %}
+        <tr>
+          <td>{{ a.action_date or "—" }}</td>
+          <td>{{ a.awarding_agency or "—" }}</td>
+          <td>{{ "$%,.0f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
+          <td>{{ a.psc_code or "—" }}</td>
+          <td class="truncate" style="max-width:200px;">{{ a.description or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% elif results is not none %}
+<!-- Search results -->
+<div class="card">
+  {% if results %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>UEI</th><th>CAGE</th><th>Status</th><th>PSC</th></tr>
+      </thead>
+      <tbody>
+        {% for v in results %}
+        <tr>
+          <td><a href="/vendors?q={{ v.uei }}">{{ v.legal_name or v.uei }}</a></td>
+          <td><code>{{ v.uei }}</code></td>
+          <td>{{ v.cage_code or "—" }}</td>
+          <td><span class="badge badge-{% if v.registration_status == 'Active' %}success{% else %}secondary{% endif %}">{{ v.registration_status or '?' }}</span></td>
+          <td>
+            {% if v.psc_codes %}
+              {% for k in (v.psc_codes.keys() if v.psc_codes is mapping else []) | list %}
+                <span class="badge badge-secondary">{{ k }}</span>
+              {% endfor %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="text-muted text-center" style="padding:2rem 0;">No vendors found. Try a UEI or company name.</p>
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">Search for a vendor by UEI, CAGE code, or name.</p>
+</div>
+{% endif %}
+
+{% endblock %}

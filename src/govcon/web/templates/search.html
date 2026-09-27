@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Search — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Search</h1>
+    <div class="page-subtitle">Full-text and filtered search across all opportunities</div>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" action="/search">
+    <div class="d-flex gap-1 flex-wrap align-center">
+      <div class="form-group mb-0" style="flex:1; min-width:220px;">
+        <input type="search" name="q" placeholder="Keywords, title, NSN..." value="{{ query or '' }}" autofocus>
+      </div>
+      <div class="form-group mb-0">
+        <select name="source" title="Source">
+          <option value="">All sources</option>
+          <option value="sam" {% if source == 'sam' %}selected{% endif %}>SAM.gov</option>
+          <option value="dibbs" {% if source == 'dibbs' %}selected{% endif %}>DIBBS</option>
+        </select>
+      </div>
+      <div class="form-group mb-0">
+        <input type="text" name="psc" placeholder="PSC prefix" value="{{ psc or '' }}" style="width:100px;">
+      </div>
+      <div class="form-group mb-0">
+        <input type="text" name="naics" placeholder="NAICS prefix" value="{{ naics or '' }}" style="width:100px;">
+      </div>
+      <div class="form-group mb-0">
+        <select name="status" title="Status">
+          <option value="">All statuses</option>
+          <option value="open" {% if status == 'open' %}selected{% endif %}>Open</option>
+          <option value="closed" {% if status == 'closed' %}selected{% endif %}>Closed</option>
+          <option value="archived" {% if status == 'archived' %}selected{% endif %}>Archived</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Search</button>
+      {% if query or source or psc or naics or status %}
+        <a href="/search" class="btn btn-secondary">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+{% if results is not none %}
+<div class="card">
+  {% if results %}
+  <div class="card-header">
+    <span class="card-title">{{ results|length }}{% if results|length == limit %}&nbsp;(limited){% endif %} results</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Title / ID</th>
+          <th>Source</th>
+          <th>PSC</th>
+          <th>Agency</th>
+          <th>Est. Value</th>
+          <th>Deadline</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results %}
+        <tr>
+          <td>
+            <a href="/opp/{{ r.id }}">{{ (r.title or r.source_id)[:80] }}</a>
+            {% if r.solicitation_number %}<div class="text-sm text-muted">{{ r.solicitation_number }}</div>{% endif %}
+          </td>
+          <td>{{ r.source|upper }}</td>
+          <td>{{ r.psc_code or "—" }}</td>
+          <td class="truncate" style="max-width:160px;">{{ r.agency_path[:60] if r.agency_path else "—" }}</td>
+          <td>{{ r.value_display or "—" }}</td>
+          <td class="{{ r.deadline_class }}">{{ r.deadline_display or "—" }}</td>
+          <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="text-muted text-center" style="padding:2rem 0;">No matching opportunities found.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

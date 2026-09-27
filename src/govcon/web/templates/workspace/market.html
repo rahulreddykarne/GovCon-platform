@@ -1,0 +1,44 @@
+<!-- Market Intelligence tab -->
+{% if ai_market %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Market Intelligence <span class="label-ai">AI</span></span>
+  </div>
+  {% set out = ai_market.output_json %}
+  {% if out.get('market_summary') %}<p>{{ out['market_summary'] }}</p>{% endif %}
+  {% if out.get('agencies') %}
+    <h3 style="font-size:13px; font-weight:600; margin:1rem 0 0.5rem;">Key Agencies</h3>
+    <ul>{% for a in out['agencies'] %}<li>{{ a }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if out.get('suppliers') %}
+    <h3 style="font-size:13px; font-weight:600; margin:1rem 0 0.5rem;">Known Suppliers</h3>
+    <ul>{% for s in out['suppliers'] %}<li>{{ s }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">No market intelligence analysis yet.</p>
+</div>
+{% endif %}
+
+{% if awards %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Award Pattern ({{ awards|length }} records)</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Recipient</th><th>Agency</th><th>Amount</th><th>PSC</th></tr></thead>
+      <tbody>
+        {% for a in awards[:20] %}
+        <tr>
+          <td>{{ a.action_date or "—" }}</td>
+          <td>{{ a.recipient_name or a.recipient_uei or "—" }}</td>
+          <td>{{ a.awarding_agency or "—" }}</td>
+          <td>{{ "$%,.0f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
+          <td>{{ a.psc_code or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

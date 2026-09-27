@@ -1,0 +1,73 @@
+<!-- Submission tab -->
+{% if review_session and review_session.status == 'approved_to_bid' and proposal and proposal.status == 'final_approved' %}
+  {% if submission %}
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Submission Package</span>
+      <span class="badge badge-{% if submission.status == 'ready' %}success{% elif submission.status == 'submitted' %}primary{% else %}secondary{% endif %}">{{ submission.status|replace('_',' ') }}</span>
+    </div>
+
+    {% if submission.required_actions %}
+    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Checklist</h3>
+    <ul>
+      {% if submission.required_actions is mapping %}
+        {% for key, val in submission.required_actions.items() %}
+          <li>{% if val %}<strong>{{ key }}</strong>{% else %}{{ key }}{% endif %}</li>
+        {% endfor %}
+      {% else %}
+        {% for item in submission.required_actions %}
+          <li>{{ item }}</li>
+        {% endfor %}
+      {% endif %}
+    </ul>
+    {% endif %}
+
+    {% if submission.instructions %}
+    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Submission Instructions</h3>
+    <p>{{ submission.instructions }}</p>
+    {% endif %}
+
+    <!-- Final submit approval -->
+    {% if can_approve and submission.status == 'ready' %}
+    <div class="mt-2 d-flex gap-1">
+      <form method="post" action="/workspace/{{ opp.id }}/submission/approve">
+        <input type="hidden" name="decision" value="approve">
+        <button type="submit" class="btn btn-success">Authorize Submission</button>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if submission.status == 'submitted' %}
+    <div class="alert alert-success mt-2">
+      Submitted {% if submission.submitted_at %}on {{ submission.submitted_at.strftime('%Y-%m-%d') }}{% endif %}.
+    </div>
+    <!-- Outcome recording -->
+    {% if pursuit and pursuit.stage not in ('won','lost','cancelled') %}
+    <form method="post" action="/workspace/{{ opp.id }}/record-outcome" class="mt-2">
+      <div class="d-flex gap-1 align-center flex-wrap">
+        <select name="outcome" required>
+          <option value="">Record outcome…</option>
+          <option value="won">Won</option>
+          <option value="lost">Lost</option>
+          <option value="cancelled">Cancelled / No Award</option>
+        </select>
+        <input type="text" name="notes" placeholder="Notes / lessons learned" style="flex:1; min-width:200px;">
+        <button type="submit" class="btn btn-primary">Record</button>
+      </div>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card">
+    <p class="text-muted text-center" style="padding:2rem 0;">Submission package generating…</p>
+  </div>
+  {% endif %}
+{% else %}
+<div class="card">
+  <p class="text-muted" style="padding:1rem 0;">
+    Submission package available after proposal is approved.
+    {% if review_session %}Status: <span class="badge badge-primary">{{ review_session.status|replace('_',' ') }}</span>{% endif %}
+  </p>
+</div>
+{% endif %}

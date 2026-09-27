@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit Watchlist{% else %}New Watchlist{% endif %} — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{% if editing %}Edit Watchlist{% else %}New Watchlist{% endif %}</h1>
+  </div>
+  <a href="/watchlists" class="btn btn-secondary">← Back</a>
+</div>
+
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="{% if editing %}/watchlists/{{ wl.id }}/edit{% else %}/watchlists/new{% endif %}">
+    <div class="form-group">
+      <label for="name">Name *</label>
+      <input type="text" id="name" name="name" required value="{{ wl.name if wl else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="psc_codes">PSC Codes (comma-separated prefixes)</label>
+      <input type="text" id="psc_codes" name="psc_codes" value="{{ (wl.psc_codes|join(',')) if wl and wl.psc_codes else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="naics_codes">NAICS Codes (comma-separated prefixes)</label>
+      <input type="text" id="naics_codes" name="naics_codes" value="{{ (wl.naics_codes|join(',')) if wl and wl.naics_codes else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="keywords">Keywords (comma-separated)</label>
+      <input type="text" id="keywords" name="keywords" value="{{ (wl.keywords|join(',')) if wl and wl.keywords else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="exclude_keywords">Exclude Keywords (comma-separated)</label>
+      <input type="text" id="exclude_keywords" name="exclude_keywords" value="{{ (wl.exclude_keywords|join(',')) if wl and wl.exclude_keywords else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="nsn_list">NSNs (comma-separated)</label>
+      <input type="text" id="nsn_list" name="nsn_list" value="{{ (wl.nsn_list|join(',')) if wl and wl.nsn_list else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="set_asides">Set-Asides (comma-separated codes)</label>
+      <input type="text" id="set_asides" name="set_asides" value="{{ (wl.set_asides|join(',')) if wl and wl.set_asides else '' }}">
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+      <div class="form-group">
+        <label for="min_value">Min Value ($)</label>
+        <input type="number" id="min_value" name="min_value" step="0.01" value="{{ wl.min_value if wl and wl.min_value else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="max_value">Max Value ($)</label>
+        <input type="number" id="max_value" name="max_value" step="0.01" value="{{ wl.max_value if wl and wl.max_value else '' }}">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="min_deadline_days">Min Deadline Days (from today)</label>
+      <input type="number" id="min_deadline_days" name="min_deadline_days" value="{{ wl.min_deadline_days if wl and wl.min_deadline_days else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="sources">Sources (comma-separated: sam, dibbs)</label>
+      <input type="text" id="sources" name="sources" value="{{ (wl.sources|join(',')) if wl and wl.sources else '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="2">{{ wl.notes if wl and wl.notes else '' }}</textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">{% if editing %}Save Changes{% else %}Create Watchlist{% endif %}</button>
+  </form>
+</div>
+
+{% endblock %}

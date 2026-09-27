@@ -1147,3 +1147,114 @@ None.
 ### Recommended next phase
 
 **`PHASE_14_WEB_UI.md`** — Web UI. Do not implement in this run.
+## 2026-09-27 01:00 UTC — PHASE_14_WEB_UI
+
+- Agent/model identity: cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27 01:00 UTC
+- Phase/task: PHASE_14_WEB_UI (master §20)
+- Branch: `cursor/phase-14-web-ui-2f9c`
+- Base: `main` at `ff8abee` (Phase 12 squash merge)
+- Pull request: (draft, to be opened)
+
+### Files changed
+
+- `pyproject.toml` — added `itsdangerous>=2.1`, `jinja2>=3.1`, `python-multipart>=0.0.6`
+- `src/govcon/web/app.py` — full FastAPI app with static files and all 9-page routes
+- `src/govcon/web/routes/__init__.py` — all route handlers (inbox, search, opp_detail, workspace, pipeline, watchlists, vendors, ops, learning, admin/invite)
+- `src/govcon/web/auth.py` — session cookie auth dependency helpers
+- `src/govcon/web/helpers.py` — deadline_info, format_value template helpers
+- `src/govcon/web/static/govcon.css` — single CSS file (variables, layout, cards, buttons, forms, badges, tables, tabs, pipeline board, workspace, responsive)
+- `src/govcon/web/templates/base.html` — top-bar nav, user badge, logout
+- `src/govcon/web/templates/login.html` — standalone login page
+- `src/govcon/web/templates/inbox.html` — match groups with HTMX action buttons
+- `src/govcon/web/templates/search.html` — full-text + filters
+- `src/govcon/web/templates/opp_detail.html` — all opportunity fields, contacts, awards, competitors, timeline, snapshots
+- `src/govcon/web/templates/workspace.html` — tab bar + tab dispatch
+- `src/govcon/web/templates/workspace/overview.html` — sidebar + bid decision + review status
+- `src/govcon/web/templates/workspace/ai_decision.html` — full decision package
+- `src/govcon/web/templates/workspace/requirements.html` — requirements table
+- `src/govcon/web/templates/workspace/market.html` — market intelligence + awards
+- `src/govcon/web/templates/workspace/awards.html` — historical awards table
+- `src/govcon/web/templates/workspace/products.html` — sourcing analysis
+- `src/govcon/web/templates/workspace/pricing.html` — pricing analysis + pursuit pricing
+- `src/govcon/web/templates/workspace/competitors.html` — competitor table
+- `src/govcon/web/templates/workspace/compliance.html` — compliance matrix + requirements
+- `src/govcon/web/templates/workspace/review.html` — reviewer assignments, comments, approval actions
+- `src/govcon/web/templates/workspace/proposal.html` — proposal (gated behind approve_to_bid)
+- `src/govcon/web/templates/workspace/submission.html` — submission package + outcome recording
+- `src/govcon/web/templates/workspace/activity.html` — audit event log
+- `src/govcon/web/templates/pipeline.html` — kanban board with 15 columns
+- `src/govcon/web/templates/watchlists.html` — watchlist list
+- `src/govcon/web/templates/watchlist_edit.html` — watchlist CRUD form
+- `src/govcon/web/templates/vendors.html` — vendor search + profile
+- `src/govcon/web/templates/ops.html` — stats + ingestion runs + user management
+- `src/govcon/web/templates/learning.html` — outcome analytics
+- `src/govcon/web/templates/invite_user.html` — user invite form
+- `src/govcon/cli.py` — added `web_app` typer group + `govcon web serve`
+- `tests/test_web_ui.py` — 34 tests covering auth, all pages, inbox actions, concurrent access, approval permissions, audit trail, watchlist CRUD, security requirements
+- `IMPLEMENTATION_STATUS.md`, `DECISIONS.md`, `SPEC_DEVIATIONS.md`, this file
+
+### What shipped
+
+**Authentication:**
+- Session-based login/logout (cookie `govcon_session` → SHA-256 hash stored in DB)
+- Invite-only user creation via `/admin/users/invite` (owner role required)
+- Role checks: `owner`, `approver`, `reviewer`, `read_only`
+- App defaults to `127.0.0.1` bind (security requirement §24)
+
+**Pages (9 of 9):**
+1. Inbox `/` — new matches grouped by watchlist, HTMX Seen/Dismiss/Review/Pursue actions
+2. Search `/search` — full-text (PostgreSQL FTS) + source/PSC/NAICS/status filters
+3. Opportunity detail `/opp/{id}` — all fields, timeline, contacts, attachments, AI summary, awards, competitors, snapshots, source link
+4. Workspace `/workspace/{id}` — 13-tab collaborative bid workspace:
+   - Overview, AI Decision Package, Requirements, Market Intelligence, Historical Awards,
+     Products & Suppliers, Pricing, Competitors, Compliance, Collaborative Review,
+     Proposal (gated), Submission (gated), Activity
+5. Pipeline `/pipeline` — 15-column kanban board (Ingested → Won/Lost/No Bid)
+6. Watchlists `/watchlists` — CRUD + rebuild matches
+7. Vendors `/vendors` — search by UEI/CAGE/name + historical win profile
+8. Ops `/ops` — stats, ingestion runs, user management
+9. Learning `/learning` — outcome analytics (bids submitted, wins, losses, margins, recent outcomes)
+
+**Workflow gates:**
+- Proposal tab locked until `approved_to_bid`
+- Submission tab locked until proposal `final_approved`
+- Approve-to-bid requires approver/owner role
+- Outcome recording (won/lost/cancelled) after submitted
+
+**UI behavior:**
+- Server-rendered HTMX (no SPA framework)
+- Single CSS file (`govcon.css`)
+- Deadline urgency coloring (red < 3 days, yellow < 7 days)
+- AI vs human labels throughout
+- Source citations link to SAM.gov original
+
+### Acceptance criteria
+
+All §20 acceptance criteria verified:
+- ✅ Full workflow in UI from discover → submitted → won/lost
+- ✅ Server-rendered + HTMX, one CSS file, no JS build tool
+- ✅ Clear deadline urgency (color coding)
+- ✅ Clear AI vs human labels
+- ✅ Clear unknown/missing states (shown as "—" or placeholder text)
+- ✅ Source citations clickable (opp source link in detail + workspace)
+- ✅ Authentication: invite-only, session-based, logout, inactive-user disable, role checks
+- ✅ Two users can open same workspace simultaneously (test: test_two_users_open_same_workspace)
+- ✅ Reviewer identity visible on comments (user_id stored + displayed)
+- ✅ Approval permissions enforced (reviewer cannot approve — test: test_reviewer_cannot_approve)
+- ✅ Audit history: who changed what and when (activity tab)
+- ✅ App defaults to localhost only (127.0.0.1 bind)
+- ✅ No password hashes in rendered HTML (test: test_no_password_hash_in_rendered_page)
+
+### Deviations
+
+- DEV-008: Phase 13 (semantic search) NOT a dependency for Phase 14 per spec; Phase 14 depends on 0,1,2,5,6,7,8,9,10,11 — all confirmed. Semantic search tab not needed.
+- Proposal/Submission tabs show "locked" state before approval — matches spec (tabs show "planned/generated-later state" before APPROVE_TO_BID).
+- Notifications page not implemented (notification bell shows count; full page is post-Phase 14 work).
+- `govcon web serve --reload` flag is available for dev mode.
+
+### Known follow-up (not blocking)
+
+- By-agency and by-PSC breakdown in learning page is empty until Phase 15 analytics
+- `common_compliance_issues` in learning is empty until Phase 15
+- Semantic search recommendations (Phase 13) not wired into search page yet

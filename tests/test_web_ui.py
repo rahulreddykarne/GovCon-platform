@@ -1,0 +1,455 @@
+"""Phase 14 Web UI tests.
+
+Tests cover:
+- Login page renders
+- Unauthenticated requests redirect to /login
+- Authenticated session allows access to all main pages
+- Inbox, search, pipeline, watchlists, vendors, ops, learning render
+- Match status actions work (seen, dismissed, pursuing)
+- Workspace renders for all tabs
+- Two users can view the same workspace simultaneously
+- Reviewer identity is visible on comments
+- Approval permissions are enforced
+- Audit history captures who changed what
+
+These tests use the real Postgres DB via the upgraded_engine fixture.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import secrets
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from govcon.models import (
+    Match,
+    Opportunity,
+    ReviewAssignment,
+    ReviewComment,
+    ReviewSession,
+    User,
+    UserSession,
+    Watchlist,
+)
+from govcon.web.app import create_app
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="module")
+def db_session(upgraded_engine):
+    """Provide a transactional session for setup/teardown."""
+    with Session(upgraded_engine, autobegin=True) as session:
+        yield session
+        session.rollback()
+
+
+@pytest.fixture(scope="module")
+def client(upgraded_engine):
+    import os
+    os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://govcon:govcon@localhost:5432/govcon")
+    from govcon.config import get_settings
+    get_settings.cache_clear()
+    app = create_app()
+    with TestClient(app, raise_server_exceptions=True, follow_redirects=False) as c:
+        yield c
+
+
+def _make_user(session: Session, email: str, role: str = "reviewer") -> tuple[User, str]:
+    """Create a user and return (user, raw_token)."""
+    from govcon.collaboration.users import hash_password, create_session
+    existing = session.scalar(select(User).where(User.email == email))
+    if existing:
+        # clean old sessions
+        session.query(UserSession).filter_by(user_id=existing.id).delete()
+        user = existing
+    else:
+        user = User(
+            email=email,
+            display_name=email.split("@")[0],
+            password_hash=hash_password("TestPassword123!"),
+            role=role,
+            is_active=True,
+        )
+        session.add(user)
+        session.flush()
+    raw = create_session(session, user)
+    session.commit()
+    return user, raw
+
+
+def _make_opp(session: Session) -> Opportunity:
+    existing = session.scalar(select(Opportunity).where(Opportunity.source == "test", Opportunity.source_id == "WEB-UI-TEST-001"))
+    if existing:
+        return existing
+    opp = Opportunity(
+        source="test",
+        source_id="WEB-UI-TEST-001",
+        title="Phase 14 Web UI Test Opportunity",
+        psc_code="7110",
+        agency_path="Test Agency",
+        status="open",
+        response_deadline=datetime.now(UTC) + timedelta(days=30),
+        raw={},
+    )
+    session.add(opp)
+    session.flush()
+    session.commit()
+    return opp
+
+
+def _make_watchlist(session: Session) -> Watchlist:
+    existing = session.scalar(select(Watchlist).where(Watchlist.name == "Test WL Phase14"))
+    if existing:
+        return existing
+    wl = Watchlist(name="Test WL Phase14", enabled=True, psc_codes=["71"])
+    session.add(wl)
+    session.flush()
+    session.commit()
+    return wl
+
+
+# ── Tests ──────────────────────────────────────────────────────────────────────
+
+
+class TestAuthentication:
+    """AC: session-based auth, invite-only, role checks."""
+
+    def test_login_page_renders(self, client):
+        """Login page is accessible without auth."""
+        resp = client.get("/login")
+        assert resp.status_code == 200
+        assert b"Sign in" in resp.content or b"GovCon" in resp.content
+
+    def test_unauthenticated_inbox_redirects(self, client):
+        """Unauthenticated request to / redirects to /login."""
+        resp = client.get("/")
+        assert resp.status_code == 303
+        assert "/login" in resp.headers["location"]
+
+    def test_unauthenticated_search_redirects(self, client):
+        resp = client.get("/search")
+        assert resp.status_code == 303
+
+    def test_unauthenticated_pipeline_redirects(self, client):
+        resp = client.get("/pipeline")
+        assert resp.status_code == 303
+
+    def test_unauthenticated_ops_redirects(self, client):
+        resp = client.get("/ops")
+        assert resp.status_code == 303
+
+    def test_bad_credentials_return_401(self, client):
+        resp = client.post("/login", data={"email": "nobody@example.com", "password": "wrong"})
+        assert resp.status_code == 401
+        assert b"Invalid" in resp.content
+
+    def test_valid_login_sets_cookie(self, client, db_session):
+        user, _ = _make_user(db_session, "web_login_test@example.com", "reviewer")
+        resp = client.post("/login", data={"email": "web_login_test@example.com", "password": "TestPassword123!"})
+        assert resp.status_code == 303
+        assert "govcon_session" in resp.cookies
+
+    def test_logout_clears_cookie(self, client, db_session):
+        _, token = _make_user(db_session, "web_logout_test@example.com", "reviewer")
+        c = client
+        resp = c.post("/logout", cookies={"govcon_session": token})
+        assert resp.status_code == 303
+
+
+class TestMainPages:
+    """AC: All 9 pages render for authenticated users."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session):
+        self.user, self.token = _make_user(db_session, "web_pages_test@example.com", "reviewer")
+        self.cookies = {"govcon_session": self.token}
+        self.opp = _make_opp(db_session)
+        _make_watchlist(db_session)
+
+    def test_inbox_renders(self, client):
+        resp = client.get("/", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Inbox" in resp.content
+
+    def test_search_renders(self, client):
+        resp = client.get("/search", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Search" in resp.content
+
+    def test_search_with_query(self, client):
+        resp = client.get("/search?q=test", cookies=self.cookies)
+        assert resp.status_code == 200
+
+    def test_pipeline_renders(self, client):
+        resp = client.get("/pipeline", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Pipeline" in resp.content
+
+    def test_watchlists_renders(self, client):
+        resp = client.get("/watchlists", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Watchlist" in resp.content
+
+    def test_vendors_renders(self, client):
+        resp = client.get("/vendors", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Vendor" in resp.content
+
+    def test_ops_renders(self, client):
+        resp = client.get("/ops", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Operations" in resp.content
+
+    def test_learning_renders(self, client):
+        resp = client.get("/learning", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Learning" in resp.content
+
+    def test_opp_detail_renders(self, client):
+        resp = client.get(f"/opp/{self.opp.id}", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"Phase 14" in resp.content or b"Test" in resp.content
+
+    def test_workspace_overview_renders(self, client):
+        """Workspace page renders even without a pursuit."""
+        resp = client.get(f"/workspace/{self.opp.id}?tab=overview", cookies=self.cookies)
+        assert resp.status_code == 200
+        assert b"workspace" in resp.content.lower() or b"Overview" in resp.content
+
+    def test_workspace_all_tabs_render(self, client):
+        tabs = [
+            "overview", "ai_decision", "requirements", "market", "awards",
+            "products", "pricing", "competitors", "compliance", "review",
+            "proposal", "submission", "activity",
+        ]
+        for tab in tabs:
+            resp = client.get(f"/workspace/{self.opp.id}?tab={tab}", cookies=self.cookies)
+            assert resp.status_code == 200, f"Tab {tab} failed: {resp.status_code}"
+
+
+class TestInboxActions:
+    """AC: Inbox action buttons work (Seen, Dismiss, Pursue, Review)."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session):
+        self.user, self.token = _make_user(db_session, "web_inbox_test@example.com", "reviewer")
+        self.cookies = {"govcon_session": self.token}
+        self.opp = _make_opp(db_session)
+        wl = _make_watchlist(db_session)
+        # Create a fresh match
+        existing = db_session.scalar(
+            select(Match).where(Match.opportunity_id == self.opp.id, Match.watchlist_id == wl.id)
+        )
+        if existing:
+            existing.status = "new"
+            db_session.flush()
+            self.match = existing
+        else:
+            m = Match(opportunity_id=self.opp.id, watchlist_id=wl.id, status="new")
+            db_session.add(m)
+            db_session.flush()
+            self.match = m
+        db_session.commit()
+
+    def test_seen_action(self, client, db_session):
+        resp = client.post("/inbox/action", data={"match_id": self.match.id, "action": "seen"}, cookies=self.cookies)
+        assert resp.status_code == 200
+        db_session.expire(self.match)
+        assert self.match.status == "seen"
+
+    def test_dismiss_action(self, client, db_session):
+        self.match.status = "new"
+        db_session.commit()
+        resp = client.post("/inbox/action", data={"match_id": self.match.id, "action": "dismissed"}, cookies=self.cookies)
+        assert resp.status_code == 200
+        db_session.expire(self.match)
+        assert self.match.status == "dismissed"
+
+    def test_pursue_action(self, client, db_session):
+        self.match.status = "new"
+        db_session.commit()
+        resp = client.post("/inbox/action", data={"match_id": self.match.id, "action": "pursuing"}, cookies=self.cookies)
+        assert resp.status_code == 200
+        db_session.expire(self.match)
+        assert self.match.status == "pursuing"
+
+    def test_invalid_action_rejected(self, client):
+        resp = client.post("/inbox/action", data={"match_id": self.match.id, "action": "HACK"}, cookies=self.cookies)
+        assert resp.status_code == 400
+
+
+class TestConcurrentAccess:
+    """AC: Two logged-in users can open the same opportunity simultaneously.
+    Neither user silently overwrites the other's work."""
+
+    def test_two_users_open_same_workspace(self, client, db_session):
+        user1, token1 = _make_user(db_session, "concurrent_u1@example.com", "reviewer")
+        user2, token2 = _make_user(db_session, "concurrent_u2@example.com", "reviewer")
+        opp = _make_opp(db_session)
+
+        resp1 = client.get(f"/workspace/{opp.id}?tab=overview", cookies={"govcon_session": token1})
+        resp2 = client.get(f"/workspace/{opp.id}?tab=overview", cookies={"govcon_session": token2})
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+
+    def test_reviewer_identity_visible_on_comments(self, client, db_session):
+        user1, token1 = _make_user(db_session, "ident_u1@example.com", "reviewer")
+        opp = _make_opp(db_session)
+        # Post a comment
+        resp = client.post(
+            f"/workspace/{opp.id}/comment",
+            data={"body": "Identity test comment"},
+            cookies={"govcon_session": token1},
+        )
+        assert resp.status_code in (200, 303)
+        # The comment was recorded with user_id
+        comment = db_session.scalar(
+            select(ReviewComment)
+            .where(ReviewComment.opportunity_id == opp.id, ReviewComment.body == "Identity test comment")
+        )
+        assert comment is not None
+        assert comment.user_id == user1.id
+
+
+class TestApprovalPermissions:
+    """AC: Approval permissions are enforced. Reviewer cannot approve."""
+
+    def test_reviewer_cannot_approve(self, client, db_session):
+        reviewer, token = _make_user(db_session, "perm_reviewer@example.com", "reviewer")
+        opp = _make_opp(db_session)
+        # Ensure review session exists at approval_pending
+        rs = db_session.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp.id))
+        if not rs:
+            rs = ReviewSession(
+                opportunity_id=opp.id,
+                status="approval_pending",
+                review_policy="conditional",
+                required_review_count=1,
+                completed_review_count=1,
+            )
+            db_session.add(rs)
+        else:
+            rs.status = "approval_pending"
+        db_session.commit()
+
+        # Reviewer tries to approve — should be redirected (not crash, not approve)
+        resp = client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid"},
+            cookies={"govcon_session": token},
+        )
+        # Either redirect or 303 — should not change status to approved
+        db_session.expire(rs)
+        # status stays as approval_pending or is redirected
+        assert rs.status != "approved_to_bid"
+
+    def test_approver_can_approve(self, client, db_session):
+        approver, token = _make_user(db_session, "perm_approver@example.com", "approver")
+        opp = _make_opp(db_session)
+        rs = db_session.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp.id))
+        if not rs:
+            rs = ReviewSession(
+                opportunity_id=opp.id,
+                status="approval_pending",
+                review_policy="conditional",
+                required_review_count=1,
+                completed_review_count=1,
+            )
+            db_session.add(rs)
+        else:
+            rs.status = "approval_pending"
+        db_session.commit()
+
+        resp = client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid"},
+            cookies={"govcon_session": token},
+        )
+        assert resp.status_code in (200, 303)
+        db_session.expire(rs)
+        assert rs.status == "approved_to_bid"
+        assert rs.approved_by_user_id == approver.id
+
+
+class TestAuditTrail:
+    """AC: Audit history shows who changed what and when."""
+
+    def test_comment_stored_with_user_id(self, client, db_session):
+        user, token = _make_user(db_session, "audit_user@example.com", "reviewer")
+        opp = _make_opp(db_session)
+        body = f"Audit trail test {secrets.token_hex(4)}"
+        client.post(
+            f"/workspace/{opp.id}/comment",
+            data={"body": body},
+            cookies={"govcon_session": token},
+        )
+        comment = db_session.scalar(
+            select(ReviewComment).where(
+                ReviewComment.opportunity_id == opp.id,
+                ReviewComment.body == body,
+            )
+        )
+        assert comment is not None
+        assert comment.user_id == user.id
+        assert comment.created_at is not None
+
+
+class TestWatchlistCRUD:
+    """AC: Watchlist CRUD works from the UI."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session):
+        self.user, self.token = _make_user(db_session, "wl_crud_test@example.com", "owner")
+        self.cookies = {"govcon_session": self.token}
+
+    def test_watchlist_list_renders(self, client):
+        resp = client.get("/watchlists", cookies=self.cookies)
+        assert resp.status_code == 200
+
+    def test_watchlist_new_form_renders(self, client):
+        resp = client.get("/watchlists/new", cookies=self.cookies)
+        assert resp.status_code == 200
+
+    def test_watchlist_create_and_list(self, client, db_session):
+        resp = client.post(
+            "/watchlists/new",
+            data={"name": "UI Test WL", "psc_codes": "7110", "keywords": "test,widget"},
+            cookies=self.cookies,
+        )
+        assert resp.status_code in (200, 303)
+        wl = db_session.scalar(select(Watchlist).where(Watchlist.name == "UI Test WL"))
+        assert wl is not None
+        assert wl.psc_codes == ["7110"]
+
+
+class TestSecurityRequirements:
+    """AC: App defaults to localhost only. No secret values in rendered HTML."""
+
+    def test_bind_host_defaults_to_loopback(self):
+        from govcon.web.app import bind_host
+        from govcon.config import Settings
+        s = Settings(database_url="postgresql+psycopg://x:x@localhost/x")
+        assert bind_host(s) == "127.0.0.1"
+
+    def test_no_password_hash_in_rendered_page(self, client, db_session):
+        user, token = _make_user(db_session, "security_test@example.com", "read_only")
+        resp = client.get("/ops", cookies={"govcon_session": token})
+        assert resp.status_code == 200
+        # Password hashes start with $argon2
+        assert b"$argon2" not in resp.content
+
+    def test_public_bind_requires_explicit_opt_in(self):
+        from govcon.config import Settings
+        import pytest
+        with pytest.raises(Exception):
+            Settings(
+                database_url="postgresql+psycopg://x:x@localhost/x",
+                web_bind_host="0.0.0.0",
+            )

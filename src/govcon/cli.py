@@ -37,6 +37,7 @@ submission_app = typer.Typer(help="Submission package generation and tracking (P
 mcp_app = typer.Typer(help="Model Context Protocol server (Phase 12).")
 embed_app = typer.Typer(help="Embedding generation and semantic search (Phase 13).")
 semantic_app = typer.Typer(help="Semantic recommendations (Phase 13).")
+web_app = typer.Typer(help="Web UI server (Phase 14).")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -56,6 +57,7 @@ app.add_typer(submission_app, name="submission")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(embed_app, name="embed")
 app.add_typer(semantic_app, name="semantic")
+app.add_typer(web_app, name="web")
 
 
 def main() -> None:
@@ -2315,3 +2317,23 @@ def semantic_recommendations(
             limit=limit,
         )
     typer.echo(json.dumps(result, indent=2, default=str))
+
+@web_app.command("serve")
+def web_serve(
+    host: str | None = typer.Option(None, help="Override bind host (default: from settings)."),
+    port: int = typer.Option(8000, help="HTTP port."),
+    reload: bool = typer.Option(False, help="Enable auto-reload (dev only)."),
+) -> None:
+    """Start the GovCon web UI server."""
+    import uvicorn
+
+    settings = _settings()
+    bind_host = host or settings.web_bind_host
+    typer.echo(f"Starting GovCon web UI on http://{bind_host}:{port}")
+    uvicorn.run(
+        "govcon.web.app:create_app",
+        host=bind_host,
+        port=port,
+        reload=reload,
+        factory=True,
+    )

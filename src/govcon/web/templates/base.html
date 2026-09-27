@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}GovCon{% endblock %}</title>
+  <link rel="stylesheet" href="/static/govcon.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" defer></script>
+</head>
+<body class="app-shell">
+
+<header class="top-bar">
+  <a class="brand" href="/">GovCon</a>
+  <nav class="d-flex gap-1 align-center">
+    <a href="/"          {% if active_page == 'inbox'     %}class="active"{% endif %}>Inbox</a>
+    <a href="/search"    {% if active_page == 'search'    %}class="active"{% endif %}>Search</a>
+    <a href="/pipeline"  {% if active_page == 'pipeline'  %}class="active"{% endif %}>Pipeline</a>
+    <a href="/watchlists"{% if active_page == 'watchlists'%}class="active"{% endif %}>Watchlists</a>
+    <a href="/vendors"   {% if active_page == 'vendors'   %}class="active"{% endif %}>Vendors</a>
+    <a href="/ops"       {% if active_page == 'ops'       %}class="active"{% endif %}>Ops</a>
+    <a href="/learning"  {% if active_page == 'learning'  %}class="active"{% endif %}>Learning</a>
+  </nav>
+  <span class="spacer"></span>
+  <div class="user-badge">
+    {% if current_user %}
+      <span>{{ current_user.display_name }}</span>
+      <span class="role-badge">{{ current_user.role }}</span>
+      {% set notif_count = unread_notification_count|default(0) %}
+      {% if notif_count > 0 %}
+      <a href="/notifications" style="color:#fff; font-size:12px;">[{{ notif_count }}]</a>
+      {% endif %}
+      <form method="post" action="/logout" style="margin:0;">
+        <button type="submit" class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.7);">Logout</button>
+      </form>
+    {% endif %}
+  </div>
+</header>
+
+<main class="main-content">
+  {% with messages = get_flashed_messages() if get_flashed_messages is defined else [] %}
+    {% if messages %}
+      {% for msg in messages %}
+        <div class="alert alert-info">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>

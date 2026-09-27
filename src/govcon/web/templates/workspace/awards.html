@@ -1,0 +1,36 @@
+<!-- Awards tab -->
+{% if not awards %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">No historical award data. Run <code>govcon awards fetch-nsn</code>.</p>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Historical Awards</span>
+    <span class="text-sm text-muted">{{ awards|length }} records</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Recipient</th><th>Agency</th>
+          <th>Amount</th><th>Unit Price</th><th>Qty</th><th>PSC</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in awards %}
+        <tr>
+          <td>{{ a.action_date or "—" }}</td>
+          <td>{{ a.recipient_name or a.recipient_uei or "—" }}</td>
+          <td>{{ a.awarding_agency or "—" }}</td>
+          <td>{{ "$%,.2f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
+          <td>{{ "$%,.4f"|format(a.unit_price|float) if a.unit_price else "—" }}</td>
+          <td>{{ a.quantity or "—" }}</td>
+          <td>{{ a.psc_code or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

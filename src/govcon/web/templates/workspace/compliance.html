@@ -1,0 +1,55 @@
+<!-- Compliance tab -->
+{% if not compliance_run %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Run <code>govcon compliance run --opp-id {{ opp.id }}</code>.</p>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Compliance Matrix <span class="label-ai">AI</span></span>
+    <span class="text-sm text-muted">{{ compliance_run.created_at.strftime('%Y-%m-%d') if compliance_run.created_at else '' }}</span>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Mandatory Total</div>
+      <div class="value">{{ compliance_run.mandatory_total or 0 }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Satisfied</div>
+      <div class="value success">{{ compliance_run.mandatory_satisfied or 0 }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Missing</div>
+      <div class="value danger">{{ compliance_run.mandatory_missing or 0 }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Unknown</div>
+      <div class="value">{{ compliance_run.mandatory_unknown or 0 }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Needs Review</div>
+      <div class="value primary">{{ compliance_run.mandatory_needs_review or 0 }}</div>
+    </div>
+  </div>
+
+  {% if compliance_run.output_json %}
+    {% set out = compliance_run.output_json %}
+    {% if out.get('preflight_passed') is not none %}
+      {% if out['preflight_passed'] %}
+        <div class="alert alert-success mt-1">Pre-flight: PASS — ready to submit</div>
+      {% else %}
+        <div class="alert alert-error mt-1">Pre-flight: FAIL — submission blocked</div>
+        {% if out.get('blocking_items') %}
+          <ul>{% for item in out['blocking_items'] %}<li>{{ item }}</li>{% endfor %}</ul>
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  {% endif %}
+</div>
+
+<!-- Requirements detail -->
+{% if requirements %}
+  {% include "workspace/requirements.html" %}
+{% endif %}
+{% endif %}

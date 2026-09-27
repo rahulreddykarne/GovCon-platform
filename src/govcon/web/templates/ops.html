@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Operations — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Operations</h1>
+    <div class="page-subtitle">Ingestion and job health</div>
+  </div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Total Opportunities</div>
+    <div class="value primary">{{ stats.opp_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Open</div>
+    <div class="value success">{{ stats.opp_open }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Matches</div>
+    <div class="value primary">{{ stats.match_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">New (unactioned)</div>
+    <div class="value primary">{{ stats.match_new }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Pursuing</div>
+    <div class="value success">{{ stats.match_pursuing }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Users</div>
+    <div class="value">{{ stats.user_count }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Recent Ingestion Runs</span></div>
+  {% if not runs %}
+    <p class="text-muted">No ingestion runs recorded.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Job</th><th>Type</th><th>Status</th><th>Started</th><th>Duration</th><th>Fetched</th><th>Errors</th></tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td>{{ r.job or "—" }}</td>
+          <td>—</td>
+          <td>
+            <span class="badge badge-{% if r.status == 'success' %}success{% elif r.status == 'running' %}primary{% else %}danger{% endif %}">{{ r.status or '?' }}</span>
+          </td>
+          <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '—' }}</td>
+          <td>{% if r.finished_at and r.started_at %}{{ "%.1f"|format((r.finished_at - r.started_at).total_seconds()) }}s{% else %}—{% endif %}</td>
+          <td>{% if r.fetched is not none %}{{ r.fetched }}{% else %}—{% endif %}</td>
+          <td>{% if r.errors %}{{ r.errors|length if r.errors is mapping else r.errors }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Users panel (owner only) -->
+{% if current_user.role in ('owner',) %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Users</span>
+    <a href="/admin/users/invite" class="btn btn-primary btn-sm">Invite User</a>
+  </div>
+  {% if not users %}
+    <p class="text-muted">No other users.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Active</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.email }}</td>
+          <td>{{ u.display_name }}</td>
+          <td><span class="role-badge" style="background:var(--color-bg); color:var(--color-text);">{{ u.role }}</span></td>
+          <td>{{ "✓" if u.is_active else "✗" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}
