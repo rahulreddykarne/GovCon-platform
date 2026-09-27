@@ -1,5 +1,95 @@
 # AI handoff
 
+## 2026-09-27 05:20 UTC — PHASE_18_SECURITY_HARDENING
+
+- Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27 05:20 UTC
+- Phase/task: PHASE_18_SECURITY_HARDENING (master §24)
+- Branch: `cursor/phase-18-security-hardening-05e1`
+- Base: `main` at `35eaf01` (Phase 17 Scheduling & ops squash-merged via PR #19)
+- Pull request: (branch pushed; PR created via ManagePullRequest)
+
+### Files changed
+
+- `tests/test_security_hardening.py` — new: 54 Phase 18 AC tests across 6 test classes
+- `IMPLEMENTATION_STATUS.md` — Phase 18 row updated to COMPLETE
+- `SPEC_DEVIATIONS.md` — Phase 18 section added (no deviations; documents early-build note)
+- `DECISIONS.md` — ADR-054 added (Phase 18 strategy: inspect, confirm, evidence)
+- `docs/AI_HANDOFF.md` — this entry
+
+### What shipped
+
+**Phase 18 inspects the existing security infrastructure and assembles explicit compliance evidence.**
+
+The full security stack was built in Phase 0 (ADR-006) and Phase 7 (ADR-024) because it was a prerequisite for any live AI call. Phase 18's deliverable is `tests/test_security_hardening.py` — 54 tests that explicitly map every §24 acceptance criterion to a pytest assertion:
+
+- **TestSecretFieldsNeverInLogs** (9 tests, AC-1): redact masks assignments/URLs/bearers; log handler strips secrets; gateway log does not include secret content; audit scrub removes secret keys (nested, lists, non-dict root).
+- **TestAIGatewayBlocksDisallowedContent** (17 tests, AC-2): full classify → check → block → log pipeline; all classification levels; PUBLIC always allowed; SECRET_CREDENTIAL always blocked; FCI/CUI blocked by default, configurable; PROPRIETARY configurable; gateway logs provider/model/classification/purpose; block decision is logged.
+- **TestLocalhostDefault** (8 tests, AC-3): default bind is 127.0.0.1; public bind rejected without explicit flag; IPv6 wildcard rejected; docker-compose Postgres binds loopback.
+- **TestRepositoryContainsNoLiveCredentials** (3 tests, AC-4): scans all git-tracked files for live API key patterns (SAM, DeepSeek, OpenAI, Anthropic, JEV, Bearer tokens, private key headers); verifies .env is gitignored; verifies .env.example has no real values.
+- **TestCredentialStorageRules** (4 tests): parametrized over all 5 disallowed kinds (sam_password, piee_password, portal_cookie, mfa_secret, browser_session_token); error message mentions env/secret-manager; non-secret kinds pass through.
+- **TestSharedPromptFragments** (5 tests): all 4 §38 fragments exist, have `status: active`, and contain required content; no fragment reveals secrets.
+- **TestNoHardcodedSecretsInSourceModules** (2 tests): security module and gateway have no embedded live credentials.
+
+**Security infrastructure confirmed present:**
+- `src/govcon/security/classification.py` — `DataClassification` enum + `classify()` (Phase 0)
+- `src/govcon/ai/gateway.py` — `authorize_external_call()` + `external_call_allowed()` (Phase 0)
+- `src/govcon/security/secrets.py` — `reject_database_secret()` with all 5 disallowed kinds (Phase 0)
+- `src/govcon/logging.py` — `RedactionFilter` + `redact()` (Phase 0)
+- `src/govcon/config.py` — `WEB_BIND_HOST` defaults to `127.0.0.1`, model_validator rejects `0.0.0.0` (Phase 0)
+- `src/govcon/prompts/shared/*.md` — all 4 §38 fragments with production bodies (Phase 7)
+
+### ADRs / DECISIONS touched
+
+- ADR-054 (new): Phase 18 strategy — inspect existing security foundation, assemble evidence, do not re-implement.
+
+### Migrations
+
+None. Phase 18 requires no schema changes.
+
+### Tests
+
+Without live PostgreSQL (cloud agent environment):
+- `pytest tests/test_security_hardening.py` → **54 passed**
+- `pytest tests/test_config_security.py tests/test_audit.py tests/test_security_hardening.py` → **63 passed**
+
+All 315 previously-passing non-DB tests remain green. DB-integration tests (web UI, scheduler, etc.) require PostgreSQL and are not affected by Phase 18 changes.
+
+### Acceptance criteria (§24)
+
+| AC | Criterion | Test class | Result |
+|---|---|---|---|
+| AC-1 | Secret fields never appear in logs | `TestSecretFieldsNeverInLogs` (9 tests) | ✅ |
+| AC-2 | AI gateway blocks disallowed content | `TestAIGatewayBlocksDisallowedContent` (17 tests) | ✅ |
+| AC-3 | App defaults to localhost only | `TestLocalhostDefault` (8 tests) | ✅ |
+| AC-4 | Repository contains no live credentials | `TestRepositoryContainsNoLiveCredentials` (3 tests) | ✅ |
+
+### VERIFY outcomes
+
+`PHASE_18_SECURITY_HARDENING.md` has no `⚠️ VERIFY` markers. All security interfaces are internal to the codebase.
+
+### §24A note
+
+§24A (collaboration, authentication, and concurrency) was fully delivered by Phase 10. The user instructions explicitly state: "Do NOT re-implement full §24A collaboration/auth/concurrency if Phase 10 already delivered it." All §24A ACs are documented as satisfied in IMPLEMENTATION_STATUS Phase 10.
+
+### Phase 16 note
+
+Phase 16 (State & local adapters) remains DEFERRED per user instructions.
+
+### Known deviations
+
+None. All §24 ACs are satisfied. See SPEC_DEVIATIONS.md Phase 18 section for the early-build note.
+
+### Unfinished work
+
+None for Phase 18 scope.
+
+### Recommended next task
+
+**Phase 19 — Testing strategy (`PHASE_19_TESTING_RELEASE_GATES.md`).**
+
+---
+
 ## 2026-09-27 04:45 UTC — PHASE_17_SCHEDULING_OPS
 
 - Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`

@@ -435,3 +435,15 @@ Record durable architecture/implementation decisions.
 - Decision: All analytics functions return counts and rates without causal language. The `win_profile_note` string is checked in tests to not contain causal phrases ("caused by", "because of", "therefore", etc.). The `outcome_analysis_v1.md` prompt explicitly states "Do not claim the business lost because of price merely because another award value differs" and "If the cause is not established, return UNKNOWN." The MCP `analytics_note` field surfaces the descriptive-only guarantee to API consumers.
 - Alternatives considered: Generate narrative explanations of loss patterns (rejected — would invent causal stories without evidence).
 - Consequences: Analytics surface useful patterns (pricing losses 3/5 times) without implying causation. Government feedback and debrief notes are preserved as evidence separately from inferred signals.
+
+### ADR-054 — Phase 18 security hardening: foundation from Phase 0; evidence assembled here
+- Phase: 18
+- Date: 2026-09-27
+- Context: §24 (Phase 18) specifies data classification, AI gateway, credential rules, localhost bind, and shared prompt fragments. All five were built in Phase 0 (ADR-006) and Phase 7 (ADR-024) as prerequisites for any live AI call; no security component was deferred.
+- Decision: Phase 18 does not re-implement any security primitive. Instead it:
+  1. Inspects and confirms the existing infrastructure satisfies every §24 AC.
+  2. Creates `tests/test_security_hardening.py` with 54 explicit tests that map each AC to a pytest assertion, including a repository credential scan (`TestRepositoryContainsNoLiveCredentials`) and full gateway pipeline tests (`TestAIGatewayBlocksDisallowedContent`).
+  3. Records §24A (collaboration/auth/concurrency) as fully satisfied by Phase 10, avoiding duplicate auth stack.
+  4. No new migrations, CLI commands, or runtime modules are required.
+- Alternatives considered: Re-implement security from scratch in Phase 18 (rejected: duplicates working Phase 0 code and creates inconsistency). Add a separate security CLI command (rejected: gateway is already called by every AI provider call).
+- Consequences: All four §24 ACs are provably satisfied by the test suite without duplication. The security module's public surface (`govcon.security.classification`, `govcon.security.secrets`, `govcon.ai.gateway`, `govcon.logging`) is stable and used by every AI call path. No Phase 18-specific Alembic migration is needed.
