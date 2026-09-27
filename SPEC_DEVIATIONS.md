@@ -287,10 +287,10 @@ Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as p
 - Date: 2026-09-27
 - Spec requirement: §39.2–39.4 define market_analysis_v1.md, supplier_analysis_v1.md, and pricing_analysis_v1.md as production prompt files. Appendix D DoD items 6–7 require AI supplier/pricing analysis to be available.
 - Verified external/repository reality: All three prompts were still `status: placeholder` at Phase 20 start. No prior phase had activated them or registered their output schemas.
-- Decision: Activate all three prompts with production text derived from §39.2–39.4. Register MarketAnalysisV1, SupplierAnalysisV1, and PricingAnalysisV1 Pydantic schemas in SCHEMA_REGISTRY. All three pass the full activation gate (template, variable, schema, secret-scan, injection checks). Phase 20 does NOT implement a service layer that calls these prompts automatically — they are prompt-registry ready for any downstream phase or manual invocation.
-- Reason: Phase 20 is the final integration acceptance phase and must close all gaps in the Appendix D DoD. The service-layer integration (auto-run on opportunity analysis) is not required by v1 DoD and is out of scope per §28.
-- Impact: DoD items 6 and 7 are now met. 18 active task prompts total (up from 15 in Phase 19). SCHEMA_REGISTRY expanded with 3 new schemas. market_analysis, supplier_analysis, and pricing_analysis are all prompt-registry ready and can be called via the structured AI interface.
-- Follow-up: Wire supplier_analysis and pricing_analysis into an intelligence service when needed post-v1.
+- Decision: Activate all three prompts with production text derived from §39.2–39.4. Register MarketAnalysisV1, SupplierAnalysisV1, and PricingAnalysisV1 Pydantic schemas in SCHEMA_REGISTRY. All three pass the full activation gate (template, variable, schema, secret-scan, injection checks). Phase 20 does NOT implement a service layer that calls these prompts automatically — they are prompt-registry ready for manual or downstream invocation only.
+- Reason: Phase 20 is the final integration acceptance phase. Prompt-registry readiness is the achievable v1 gate for DoD 6–7. Full service-layer orchestration (auto-invoke on opportunity analysis) is not required by v1 DoD and is explicitly out of scope per §28.
+- Impact: DoD items 6 and 7 are **prompt+schema ready** (not behaviorally wired). The Appendix D "let AI research/structure supplier…" and "let AI build pricing/commercial analysis…" language refers to the capability being present in the prompt registry and callable via `run_structured_prompt`, not to an automatic end-to-end pipeline. SCHEMA_REGISTRY expanded with 3 schemas. 18 active task prompts (↑ from 15).
+- Follow-up: Wire supplier_analysis and pricing_analysis into an auto-invoke intelligence service post-v1.
 
 ### Note — Phase 16 waiver confirmed for Phase 20 DoD
 - Phase: 20
@@ -299,3 +299,13 @@ Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as p
 - Decision: Phase 16 remains DEFERRED per standing user waiver (DEV-015). The v1 DoD is considered met for Phases 0–15, 17–19. Phase 20 explicitly documents this waiver in IMPLEMENTATION_STATUS.md, SPEC_DEVIATIONS.md, DECISIONS.md, and AI_HANDOFF.md.
 - Impact: No state/local adapter tests are included. No Phase 16 functionality is tested or exercised.
 - Follow-up: None. Phase 16 remains DEFERRED unless explicitly re-enabled.
+
+### DEV-021 — Checkpoint F: fixture-path E2E satisfies release gate for federal fixture-only v1
+- Phase: 20
+- Date: 2026-09-27
+- Spec requirement: Appendix D / phase completion gate requires live end-to-end verification of all Checkpoint F acceptance criteria (including live SAM ingest, live AI analysis, live JEV decisioning) before marking the platform v1-complete.
+- Verified external/repository reality: No live SAM_API_KEY, DEEPSEEK_API_KEY, or JEV_API_KEY is available in the CI/dev environment. The Phase 0–19 implementation includes graceful no-key paths for all live-API steps (SAM ingest skips when key unset; AI gateway returns a configurable mock; JEV falls back to the rule-based provider). These paths are fully tested.
+- Lead ruling: Lead DEV waiver — Checkpoint F (A). Fixture-path E2E is sufficient for federal fixture-only v1. Evidence: smoke.sh 16/16 PASS (full pipeline from DB upgrade through submission checklist, covering all DoD items exercisable without live keys); Phase 20 DoD test suite (81 tests, 585/1 full suite); all AI steps either use mock provider or produce graceful warnings. Live SAM/AI/JEV walkthrough is a recommended post-v1 verification step, not a blocking gate.
+- Decision: Declare v1 Checkpoint F satisfied on fixture-path E2E. Record live-key verification as a recommended follow-up (not a hard gate). Live keys become the gate only when the platform is deployed to a production environment with real credentials.
+- Impact: Phase 20 is marked COMPLETE. The IMPLEMENTATION_STATUS "fully verified" language is scoped to fixture-path E2E for DoD items 1–5, 8–27; DoD 6–7 are prompt+schema ready (DEV-020).
+- Follow-up: Run live-key E2E before any production deployment. Wire auto-invoke service layer for DoD 6–7 post-v1 (DEV-020).

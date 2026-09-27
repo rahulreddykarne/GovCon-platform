@@ -9,7 +9,11 @@
 
 ### Summary
 
-Phase 20 is the final integration acceptance phase for GovCon v1. It closes the last open gaps in the Appendix D Definition of Done and confirms §26 feature checklist parity across Phases 0–15, 17–19 (Phase 16 waived per standing user instruction).
+Phase 20 is the final integration acceptance phase for GovCon v1. It confirms §26 feature checklist parity across Phases 0–15, 17–19 (Phase 16 waived per DEV-015) and addresses all Appendix D DoD items within scope:
+
+- **DoD 1–5, 8–27**: Fully verified via fixture-path E2E (smoke.sh 16/16 + CI 585/1). Checkpoint F satisfied for federal fixture-only v1 per Lead DEV waiver (DEV-021). Live SAM/AI/JEV keys optional — graceful no-key paths tested.
+- **DoD 6–7**: Prompts and output schemas activated and gate-verified (supplier_analysis_v1, pricing_analysis_v1, market_analysis_v1). The behavioral "let AI research/structure..." and "let AI build pricing..." service orchestration is **NOT yet wired** — these prompts are prompt-registry ready for manual or downstream invocation, but no auto-invoke service layer calls them on opportunity analysis. This is a known post-v1 follow-up (DEV-020), not a silent gap.
+- **Phase 16**: DEFERRED per standing user waiver (DEV-015).
 
 ### What was implemented
 
@@ -17,9 +21,9 @@ Phase 20 is the final integration acceptance phase for GovCon v1. It closes the 
 
 1. **`src/govcon/prompts/deepseek/market_analysis_v1.md`** — Activated with production text from §39.2. Status: `active`. Includes shared source-security, no-fabrication, and evidence fragments. Declares `required_variables: OPPORTUNITY_JSON, AWARDS_JSON, VENDOR_PROFILES_JSON`. Passes all activation gate checks.
 
-2. **`src/govcon/prompts/deepseek/supplier_analysis_v1.md`** — Activated with production text from §39.3. Status: `active`. Covers: exact/partial requirement matches, unsupported claims, specification mismatches, delivery/lead-time risk, origin compliance gaps, quote/commercial risks, evidence-still-required list. Declares `required_variables: REQUIREMENTS_JSON, SUPPLIER_RECORDS_JSON`. Passes all activation gate checks. (DoD 6: AI research/structure supplier and product options)
+2. **`src/govcon/prompts/deepseek/supplier_analysis_v1.md`** — Activated with production text from §39.3. Status: `active`. Covers: exact/partial requirement matches, unsupported claims, specification mismatches, delivery/lead-time risk, origin compliance gaps, quote/commercial risks, evidence-still-required list. Declares `required_variables: REQUIREMENTS_JSON, SUPPLIER_RECORDS_JSON`. Passes all activation gate checks. (DoD 6: prompts+schemas ready; **auto-invoke service wiring is post-v1 — see DEV-020**)
 
-3. **`src/govcon/prompts/deepseek/pricing_analysis_v1.md`** — Activated with production text from §39.4. Status: `active`. Covers: historical comparability, proposed price position, margin quality, cost-risk signals, missing cost inputs, pricing evidence gaps. Explicitly forbids autonomous price setting (§28 non-goal). Declares `required_variables: PRICING_INPUTS_JSON, HISTORICAL_AWARDS_JSON`. Passes all activation gate checks. (DoD 7: AI pricing/commercial analysis)
+3. **`src/govcon/prompts/deepseek/pricing_analysis_v1.md`** — Activated with production text from §39.4. Status: `active`. Covers: historical comparability, proposed price position, margin quality, cost-risk signals, missing cost inputs, pricing evidence gaps. Explicitly forbids autonomous price setting (§28 non-goal). Declares `required_variables: PRICING_INPUTS_JSON, HISTORICAL_AWARDS_JSON`. Passes all activation gate checks. (DoD 7: prompts+schemas ready; **auto-invoke service wiring is post-v1 — see DEV-020**)
 
 4. **`src/govcon/ai/schemas.py`** — Three new Pydantic schema classes added:
    - `MarketAnalysisV1` → `"market_analysis.v1"` in SCHEMA_REGISTRY
@@ -50,46 +54,52 @@ Phase 20 is the final integration acceptance phase for GovCon v1. It closes the 
 
 ### Appendix D DoD status
 
-| DoD Item | Status | Coverage |
-|---|---|---|
-| 1. Ingest federal opportunities | ✓ | Phase 1 SAM ingestion |
-| 2. Receive filtered matches | ✓ | Phase 2 matching engine |
-| 3. Inspect amendments/history | ✓ | Phase 1 snapshots + events |
-| 4. AI analyze solicitation files | ✓ | Phase 7/9 solicitation_analysis + dual extraction |
-| 5. Inspect historical pricing and winners | ✓ | Phase 5 USAspending awards |
-| 6. AI research/structure supplier options | ✓ | **Phase 20** supplier_analysis_v1 activated |
-| 7. AI build pricing/commercial analysis | ✓ | **Phase 20** pricing_analysis_v1 activated |
-| 8. Compliance matrix | ✓ | Phase 9 dual extraction + reconciler + validators |
-| 9. JEV bid recommendation | ✓ | Phase 8 decision engine |
-| 10. Consolidated decision package | ✓ | Phase 8 decision package |
-| 11. Assign reviewers | ✓ | Phase 10 |
-| 12. Parallel review | ✓ | Phase 10 dual/conditional quorum |
-| 13. AI comment validation | ✓ | Phase 10 reviewer_comment_validation |
-| 14. Quorum + consolidated review | ✓ | Phase 10 |
-| 15. Approve/return/reject bid | ✓ | Phase 10 finalize_approval |
-| 16. Versioned proposal generation | ✓ | Phase 11 |
-| 17. Submission instructions + checklist | ✓ | Phase 11 |
-| 18. Red-team + coverage + pre-flight | ✓ | Phase 9/11 |
-| 19. Final human submission approval | ✓ | Phase 11 finalize_proposal |
-| 20. Manual submit + confirmation | ✓ | Phase 11 record_submission_confirmation |
-| 21. Track outcomes | ✓ | Phase 15 outcome_feedback |
-| 22. Debrief/lessons learned | ✓ | Phase 15 debrief_notes |
-| 23. Outcome-informed analysis | ✓ | Phase 15 outcome_analytics |
-| 24. Prompt registry for all AI calls | ✓ | All phases |
-| 25. Reproducible AI output metadata | ✓ | All phases (prompt_hash, provider, model) |
-| 26. Regression gate | ✓ | Phase 9/19 activation gate + benchmark |
-| 27. Prompt rollback | ✓ | Phase 9 rollback_prompt |
-| **Phase 16 (state/local)** | DEFERRED | User waiver — DEV-015 |
+Legend: ✓ = fully verified via fixture-path E2E | ⚠️ = prompts+schemas ready; service wiring deferred post-v1 | DEFERRED = waived
+
+| DoD Item | Status | Coverage | Notes |
+|---|---|---|---|
+| 1. Ingest federal opportunities | ✓ | Phase 1 SAM ingestion | smoke + CI |
+| 2. Receive filtered matches | ✓ | Phase 2 matching engine | smoke + CI |
+| 3. Inspect amendments/history | ✓ | Phase 1 snapshots + events | smoke + CI |
+| 4. AI analyze solicitation files | ✓ | Phase 7/9 solicitation_analysis + dual extraction | graceful no-key path tested |
+| 5. Inspect historical pricing and winners | ✓ | Phase 5 USAspending awards | smoke + CI |
+| 6. AI research/structure supplier options | ⚠️ | **Phase 20** supplier_analysis_v1 + schema ready | Prompt activated, gate PASS; auto-invoke service wiring post-v1 (DEV-020) |
+| 7. AI build pricing/commercial analysis | ⚠️ | **Phase 20** pricing_analysis_v1 + schema ready | Prompt activated, gate PASS; auto-invoke service wiring post-v1 (DEV-020) |
+| 8. Compliance matrix | ✓ | Phase 9 dual extraction + reconciler + validators | smoke + CI |
+| 9. JEV bid recommendation | ✓ | Phase 8 decision engine | smoke + CI |
+| 10. Consolidated decision package | ✓ | Phase 8 decision package | smoke + CI |
+| 11. Assign reviewers | ✓ | Phase 10 | CI |
+| 12. Parallel review | ✓ | Phase 10 dual/conditional quorum | CI |
+| 13. AI comment validation | ✓ | Phase 10 reviewer_comment_validation | CI |
+| 14. Quorum + consolidated review | ✓ | Phase 10 | CI |
+| 15. Approve/return/reject bid | ✓ | Phase 10 finalize_approval | CI |
+| 16. Versioned proposal generation | ✓ | Phase 11 | smoke + CI |
+| 17. Submission instructions + checklist | ✓ | Phase 11 | smoke + CI |
+| 18. Red-team + coverage + pre-flight | ✓ | Phase 9/11 | smoke + CI |
+| 19. Final human submission approval | ✓ | Phase 11 finalize_proposal | CI |
+| 20. Manual submit + confirmation | ✓ | Phase 11 record_submission_confirmation | CI |
+| 21. Track outcomes | ✓ | Phase 15 outcome_feedback | CI |
+| 22. Debrief/lessons learned | ✓ | Phase 15 (debrief_notes / outcome_notes) | CI |
+| 23. Outcome-informed analysis | ✓ | Phase 15 outcome_analytics | CI |
+| 24. Prompt registry for all AI calls | ✓ | All phases | smoke + CI |
+| 25. Reproducible AI output metadata | ✓ | All phases (prompt_hash, provider, model) | CI |
+| 26. Regression gate | ✓ | Phase 9/19 activation gate + benchmark | CI |
+| 27. Prompt rollback | ✓ | Phase 9 rollback_prompt | CI |
+| **Phase 16 (state/local)** | DEFERRED | User waiver — DEV-015 | — |
+
+**Checkpoint F**: Fixture-path E2E (smoke 16/16 + Phase 20 DoD suite + CI 585/1) satisfies Checkpoint F for federal fixture-only v1 per Lead DEV waiver (DEV-021). Live SAM/AI/JEV keys remain optional; graceful no-key paths are tested.
 
 ### ADRs recorded
 
 - ADR-056: Activate market/supplier/pricing analysis prompts; no new service layer
 - ADR-057: Fix _purge FK cascade in test_sam_ingestion.py
+- ADR-058: Checkpoint F fixture-path waiver for federal fixture-only v1
 
 ### Deviations recorded
 
-- DEV-020: market/supplier/pricing prompts activated in Phase 20 (not earlier phases)
-- DEV-020 note: Phase 16 waiver confirmed for Phase 20 DoD
+- DEV-020: market/supplier/pricing prompts activated Phase 20; DoD 6–7 prompts+schemas ready; auto-invoke service wiring is post-v1
+- DEV-021: Checkpoint F fixture-path E2E waiver (Lead DEV approved)
+- DEV-015: Phase 16 waiver (standing)
 
 ---
 
