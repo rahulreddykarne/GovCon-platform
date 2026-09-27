@@ -857,6 +857,23 @@ class IngestionRun(Base):
     errors: Mapped[dict | None] = mapped_column(JSONB)
 
 
+class SchedulerJobRun(Base):
+    """Chain-level scheduler execution record written by Phase 17 job chains."""
+
+    __tablename__ = "scheduler_job_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    chain_name: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'manual'"))
+    started_at: Mapped[datetime] = mapped_column(_ts(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(_ts())
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'running'"))
+    steps_completed: Mapped[dict | None] = mapped_column(JSONB)
+    failed_step: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    row_counts: Mapped[dict | None] = mapped_column(JSONB)
+
+
 UPDATED_AT_TABLES: tuple[str, ...] = tuple(
     table.name for table in Base.metadata.tables.values() if "updated_at" in table.c
 )

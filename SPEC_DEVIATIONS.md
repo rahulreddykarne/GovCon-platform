@@ -153,6 +153,28 @@ Implementation notes:
 - Decision: Migration `f2a3b4c5d6e7` creates the HNSW index without CONCURRENTLY. For zero-downtime production upgrades, the index should be created with CONCURRENTLY before running Alembic. A comment in the migration records this.
 - Impact: Non-blocking for the dev/test environment. Production teams should create the index manually first.
 - Follow-up: None. Production deployment guidance is documented in the migration comment.
+## Phase 17
+
+### DEV-013 — analytics_refresh is a no-op pending Phase 15
+- Phase: 17
+- Date: 2026-09-27
+- Spec requirement: Sunday sweep includes "analytics refresh".
+- Verified external/repository reality: Phase 15 outcome analytics engine ships in the same squash-merge as this rebase. `learning/analytics.py` is now complete, but calling it from the scheduler without testing the integration is out of scope for Phase 17.
+- Decision: `step_analytics_refresh` logs "Phase 15 analytics engine not yet implemented; step is a no-op" and returns `succeeded`. The step is in the chain and visible in `/ops`, but does no DB work. A follow-up can wire the Phase 15 analytics engine into this step.
+- Reason: Phase 17 must not implicitly depend on untested Phase 15 integration paths.
+- Impact: Sunday sweep completes without calling the analytics engine until the step is wired up.
+- Follow-up: Wire `learning.analytics.outcome_analytics` into `step_analytics_refresh`.
+
+### DEV-014 — SAM ingest in scheduler chains skips when SAM_API_KEY is unset
+- Phase: 17
+- Date: 2026-09-27
+- Spec requirement: 06:30 chain: SAM ingest → DIBBS ingest → match → alerts.
+- Verified external/repository reality: Live SAM.gov API requires `SAM_API_KEY`. Without it, an unauthenticated request returns an empty 404. The Phase 1 ingest command exits 1 when the key is missing.
+- Decision: The scheduler `step_sam_ingest` returns `status="skipped"` (not "failed") when `SAM_API_KEY` is not set. The chain continues to DIBBS ingest. A skipped step is visible in the job run record and the CLI output.
+- Reason: A missing API key is a configuration issue, not an ingest failure. DIBBS, match, and alerts can still run usefully. The chain should not abort entirely because of a missing key.
+- Impact: Without `SAM_API_KEY`, only DIBBS, match, and alerts run in the morning/evening chains.
+- Follow-up: Set `SAM_API_KEY` in production to enable SAM ingest.
+
 ## Phase 14
 
 ### DEV-009 — Notifications full page deferred

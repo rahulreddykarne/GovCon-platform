@@ -36,6 +36,86 @@
   </div>
 </div>
 
+<!-- Scheduler Job Chain Summary -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Scheduler Job Chains</span>
+    <span class="text-muted" style="font-size:0.85rem;">Run <code>govcon scheduler start</code> or <code>govcon jobs run &lt;chain&gt;</code></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Chain</th><th>Schedule</th><th>Steps</th><th>Last Run</th><th>Status</th><th>Details</th></tr>
+      </thead>
+      <tbody>
+        {% for chain in chain_summary %}
+        <tr>
+          <td><strong>{{ chain.name }}</strong><br><small class="text-muted">{{ chain.description }}</small></td>
+          <td><code>{{ chain.cron }}</code></td>
+          <td><small>{{ chain.steps | join(' → ') }}</small></td>
+          <td>
+            {% if chain.last_run %}
+              {{ chain.last_run.started_at.strftime('%Y-%m-%d %H:%M') if chain.last_run.started_at else '—' }} UTC
+              <small class="text-muted">({{ chain.last_run.trigger or 'manual' }})</small>
+            {% else %}
+              <span class="text-muted">never run</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if chain.last_run %}
+              <span class="badge badge-{% if chain.last_run.status == 'succeeded' %}success{% elif chain.last_run.status == 'running' %}primary{% else %}danger{% endif %}">
+                {{ chain.last_run.status }}
+              </span>
+            {% else %}
+              <span class="badge">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if chain.last_run and chain.last_run.failed_step %}
+              <small class="text-danger">failed at: {{ chain.last_run.failed_step }}</small>
+            {% elif chain.last_run and chain.last_run.steps_completed %}
+              <small class="text-muted">{{ chain.last_run.steps_completed | length }} steps</small>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Recent Scheduler Job Runs -->
+{% if job_runs %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Recent Scheduler Runs</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Chain</th><th>Trigger</th><th>Status</th><th>Started</th><th>Duration</th><th>Steps Done</th><th>Failed At</th></tr>
+      </thead>
+      <tbody>
+        {% for r in job_runs %}
+        <tr>
+          <td>{{ r.chain_name }}</td>
+          <td><span class="badge">{{ r.trigger or 'manual' }}</span></td>
+          <td>
+            <span class="badge badge-{% if r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% else %}danger{% endif %}">{{ r.status }}</span>
+          </td>
+          <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '—' }}</td>
+          <td>{% if r.finished_at and r.started_at %}{{ "%.1f"|format((r.finished_at - r.started_at).total_seconds()) }}s{% else %}—{% endif %}</td>
+          <td>{{ r.steps_completed | join(', ') if r.steps_completed else '—' }}</td>
+          <td>{% if r.failed_step %}<span class="text-danger">{{ r.failed_step }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Recent Ingestion Runs -->
 <div class="card">
   <div class="card-header"><span class="card-title">Recent Ingestion Runs</span></div>
   {% if not runs %}
@@ -44,20 +124,21 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Job</th><th>Type</th><th>Status</th><th>Started</th><th>Duration</th><th>Fetched</th><th>Errors</th></tr>
+        <tr><th>Job</th><th>Status</th><th>Started</th><th>Duration</th><th>Fetched</th><th>Inserted</th><th>Updated</th><th>Errors</th></tr>
       </thead>
       <tbody>
         {% for r in runs %}
         <tr>
           <td>{{ r.job or "—" }}</td>
-          <td>—</td>
           <td>
-            <span class="badge badge-{% if r.status == 'success' %}success{% elif r.status == 'running' %}primary{% else %}danger{% endif %}">{{ r.status or '?' }}</span>
+            <span class="badge badge-{% if r.status == 'success' or r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% elif r.status == 'skipped' %}{% else %}danger{% endif %}">{{ r.status or '?' }}</span>
           </td>
           <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '—' }}</td>
           <td>{% if r.finished_at and r.started_at %}{{ "%.1f"|format((r.finished_at - r.started_at).total_seconds()) }}s{% else %}—{% endif %}</td>
           <td>{% if r.fetched is not none %}{{ r.fetched }}{% else %}—{% endif %}</td>
-          <td>{% if r.errors %}{{ r.errors|length if r.errors is mapping else r.errors }}{% else %}—{% endif %}</td>
+          <td>{% if r.inserted is not none %}{{ r.inserted }}{% else %}—{% endif %}</td>
+          <td>{% if r.updated is not none %}{{ r.updated }}{% else %}—{% endif %}</td>
+          <td>{% if r.errors and r.errors.get('messages') %}{{ r.errors['messages'] | length }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -387,6 +387,23 @@ Record durable architecture/implementation decisions.
 - Alternatives considered: Return a "dismissed" state row, or redirect.
 - Consequences: Instant optimistic UI feedback. Match status is updated server-side.
 
+### ADR-053 — Phase 17 scheduler architecture and chain isolation
+
+- Phase: 17
+- Date: 2026-09-27
+- Context: Phase 17 requires APScheduler-backed job chains with hard predecessor abort, independent chain execution, and every run visible in `/ops`.
+- Decision:
+  1. Use `APScheduler>=3.10` with `BlockingScheduler` + `CronTrigger` (UTC). Six chains are registered as independent APScheduler jobs; a failure in one chain never affects another.
+  2. Each chain step runs in its own `session_scope` so that a step failure (or the VACUUM step's autocommit connection) cannot corrupt the chain-level session.
+  3. Chain execution writes a `scheduler_job_runs` row (migration `b1c2d3e4f5a6`) on start (status=running) and on finish (succeeded/failed). Individual ingest steps continue to write `ingestion_runs` rows via the existing bookkeeping layer.
+  4. VACUUM ANALYZE uses a fresh SQLAlchemy connection with `execution_options(isolation_level="AUTOCOMMIT")` because VACUUM cannot run inside a PostgreSQL transaction block.
+  5. `step_sam_ingest` returns `status="skipped"` (not "failed") when `SAM_API_KEY` is unset; the chain continues.
+  6. `step_analytics_refresh` is a no-op that logs clearly; Phase 15 will replace it.
+  7. CLI: `govcon jobs list`, `govcon jobs run <chain>`, `govcon scheduler start`. `govcon status` now shows last run per chain with row counts.
+  8. `/ops` shows chain summary panel (latest per chain) + full scheduler run history + ingestion runs.
+- Alternatives considered: Use a single session for the entire chain (rejected: VACUUM + step failure corrupts the session). Use `BackgroundScheduler` (rejected: blocking is simpler for a local daemon).
+- Consequences: Each step's DB work is committed independently. A step failure is always recorded. The scheduler is started via `govcon scheduler start` or `python scheduler.py`.
+
 ### ADR-049 — Workspace route loads all data in single session_scope
 - Phase: 14
 - Date: 2026-09-27

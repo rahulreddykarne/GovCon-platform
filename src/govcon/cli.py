@@ -38,6 +38,8 @@ mcp_app = typer.Typer(help="Model Context Protocol server (Phase 12).")
 embed_app = typer.Typer(help="Embedding generation and semantic search (Phase 13).")
 semantic_app = typer.Typer(help="Semantic recommendations (Phase 13).")
 web_app = typer.Typer(help="Web UI server (Phase 14).")
+jobs_app = typer.Typer(help="Scheduler job chains (Phase 17).")
+scheduler_app = typer.Typer(help="APScheduler daemon (Phase 17).")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -58,6 +60,8 @@ app.add_typer(mcp_app, name="mcp")
 app.add_typer(embed_app, name="embed")
 app.add_typer(semantic_app, name="semantic")
 app.add_typer(web_app, name="web")
+app.add_typer(jobs_app, name="jobs")
+app.add_typer(scheduler_app, name="scheduler")
 
 
 def main() -> None:
@@ -95,7 +99,9 @@ def _bootstrap() -> None:
 
 @app.command("status")
 def status() -> None:
-    """Print database connectivity and the applied schema revision."""
+    """Print DB connectivity, schema revision, row counts, and last job run results."""
+    from sqlalchemy import func, text
+
     try:
         settings = _settings()
         engine = make_engine(settings)
@@ -103,13 +109,49 @@ def status() -> None:
         _fail_config(exc)
         return
     ok, revision = check_connectivity(engine)
-    if ok:
-        typer.echo("database_connectivity: ok")
-        typer.echo(f"schema_revision: {revision}")
-        return
-    typer.echo("database_connectivity: failed")
-    typer.echo("schema_revision: unavailable")
-    raise typer.Exit(code=1)
+    if not ok:
+        typer.echo("database_connectivity: failed")
+        typer.echo("schema_revision: unavailable")
+        raise typer.Exit(code=1)
+
+    typer.echo("database_connectivity: ok")
+    typer.echo(f"schema_revision: {revision}")
+
+    try:
+        from govcon.models import IngestionRun, Opportunity, SchedulerJobRun
+        from govcon.scheduler.chains import CHAIN_DEFINITIONS
+
+        with session_scope(settings) as db:
+            opp_count = db.scalar(select(func.count()).select_from(Opportunity)) or 0
+            opp_open = db.scalar(
+                select(func.count()).select_from(Opportunity).where(Opportunity.status == "open")
+            ) or 0
+            typer.echo(f"opportunities_total: {opp_count}")
+            typer.echo(f"opportunities_open: {opp_open}")
+
+            typer.echo("")
+            typer.echo("--- last job runs ---")
+            for chain_name in CHAIN_DEFINITIONS:
+                last_run = db.scalars(
+                    select(SchedulerJobRun)
+                    .where(SchedulerJobRun.chain_name == chain_name)
+                    .order_by(SchedulerJobRun.started_at.desc())
+                    .limit(1)
+                ).first()
+                if last_run is None:
+                    typer.echo(f"{chain_name}: never_run")
+                else:
+                    ts = last_run.started_at.strftime("%Y-%m-%d %H:%M UTC") if last_run.started_at else "?"
+                    counts = ""
+                    if last_run.row_counts:
+                        totals = {}
+                        for step_counts in last_run.row_counts.values():
+                            for k, v in step_counts.items():
+                                totals[k] = totals.get(k, 0) + (v or 0)
+                        counts = " " + " ".join(f"{k}={v}" for k, v in totals.items() if v)
+                    typer.echo(f"{chain_name}: {last_run.status} at {ts}{counts}")
+    except Exception as exc:
+        typer.echo(f"status_detail_error: {exc}", err=True)
 
 
 @db_app.command("upgrade")
@@ -2317,6 +2359,114 @@ def semantic_recommendations(
             limit=limit,
         )
     typer.echo(json.dumps(result, indent=2, default=str))
+
+# ── jobs commands (Phase 17) ─────────────────────────────────────────────────
+
+
+@jobs_app.command("list")
+def jobs_list() -> None:
+    """List all configured scheduler job chains with their schedule and last run status."""
+    from sqlalchemy import func
+
+    from govcon.models import SchedulerJobRun
+    from govcon.scheduler.chains import CHAIN_DEFINITIONS
+
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+
+    with session_scope() as db:
+        for chain_name, chain_def in CHAIN_DEFINITIONS.items():
+            last_run = db.scalars(
+                select(SchedulerJobRun)
+                .where(SchedulerJobRun.chain_name == chain_name)
+                .order_by(SchedulerJobRun.started_at.desc())
+                .limit(1)
+            ).first()
+
+            if last_run is None:
+                last_info = "never_run"
+                row_info = ""
+            else:
+                ts = last_run.started_at.strftime("%Y-%m-%d %H:%M UTC") if last_run.started_at else "?"
+                last_info = f"{last_run.status} at {ts}"
+                if last_run.row_counts:
+                    totals: dict[str, int] = {}
+                    for step_counts in last_run.row_counts.values():
+                        for k, v in step_counts.items():
+                            totals[k] = totals.get(k, 0) + (v or 0)
+                    row_info = "  " + " ".join(f"{k}={v}" for k, v in totals.items() if v)
+                else:
+                    row_info = ""
+
+            typer.echo(f"chain: {chain_name}")
+            typer.echo(f"  schedule: {chain_def.cron}")
+            typer.echo(f"  steps: {' → '.join(chain_def.steps)}")
+            typer.echo(f"  last_run: {last_info}{row_info}")
+            if last_run and last_run.failed_step:
+                typer.echo(f"  failed_step: {last_run.failed_step}")
+                typer.echo(f"  error: {last_run.error or ''}")
+            typer.echo("")
+
+
+@jobs_app.command("run")
+def jobs_run(
+    job: str = typer.Argument(..., help="Chain name to run (e.g. morning_ingest, usaspending)."),
+) -> None:
+    """Manually run a named job chain synchronously and print the result."""
+    from govcon.scheduler.chains import ALL_CHAIN_NAMES, run_chain
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+
+    if job not in ALL_CHAIN_NAMES:
+        typer.echo(f"unknown chain: {job!r}. Available: {', '.join(ALL_CHAIN_NAMES)}", err=True)
+        raise typer.Exit(code=2)
+
+    typer.echo(f"running chain: {job}")
+    result = run_chain(job, settings, trigger="manual")
+
+    typer.echo(f"status: {result.status}")
+    typer.echo(f"run_id: {result.run_id}")
+    typer.echo(f"steps_completed: {result.steps_completed}")
+    if result.failed_step:
+        typer.echo(f"failed_step: {result.failed_step}")
+        typer.echo(f"error: {result.error}")
+
+    for sr in result.step_results:
+        counts = " ".join(f"{k}={v}" for k, v in sr.row_counts().items() if v)
+        typer.echo(f"  step={sr.step} status={sr.status} {counts}")
+        if sr.extra:
+            typer.echo(f"    extra={sr.extra}")
+
+    if result.failed:
+        raise typer.Exit(code=1)
+
+
+# ── scheduler commands (Phase 17) ────────────────────────────────────────────
+
+
+@scheduler_app.command("start")
+def scheduler_start() -> None:
+    """Start the APScheduler daemon (blocking). Press Ctrl-C to stop."""
+    from govcon.scheduler.runner import start_blocking_scheduler
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+
+    typer.echo("Starting GovCon scheduler daemon (Ctrl-C to stop)...")
+    start_blocking_scheduler(settings)
+
 
 @web_app.command("serve")
 def web_serve(
