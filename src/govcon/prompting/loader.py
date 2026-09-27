@@ -23,6 +23,7 @@ class PromptAsset:
 
 
 def parse_front_matter(text: str) -> tuple[dict[str, str], str]:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not text.startswith("---\n"):
         raise ValueError("prompt file is missing YAML front matter")
     try:

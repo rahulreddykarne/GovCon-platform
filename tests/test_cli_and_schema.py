@@ -73,17 +73,18 @@ def test_env_file_is_ignored() -> None:
 
 
 def test_upgrade_from_empty_database(upgraded_engine) -> None:
+    base_url = upgraded_engine.url
     admin = create_engine(
-        "postgresql+psycopg://govcon:govcon@localhost:5432/postgres",
+        base_url.set(database="postgres"),
         isolation_level="AUTOCOMMIT",
     )
     name = "govcon_phase0_empty"
     with admin.connect() as connection:
         connection.execute(text(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
         connection.execute(text(f"CREATE DATABASE {name}"))
-    url = f"postgresql+psycopg://govcon:govcon@localhost:5432/{name}"
+    url = base_url.set(database=name)
     previous = os.environ.get("GOVCON_ALEMBIC_URL")
-    os.environ["GOVCON_ALEMBIC_URL"] = url
+    os.environ["GOVCON_ALEMBIC_URL"] = url.render_as_string(hide_password=False)
     try:
         command.upgrade(alembic_config(), "head")
         engine = create_engine(url)

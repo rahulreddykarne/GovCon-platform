@@ -16,6 +16,7 @@ Tests cover:
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Generator
 from unittest.mock import MagicMock, patch
@@ -39,7 +40,7 @@ runner = CliRunner()
 
 
 def _invoke(*args: str, env: dict | None = None):
-    default_env = {"DATABASE_URL": "postgresql+psycopg://govcon:govcon@localhost:5432/govcon"}
+    default_env = {"DATABASE_URL": os.environ.get("DATABASE_URL", "postgresql+psycopg://govcon:govcon@localhost:5432/govcon")}
     if env:
         default_env.update(env)
     return runner.invoke(app, list(args), env=default_env)

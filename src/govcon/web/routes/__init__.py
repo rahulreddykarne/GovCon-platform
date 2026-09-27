@@ -202,7 +202,12 @@ def inbox(request: Request) -> HTMLResponse:
             total += len(matches)
             groups.append({"watchlist_name": wl.name, "matches": matches})
 
-    return _render(request, "inbox.html", {"groups": groups, "total_count": total, "active_page": "inbox"}, user)
+    return _render(request, "inbox.html", {
+        "groups": groups,
+        "total_count": total,
+        "watchlist_count": len(wls),
+        "active_page": "inbox",
+    }, user)
 
 
 def _fmt_matched_on(matched_on: dict | None) -> str:
@@ -254,43 +259,40 @@ def search(
         return RedirectResponse("/login", status_code=303)
 
     LIMIT = 100
-    results = None
-
-    if q or source or psc or naics or status_filter:
-        with session_scope() as db:
-            stmt = select(Opportunity)
-            if q:
-                stmt = stmt.where(
-                    text("to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,'')) @@ plainto_tsquery('english', :q)")
-                ).params(q=q)
-            if source:
-                stmt = stmt.where(Opportunity.source == source)
-            if psc:
-                stmt = stmt.where(Opportunity.psc_code.like(f"{psc}%"))
-            if naics:
-                stmt = stmt.where(Opportunity.naics_code.like(f"{naics}%"))
-            if status_filter:
-                stmt = stmt.where(Opportunity.status == status_filter)
-            stmt = stmt.order_by(desc(Opportunity.response_deadline)).limit(LIMIT)
-            rows = db.scalars(stmt).all()
-            results = []
-            for r in rows:
-                dl, dlc = deadline_info(r.response_deadline)
-                results.append(
-                    type("R", (), {
-                        "id": r.id,
-                        "title": r.title,
-                        "source": r.source,
-                        "source_id": r.source_id,
-                        "solicitation_number": r.solicitation_number,
-                        "psc_code": r.psc_code,
-                        "agency_path": r.agency_path,
-                        "value_display": format_value(r.estimated_value_min, r.estimated_value_max),
-                        "deadline_display": dl,
-                        "deadline_class": dlc,
-                        "status": r.status,
-                    })()
-                )
+    with session_scope() as db:
+        stmt = select(Opportunity)
+        if q:
+            stmt = stmt.where(
+                text("to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,'')) @@ plainto_tsquery('english', :q)")
+            ).params(q=q)
+        if source:
+            stmt = stmt.where(Opportunity.source == source)
+        if psc:
+            stmt = stmt.where(Opportunity.psc_code.like(f"{psc}%"))
+        if naics:
+            stmt = stmt.where(Opportunity.naics_code.like(f"{naics}%"))
+        if status_filter:
+            stmt = stmt.where(Opportunity.status == status_filter)
+        stmt = stmt.order_by(desc(Opportunity.posted_date), desc(Opportunity.id)).limit(LIMIT)
+        rows = db.scalars(stmt).all()
+        results = []
+        for r in rows:
+            dl, dlc = deadline_info(r.response_deadline)
+            results.append(
+                type("R", (), {
+                    "id": r.id,
+                    "title": r.title,
+                    "source": r.source,
+                    "source_id": r.source_id,
+                    "solicitation_number": r.solicitation_number,
+                    "psc_code": r.psc_code,
+                    "agency_path": r.agency_path,
+                    "value_display": format_value(r.estimated_value_min, r.estimated_value_max),
+                    "deadline_display": dl,
+                    "deadline_class": dlc,
+                    "status": r.status,
+                })()
+            )
 
     return _render(request, "search.html", {
         "results": results,
@@ -1022,9 +1024,20 @@ async def watchlist_edit_post(request: Request, wl_id: int) -> HTMLResponse:
 async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> HTMLResponse:
     form = await request.form()
     name = (form.get("name") or "").strip()
-    if not name:
-        ctx = {"editing": wl_id is not None, "wl": None, "error": "Name is required.", "active_page": "watchlists"}
+
+    def invalid_form(message: str) -> HTMLResponse:
+        with session_scope() as db:
+            current = db.get(Watchlist, wl_id) if wl_id is not None else None
+        ctx = {
+            "editing": wl_id is not None,
+            "wl": current,
+            "error": message,
+            "active_page": "watchlists",
+        }
         return _render(request, "watchlist_edit.html", ctx, user)
+
+    if not name:
+        return invalid_form("Name is required.")
 
     def parse_list(val: str | None) -> list[str] | None:
         if not val or not val.strip():
@@ -1036,6 +1049,15 @@ async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> HT
             return float(val) if val and val.strip() else None
         except ValueError:
             return None
+
+    criteria = (
+        "psc_codes", "naics_codes", "keywords", "nsn_list", "set_asides", "sources",
+    )
+    if not any(parse_list(form.get(key)) for key in criteria) and not any(
+        form.get(key) and form.get(key).strip()
+        for key in ("min_value", "max_value", "min_deadline_days")
+    ):
+        return invalid_form("Add at least one code, keyword, source, value, or deadline filter.")
 
     with session_scope() as db:
         if wl_id:
@@ -1058,6 +1080,10 @@ async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> HT
         wl.min_deadline_days = int(form.get("min_deadline_days")) if form.get("min_deadline_days") and form.get("min_deadline_days").strip() else None
         wl.sources = parse_list(form.get("sources"))
         wl.notes = (form.get("notes") or "").strip() or None
+
+        db.flush()
+        from govcon.matching.engine import run_matching
+        run_matching(db, watchlist_id=wl.id, rebuild=True)
 
     return RedirectResponse("/watchlists", status_code=303)
 
@@ -1108,14 +1134,21 @@ def vendors(request: Request) -> HTMLResponse:
     vendor = None
     vendor_awards = None
     results = None
+    error = None
 
     if q:
         with session_scope() as db:
             # Try exact UEI match first
-            vendor = db.scalar(select(Vendor).where(Vendor.uei == q))
+            vendor = db.scalar(select(Vendor).where(Vendor.uei == q.upper()))
             if vendor is None:
                 # Try CAGE
-                vendor = db.scalar(select(Vendor).where(Vendor.cage_code == q))
+                vendor = db.scalar(select(Vendor).where(Vendor.cage_code == q.upper()))
+            if vendor is None and len(q) == 12 and q.isalnum():
+                from govcon.ingest.sam_entities import SamEntityError, ensure_vendor
+                try:
+                    vendor, _ = ensure_vendor(db, q)
+                except (SamEntityError, ValueError):
+                    error = "SAM.gov entity lookup is unavailable or the UEI was not found. Please try again later."
             if vendor is None:
                 # Try name search
                 results = db.scalars(
@@ -1127,11 +1160,30 @@ def vendors(request: Request) -> HTMLResponse:
                     .order_by(desc(Award.action_date)).limit(30)
                 ).all()
 
+    awardee_name = Opportunity.raw["award"]["awardee"]["name"].astext
+    with session_scope() as db:
+        awardee_query = (
+            select(
+                awardee_name.label("name"),
+                func.count(Opportunity.id).label("notice_count"),
+                func.max(Opportunity.id).label("opp_id"),
+            )
+            .where(Opportunity.source == "sam", awardee_name.is_not(None), awardee_name != "")
+            .group_by(awardee_name)
+            .order_by(desc(func.count(Opportunity.id)))
+            .limit(30)
+        )
+        if q:
+            awardee_query = awardee_query.where(awardee_name.ilike(f"%{q}%"))
+        awardees = db.execute(awardee_query).all()
+
     return _render(request, "vendors.html", {
         "query": q or None,
         "vendor": vendor,
         "vendor_awards": vendor_awards,
         "results": results,
+        "awardees": awardees,
+        "error": error,
         "active_page": "vendors",
     }, user)
 

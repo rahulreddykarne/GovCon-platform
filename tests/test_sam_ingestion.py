@@ -200,6 +200,25 @@ def test_rerun_unchanged_fixture_inserts_nothing_new(session: Session) -> None:
         _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
 
 
+def test_duplicate_contact_email_in_one_notice_is_upserted_once(session: Session) -> None:
+    _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
+    record = _record()
+    record["pointOfContact"].append(
+        {"email": "jesse.jones@gsa.gov", "fullName": "Jesse Jones", "type": "secondary"}
+    )
+    try:
+        stats = ingest_opportunity_records(session, [record])
+        session.commit()
+        contacts = session.scalar(
+            select(func.count()).select_from(Contact).where(Contact.email == "jesse.jones@gsa.gov")
+        )
+        assert stats.inserted == 1
+        assert stats.errors == []
+        assert contacts == 1
+    finally:
+        _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
+
+
 def test_changed_payload_creates_one_snapshot_and_deadline_event(session: Session) -> None:
     _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
     record = _record()

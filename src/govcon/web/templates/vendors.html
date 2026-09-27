@@ -9,6 +9,8 @@
   </div>
 </div>
 
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
 <div class="card">
   <form method="get" action="/vendors">
     <div class="d-flex gap-1 flex-wrap align-center">
@@ -93,12 +95,33 @@
     </table>
   </div>
   {% else %}
-    <p class="text-muted text-center" style="padding:2rem 0;">No vendors found. Try a UEI or company name.</p>
+    <p class="text-muted text-center" style="padding:2rem 0;">No saved SAM.gov entity profile matches this search. A 12-character UEI triggers a live lookup.</p>
   {% endif %}
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">Search for a vendor by UEI, CAGE code, or name.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">Enter a 12-character UEI for a live SAM.gov entity lookup, or search saved profiles by CAGE code or name.</p>
+</div>
+{% endif %}
+
+{% if awardees %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Awardees named in recent SAM.gov notices</span></div>
+  <p class="text-muted text-sm">These are names from public award notices, not verified entity profiles.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Awardee</th><th>Notices</th><th>Source</th></tr></thead>
+      <tbody>
+        {% for a in awardees %}
+        <tr>
+          <td>{{ a.name }}</td>
+          <td>{{ a.notice_count }}</td>
+          <td><a href="/opp/{{ a.opp_id }}">View notice</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 

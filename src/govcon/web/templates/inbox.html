@@ -14,7 +14,14 @@
 
 {% if not groups %}
   <div class="card">
-    <p class="text-muted text-center" style="padding:2rem 0;">No new matches. Run <code>govcon match run</code> to populate.</p>
+    {% if watchlist_count == 0 %}
+      <p class="text-muted text-center" style="padding:2rem 0;">
+        Live opportunities are available in <a href="/search">Search</a>.
+        <a href="/watchlists/new">Create a watchlist</a> to receive matching notices here.
+      </p>
+    {% else %}
+      <p class="text-muted text-center" style="padding:2rem 0;">No new matches for your watchlists.</p>
+    {% endif %}
   </div>
 {% endif %}
 

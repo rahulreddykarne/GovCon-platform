@@ -18,6 +18,9 @@ logs/**
 outbox/**
 !outbox/.gitkeep
 exports/
+data-live/
+logs-live/
+outbox-live/
 
 # Python
 __pycache__/

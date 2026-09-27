@@ -15,7 +15,10 @@
 
 {% if not watchlists %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No watchlists yet. Create one to start matching opportunities.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">
+    No watchlists yet. <a href="/watchlists/new">Create one</a> with your business's
+    NAICS or PSC codes, keywords, or other filters. Matches will appear in your Inbox.
+  </p>
 </div>
 {% else %}
 {% for wl in watchlists %}

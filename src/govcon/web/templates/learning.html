@@ -9,6 +9,15 @@
   </div>
 </div>
 
+{% if stats.submitted == 0 and stats.no_bid == 0 %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">
+    Learning starts after your team records bid outcomes. <a href="/search">Choose an opportunity</a>,
+    start a workspace, and record a win, loss, or no-bid decision there.
+  </p>
+</div>
+{% endif %}
+
 <div class="stats-grid">
   <div class="stat-card">
     <div class="label">Bids Submitted</div>

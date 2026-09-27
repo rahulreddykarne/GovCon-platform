@@ -591,6 +591,34 @@ class TestWatchlistCRUD:
         assert wl is not None
         assert wl.psc_codes == ["7110"]
 
+    def test_new_watchlist_matches_existing_opportunity(self, client, db_session):
+        opp = _make_opp(db_session)
+        response = client.post(
+            "/watchlists/new",
+            data={"name": "Auto Match UI Test", "psc_codes": "7110", "keywords": "Phase 14"},
+            cookies=self.cookies,
+        )
+        assert response.status_code == 303
+        db_session.expire_all()
+        watchlist = db_session.scalar(select(Watchlist).where(Watchlist.name == "Auto Match UI Test"))
+        assert watchlist is not None
+        match = db_session.scalar(
+            select(Match).where(Match.watchlist_id == watchlist.id, Match.opportunity_id == opp.id)
+        )
+        assert match is not None
+        db_session.query(Match).filter_by(watchlist_id=watchlist.id).delete()
+        db_session.delete(watchlist)
+        db_session.commit()
+
+    def test_empty_watchlist_is_rejected(self, client):
+        response = client.post(
+            "/watchlists/new",
+            data={"name": "No Filters"},
+            cookies=self.cookies,
+        )
+        assert response.status_code == 200
+        assert b"Add at least one code" in response.content
+
 
 class TestSecurityRequirements:
     """AC: App defaults to localhost only. No secret values in rendered HTML."""

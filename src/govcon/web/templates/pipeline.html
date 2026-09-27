@@ -9,6 +9,15 @@
   </div>
 </div>
 
+{% if total_count == 0 %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">
+    Your pipeline is empty. <a href="/search">Browse live opportunities</a>, open one, and select
+    <strong>Start Workspace</strong> to track it here.
+  </p>
+</div>
+{% endif %}
+
 <div class="pipeline-board">
   {% for col in columns %}
   <div class="pipeline-column">

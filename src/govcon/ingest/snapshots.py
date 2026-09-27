@@ -279,26 +279,29 @@ def _insert_snapshot(session: Session, opportunity_id: int, item: NormalizedOppo
 def _upsert_contacts(session: Session, opportunity_id: int, item: NormalizedOpportunity) -> None:
     if not item.agency_path:
         return
+    pending: dict[str, Contact] = {}
     for contact in item.contacts:
         email = contact.get("email")
         if not isinstance(email, str) or "@" not in email:
             continue
         normalized_email = email.strip().lower()
-        existing = session.scalar(
-            select(Contact).where(Contact.email == normalized_email, Contact.agency_path == item.agency_path)
-        )
+        existing = pending.get(normalized_email)
         if existing is None:
-            session.add(
-                Contact(
-                    name=contact.get("name"),
-                    email=normalized_email,
-                    phone=contact.get("phone"),
-                    title=contact.get("title"),
-                    agency_path=item.agency_path,
-                    contact_type=contact.get("contact_type"),
-                    first_seen_opportunity_id=opportunity_id,
-                )
+            existing = session.scalar(
+                select(Contact).where(Contact.email == normalized_email, Contact.agency_path == item.agency_path)
             )
+        if existing is None:
+            existing = Contact(
+                name=contact.get("name"),
+                email=normalized_email,
+                phone=contact.get("phone"),
+                title=contact.get("title"),
+                agency_path=item.agency_path,
+                contact_type=contact.get("contact_type"),
+                first_seen_opportunity_id=opportunity_id,
+            )
+            session.add(existing)
+            pending[normalized_email] = existing
             continue
         if contact.get("name"):
             existing.name = contact["name"]
