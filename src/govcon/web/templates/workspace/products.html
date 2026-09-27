@@ -1,0 +1,20 @@
+<!-- Products & Suppliers tab -->
+{% if ai_sourcing %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Product &amp; Supplier Analysis <span class="label-ai">AI</span></span>
+  </div>
+  {% set out = ai_sourcing.output_json %}
+  {% if out.get('product_match') %}<p><strong>Product match:</strong> {{ out['product_match'] }}</p>{% endif %}
+  {% if out.get('sources') %}
+    <h3 style="font-size:13px; font-weight:600; margin:1rem 0 0.5rem;">Sources</h3>
+    <ul>{% for s in out['sources'] %}<li>{{ s }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if out.get('lead_time') %}<p class="mt-1"><strong>Lead time:</strong> {{ out['lead_time'] }}</p>{% endif %}
+  {% if out.get('supplier_risk') %}<p class="mt-1"><strong>Supplier risk:</strong> {{ out['supplier_risk'] }}</p>{% endif %}
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">No product/supplier analysis yet.</p>
+</div>
+{% endif %}

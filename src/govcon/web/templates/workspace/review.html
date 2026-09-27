@@ -1,0 +1,152 @@
+<!-- Collaborative Review tab -->
+{% if not review_session %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">No review session yet. Start one from Overview.</p>
+</div>
+{% else %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Review Session <span class="label-human">Human</span></span>
+  </div>
+  <div class="d-flex gap-2 flex-wrap align-center mb-2">
+    <span>Status: <span class="badge badge-primary">{{ review_session.status|replace('_',' ') }}</span></span>
+    <span>Policy: {{ review_session.review_policy }}</span>
+    <span>Reviews: {{ review_session.completed_review_count }}/{{ review_session.required_review_count }}</span>
+    {% if review_session.second_review_required %}
+      <span class="badge badge-warning">Second review required</span>
+    {% endif %}
+  </div>
+
+  <!-- Reviewer assignments -->
+  {% if assignments %}
+  <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Reviewers</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reviewer</th><th>Role</th><th>Status</th><th>Recommendation</th><th>Completed</th></tr></thead>
+      <tbody>
+        {% for a in assignments %}
+        <tr>
+          <td>{{ a.user_display_name }}</td>
+          <td>{{ a.assignment_role }}</td>
+          <td><span class="badge badge-{% if a.status == 'complete' %}success{% elif a.status == 'in_progress' %}primary{% else %}secondary{% endif %}">{{ a.status }}</span></td>
+          <td>{{ a.recommendation or "—" }}</td>
+          <td>{{ a.completed_at.strftime('%Y-%m-%d') if a.completed_at else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Approval actions (approver/owner only) -->
+  {% if can_approve and review_session.status == 'approval_pending' %}
+  <div class="mt-2 d-flex gap-1 flex-wrap">
+    <form method="post" action="/workspace/{{ opp.id }}/approve" style="display:contents;">
+      <input type="hidden" name="decision" value="approve_to_bid">
+      <button type="submit" class="btn btn-success">Approve to Bid</button>
+    </form>
+    <form method="post" action="/workspace/{{ opp.id }}/approve" style="display:contents;">
+      <input type="hidden" name="decision" value="return_for_review">
+      <button type="submit" class="btn btn-secondary">Return for Review</button>
+    </form>
+    <form method="post" action="/workspace/{{ opp.id }}/approve" style="display:contents;">
+      <input type="hidden" name="decision" value="no_bid">
+      <button type="submit" class="btn btn-danger">No Bid</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <!-- Final approval status -->
+  {% if review_session.final_approval_status %}
+  <div class="alert alert-{% if review_session.final_approval_status == 'approved_to_bid' %}success{% elif review_session.final_approval_status == 'no_bid' %}error{% else %}warning{% endif %} mt-2">
+    Final decision: <strong>{{ review_session.final_approval_status|replace('_',' ')|upper }}</strong>
+    {% if review_session.approved_at %} on {{ review_session.approved_at.strftime('%Y-%m-%d') }}{% endif %}
+  </div>
+  {% endif %}
+
+  <!-- AI consolidated review -->
+  {% if review_session.ai_consolidated_review %}
+    {% set cr = review_session.ai_consolidated_review %}
+    <div class="mt-2 card" style="background:var(--color-bg);">
+      <div class="card-header"><span class="card-title">AI Consolidated Review <span class="label-ai">AI</span></span></div>
+      {% if cr.get('summary') %}<p>{{ cr['summary'] }}</p>{% endif %}
+      {% if cr.get('agreements') %}
+        <p class="mt-1"><strong>Agreements:</strong> {{ cr['agreements'] }}</p>
+      {% endif %}
+      {% if cr.get('open_issues') %}
+        <p class="mt-1"><strong>Open issues:</strong> {{ cr['open_issues'] }}</p>
+      {% endif %}
+      {% if cr.get('recommended_resolution') %}
+        <p class="mt-1"><strong>Recommendation:</strong> {{ cr['recommended_resolution'] }}</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+<!-- Comments -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Comments</span>
+    <span class="badge badge-secondary">{{ comments|length }}</span>
+  </div>
+
+  {% for c in comments %}
+  <div class="comment {% if c.parent_comment_id %}indent{% endif %}">
+    <div class="comment-header">
+      <strong>{{ c.user_display_name }}</strong>
+      <span>{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at else '' }}</span>
+      {% if c.topic %}<span class="badge badge-secondary">{{ c.topic }}</span>{% endif %}
+      {% if c.user_recommendation %}<span class="badge badge-primary">{{ c.user_recommendation }}</span>{% endif %}
+    </div>
+    <div class="body">{{ c.body }}</div>
+    {% if c.ai_position %}
+    <div class="ai-validation">
+      AI: <span class="badge badge-ai">{{ c.ai_position }}</span>
+      {% if c.ai_reason %} — {{ c.ai_reason }}{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <!-- Add comment form -->
+  {% if can_review %}
+  <form method="post" action="/workspace/{{ opp.id }}/comment" class="mt-2">
+    <div class="form-group">
+      <label for="comment_body">Add comment</label>
+      <textarea id="comment_body" name="body" rows="3" required></textarea>
+    </div>
+    <div class="d-flex gap-1">
+      <select name="user_recommendation">
+        <option value="">— recommendation —</option>
+        <option value="bid">Bid</option>
+        <option value="no_bid">No bid</option>
+        <option value="needs_info">Needs more info</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Post Comment</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+{% if can_review %}
+<div class="card">
+  <div class="card-header"><span class="card-title">My Review Actions</span></div>
+  <div class="d-flex gap-1 flex-wrap">
+    {% if my_assignment and my_assignment.status != 'complete' %}
+    <form method="post" action="/workspace/{{ opp.id }}/complete-review">
+      <div class="d-flex gap-1 align-center">
+        <select name="recommendation">
+          <option value="bid">Bid</option>
+          <option value="no_bid">No bid</option>
+          <option value="needs_more_info">Needs more info</option>
+        </select>
+        <button type="submit" class="btn btn-success">Mark Review Complete</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% endif %}

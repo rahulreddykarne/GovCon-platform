@@ -220,7 +220,10 @@ def test_acceptance_e2e_mcp_workflow(session: Session, owner):
     )
     session.flush()
 
-    matches = mcp_ops.op_list_matches(session, status="new", closing_within_days=7)
+    # Filter by watchlist_id to avoid hitting the limit(50) when many test matches exist in the DB
+    matches = mcp_ops.op_list_matches(
+        session, status="new", watchlist_id=watchlist.id, closing_within_days=7
+    )
     assert matches["ok"] is True
     ours = [row for row in matches["data"]["matches"] if row["opportunity"]["id"] == opp.id]
     assert len(ours) == 1

@@ -1,0 +1,58 @@
+<!-- Requirements tab -->
+{% if not requirements %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">
+    No requirements extracted yet. Run the compliance pipeline to populate.
+  </p>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Requirements <span class="label-ai">AI extracted</span></span>
+    <span class="text-sm text-muted">{{ requirements|length }} total</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Requirement</th>
+          <th>Type</th>
+          <th>Severity</th>
+          <th>Mandatory</th>
+          <th>Status</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in requirements %}
+        <tr>
+          <td>{{ req.id }}</td>
+          <td style="max-width:400px;">
+            {{ req.requirement_text[:200] }}{% if req.requirement_text|length > 200 %}…{% endif %}
+            {% if req.source_quote %}<div class="text-sm text-muted source-link">{{ req.source_quote[:80] }}</div>{% endif %}
+          </td>
+          <td>{{ req.requirement_type or "—" }}</td>
+          <td>
+            {% if req.severity %}
+              <span class="badge badge-{% if req.severity == 'critical' %}danger{% elif req.severity == 'high' %}warning{% else %}secondary{% endif %}">{{ req.severity }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ "✓" if req.mandatory else ("—" if req.mandatory is none else "✗") }}</td>
+          <td>
+            <span class="badge badge-{% if req.status == 'satisfied' %}success{% elif req.status in ('missing','stale') %}danger{% elif req.status == 'unknown' %}secondary{% else %}warning{% endif %}">
+              {{ req.status }}
+            </span>
+          </td>
+          <td>
+            {% if req.source_page %}p.{{ req.source_page }}{% endif %}
+            {% if req.source_section %} · {{ req.source_section[:30] }}{% endif %}
+            {% if req.blocks_submission %}<span class="badge badge-danger ml-1">blocks submit</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

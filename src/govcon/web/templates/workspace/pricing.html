@@ -1,0 +1,30 @@
+<!-- Pricing tab -->
+{% if ai_pricing %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Pricing Analysis <span class="label-ai">AI</span></span>
+  </div>
+  {% set out = ai_pricing.output_json %}
+  {% if out.get('pricing_summary') %}<p>{{ out['pricing_summary'] }}</p>{% endif %}
+  {% if out.get('supplier_cost') %}<p class="mt-1"><strong>Supplier cost:</strong> {{ out['supplier_cost'] }}</p>{% endif %}
+  {% if out.get('historical_comps') %}<p class="mt-1"><strong>Historical comparisons:</strong> {{ out['historical_comps'] }}</p>{% endif %}
+  {% if out.get('margin') %}<p class="mt-1"><strong>Margin estimate:</strong> {{ out['margin'] }}</p>{% endif %}
+  {% if out.get('price_risk') %}<p class="mt-1"><strong>Price risk:</strong> {{ out['price_risk'] }}</p>{% endif %}
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">No pricing analysis yet.</p>
+</div>
+{% endif %}
+
+{% if pursuit and (pursuit.sourcing_cost or pursuit.quote_price) %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Current Pursuit Pricing <span class="label-human">Human</span></span></div>
+  <dl class="key-val">
+    {% if pursuit.sourcing_cost %}<dt>Sourcing Cost</dt><dd>${{ "%.2f"|format(pursuit.sourcing_cost|float) }}</dd>{% endif %}
+    {% if pursuit.quote_price %}<dt>Quote Price</dt><dd>${{ "%.2f"|format(pursuit.quote_price|float) }}</dd>{% endif %}
+    {% if pursuit.margin_pct %}<dt>Margin</dt><dd>{{ pursuit.margin_pct }}%</dd>{% endif %}
+    {% if pursuit.supplier %}<dt>Supplier</dt><dd>{{ pursuit.supplier }}</dd>{% endif %}
+  </dl>
+</div>
+{% endif %}

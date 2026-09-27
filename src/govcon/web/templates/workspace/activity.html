@@ -1,0 +1,29 @@
+<!-- Activity tab -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Activity Log</span>
+    <span class="text-sm text-muted">{{ audit_events|length }} events</span>
+  </div>
+  {% if not audit_events %}
+  <p class="text-muted" style="padding:1rem 0;">No activity recorded yet.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
+      <tbody>
+        {% for ev in audit_events %}
+        <tr>
+          <td class="text-sm text-muted">{{ ev.created_at.strftime('%Y-%m-%d %H:%M') if ev.created_at else '' }}</td>
+          <td>{{ ev.user_display_name or "system" }}</td>
+          <td>{{ ev.action_type }}</td>
+          <td>{% if ev.entity_type %}{{ ev.entity_type }}{% if ev.entity_id %}:{{ ev.entity_id }}{% endif %}{% endif %}</td>
+          <td class="text-sm text-muted">
+            {% if ev.new_value and ev.new_value|length < 200 %}{{ ev.new_value }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>

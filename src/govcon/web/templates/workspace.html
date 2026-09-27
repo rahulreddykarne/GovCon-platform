@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Workspace — {{ opp.title or opp.source_id }} — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div style="flex:1;min-width:0;">
+    <h1 class="page-title truncate">{{ opp.title or "(no title)" }}</h1>
+    <div class="page-subtitle">
+      Workspace · {{ opp.source|upper }} · {{ opp.source_id }}
+      {% if review_session %} · <span class="badge badge-{{ review_session.status|replace('_','-') }}">{{ review_session.status|replace('_',' ') }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-1 flex-wrap">
+    <a href="/opp/{{ opp.id }}" class="btn btn-secondary btn-sm">← Opportunity</a>
+    {% if opp.links and opp.links.get('html_url') %}
+    <a href="{{ opp.links['html_url'] }}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">Source ↗</a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Tab bar -->
+<nav class="tab-bar">
+  {% set cur = active_tab %}
+  <a href="?tab=overview"       {% if cur == 'overview'       %}class="active"{% endif %}>Overview</a>
+  <a href="?tab=ai_decision"    {% if cur == 'ai_decision'    %}class="active"{% endif %}>AI Decision Package</a>
+  <a href="?tab=requirements"   {% if cur == 'requirements'   %}class="active"{% endif %}>Requirements</a>
+  <a href="?tab=market"         {% if cur == 'market'         %}class="active"{% endif %}>Market Intelligence</a>
+  <a href="?tab=awards"         {% if cur == 'awards'         %}class="active"{% endif %}>Historical Awards</a>
+  <a href="?tab=products"       {% if cur == 'products'       %}class="active"{% endif %}>Products &amp; Suppliers</a>
+  <a href="?tab=pricing"        {% if cur == 'pricing'        %}class="active"{% endif %}>Pricing</a>
+  <a href="?tab=competitors"    {% if cur == 'competitors'    %}class="active"{% endif %}>Competitors</a>
+  <a href="?tab=compliance"     {% if cur == 'compliance'     %}class="active"{% endif %}>Compliance</a>
+  <a href="?tab=review"         {% if cur == 'review'         %}class="active"{% endif %}>Collaborative Review</a>
+  <a href="?tab=proposal"       {% if cur == 'proposal'       %}class="active"{% endif %}>Proposal</a>
+  <a href="?tab=submission"     {% if cur == 'submission'     %}class="active"{% endif %}>Submission</a>
+  <a href="?tab=activity"       {% if cur == 'activity'       %}class="active"{% endif %}>Activity</a>
+</nav>
+
+<!-- Tab content -->
+{% if active_tab == 'overview' %}
+  {% include "workspace/overview.html" %}
+
+{% elif active_tab == 'ai_decision' %}
+  {% include "workspace/ai_decision.html" %}
+
+{% elif active_tab == 'requirements' %}
+  {% include "workspace/requirements.html" %}
+
+{% elif active_tab == 'market' %}
+  {% include "workspace/market.html" %}
+
+{% elif active_tab == 'awards' %}
+  {% include "workspace/awards.html" %}
+
+{% elif active_tab == 'products' %}
+  {% include "workspace/products.html" %}
+
+{% elif active_tab == 'pricing' %}
+  {% include "workspace/pricing.html" %}
+
+{% elif active_tab == 'competitors' %}
+  {% include "workspace/competitors.html" %}
+
+{% elif active_tab == 'compliance' %}
+  {% include "workspace/compliance.html" %}
+
+{% elif active_tab == 'review' %}
+  {% include "workspace/review.html" %}
+
+{% elif active_tab == 'proposal' %}
+  {% include "workspace/proposal.html" %}
+
+{% elif active_tab == 'submission' %}
+  {% include "workspace/submission.html" %}
+
+{% elif active_tab == 'activity' %}
+  {% include "workspace/activity.html" %}
+
+{% endif %}
+
+{% endblock %}

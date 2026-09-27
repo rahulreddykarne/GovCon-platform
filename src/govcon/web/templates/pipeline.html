@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Pipeline</h1>
+    <div class="page-subtitle">Bid lifecycle board — {{ total_count }} active opportunities</div>
+  </div>
+</div>
+
+<div class="pipeline-board">
+  {% for col in columns %}
+  <div class="pipeline-column">
+    <div class="pipeline-column-header">
+      <span>{{ col.label }}</span>
+      <span style="background:rgba(255,255,255,.2); padding:1px 6px; border-radius:10px; font-size:11px;">{{ col.cards|length }}</span>
+    </div>
+    {% if not col.cards %}
+      <div class="pipeline-card" style="color:var(--color-muted); font-style:italic;">empty</div>
+    {% endif %}
+    {% for card in col.cards %}
+    <div class="pipeline-card">
+      <div class="title">
+        <a href="/workspace/{{ card.opp_id }}">{{ card.title[:50] if card.title else card.source_id }}</a>
+      </div>
+      <div class="meta">
+        {% if card.deadline_label %}<span class="{{ card.deadline_class }}">{{ card.deadline_label }}</span><br>{% endif %}
+        {% if card.value %}<span>{{ card.value }}</span><br>{% endif %}
+        {% if card.margin %}Margin {{ card.margin }}%{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

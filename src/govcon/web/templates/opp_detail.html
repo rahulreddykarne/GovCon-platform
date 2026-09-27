@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}{{ opp.title or opp.source_id }} — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div style="flex:1; min-width:0;">
+    <h1 class="page-title truncate">{{ opp.title or "(no title)" }}</h1>
+    <div class="page-subtitle">
+      {{ opp.source|upper }} · {{ opp.source_id }}
+      {% if opp.solicitation_number %} · {{ opp.solicitation_number }}{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-1 flex-wrap">
+    {% if workspace_id %}
+      <a href="/workspace/{{ workspace_id }}" class="btn btn-primary">Open Workspace</a>
+    {% else %}
+      <form method="post" action="/opp/{{ opp.id }}/start-workspace">
+        <button type="submit" class="btn btn-primary">Start Workspace</button>
+      </form>
+    {% endif %}
+    {% if opp.links and opp.links.get('html_url') %}
+      <a href="{{ opp.links['html_url'] }}" class="btn btn-secondary" target="_blank" rel="noopener">Source ↗</a>
+    {% endif %}
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 320px; gap:1rem;">
+  <div>
+    <!-- Status / Urgency -->
+    <div class="d-flex gap-1 align-center flex-wrap mb-2">
+      <span class="badge badge-{{ opp.status }}">{{ opp.status }}</span>
+      {% if deadline_class %}<span class="{{ deadline_class }} badge">{{ deadline_label }}</span>{% endif %}
+      {% if match_status %}<span class="badge badge-{{ match_status }}">{{ match_status }}</span>{% endif %}
+    </div>
+
+    <!-- AI Summary -->
+    {% if ai_summary %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">AI Summary <span class="label-ai">AI</span></span>
+        <span class="text-sm text-muted">{{ ai_summary.created_at.strftime('%Y-%m-%d') if ai_summary.created_at else '' }}</span>
+      </div>
+      {% set out = ai_summary.output_json %}
+      {% if out.get('summary') %}
+        <p>{{ out['summary'] }}</p>
+      {% endif %}
+      {% if out.get('requirements_summary') %}
+        <p class="mt-1"><strong>Requirements:</strong> {{ out['requirements_summary'] }}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Description -->
+    {% if opp.description %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Description</span></div>
+      <p style="white-space:pre-wrap; word-break:break-word;">{{ opp.description[:2000] }}{% if opp.description|length > 2000 %} <em>[truncated]</em>{% endif %}</p>
+    </div>
+    {% endif %}
+
+    <!-- Attachments -->
+    {% if attachments %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Attachments</span></div>
+      <ul style="list-style:none; padding:0;">
+        {% for f in attachments %}
+        <li style="padding:0.4rem 0; border-bottom:1px solid var(--color-border);">
+          {{ f.filename or f.url or "(file)" }}
+          <span class="text-sm text-muted">
+            {% if f.mime_type %}· {{ f.mime_type }}{% endif %}
+            {% if f.extraction_status == 'done' %}<span style="color:var(--color-success);"> ✓ extracted</span>{% endif %}
+          </span>
+          {% if f.url %}<a href="{{ f.url }}" class="source-link ml-auto" target="_blank" rel="noopener">↗</a>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- Timeline -->
+    {% if events %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Timeline</span></div>
+      <ul style="list-style:none; padding:0;">
+        {% for ev in events %}
+        <li style="padding:0.3rem 0; border-bottom:1px solid var(--color-border); font-size:13px;">
+          <span class="text-muted">{{ ev.detected_at.strftime('%Y-%m-%d') }}</span>
+          <strong>{{ ev.event_type }}</strong>
+          {% if ev.field_name %} — {{ ev.field_name }}{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- Historical Awards -->
+    {% if awards %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Historical Awards</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Recipient</th><th>Agency</th><th>Amount</th></tr></thead>
+          <tbody>
+            {% for a in awards %}
+            <tr>
+              <td>{{ a.action_date or "—" }}</td>
+              <td>{{ a.recipient_name or a.recipient_uei or "—" }}</td>
+              <td>{{ a.awarding_agency or "—" }}</td>
+              <td>{{ "$%,.0f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Competitors -->
+    {% if competitors %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Vendors / Competitors</span></div>
+      <ul style="list-style:none; padding:0;">
+        {% for c in competitors %}
+        <li style="padding:0.3rem 0; border-bottom:1px solid var(--color-border); font-size:13px;">
+          <a href="/vendors?q={{ c.recipient_uei }}">{{ c.recipient_name or c.recipient_uei }}</a>
+          <span class="text-muted"> — {{ c.award_count }} award(s)</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- Snapshots -->
+    {% if snapshots %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Snapshot History</span></div>
+      <ul style="list-style:none; padding:0;">
+        {% for s in snapshots %}
+        <li style="padding:0.3rem 0; border-bottom:1px solid var(--color-border); font-size:13px;">
+          <span class="text-muted">{{ s.fetched_at.strftime('%Y-%m-%d %H:%M') if s.fetched_at else '' }}</span>
+          <code class="text-sm">{{ s.content_hash[:12] }}</code>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar-panel">
+    <dl class="key-val">
+      <dt>Source</dt><dd>{{ opp.source|upper }}</dd>
+      <dt>Status</dt><dd><span class="badge badge-{{ opp.status }}">{{ opp.status }}</span></dd>
+
+      {% if opp.response_deadline %}
+      <dt>Response Deadline</dt>
+      <dd class="{{ deadline_class }}">{{ opp.response_deadline.strftime('%Y-%m-%d %H:%M UTC') }}</dd>
+      {% endif %}
+
+      {% if opp.posted_date %}
+      <dt>Posted</dt><dd>{{ opp.posted_date }}</dd>
+      {% endif %}
+
+      {% if opp.psc_code %}
+      <dt>PSC</dt><dd>{{ opp.psc_code }}</dd>
+      {% endif %}
+
+      {% if opp.naics_code %}
+      <dt>NAICS</dt><dd>{{ opp.naics_code }}</dd>
+      {% endif %}
+
+      {% if opp.nsn %}
+      <dt>NSN</dt><dd>{{ opp.nsn }}</dd>
+      {% endif %}
+
+      {% if opp.quantity %}
+      <dt>Quantity</dt><dd>{{ opp.quantity }} {{ opp.unit or "" }}</dd>
+      {% endif %}
+
+      {% if opp.estimated_value_min or opp.estimated_value_max %}
+      <dt>Est. Value</dt>
+      <dd>
+        {% if opp.estimated_value_min %}${{ "%.0f"|format(opp.estimated_value_min|float) }}{% endif %}
+        {% if opp.estimated_value_max and opp.estimated_value_max != opp.estimated_value_min %}
+          – ${{ "%.0f"|format(opp.estimated_value_max|float) }}
+        {% endif %}
+        {% if opp.estimated_value_source %}<span class="text-muted text-sm">({{ opp.estimated_value_source }})</span>{% endif %}
+      </dd>
+      {% endif %}
+
+      {% if opp.set_aside_code %}
+      <dt>Set-Aside</dt><dd>{{ opp.set_aside_code }}</dd>
+      {% endif %}
+
+      {% if opp.agency_path %}
+      <dt>Agency</dt><dd>{{ opp.agency_path[:80] }}</dd>
+      {% endif %}
+
+      {% if opp.poc %}
+      <dt>POC</dt>
+      <dd>
+        {% if opp.poc is iterable and opp.poc is not string %}
+          {% for p in opp.poc %}
+            {{ p.get('fullName') or p.get('name') or '' }}
+            {% if p.get('email') %}<br><a href="mailto:{{ p['email'] }}" class="source-link">{{ p['email'] }}</a>{% endif %}
+          {% endfor %}
+        {% else %}
+          {{ opp.poc }}
+        {% endif %}
+      </dd>
+      {% endif %}
+
+      {% if opp.links %}
+        {% for key, url in opp.links.items() %}
+          {% if url and url.startswith('http') %}
+            <dt>{{ key|replace('_',' ')|title }}</dt>
+            <dd><a href="{{ url }}" target="_blank" rel="noopener" class="source-link">↗ Open</a></dd>
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+    </dl>
+
+    <!-- Contacts -->
+    {% if contacts %}
+    <hr style="margin:0.75rem 0; border:none; border-top:1px solid var(--color-border);">
+    <div style="font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--color-muted); margin-bottom:0.5rem;">Contacts</div>
+    {% for c in contacts %}
+    <div style="font-size:12px; margin-bottom:0.4rem;">
+      {{ c.name or "—" }} <span class="text-muted">({{ c.contact_type or "contact" }})</span><br>
+      {% if c.email %}<a href="mailto:{{ c.email }}">{{ c.email }}</a>{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- Bid Decision -->
+    {% if bid_decision %}
+    <hr style="margin:0.75rem 0; border:none; border-top:1px solid var(--color-border);">
+    <div style="font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--color-muted); margin-bottom:0.5rem;">AI Bid Decision <span class="label-ai">AI</span></div>
+    <div>
+      <span class="badge badge-{% if bid_decision.recommendation == 'bid' %}success{% elif bid_decision.recommendation == 'no_bid' %}danger{% else %}warning{% endif %}">
+        {{ bid_decision.recommendation|replace('_',' ')|upper }}
+      </span>
+      {% if bid_decision.recommendation_score %}
+        <span class="text-sm text-muted"> {{ "%.0f"|format(bid_decision.recommendation_score|float) }}%</span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

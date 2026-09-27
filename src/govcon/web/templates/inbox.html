@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Inbox — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Inbox</h1>
+    <div class="page-subtitle">New matches grouped by watchlist — action required</div>
+  </div>
+  <div class="d-flex gap-1 align-center flex-wrap">
+    <span class="text-muted text-sm">{{ total_count }} new</span>
+  </div>
+</div>
+
+{% if not groups %}
+  <div class="card">
+    <p class="text-muted text-center" style="padding:2rem 0;">No new matches. Run <code>govcon match run</code> to populate.</p>
+  </div>
+{% endif %}
+
+{% for group in groups %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{{ group.watchlist_name }}</span>
+    <span class="badge badge-new">{{ group.matches|length }} new</span>
+  </div>
+
+  {% for m in group.matches %}
+  <div class="match-row" id="match-{{ m.match_id }}">
+    <div style="flex:1; min-width:0;">
+      <div class="title truncate">
+        <a href="/opp/{{ m.opp_id }}">{{ m.title or "(no title)" }}</a>
+      </div>
+      <div class="match-meta">
+        {% if m.deadline_label %}
+          <span class="{{ m.deadline_class }}">{{ m.deadline_label }}</span> ·
+        {% endif %}
+        {{ m.source|upper }} · {{ m.psc or "" }}
+        {% if m.agency %} · {{ m.agency[:60] }}{% endif %}
+        {% if m.estimated_value %} · ~{{ m.estimated_value }}{% endif %}
+      </div>
+      {% if m.matched_on %}
+      <div class="text-sm text-muted">Matched: {{ m.matched_on }}</div>
+      {% endif %}
+    </div>
+    <div class="match-actions">
+      <form method="post" action="/inbox/action" style="display:contents;"
+            hx-post="/inbox/action"
+            hx-target="#match-{{ m.match_id }}"
+            hx-swap="outerHTML">
+        <input type="hidden" name="match_id" value="{{ m.match_id }}">
+        <input type="hidden" name="action" value="seen">
+        <button type="submit" class="btn btn-secondary btn-sm">Seen</button>
+      </form>
+      <form method="post" action="/inbox/action" style="display:contents;"
+            hx-post="/inbox/action"
+            hx-target="#match-{{ m.match_id }}"
+            hx-swap="outerHTML">
+        <input type="hidden" name="match_id" value="{{ m.match_id }}">
+        <input type="hidden" name="action" value="dismissed">
+        <button type="submit" class="btn btn-secondary btn-sm">Dismiss</button>
+      </form>
+      <a href="/opp/{{ m.opp_id }}" class="btn btn-secondary btn-sm">Review</a>
+      <form method="post" action="/inbox/action" style="display:contents;"
+            hx-post="/inbox/action"
+            hx-target="#match-{{ m.match_id }}"
+            hx-swap="outerHTML">
+        <input type="hidden" name="match_id" value="{{ m.match_id }}">
+        <input type="hidden" name="action" value="pursuing">
+        <button type="submit" class="btn btn-primary btn-sm">Pursue</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+{% endblock %}

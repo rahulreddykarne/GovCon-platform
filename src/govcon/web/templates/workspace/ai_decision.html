@@ -1,0 +1,102 @@
+<!-- AI Decision Package tab -->
+{% if not bid_decision %}
+<div class="card">
+  <p class="text-muted text-center" style="padding:2rem 0;">
+    No AI decision package yet. Run <code>govcon decision run --opp-id {{ opp.id }}</code> to generate.
+  </p>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">AI Bid Decision Package <span class="label-ai">AI</span></span>
+    <span class="text-sm text-muted">{{ bid_decision.created_at.strftime('%Y-%m-%d %H:%M') if bid_decision.created_at else '' }}</span>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Recommendation</div>
+      <div class="value {% if bid_decision.recommendation == 'bid' %}success{% elif bid_decision.recommendation == 'no_bid' %}danger{% else %}primary{% endif %}">
+        {{ bid_decision.recommendation|replace('_',' ')|upper }}
+      </div>
+    </div>
+    {% if bid_decision.recommendation_score %}
+    <div class="stat-card">
+      <div class="label">Confidence</div>
+      <div class="value">{{ "%.0f"|format(bid_decision.recommendation_score|float) }}%</div>
+    </div>
+    {% endif %}
+    {% if bid_decision.compliance_risk_score %}
+    <div class="stat-card">
+      <div class="label">Compliance Risk</div>
+      <div class="value {% if bid_decision.compliance_risk_score|float > 70 %}danger{% elif bid_decision.compliance_risk_score|float > 40 %}primary{% else %}success{% endif %}">
+        {{ "%.0f"|format(bid_decision.compliance_risk_score|float) }}%
+      </div>
+    </div>
+    {% endif %}
+    {% if bid_decision.margin_score %}
+    <div class="stat-card">
+      <div class="label">Margin Score</div>
+      <div class="value">{{ "%.0f"|format(bid_decision.margin_score|float) }}%</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if bid_decision.strengths %}
+  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem;">Strengths</h3>
+  <ul>
+    {% if bid_decision.strengths is iterable and bid_decision.strengths is not string %}
+      {% for s in bid_decision.strengths %}
+        <li>{{ s }}</li>
+      {% endfor %}
+    {% else %}
+      <li>{{ bid_decision.strengths }}</li>
+    {% endif %}
+  </ul>
+  {% endif %}
+
+  {% if bid_decision.risks %}
+  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem;">Risks</h3>
+  <ul>
+    {% if bid_decision.risks is iterable and bid_decision.risks is not string %}
+      {% for r in bid_decision.risks %}
+        <li>{{ r }}</li>
+      {% endfor %}
+    {% else %}
+      <li>{{ bid_decision.risks }}</li>
+    {% endif %}
+  </ul>
+  {% endif %}
+
+  {% if bid_decision.missing_information %}
+  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem; color:var(--color-warning);">Missing Information <span class="label-ai">AI</span></h3>
+  <ul>
+    {% if bid_decision.missing_information is iterable and bid_decision.missing_information is not string %}
+      {% for mi in bid_decision.missing_information %}
+        <li>{{ mi }}</li>
+      {% endfor %}
+    {% else %}
+      <li>{{ bid_decision.missing_information }}</li>
+    {% endif %}
+  </ul>
+  {% endif %}
+
+  {% if bid_decision.evidence %}
+  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem;">Evidence <span class="label-ai">AI</span></h3>
+  <pre style="font-size:12px; background:var(--color-bg); padding:0.75rem; border-radius:var(--radius); overflow:auto; max-height:300px;">{{ bid_decision.evidence|tojson(indent=2) }}</pre>
+  {% endif %}
+</div>
+
+{% if decision_package_analysis %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Full Decision Package <span class="label-ai">AI</span></span>
+  </div>
+  {% set dp = decision_package_analysis.output_json %}
+  {% if dp.get('summary') %}<p>{{ dp['summary'] }}</p>{% endif %}
+  {% if dp.get('pricing_position') %}<p class="mt-1"><strong>Pricing position:</strong> {{ dp['pricing_position'] }}</p>{% endif %}
+  {% if dp.get('supplier_position') %}<p class="mt-1"><strong>Supplier position:</strong> {{ dp['supplier_position'] }}</p>{% endif %}
+  {% if dp.get('compliance_status') %}<p class="mt-1"><strong>Compliance:</strong> {{ dp['compliance_status'] }}</p>{% endif %}
+</div>
+{% endif %}
+
+{% endif %}

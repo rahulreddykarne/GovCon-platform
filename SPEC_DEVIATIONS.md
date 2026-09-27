@@ -153,3 +153,22 @@ Implementation notes:
 - Decision: Migration `f2a3b4c5d6e7` creates the HNSW index without CONCURRENTLY. For zero-downtime production upgrades, the index should be created with CONCURRENTLY before running Alembic. A comment in the migration records this.
 - Impact: Non-blocking for the dev/test environment. Production teams should create the index manually first.
 - Follow-up: None. Production deployment guidance is documented in the migration comment.
+## Phase 14
+
+### DEV-009 — Notifications full page deferred
+- Phase: 14
+- Date: 2026-09-27
+- Spec requirement: §24A lists in-app notifications for all review/approval/submission events.
+- Verified external/repository reality: `notifications` table and `notify()` function exist from Phase 10. The bell link shows unread count in the top bar.
+- Decision: Full `/notifications` list page not implemented in this phase. Unread count badge is visible. Phase 17/18 can add the full page.
+- Impact: Users see the count but must navigate to specific pages. No notification functionality is blocked.
+- Follow-up: Phase 17 or standalone follow-up.
+
+### DEV-010 — Learning by-agency/by-PSC analytics placeholder
+- Phase: 14
+- Date: 2026-09-27
+- Spec requirement: §20 learning page shows analytics by agency, PSC, repeat competitors.
+- Verified external/repository reality: Outcome data exists in `pursuits.stage` + `pursuits.outcome_notes`; grouped analytics (by agency/PSC/competitor) require joins with opportunities.
+- Decision: Summary stats (submitted/won/lost/win-rate/avg-margin) are computed. Grouped analytics rows are empty list pending Phase 15 analytics engine.
+- Impact: Top-level learning stats work; drill-down tables show "no data" until Phase 15.
+- Follow-up: Phase 15.
