@@ -436,6 +436,15 @@ Record durable architecture/implementation decisions.
 - Alternatives considered: Generate narrative explanations of loss patterns (rejected — would invent causal stories without evidence).
 - Consequences: Analytics surface useful patterns (pricing losses 3/5 times) without implying causation. Government feedback and debrief notes are preserved as evidence separately from inferred signals.
 
+### ADR-055 — Phase 19 testing strategy: fill gaps in existing test coverage; no duplication
+
+- Phase: 19
+- Date: 2026-09-27
+- Context: §25 requires full automated testing, prompt/JEV/compliance regression suites, smoke tests, and release gates. Phases 1–18 already have dedicated test files (test_sam_ingestion.py, test_compliance.py, test_decision_engine.py, etc.). Phase 19 should fill gaps rather than duplicate.
+- Decision: (1) `tests/test_phase19_testing_gates.py` (87 tests) covers exactly the §25 ACs not already exercised by phase-specific tests: parser/fixture checks, idempotency with correct API calls, snapshot behavior, table-driven matching, AI schema registry coverage, full prompt-library gate, JEV/decision acceptance criteria (§36), quorum policy tests, compliance release gate assertions, proposal immutability, submission model checks, and migration. (2) `tests/fixtures/prompts/` adds 9 subdirectories with representative fixtures for each prompt task class (§43.6). (3) `scripts/smoke.sh` is expanded from the Phase 0 stub to the full §25 smoke spec. (4) `govcon prompts` CLI is extended with `list`, `validate`, `render`, `diff`, and `eval` commands (§25, §43 prompt-library CLI).
+- Alternatives considered: Adding all tests to phase-specific test files (rejected: would require editing 18 existing files and create cross-phase coupling). Creating a single monolithic test file with every AC from every phase (rejected: duplicates existing per-phase tests and is fragile to infrastructure differences).
+- Consequences: The Phase 19 test file is the authoritative AC checklist for the testing strategy phase. Existing per-phase test files remain unchanged. The compliance release gate is gated by the benchmark replay in `test_compliance_benchmark_passes`.
+
 ### ADR-054 — Phase 18 security hardening: foundation from Phase 0; evidence assembled here
 - Phase: 18
 - Date: 2026-09-27

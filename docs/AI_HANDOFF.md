@@ -1,5 +1,151 @@
 # AI handoff
 
+## 2026-09-27 07:30 UTC — PHASE_19_TESTING_RELEASE_GATES
+
+- Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27 07:30 UTC
+- Phase/task: PHASE_19_TESTING_RELEASE_GATES (master §25)
+- Branch: `cursor/phase-19-testing-release-gates-9982`
+- Base: `main` at `9a2556c` (Phase 18 squash-merged tip)
+
+### Files changed
+
+- `src/govcon/cli.py` — added `prompts list`, `prompts validate`, `prompts render`, `prompts diff`, `prompts eval` commands
+- `src/govcon/prompting/evaluation.py` — fixed `not_placeholder` gate check (DEV-016)
+- `src/govcon/ai/schemas.py` — added `OutcomeAnalysisV1` schema, registered `outcome_analysis.v1` (DEV-017)
+- `src/govcon/prompts/deepseek/outcome_analysis_v1.md` — added `source_security_rules` include + `required_variables` (DEV-017)
+- `src/govcon/prompts/deepseek/solicitation_analysis_v1.md` — added `required_variables` (DEV-018)
+- `scripts/smoke.sh` — expanded from Phase 0 stub to full §25 smoke spec
+- `tests/test_phase19_testing_gates.py` — 87 Phase 19 AC tests (new)
+- `tests/fixtures/prompts/` — 9 subdirectories, 11 JSON fixture files for prompt regression (new)
+- `IMPLEMENTATION_STATUS.md` — Phase 19 row updated to COMPLETE
+- `SPEC_DEVIATIONS.md` — DEV-015 through DEV-018 added
+- `DECISIONS.md` — ADR-055 added
+- `docs/AI_HANDOFF.md` — this entry
+
+### What shipped
+
+**Phase 19 assembles the full automated testing, prompt/JEV/compliance regression suites, smoke test, and release gates required by §25.**
+
+**Prompt CLI (new commands):**
+- `govcon prompts list` — lists all source-controlled prompts with status and hash
+- `govcon prompts validate` — runs the activation gate on all active task prompts (skips shared fragments)
+- `govcon prompts render <name> [--fixture <path>]` — renders system prompt and optional user context
+- `govcon prompts diff <name>@vN <name>@vN+1` — unified diff between two prompt versions
+- `govcon prompts eval [<name>@<version>] [--suite compliance]` — runs regression evaluation
+
+**Prompt infrastructure fixes:**
+- `not_placeholder` gate: changed from `"PLACEHOLDER" not in body` to `"Do not activate." in body OR status=="placeholder"`, correctly allowing production prompts to use "PLACEHOLDER FORMAT" as a documentation term
+- `OutcomeAnalysisV1` Pydantic schema registered in `SCHEMA_REGISTRY` as `"outcome_analysis.v1"`
+- `outcome_analysis_v1.md` and `solicitation_analysis_v1.md` front matter updated with `required_variables` and `source_security_rules` includes
+
+**Test file `tests/test_phase19_testing_gates.py` (87 tests) covers:**
+- Parser/fixture tests: SAM, DIBBS, USAspending fixture existence and structure
+- Idempotency: SAM and DIBBS re-ingest produce zero duplicate records
+- Snapshot: unchanged payload → no new snapshot; changed payload → one new snapshot
+- Matching: 11-case table-driven parametrized test (PSC prefix, NAICS prefix, keyword, exclude, source, NSN)
+- AI schema: registry coverage for all active task prompts; `OutcomeAnalysisV1` validation; malformed-schema rejection
+- Prompt-library: full gate for all 15 active task prompts (no regression for speed); hash stability; secret scan; injection confinement; CLI commands
+- JEV/Decision §36: 13 fixture files; fixture schema validation; obvious-bid/no-bid/escalation; hard-rule override; `bid_decision` cannot directly set pursuit stage; decision persisted to `decision_runs`
+- Collaborative review §25: single-review quorum satisfied after 1; dual-review blocked after 1; override requires reason; BID/NO BID split routes to human
+- Compliance §25: benchmark gate (mandatory recall=1.0, critical recall=1.0, false-satisfied=0.0, amendment detection=1.0); release gate CLI
+- Proposal §25: version immutability; version number uniqueness
+- Submission §25: blocking finding prevents `ready_to_submit`; no auto-portal submission code; `submitted_at` recorded
+- Migration: `upgraded_engine` fixture confirms `alembic upgrade head`; all 33 phase tables exist
+- Prompt runtime ACs §43.11: two independent extraction strategies; active amendment/coverage/preflight prompts; versioned schemas; 13 JEV bundle specs
+
+**`scripts/smoke.sh` steps:**
+1. db upgrade
+2. seed demo watchlist
+3. govcon status
+4. ingest SAM fixture
+5. ingest DIBBS fixture
+6. snapshot diff (re-ingest SAM — zero new snapshots)
+7. match
+8. alerts digest (outbox mode)
+9. validate prompt registry (all 15 active task prompts: PASS)
+10. list prompts
+11. render fixture prompt (amendment_analysis with DOCUMENT_INVENTORY_JSON, REQUIREMENTS_JSON, AMENDMENT_JSON)
+12. diff same prompt version (no differences)
+13. eval compliance suite (PASS)
+14. compliance benchmark / release gate (PASS: mandatory recall=1.0, critical recall=1.0, false-satisfied=0.0)
+15. assert outputs (at least 1 opportunity, at least 1 watchlist in DB)
+
+### Prompt fixture directory `tests/fixtures/prompts/`
+
+9 subdirectories as specified in §43.6:
+- `solicitation_analysis/` — basic case + injection attempt
+- `requirement_extraction/` — basic extraction + table-embedded case
+- `amendment_analysis/` — material change + no-change
+- `comment_validation/` — evidence-grounded + insufficient-evidence
+- `proposal_drafting/` — basic draft + missing-evidence (BLOCKER expected)
+- `proposal_red_team/` — critical-issue case
+- `compliance_validation/` — deterministic-blocker case
+- `proposal_coverage/` — partial-coverage case
+- `submission_preflight/` — missing-attachment case
+
+### ADRs / DECISIONS touched
+
+- ADR-055 (new): Phase 19 testing strategy — fill gaps rather than duplicate.
+- DEV-015 (new): Phase 16 dependency waiver.
+- DEV-016 (new): `not_placeholder` gate fix.
+- DEV-017 (new): `outcome_analysis.v1` schema, required_variables, source_security_rules.
+- DEV-018 (new): `solicitation_analysis` required_variables.
+
+### Migrations
+
+None. Phase 19 adds no schema changes.
+
+### Tests
+
+PostgreSQL 16 + pgvector on localhost:5432 (installed in this cloud agent VM):
+
+- `pytest tests/test_phase19_testing_gates.py` → **87 passed**
+- `pytest` (full suite) → **493 passed, 1 skipped, 48 warnings**
+- `bash scripts/smoke.sh` → **PASS** (exit 0)
+- `govcon prompts validate` → **all 15 active task prompts PASS**
+- `govcon compliance benchmark` → **gate PASS** (aggregate: mandatory_recall=1.0, critical_recall=1.0, false_satisfied_rate=0.0)
+
+### Acceptance criteria (§25)
+
+| AC | Criterion | Result |
+|---|---|---|
+| Parser tests | SAM/DIBBS/USAspending fixtures; no live network | ✅ |
+| Idempotency | Re-run produces zero duplicates for SAM, DIBBS | ✅ |
+| Snapshot tests | Unchanged → no snapshot; changed → 1 snapshot | ✅ |
+| Matching tests | 11-case table-driven parametrized | ✅ |
+| AI schema tests | All schemas registered; malformed rejected; injection-safe | ✅ |
+| Prompt-library tests | All 15 active prompts pass gate; 7 CLI commands | ✅ |
+| Decision/JEV tests §35/§36 | 13 fixtures; fixture schema; bid/no-bid/escalation; hard-rule; persistence | ✅ |
+| Collaborative review tests | Single/dual quorum; override requires reason; split routes human | ✅ |
+| Compliance tests | Benchmark PASS; mandatory recall=1.0; false-satisfied=0.0 | ✅ |
+| Compliance release gate | CLI exits 0; gate PASS; amendment detection=1.0 | ✅ |
+| Proposal tests | Version immutability; incrementing version numbers | ✅ |
+| Submission tests | Blocking finding prevents ready; no auto-portal; timestamp recorded | ✅ |
+| Migration test | `alembic upgrade head` from empty DB via `upgraded_engine` fixture | ✅ |
+| Smoke test | `scripts/smoke.sh` exits 0 with all sections PASS | ✅ |
+
+### Phase 16 note
+
+Phase 16 (State & local adapters) remains DEFERRED per user instructions (DEV-015).
+
+### Known deviations
+
+- DEV-015: Phase 16 dependency waiver (DEFERRED).
+- DEV-016: `not_placeholder` gate check fixed for production prompts using "PLACEHOLDER FORMAT" as a heading.
+- DEV-017: `outcome_analysis.v1` schema added; prompt front matter updated.
+- DEV-018: `solicitation_analysis` required_variables added.
+
+### Unfinished work
+
+None for Phase 19 scope. The compliance benchmark replay measures recorded AI output; live re-evaluation requires `DEEPSEEK_API_KEY` and is available via `govcon compliance benchmark --live`.
+
+### Recommended next task
+
+**Phase 20 — Final integration acceptance (`PHASE_20_FINAL_INTEGRATION_ACCEPTANCE.md`).**
+
+---
+
 ## 2026-09-27 05:20 UTC — PHASE_18_SECURITY_HARDENING
 
 - Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`

@@ -1,0 +1,59 @@
+{
+  "description": "Basic solicitation analysis fixture — DLA NSN supply contract.",
+  "inputs": {
+    "OPPORTUNITY_JSON": {
+      "id": 1,
+      "title": "NSN 6515-01-234-5678 Surgical Suture",
+      "source": "dibbs",
+      "source_id": "SPE2DE26T1000",
+      "psc_code": "6515",
+      "naics_code": "339112",
+      "set_aside_code": "SBA",
+      "response_deadline": "2026-11-15T23:59:59Z",
+      "agency_path": "DEPT OF DEFENSE > DLA > MEDICAL",
+      "estimated_value_min": 50000,
+      "estimated_value_max": 100000,
+      "nsn": "6515-01-234-5678"
+    },
+    "SOURCE_PACKAGE_JSON": {
+      "files": [
+        {
+          "file_id": 1,
+          "filename": "solicitation.pdf",
+          "sha256": "abc123",
+          "pages": 22,
+          "extraction_status": "success"
+        }
+      ],
+      "text_chunks": [
+        {
+          "file_id": 1,
+          "page": 3,
+          "section": "Section B",
+          "text": "CLIN 0001: NSN 6515-01-234-5678, Quantity 1000 EA, Unit Price $___. Delivery within 45 days ARO."
+        },
+        {
+          "file_id": 1,
+          "page": 7,
+          "section": "Section L",
+          "text": "Proposals due NLT November 15, 2026. Page limit: 10 pages. Required: FAR 52.204-7."
+        }
+      ]
+    }
+  },
+  "expected_required_facts": [
+    "nsn",
+    "delivery_days",
+    "page_limit",
+    "response_deadline"
+  ],
+  "forbidden_hallucinations": [
+    "secret clearance required",
+    "Buy American Act waiver",
+    "overseas delivery"
+  ],
+  "expected_source_refs": true,
+  "minimum_acceptable_recall": 0.8,
+  "maximum_false_positive_rate": 0.1,
+  "notes": "Standard DLA supply solicitation. Should extract NSN, CLIN, delivery requirement, page limit, and FAR clause reference."
+}

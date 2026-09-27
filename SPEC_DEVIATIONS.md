@@ -226,6 +226,45 @@ Implementation notes:
 
 No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
 
+## Phase 19
+
+### DEV-015 — Phase 16 dependency waiver (standing product decision)
+- Phase: 19
+- Date: 2026-09-27
+- Spec requirement: `PHASE_19_TESTING_RELEASE_GATES.md` lists Phase 16 (State & local adapters) as a dependency.
+- Verified external/repository reality: Phase 16 was intentionally deferred per user instructions across all prior phases. It is marked DEFERRED (OPTIONAL) in IMPLEMENTATION_STATUS.md.
+- Decision: Treat Phases 0–15, 17, and 18 as the required base for Phase 19. Phase 16 remains deferred and must NOT be implemented in this run.
+- Reason: User instruction: "Phase 16 (state/local adapters) is intentionally DEFERRED and must NOT be implemented in this run."
+- Impact: No state/local adapter tests are included in the Phase 19 suite. No Phase 16 functionality is tested or exercised.
+- Follow-up: None. Phase 16 remains DEFERRED unless a future user instruction re-enables it.
+
+### DEV-016 — `not_placeholder` gate fix in `evaluation.py`
+- Phase: 19
+- Date: 2026-09-27
+- Spec requirement: Every active prompt must pass the `not_placeholder` check.
+- Verified reality: `proposal_drafting_v1.md` contains the text "PLACEHOLDER FORMAT" as a heading in its output-format instructions. The original check `"PLACEHOLDER" not in asset.body` incorrectly flagged it.
+- Decision: The `not_placeholder` check now uses `status == "placeholder" OR "Do not activate." in body` as the sentinel, not the presence of the word "PLACEHOLDER" in the body.
+- Impact: `proposal_drafting` now correctly passes the gate. The word "PLACEHOLDER" remains permissible in production prompt bodies as a documentation term.
+- Follow-up: None.
+
+### DEV-017 — `outcome_analysis.v1` schema added to SCHEMA_REGISTRY; required_variables and source_security_rules include added
+- Phase: 19
+- Date: 2026-09-27
+- Spec requirement: §43.11 item 3: exact prompt hashes are persisted for every AI run; §43.11 item 4: output schemas are versioned; §43.4: all active prompts pass the activation gate.
+- Verified reality: `outcome_analysis_v1.md` was activated in Phase 15 but its schema was not registered in `SCHEMA_REGISTRY`, and it lacked `required_variables` and `source_security_rules` in its includes.
+- Decision: (1) Added `OutcomeAnalysisV1` Pydantic model to `govcon/ai/schemas.py` and registered it as `"outcome_analysis.v1"`. (2) Added `required_variables: OUTCOME_JSON, EVIDENCE_JSON` to the front matter. (3) Added `shared/source_security_rules_v1` to the includes.
+- Impact: `outcome_analysis` now passes the full prompt activation gate. The schema validates AI output for this prompt.
+- Follow-up: Wire AI classification call in `record_outcome` when `DEEPSEEK_API_KEY` is available (DEV-012 remains open).
+
+### DEV-018 — `solicitation_analysis` prompt required_variables added
+- Phase: 19
+- Date: 2026-09-27
+- Spec requirement: §43.5 / §43.8: every task prompt should declare `required_variables` for the activation gate.
+- Verified reality: `solicitation_analysis_v1.md` was missing `required_variables` in its front matter.
+- Decision: Added `required_variables: OPPORTUNITY_JSON, SOURCE_PACKAGE_JSON` to the front matter. The prompt's rendering path in `enrich/summarize.py` already uses structured context; this aligns the front-matter declaration with actual usage.
+- Impact: `solicitation_analysis` now passes the `declares_required_variables` gate check.
+- Follow-up: None.
+
 Core security infrastructure (data classification, AI gateway, credential rules, localhost bind, log redaction) was implemented in Phase 0 per ADR-006 rather than deferred to Phase 18. This was an intentional architectural decision, not a deviation; Phase 0 required the gateway as a prerequisite for any later AI call. Phase 18 confirms all ACs are satisfied and assembles the compliance evidence in `tests/test_security_hardening.py`.
 
 Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as part of the prompt registry work. Phase 18 confirms their production bodies and `status: active` are correct.

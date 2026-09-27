@@ -1,0 +1,27 @@
+{
+  "description": "Submission pre-flight — required attachment missing.",
+  "prompt": "submission_preflight_ai",
+  "inputs": {
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "required_attachment", "text": "ISO 13485 certificate required", "mandatory": true, "status": "unknown"},
+      {"id": 2, "category": "deadline", "text": "Submit by November 30, 2026", "mandatory": true, "status": "satisfied"},
+      {"id": 3, "category": "delivery", "text": "30 days ARO", "mandatory": true, "status": "satisfied"}
+    ],
+    "SUBMISSION_PACKAGE_JSON": {
+      "documents": ["proposal_v2.docx", "pricing_schedule.xlsx"],
+      "submitted_at": null,
+      "portal": "SAM.gov"
+    },
+    "CHECKLIST_JSON": {
+      "deadline": "2026-11-30",
+      "current_date": "2026-11-10",
+      "required_files": ["ISO_13485_cert"],
+      "attached_files": ["proposal_v2.docx", "pricing_schedule.xlsx"]
+    }
+  },
+  "expected_status": "NEEDS_REVIEW",
+  "expected_blocking_issues": ["missing_required_attachment: ISO_13485_cert"],
+  "critical_blocker_recall_min": 1.0,
+  "false_ready_rate_max": 0.0,
+  "notes": "ISO 13485 cert is required but not in submission package. Must be a blocking issue."
+}

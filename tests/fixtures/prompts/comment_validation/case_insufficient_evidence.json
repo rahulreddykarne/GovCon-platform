@@ -1,0 +1,23 @@
+{
+  "description": "Reviewer comment making a claim without evidence — should require evidence.",
+  "prompt": "reviewer_comment_validation",
+  "inputs": {
+    "COMMENT_JSON": {
+      "id": 2,
+      "body": "I think we can deliver in time. We have done similar jobs before. No issues.",
+      "author": "reviewer_b",
+      "created_at": "2026-10-01T11:00:00Z"
+    },
+    "CONTEXT_JSON": {
+      "opportunity_title": "Defense Medical Supply",
+      "requirements": [
+        {"id": 1, "category": "delivery", "text": "Delivery within 15 days ARO", "mandatory": true}
+      ],
+      "sourcing": {"lead_time_days": null},
+      "compliance_summary": {"mandatory_missing": 0}
+    }
+  },
+  "expected_grounding": "insufficient_evidence",
+  "correct_insufficient_evidence_behavior": true,
+  "notes": "Comment has no specific evidence. Lead time is unknown. Should require concrete delivery evidence before supporting bid."
+}

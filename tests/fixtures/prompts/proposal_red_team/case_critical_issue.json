@@ -1,0 +1,24 @@
+{
+  "description": "Red team finds critical compliance gap in proposal.",
+  "prompt": "proposal_red_team",
+  "inputs": {
+    "PROPOSAL_JSON": {
+      "version_id": 1,
+      "sections": [
+        {"section_key": "technical_response", "content": "We will deliver 500 units within 30 days using our warehouse stock."},
+        {"section_key": "delivery_plan", "content": "Shipping via FedEx Ground, 3-5 business days to destination."}
+      ]
+    },
+    "REQUIREMENTS_JSON": [
+      {"id": 1, "category": "delivery", "text": "Delivery within 30 days ARO. Government vehicle pickup only — no commercial carrier.", "mandatory": true, "status": "satisfied"},
+      {"id": 2, "category": "packaging", "text": "MIL-STD-2073-1E packaging required", "mandatory": true, "status": "unknown"}
+    ]
+  },
+  "expected_findings": [
+    {"severity": "critical", "category": "delivery", "finding": "commercial carrier used despite government pickup requirement"},
+    {"severity": "major", "category": "packaging", "finding": "MIL-STD-2073-1E not addressed in proposal"}
+  ],
+  "critical_issue_recall_min": 1.0,
+  "false_finding_rate_max": 0.1,
+  "notes": "Proposal says FedEx Ground but requirement says government pickup only — critical issue. Packaging not addressed — major issue."
+}
