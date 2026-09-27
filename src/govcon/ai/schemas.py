@@ -176,11 +176,88 @@ class OutcomeAnalysisV1(BaseModel):
     evidence_summary: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# §39.2 market_analysis.v1
+# ---------------------------------------------------------------------------
+
+class ComparableAward(BaseModel):
+    vendor: str | None = None
+    amount: float | None = None
+    date: str | None = None
+    nsn: str | None = None
+    psc: str | None = None
+    comparability_note: str | None = None
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
+class MarketAnalysisV1(BaseModel):
+    """Schema for market_analysis.v1 — government-contract market intelligence."""
+
+    comparable_awards: list[ComparableAward] = Field(default_factory=list)
+    historical_winners: list[str] = Field(default_factory=list)
+    incumbent_signals: list[str] = Field(default_factory=list)
+    recurring_vendors: list[str] = Field(default_factory=list)
+    price_comparability: str | None = None
+    agency_buying_patterns: str | None = None
+    competition_signals: list[str] = Field(default_factory=list)
+    recompete_signals: list[str] = Field(default_factory=list)
+    comparability_weaknesses: list[str] = Field(default_factory=list)
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# §39.3 supplier_analysis.v1
+# ---------------------------------------------------------------------------
+
+class SupplierCandidate(BaseModel):
+    supplier: str | None = None
+    product: str | None = None
+    exact_requirement_matches: list[str] = Field(default_factory=list)
+    partial_requirement_matches: list[str] = Field(default_factory=list)
+    unsupported_claims: list[str] = Field(default_factory=list)
+    specification_mismatches: list[str] = Field(default_factory=list)
+    delivery_lead_time_risk: str | None = None
+    origin_compliance_gaps: list[str] = Field(default_factory=list)
+    quote_commercial_risks: list[str] = Field(default_factory=list)
+    evidence_still_required: list[str] = Field(default_factory=list)
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
+class SupplierAnalysisV1(BaseModel):
+    """Schema for supplier_analysis.v1 — sourcing evidence analysis."""
+
+    candidates: list[SupplierCandidate] = Field(default_factory=list)
+    overall_sourcing_risk: Literal["low", "medium", "high", "UNKNOWN"] = "UNKNOWN"
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# §39.4 pricing_analysis.v1
+# ---------------------------------------------------------------------------
+
+class PricingAnalysisV1(BaseModel):
+    """Schema for pricing_analysis.v1 — bid-pricing commercial analysis."""
+
+    historical_comparability: str | None = None
+    proposed_price_position: str | None = None
+    expected_margin_quality: str | None = None
+    cost_risk_signals: list[str] = Field(default_factory=list)
+    missing_cost_inputs: list[str] = Field(default_factory=list)
+    pricing_evidence_gaps: list[str] = Field(default_factory=list)
+    more_research_warranted: bool = False
+    confidence: Literal["high", "medium", "low"] = "low"
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "solicitation_analysis.v1": SolicitationAnalysisV1,
     "reviewer_comment_validation.v1": ReviewerCommentValidationV1,
     "consolidated_review.v1": ConsolidatedReviewV1,
     "outcome_analysis.v1": OutcomeAnalysisV1,
+    "market_analysis.v1": MarketAnalysisV1,
+    "supplier_analysis.v1": SupplierAnalysisV1,
+    "pricing_analysis.v1": PricingAnalysisV1,
 }
 
 from govcon.compliance.schemas import COMPLIANCE_SCHEMAS  # noqa: E402

@@ -456,3 +456,28 @@ Record durable architecture/implementation decisions.
   4. No new migrations, CLI commands, or runtime modules are required.
 - Alternatives considered: Re-implement security from scratch in Phase 18 (rejected: duplicates working Phase 0 code and creates inconsistency). Add a separate security CLI command (rejected: gateway is already called by every AI provider call).
 - Consequences: All four §24 ACs are provably satisfied by the test suite without duplication. The security module's public surface (`govcon.security.classification`, `govcon.security.secrets`, `govcon.ai.gateway`, `govcon.logging`) is stable and used by every AI call path. No Phase 18-specific Alembic migration is needed.
+
+### ADR-056 — Phase 20: activate market/supplier/pricing analysis prompts; no new service layer
+- Phase: 20
+- Date: 2026-09-27
+- Context: §39.2–39.4 define production prompt bodies for market_analysis, supplier_analysis, and pricing_analysis. These were left as placeholders through Phase 19. Appendix D DoD items 6 and 7 require AI-powered supplier research and pricing analysis to be part of the v1 platform.
+- Decision: Activate all three prompts with production text from §39.2–39.4. Each prompt: (a) includes the shared source-security, no-fabrication, and evidence fragments; (b) declares required_variables; (c) confines untrusted input to data blocks. Register matching Pydantic schemas (MarketAnalysisV1, SupplierAnalysisV1, PricingAnalysisV1) in SCHEMA_REGISTRY. Do NOT add a service-layer orchestrator that calls these prompts automatically — the v1 DoD only requires the prompts to be prompt-registry ready, not wired into an end-to-end pipeline.
+- Alternatives considered: Build a full market/supplier/pricing analysis pipeline (rejected: out-of-scope per §28; the intelligence/sourcing.py stub and Phase 5/6 award intelligence already address the human-readable data; AI analysis is additive). Keep as placeholders (rejected: DoD items 6–7 explicitly require AI analysis capability).
+- Consequences: 18 active task prompts (up from 15). SCHEMA_REGISTRY now covers all 7 non-compliance analysis types. All three prompts pass the full activation gate. The pricing_analysis prompt explicitly forbids autonomous price setting (§28 non-goal). No migration required.
+
+### ADR-057 — Phase 20: fix _purge FK cascade in test_sam_ingestion.py
+- Phase: 20
+- Date: 2026-09-27
+- Context: After the smoke test runs on a shared test database, all 21 FK-dependent tables referencing `opportunities` may have rows for the fixture opportunity. The original `_purge` helper only deleted 5 tables and would fail with FK violations when compliance, AI, proposal, or submission data existed.
+- Decision: Rewrite `_purge` with raw SQL to delete from all 21 dependent tables in correct topological order, including: proposal_sections → proposal_versions (+ circular FK null-out) → proposals → submissions → outcome_feedback → review_notes → review_comments → review_assignments → review_sessions → bid_decisions → decision_runs → pursuits → compliance_findings → requirement_evidence → requirements → compliance_runs → ai_analyses → files → notifications → audit_events → opportunity_events → opportunity_snapshots → matches → contacts. Add pre-test cleanup call for the three tests that use PUBLISHED_NOTICE_ID to ensure test isolation even on databases contaminated by a prior smoke run.
+- Alternatives considered: Use TRUNCATE ... CASCADE (too destructive; clears unrelated data). Add ON DELETE CASCADE to all FK constraints (migration risk; changes production behavior). Use a test transaction rollback (not possible since these tests commit).
+- Consequences: test_sam_ingestion tests are now idempotent and isolated regardless of whether smoke.sh ran against the same database first. No schema change. No behavior change.
+
+### ADR-058 — Checkpoint F: fixture-path E2E is the v1 release gate; live keys are a recommended post-v1 step
+- Phase: 20
+- Date: 2026-09-27
+- Context: The Appendix D / phase completion gate nominally requires a live end-to-end walkthrough (live SAM ingest, live AI calls, live JEV decisioning). No live credentials (SAM_API_KEY, DEEPSEEK_API_KEY, JEV_API_KEY) are available in the CI or dev environment; all three services require authenticated access. The platform implements graceful no-key paths (SAM skips, AI returns mock/warning, JEV falls back to rule provider) that are fully tested.
+- Lead ruling: Lead DEV waiver — Checkpoint F path (A). Federal fixture-only v1. The fixture-path E2E (smoke.sh 16/16 + Phase 20 DoD suite + CI 585 passed / 1 skipped) satisfies Checkpoint F for this v1 release. Live SAM/AI/JEV walkthrough is recorded as a recommended verification step for production deployment, not a blocking gate for the v1 code milestone.
+- Decision: Accept fixture-path E2E as sufficient Checkpoint F evidence. CI gate = pytest 585/1 + smoke 16/16 + govcon prompts validate 18/18 + govcon compliance benchmark PASS. Live-key walkthrough deferred to production deployment gate. Record DEV-021 in SPEC_DEVIATIONS.md.
+- Alternatives considered: Block v1 on live-key availability (rejected: no timeline for credential provisioning; graceful paths are fully specified and tested). Run live calls with a shared dev key (rejected: credentials must not appear in test output or fixtures per §29.6).
+- Consequences: The v1 code milestone is marked COMPLETE without live API calls. Any production deployment must run live-key verification as its own gate. The ADR is visible in DECISIONS.md so the follow-up is not accidentally forgotten.
