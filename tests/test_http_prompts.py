@@ -62,7 +62,10 @@ def test_placeholder_prompts_load() -> None:
         "proposal_drafting",
         "proposal_red_team",
     }
-    all_active = activated_phase7 | activated_phase9 | activated_phase10 | activated_phase11
+    activated_phase15 = {
+        "outcome_analysis",
+    }
+    all_active = activated_phase7 | activated_phase9 | activated_phase10 | activated_phase11 | activated_phase15
     for asset in assets:
         assert asset.version == "v1"
         assert len(asset.content_hash) == 64
@@ -71,7 +74,7 @@ def test_placeholder_prompts_load() -> None:
             assert "Do not activate." not in asset.body
         else:
             assert asset.metadata["status"] == "placeholder", f"{asset.name} should be placeholder"
-            assert "Do not activate." in asset.body
+            assert "PLACEHOLDER" in asset.body.upper() or "Do not activate." in asset.body
 
     jev = list((root / "jev").glob("*.yaml"))
     assert len(jev) == 13

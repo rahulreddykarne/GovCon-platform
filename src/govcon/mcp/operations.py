@@ -449,33 +449,84 @@ def op_submission_status(session: Session, opportunity_id: int) -> dict[str, Any
 
 
 def op_learning_summary(session: Session, *, opportunity_id: int | None = None) -> dict[str, Any]:
-    stmt = select(OutcomeFeedback)
+    from govcon.learning.analytics import WIN_PROFILE_MINIMUM, outcome_analytics, similar_past_outcomes
+    from govcon.learning.outcomes import outcome_to_dict
+
     if opportunity_id is not None:
-        stmt = stmt.where(OutcomeFeedback.opportunity_id == opportunity_id)
-    rows = session.scalars(stmt.order_by(desc(OutcomeFeedback.updated_at), desc(OutcomeFeedback.id)).limit(50)).all()
-    by_outcome = dict(
-        session.execute(
-            select(OutcomeFeedback.outcome, func.count()).group_by(OutcomeFeedback.outcome)
+        # Return record-level summary + similar past outcomes for decision reports
+        _require_row(session, Opportunity, opportunity_id, "opportunity")
+        rows = session.scalars(
+            select(OutcomeFeedback)
+            .where(OutcomeFeedback.opportunity_id == opportunity_id)
+            .order_by(desc(OutcomeFeedback.updated_at), desc(OutcomeFeedback.id))
         ).all()
-    )
+        similar = similar_past_outcomes(session, opportunity_id, limit=5)
+        return success(
+            {
+                "opportunity_id": opportunity_id,
+                "records": [outcome_to_dict(r) for r in rows],
+                "similar_past_outcomes": similar,
+                "note": (
+                    "similar_past_outcomes are descriptive references; "
+                    "they do not establish causation."
+                ),
+            }
+        )
+
+    # Global analytics summary
+    analytics = outcome_analytics(session)
     return success(
         {
-            "note": "Outcome analytics (Phase 15) are not implemented; this summarizes stored outcome_feedback rows.",
-            "outcome_counts": by_outcome,
-            "records": [
+            "total_submitted": analytics.total_submitted,
+            "total_won": analytics.total_won,
+            "total_lost": analytics.total_lost,
+            "total_no_bid": analytics.total_no_bid,
+            "overall_win_rate_pct": analytics.overall_win_rate_pct,
+            "avg_margin_pct_on_wins": analytics.avg_margin_pct_on_wins,
+            "avg_days_discovery_to_submission": analytics.avg_days_discovery_to_submission,
+            "win_profile_available": analytics.win_profile_available,
+            "win_profile_note": analytics.win_profile_note,
+            "by_psc": [
                 {
-                    "id": row.id,
-                    "opportunity_id": row.opportunity_id,
-                    "pursuit_id": row.pursuit_id,
-                    "outcome": row.outcome,
-                    "no_bid_reason": row.no_bid_reason,
-                    "loss_reason": row.loss_reason,
-                    "win_reason": row.win_reason,
-                    "lessons_learned": truncate_text(row.lessons_learned, limit=240),
-                    "updated_at": row.updated_at,
+                    "psc": r.key,
+                    "submitted": r.submitted,
+                    "won": r.won,
+                    "lost": r.lost,
+                    "win_rate_pct": r.win_rate_pct,
+                    "small_sample": r.small_sample,
                 }
-                for row in rows
+                for r in analytics.by_psc
             ],
+            "by_agency": [
+                {
+                    "agency": r.key,
+                    "submitted": r.submitted,
+                    "won": r.won,
+                    "lost": r.lost,
+                    "win_rate_pct": r.win_rate_pct,
+                    "small_sample": r.small_sample,
+                }
+                for r in analytics.by_agency
+            ],
+            "no_bid_reasons": [
+                {"reason": r.reason, "count": r.count} for r in analytics.no_bid_reasons
+            ],
+            "loss_reasons": [
+                {"reason": r.reason, "count": r.count} for r in analytics.loss_reasons
+            ],
+            "common_competitors": [
+                {"competitor": r.reason, "times_lost_to": r.count}
+                for r in analytics.common_competitors
+            ],
+            "reliable_suppliers": [
+                {"supplier": r.supplier, "wins": r.wins} for r in analytics.reliable_suppliers
+            ],
+            "recent_outcomes": analytics.recent_outcomes[:10],
+            "analytics_note": (
+                "All figures are descriptive history. "
+                f"Win-profile recommendations require ≥{WIN_PROFILE_MINIMUM} wins. "
+                "Small-sample rows are labeled; interpret with caution."
+            ),
         }
     )
 
@@ -817,54 +868,62 @@ def op_record_outcome(
     *,
     outcome: str,
     actor_email: str | None = None,
+    # No-bid fields
     no_bid_reason: str | None = None,
+    no_bid_category: str | None = None,
+    # Loss fields
     loss_reason: str | None = None,
+    known_winning_price: float | None = None,
+    # Win fields
     win_reason: str | None = None,
-    lessons_learned: str | None = None,
+    win_margin_pct: float | None = None,
+    win_supplier: str | None = None,
+    win_delivery_terms: str | None = None,
+    win_proposal_version: str | None = None,
+    # Common fields
     awarded_vendor_uei: str | None = None,
     awarded_vendor_name: str | None = None,
     award_amount: float | None = None,
+    government_feedback: str | None = None,
+    debrief_notes: str | None = None,
+    lessons_learned: str | None = None,
 ) -> dict[str, Any]:
-    if outcome not in {"won", "lost", "no_bid", "cancelled"}:
-        raise ValueError("outcome must be won, lost, no_bid, or cancelled")
-    _require_row(session, Opportunity, opportunity_id, "opportunity")
+    from govcon.learning.outcomes import TERMINAL_OUTCOMES, NO_BID_CATEGORIES, record_outcome, outcome_to_dict
+
+    # Validate early (before actor lookup) so errors are clear
+    if outcome not in TERMINAL_OUTCOMES:
+        raise ValueError(f"outcome must be one of {sorted(TERMINAL_OUTCOMES)}")
+    if no_bid_category is not None and no_bid_category not in NO_BID_CATEGORIES:
+        raise ValueError(
+            f"no_bid_category must be one of {sorted(NO_BID_CATEGORIES)} or None"
+        )
+
     actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
-    pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
-    now = datetime.now(UTC)
-    row = OutcomeFeedback(
+    row = record_outcome(
+        session,
         opportunity_id=opportunity_id,
-        pursuit_id=pursuit.id if pursuit else None,
         outcome=outcome,
         no_bid_reason=no_bid_reason,
+        no_bid_category=no_bid_category,
         loss_reason=loss_reason,
+        known_winning_price=known_winning_price,
         win_reason=win_reason,
-        lessons_learned=lessons_learned,
+        win_margin_pct=win_margin_pct,
+        win_supplier=win_supplier,
+        win_delivery_terms=win_delivery_terms,
+        win_proposal_version=win_proposal_version,
         awarded_vendor_uei=awarded_vendor_uei,
         awarded_vendor_name=awarded_vendor_name,
-        award_amount=Decimal(str(award_amount)) if award_amount is not None else None,
+        award_amount=award_amount,
+        government_feedback=government_feedback,
+        debrief_notes=debrief_notes,
+        lessons_learned=lessons_learned,
     )
-    session.add(row)
-    if pursuit is not None:
-        if outcome == "won":
-            pursuit.stage = "won"
-        elif outcome == "lost":
-            pursuit.stage = "lost"
-        elif outcome == "no_bid":
-            pursuit.stage = "no_bid"
-        elif outcome == "cancelled":
-            pursuit.stage = "cancelled"
-        pursuit.outcome_at = now
-        pursuit.outcome_notes = lessons_learned or win_reason or loss_reason or no_bid_reason
-    session.flush()
-    return success(
-        {
-            "outcome_feedback_id": row.id,
-            "opportunity_id": opportunity_id,
-            "outcome": row.outcome,
-            "pursuit_stage": pursuit.stage if pursuit else None,
-            "recorded_by": actor.email,
-        }
-    )
+    pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
+    result = outcome_to_dict(row)
+    result["pursuit_stage"] = pursuit.stage if pursuit else None
+    result["recorded_by"] = actor.email
+    return success(result)
 
 
 def _pursuit_record(pursuit: Pursuit) -> dict[str, Any]:

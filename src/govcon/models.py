@@ -788,18 +788,47 @@ class OutcomeFeedback(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     opportunity_id: Mapped[int] = mapped_column(ForeignKey("opportunities.id"), nullable=False)
     pursuit_id: Mapped[int | None] = mapped_column(ForeignKey("pursuits.id"))
+
     outcome: Mapped[str | None] = mapped_column(Text)
+
+    # No-bid structured capture
     no_bid_reason: Mapped[str | None] = mapped_column(Text)
+    no_bid_category: Mapped[str | None] = mapped_column(Text)
+
+    # Loss structured capture
     loss_reason: Mapped[str | None] = mapped_column(Text)
+    known_winning_price: Mapped[Decimal | None] = mapped_column(Numeric)
+
+    # Win structured capture
     win_reason: Mapped[str | None] = mapped_column(Text)
+    win_margin_pct: Mapped[Decimal | None] = mapped_column(Numeric)
+    win_supplier: Mapped[str | None] = mapped_column(Text)
+    win_delivery_terms: Mapped[str | None] = mapped_column(Text)
+    win_proposal_version: Mapped[str | None] = mapped_column(Text)
+
+    # Award details (applicable to won/lost)
     awarded_vendor_uei: Mapped[str | None] = mapped_column(Text)
     awarded_vendor_name: Mapped[str | None] = mapped_column(Text)
     award_amount: Mapped[Decimal | None] = mapped_column(Numeric)
     award_date: Mapped[date | None] = mapped_column(Date)
+
+    # Government feedback
     government_feedback: Mapped[str | None] = mapped_column(Text)
     debrief_notes: Mapped[str | None] = mapped_column(Text)
     lessons_learned: Mapped[str | None] = mapped_column(Text)
+
     user_tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+
+    # Denormalized opportunity fields for analytics (captured at recording time)
+    denorm_agency: Mapped[str | None] = mapped_column(Text)
+    denorm_psc: Mapped[str | None] = mapped_column(Text)
+    denorm_naics: Mapped[str | None] = mapped_column(Text)
+    denorm_estimated_value: Mapped[Decimal | None] = mapped_column(Numeric)
+
+    # FK to AI outcome_analysis result (optional)
+    outcome_analysis_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ai_analyses.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class ReviewNote(CreatedAtMixin, Base):
