@@ -1009,3 +1009,48 @@ None.
 ### Recommended next phase
 
 `PHASE_12_MCP.md` — MCP server. Do not implement in this run.
+
+
+## Phase 12 — MCP server
+
+Date: 2026-09-27
+Branch: cursor/phase-12-mcp-8245
+Spec: `PHASE_12_MCP.md` / master §18
+
+### What shipped
+- FastMCP dependency (`fastmcp>=2.0`) and `govcon.mcp.server` stdio server.
+- All §18 read and write tool contracts registered.
+- Thin helpers in `govcon.mcp.services` for opportunity search/get/history, match list/update, pursuit add/update/pipeline, and human bid-decision recording.
+- Existing services wrapped for pricing, vendors, competitors, bid analysis, compliance, review lifecycle, proposals, and submissions.
+- Safety: compact truncated descriptions, structured errors (no stack traces), write echo, destructive `confirm`, no auto-submit, `audit.scrub` on outputs.
+- CLI: `govcon mcp serve`, `govcon mcp list-tools`.
+- Phase 13/15 tools (`similar_opportunities`, `learning_summary`, `record_outcome`) return structured `not_implemented`.
+
+### Tests
+- `tests/test_mcp.py`: 12 passed (includes FastMCP in-process Client AC flow against local PostgreSQL).
+- Full suite: 219 passed, 1 skipped.
+
+### Acceptance criteria verification
+
+| Criterion | Verified by | Result |
+|---|---|---|
+| AC: Example end-to-end interaction through MCP against local DB | `test_ac_end_to_end_mcp_client` — list new matches closing in 7 days → price_history → get_bid_analysis → update_match reviewing → missing info | PASS |
+
+Additional coverage: tool registry completeness, truncation, structured errors, secret scrubbing, destructive confirm, Phase 13/15 stubs, pursuit write echo, no auto-submit guard.
+
+### Design decisions
+- ADR-043: FastMCP stdio + structured ok/error envelopes.
+- ADR-044: Thin MCP services for missing query/write façades; wrap existing domain services otherwise.
+
+### ⚠️ VERIFY items
+Phase 12 has no `⚠️ VERIFY` markers.
+
+### Known deviations
+None required. Phase 13/15 stubs documented in `SPEC_DEVIATIONS.md` Phase 12 notes.
+
+### Unresolved blockers
+None.
+
+### Recommended next phase
+
+`PHASE_13_SEMANTIC_SEARCH.md` — Semantic search & recommendations. Do not implement in this run.

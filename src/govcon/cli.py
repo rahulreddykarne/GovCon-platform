@@ -34,6 +34,7 @@ review_app = typer.Typer(help="Collaborative review workspace operations.")
 compliance_app = typer.Typer(help="High-reliability compliance matrix, validation, and pre-flight.")
 proposal_app = typer.Typer(help="Post-approval proposal generation and final approval (Phase 11).")
 submission_app = typer.Typer(help="Submission package generation and tracking (Phase 11).")
+mcp_app = typer.Typer(help="MCP server for assistant access (Phase 12).")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -50,6 +51,7 @@ app.add_typer(review_app, name="review")
 app.add_typer(compliance_app, name="compliance")
 app.add_typer(proposal_app, name="proposal")
 app.add_typer(submission_app, name="submission")
+app.add_typer(mcp_app, name="mcp")
 
 
 def main() -> None:
@@ -2222,3 +2224,33 @@ def submission_confirm(
     except (PermissionDenied, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
+
+
+# ── MCP server CLI ──
+
+
+@mcp_app.command("serve")
+def mcp_serve() -> None:
+    """Start the GovCon MCP server on stdio (for Claude Desktop / MCP clients)."""
+    from govcon.mcp.server import run_stdio
+
+    try:
+        _settings()
+    except Exception:
+        pass
+    run_stdio()
+
+
+@mcp_app.command("list-tools")
+def mcp_list_tools() -> None:
+    """Print registered MCP tool names (no server start)."""
+    import asyncio
+
+    from govcon.mcp.server import mcp
+
+    async def _list() -> list[str]:
+        tools = await mcp.list_tools()
+        return sorted(tool.name for tool in tools)
+
+    for name in asyncio.run(_list()):
+        typer.echo(name)

@@ -84,6 +84,15 @@ USAspending search does not use an API key. The client calls `https://api.usaspe
 
 Vendor lookup calls `https://api.sam.gov/entity-information/v3/entities` and requires `SAM_API_KEY`. Cached rows are reused for `SAM_VENDOR_CACHE_HOURS` (default 24). Competitor intelligence reads stored awards only; it does not predict future winners.
 
-## Not in this phase
+## MCP (Phase 12)
 
-Solicitation analysis, JEV decisions, proposal generation, the review quorum workflow, MCP, semantic search, and the web UI are later phases. Prompt and JEV files under `src/govcon/prompts/` are inactive placeholders.
+```bash
+govcon mcp list-tools
+govcon mcp serve
+```
+
+`govcon mcp serve` starts the FastMCP stdio server. Point an MCP client (for example Claude Desktop) at that command. Write tools require `actor_email`. Submission tools never auto-submit portals. Semantic search and outcome learning tools are registered but return `not_implemented` until later phases.
+
+## Later phases
+
+Semantic search, the web UI, outcome learning, scheduling/ops hardening, and final release gates remain later phases.

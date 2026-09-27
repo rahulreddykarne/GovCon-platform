@@ -337,3 +337,19 @@ Record durable architecture/implementation decisions.
 - Decision: `run_proposal_red_team` validates every finding's `requirement_id` against the set of active requirement IDs for the opportunity. If the ID is not in the known set, it is set to `None` before creating the finding row.
 - Alternatives considered: Catch FK violations and retry without the requirement_id.
 - Consequences: The FK constraint is never violated. Finding traceability is preserved when the model correctly references an existing requirement.
+
+### ADR-043 — FastMCP stdio server with structured tool envelopes
+- Phase: 12
+- Date: 2026-09-27
+- Context: Master §4 / ADR-009 deferred FastMCP until Phase 12. §18 requires stable tool contracts, compact truncated reads, write echo, no auto-submit, structured errors, and no secret leakage.
+- Decision: Add `fastmcp>=2.0` (installed FastMCP 4.x) and expose tools from `govcon.mcp.server:mcp` over stdio via `govcon mcp serve`. Every tool returns `{"ok": true, ...}` or `{"ok": false, "error": {"type", "message", "details?"}}`. Descriptions truncate at 280 chars unless `include_full_description=true`. Outputs pass through `audit.scrub`. Destructive match/pursuit updates require `confirm=true`. Write tools take explicit `actor_email` (CLI pattern).
+- Alternatives considered: Official MCP SDK only; HTTP transport as default.
+- Consequences: Claude Desktop / MCP clients can attach via stdio. Tests use FastMCP's in-process `Client`.
+
+### ADR-044 — Phase 12 adds thin opportunity/match/pursuit/bid-decision helpers only
+- Phase: 12
+- Date: 2026-09-27
+- Context: Several §18 tools had schema support but no dedicated service (`search_opportunities`, `list_matches`, `update_match`, pursuits, `record_human_bid_decision`).
+- Decision: Implement thin helpers in `govcon.mcp.services` that query/update existing tables with audit, without inventing new business rules. Domain-ready services (pricing, vendors, competitors, compliance, review, proposals, submissions) are wrapped directly.
+- Alternatives considered: Push all query logic into FastMCP tool bodies; invent a separate MCP-only ORM layer.
+- Consequences: MCP stays a safe façade. `learning_summary`, `similar_opportunities`, and `record_outcome` return structured `not_implemented` pointing at Phases 13/15.

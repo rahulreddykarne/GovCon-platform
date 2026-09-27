@@ -125,3 +125,11 @@ Implementation notes:
 - The `proposal_drafting_v1` and `proposal_red_team_v1` prompts were placeholders in earlier phases. They are now activated with full production text from §41.1 and §41.2.
 - Proposal red-team severity uses `critical | major | minor` (as defined in §41.2), not the compliance system's `critical | high | medium | low`. Only critical proposal findings create blocking compliance findings (ADR-041).
 - `finalize_proposal(APPROVE_FOR_SUBMISSION)` passes the human approval as the override reason for Phase 9's pre-flight check, consistent with the human-final-authority principle (ADR-040).
+
+## Phase 12
+
+No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
+
+Implementation notes:
+- `learning_summary`, `similar_opportunities`, and `record_outcome` are registered as stable MCP contracts but return structured `not_implemented` until Phases 13/15 supply the backing services (phase-boundary honesty, not silent no-ops).
+- FastMCP is now a runtime dependency (ADR-009 follow-through / ADR-043).
