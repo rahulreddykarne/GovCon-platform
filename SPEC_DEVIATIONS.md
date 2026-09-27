@@ -155,17 +155,17 @@ Implementation notes:
 - Follow-up: None. Production deployment guidance is documented in the migration comment.
 ## Phase 17
 
-### DEV-011 — analytics_refresh is a no-op pending Phase 15
+### DEV-013 — analytics_refresh is a no-op pending Phase 15
 - Phase: 17
 - Date: 2026-09-27
 - Spec requirement: Sunday sweep includes "analytics refresh".
-- Verified external/repository reality: Phase 15 outcome analytics engine is NOT STARTED. `learning/analytics.py` is a stub.
-- Decision: `step_analytics_refresh` logs "Phase 15 analytics engine not yet implemented; step is a no-op" and returns `succeeded`. The step is in the chain and visible in `/ops`, but does no DB work.
-- Reason: Phase 17 must not start Phase 15 work.
-- Impact: Sunday sweep completes without analytics refresh until Phase 15.
-- Follow-up: Phase 15 replaces this no-op with real analytics computation.
+- Verified external/repository reality: Phase 15 outcome analytics engine ships in the same squash-merge as this rebase. `learning/analytics.py` is now complete, but calling it from the scheduler without testing the integration is out of scope for Phase 17.
+- Decision: `step_analytics_refresh` logs "Phase 15 analytics engine not yet implemented; step is a no-op" and returns `succeeded`. The step is in the chain and visible in `/ops`, but does no DB work. A follow-up can wire the Phase 15 analytics engine into this step.
+- Reason: Phase 17 must not implicitly depend on untested Phase 15 integration paths.
+- Impact: Sunday sweep completes without calling the analytics engine until the step is wired up.
+- Follow-up: Wire `learning.analytics.outcome_analytics` into `step_analytics_refresh`.
 
-### DEV-012 — SAM ingest in scheduler chains skips when SAM_API_KEY is unset
+### DEV-014 — SAM ingest in scheduler chains skips when SAM_API_KEY is unset
 - Phase: 17
 - Date: 2026-09-27
 - Spec requirement: 06:30 chain: SAM ingest → DIBBS ingest → match → alerts.

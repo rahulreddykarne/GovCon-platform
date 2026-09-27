@@ -387,7 +387,7 @@ Record durable architecture/implementation decisions.
 - Alternatives considered: Return a "dismissed" state row, or redirect.
 - Consequences: Instant optimistic UI feedback. Match status is updated server-side.
 
-### ADR-050 — Phase 17 scheduler architecture and chain isolation
+### ADR-053 — Phase 17 scheduler architecture and chain isolation
 
 - Phase: 17
 - Date: 2026-09-27

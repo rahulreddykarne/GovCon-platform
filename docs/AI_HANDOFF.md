@@ -43,9 +43,9 @@
 
 ### ADRs / DECISIONS touched
 
-- ADR-050 (new): scheduler architecture, chain isolation, VACUUM AUTOCOMMIT, SAM skip vs fail.
-- DEV-011 (new): analytics_refresh is a no-op pending Phase 15.
-- DEV-012 (new): SAM ingest skips (not fails) when `SAM_API_KEY` is unset.
+- ADR-053 (new): scheduler architecture, chain isolation, VACUUM AUTOCOMMIT, SAM skip vs fail.
+- DEV-013 (new): analytics_refresh is a no-op pending Phase 15 wiring.
+- DEV-014 (new): SAM ingest skips (not fails) when `SAM_API_KEY` is unset.
 
 ### Migrations
 
@@ -79,8 +79,8 @@ Local PostgreSQL 16 + pgvector:
 
 ### Known deviations
 
-- DEV-011: `analytics_refresh` is a no-op (Phase 15 not implemented).
-- DEV-012: `sam_ingest` skips (not fails) when `SAM_API_KEY` is unset so DIBBS/match/alerts still run.
+- DEV-013: `analytics_refresh` is a no-op (Phase 15 wiring not in scope for Phase 17).
+- DEV-014: `sam_ingest` skips (not fails) when `SAM_API_KEY` is unset so DIBBS/match/alerts still run.
 
 ### Phase 16 note
 
