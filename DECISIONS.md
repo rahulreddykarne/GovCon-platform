@@ -345,3 +345,29 @@ Record durable architecture/implementation decisions.
 - Decision: `run_proposal_red_team` validates every finding's `requirement_id` against the set of active requirement IDs for the opportunity. If the ID is not in the known set, it is set to `None` before creating the finding row.
 - Alternatives considered: Catch FK violations and retry without the requirement_id.
 - Consequences: The FK constraint is never violated. Finding traceability is preserved when the model correctly references an existing requirement.
+
+## 2026-09-27 — PHASE_13_SEMANTIC_SEARCH
+
+### ADR-044 — Sentence-transformers local embedding with HNSW vector index
+- Phase: 13
+- Date: 2026-09-27
+- Context: §19 requires local embedding of opportunity text and watchlist profiles; pgvector already installed; `opportunities.embedding vector(384)` column already in foundation schema; DEV-007 (`similar_opportunities` heuristic) must be resolved.
+- Decision: Use `sentence-transformers>=3.0` with `all-MiniLM-L6-v2` (384-dim) as the default model per §3 tech stack. Embed opportunity text as `title + description + psc_code + naics_code + nsn + agency_path`. Watchlist profile = mean embedding of `name + keywords + psc_codes + naics_codes + nsn_list + notes`. Build HNSW index (m=16, ef_construction=64) using `vector_cosine_ops` on `opportunities.embedding` and `watchlists.embedding`. Add `embedding` + `embedding_updated_at` to `watchlists` via migration `f2a3b4c5d6e7`.
+- Alternatives considered: IVFFlat (requires training and list tuning); remote embedding API (not local; spec says local); mean-pool over matched opportunity embeddings for watchlist profile (adds dependency on match data; profile text is simpler and always available).
+- Consequences: Embedding job is CPU-intensive first run; subsequent runs are fast (only_missing=True). HNSW non-CONCURRENTLY in migration (CONCURRENTLY cannot run inside a transaction; production upgrades should build with CONCURRENTLY before running Alembic).
+
+### ADR-045 — Five recommendation categories; ineligible opportunities flagged not filtered
+- Phase: 13
+- Date: 2026-09-27
+- Context: §19 lists five recommendation categories; acceptance criterion says "semantically similar but ineligible opportunity is flagged, not auto-pursued."
+- Decision: All five categories implemented: `Rule match` (Phase 2 engine, unchanged), `Semantic match` (vector search on watchlist profile, excluding rule-matched opps), `Similar to won bids` (mean embedding of ≥3 won opportunities), `Similar to pursued bids` (mean embedding of active pursuit stages), `Recompete radar` (open opportunities sharing PSC/agency with a past award). Ineligible opportunities (status not in `{open, active}`) appear in vector results with `eligible_for_pursuit=false` and `ineligible_reason`. `is_eligible_for_pursuit()` gate prevents any semantic match alone from triggering an auto-pursue action.
+- Alternatives considered: Filter out ineligible opportunities before returning; auto-pursue if cosine distance < threshold.
+- Consequences: MCP clients and the future web UI can display ineligible near-matches for awareness without risk of accidental pursuit.
+
+### ADR-046 — Win-profile requires minimum 3 genuine wins; graceful empty otherwise
+- Phase: 13
+- Date: 2026-09-27
+- Context: §19 task 5 says "Add win-profile embedding once at least 3 genuine wins exist."
+- Decision: `compute_win_profile` checks `OutcomeFeedback.outcome = 'won'` count; returns `None` when `< min_wins` (default 3). `win_profile_recommendations` returns an empty list with an explanatory note. This matches the spec's intent to avoid meaningless profile recommendations from a single data point.
+- Alternatives considered: Always compute; compute with any number of wins.
+- Consequences: Systems with fewer than 3 recorded wins skip this recommendation category gracefully.

@@ -136,3 +136,20 @@ Implementation notes:
 - The `proposal_drafting_v1` and `proposal_red_team_v1` prompts were placeholders in earlier phases. They are now activated with full production text from §41.1 and §41.2.
 - Proposal red-team severity uses `critical | major | minor` (as defined in §41.2), not the compliance system's `critical | high | medium | low`. Only critical proposal findings create blocking compliance findings (ADR-041).
 - `finalize_proposal(APPROVE_FOR_SUBMISSION)` passes the human approval as the override reason for Phase 9's pre-flight check, consistent with the human-final-authority principle (ADR-040).
+
+## Phase 13
+
+### DEV-007 RESOLVED — `similar_opportunities` now uses pgvector vector search
+- Phase: 12→13
+- Resolved: 2026-09-27
+- Original deviation: Phase 12 used NSN/PSC/agency heuristic for `similar_opportunities` with note that Phase 13 would add vector search.
+- Resolution: `op_similar_opportunities` now delegates to `matching.semantic.similar_opportunities`, which uses pgvector cosine distance (`<=>` operator) when the target opportunity has an embedding. The HNSW index on `opportunities.embedding` serves the query. Falls back to the Phase 12 heuristic only when the target opportunity has no embedding and no provider is supplied.
+
+### DEV-008 — HNSW index created without CONCURRENTLY in Alembic migration
+- Phase: 13
+- Date: 2026-09-27
+- Spec requirement: §19 task 2 says "Add vector index." The spec does not prescribe CONCURRENTLY.
+- Verified reality: `CREATE INDEX CONCURRENTLY` cannot run inside a PostgreSQL transaction block; Alembic's default mode wraps migrations in a transaction.
+- Decision: Migration `f2a3b4c5d6e7` creates the HNSW index without CONCURRENTLY. For zero-downtime production upgrades, the index should be created with CONCURRENTLY before running Alembic. A comment in the migration records this.
+- Impact: Non-blocking for the dev/test environment. Production teams should create the index manually first.
+- Follow-up: None. Production deployment guidance is documented in the migration comment.

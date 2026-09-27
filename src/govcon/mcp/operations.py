@@ -486,38 +486,12 @@ def op_similar_opportunities(
     *,
     limit: int = 10,
 ) -> dict[str, Any]:
-    opp = _require_row(session, Opportunity, opportunity_id, "opportunity")
-    limit = max(1, min(limit, 50))
-    stmt = select(Opportunity).where(Opportunity.id != opportunity_id)
-    filters = []
-    if opp.nsn:
-        filters.append(Opportunity.nsn == opp.nsn)
-    if opp.psc_code:
-        filters.append(Opportunity.psc_code == opp.psc_code)
-    if opp.agency_path:
-        filters.append(Opportunity.agency_path == opp.agency_path)
-    if not filters:
-        return success(
-            {
-                "opportunity_id": opportunity_id,
-                "method": "heuristic",
-                "note": "Semantic embeddings (Phase 13) are not implemented; no NSN/PSC/agency anchors to match.",
-                "matches": [],
-            }
-        )
-    rows = session.scalars(
-        stmt.where(or_(*filters))
-        .order_by(Opportunity.response_deadline.desc().nullslast(), Opportunity.id.desc())
-        .limit(limit)
-    ).all()
-    return success(
-        {
-            "opportunity_id": opportunity_id,
-            "method": "heuristic",
-            "note": "Semantic vector search arrives in Phase 13; results match NSN, PSC, or agency_path.",
-            "matches": [compact_opportunity(row) for row in rows],
-        }
-    )
+    from govcon.matching.semantic import similar_opportunities as _similar
+
+    result = _similar(session, opportunity_id, limit=limit)
+    if not result.get("ok", True):
+        return result
+    return success(result)
 
 
 # ── write tools ──
