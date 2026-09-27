@@ -579,6 +579,44 @@ def _filters(plan: PullPlan, extra: dict) -> dict:
     }
 
 
+def ingest_award_sample_for_opportunity(
+    session: Session,
+    opportunity,
+    *,
+    client: httpx.Client | None = None,
+    settings: Settings | None = None,
+) -> tuple[IngestStats, bool]:
+    """Fetch one public award-search page for an opportunity's PSC or NAICS.
+
+    The returned boolean means more pages exist. This is a research sample;
+    scheduled watchlist ingestion performs the full paginated backfill.
+    """
+    if opportunity.psc_code:
+        extra = {"psc_codes": [opportunity.psc_code]}
+    elif opportunity.naics_code:
+        extra = {"naics_codes": {"require": [opportunity.naics_code]}}
+    else:
+        raise ValueError("Opportunity has no PSC or NAICS code for award search")
+    start, end = default_lookback(date.today())
+    plan = PullPlan(mode="opportunity_sample", date_type="action_date", start=start, end=end)
+    own_client = client is None
+    client = client or build_client(settings or get_settings(), timeout=60.0)
+    try:
+        payload = _request_page(
+            client, _search_body(_filters(plan, extra), page=1, limit=PAGE_LIMIT),
+            attempts=5, wait=None,
+        )
+    finally:
+        if own_client:
+            client.close()
+    rows = payload.get("results")
+    if not isinstance(rows, list):
+        raise UsaSpendingError("USAspending search payload missing results")
+    stats = ingest_award_records(session, [row for row in rows if isinstance(row, dict)])
+    meta = payload.get("page_metadata") if isinstance(payload.get("page_metadata"), dict) else {}
+    return stats, bool(meta.get("hasNext"))
+
+
 def pull_usaspending(
     session: Session,
     plan: PullPlan,

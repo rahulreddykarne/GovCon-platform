@@ -1,8 +1,12 @@
 <!-- AI Decision Package tab -->
+<form method="post" action="/workspace/{{ opp.id }}/run/decision" class="mb-1">
+  <label><input type="checkbox" name="external_ai_authorized" value="yes" required> I authorize sending opportunity evidence to the configured decision provider.</label>
+  <button class="btn btn-primary" type="submit">Run decision package</button>
+</form>
 {% if not bid_decision %}
 <div class="card">
   <p class="text-muted text-center" style="padding:2rem 0;">
-    No AI decision package yet. Run <code>govcon decision run --opp-id {{ opp.id }}</code> to generate.
+    No decision package yet. Run the step above, then review missing evidence before approving a bid.
   </p>
 </div>
 {% else %}

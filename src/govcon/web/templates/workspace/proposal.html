@@ -1,12 +1,17 @@
 <!-- Proposal tab -->
 {% if review_session and review_session.status in ('approved_to_bid',) %}
+  <form method="post" action="/workspace/{{ opp.id }}/run/proposal" class="mb-1">
+    <label><input type="checkbox" name="external_ai_authorized" value="yes" required> I authorize sending approved bid evidence to the configured AI provider.</label>
+    <button class="btn btn-primary" type="submit">Generate proposal draft</button>
+  </form>
   {% if proposal and proposal.status in ('draft', 'ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix') %}
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Proposal <span class="label-ai">AI generated</span></span>
+      <span class="card-title">Proposal {% if proposal_version and proposal_version.provider == 'placeholder' %}<span class="label-human">Placeholder draft</span>{% else %}<span class="label-ai">AI generated</span>{% endif %}</span>
       <span class="badge badge-{% if proposal.status == 'final_approved' %}success{% elif proposal.status == 'red_teamed' %}primary{% else %}secondary{% endif %}">{{ proposal.status|replace('_',' ') }}</span>
     </div>
     {% if proposal_version %}
+      {% if proposal_version.provider == 'placeholder' %}<div class="alert alert-error">This draft contains placeholder text. Resolve every blocker and verify the content before approval.</div>{% endif %}
       <pre style="font-size:12px; background:var(--color-bg); padding:0.75rem; border-radius:var(--radius); overflow:auto; max-height:500px; white-space:pre-wrap;">{{ proposal_version.full_text or "(generating…)" }}</pre>
     {% endif %}
 
@@ -15,6 +20,7 @@
     <div class="mt-2 d-flex gap-1">
       <form method="post" action="/workspace/{{ opp.id }}/proposal/approve">
         <input type="hidden" name="decision" value="APPROVE_FOR_SUBMISSION">
+        <label>Override reason if readiness checks still have blockers (audited)<br><input name="override_reason" minlength="10" placeholder="Leave blank when every check passes"></label>
         <button type="submit" class="btn btn-success">Approve for Submission</button>
       </form>
       <form method="post" action="/workspace/{{ opp.id }}/proposal/approve">
@@ -31,13 +37,13 @@
   </div>
   {% else %}
   <div class="card">
-    <p class="text-muted text-center" style="padding:2rem 0;">Proposal generation in progress or not yet triggered.</p>
+    <p class="text-muted text-center" style="padding:2rem 0;">No proposal draft has been generated yet.</p>
   </div>
   {% endif %}
 {% else %}
 <div class="card">
   <p class="text-muted" style="padding:1rem 0;">
-    Proposal generation begins automatically after <strong>Approve to Bid</strong>.
+    A placeholder draft is created after <strong>Approve to Bid</strong>. Generate an AI draft above after reviewing the evidence.
     {% if review_session %}
       Current status: <span class="badge badge-primary">{{ review_session.status|replace('_',' ') }}</span>
     {% else %}

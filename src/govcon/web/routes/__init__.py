@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 
 from fastapi import Cookie, Form, Query, Request, status
@@ -176,7 +177,7 @@ def inbox(request: Request) -> HTMLResponse:
             rows = db.execute(
                 select(Match, Opportunity)
                 .join(Opportunity, Match.opportunity_id == Opportunity.id)
-                .where(Match.watchlist_id == wl.id, Match.status == "new")
+                .where(Match.watchlist_id == wl.id, Match.status == "new", Opportunity.status == "open")
                 .order_by(Opportunity.response_deadline.asc().nullslast())
                 .limit(50)
             ).all()
@@ -251,7 +252,7 @@ def search(
     source: str | None = None,
     psc: str | None = None,
     naics: str | None = None,
-    status_filter: str | None = Query(None, alias="status"),
+    status_filter: str = Query("open", alias="status"),
 ) -> HTMLResponse:
     try:
         user = _require_login(request)
@@ -271,7 +272,7 @@ def search(
             stmt = stmt.where(Opportunity.psc_code.like(f"{psc}%"))
         if naics:
             stmt = stmt.where(Opportunity.naics_code.like(f"{naics}%"))
-        if status_filter:
+        if status_filter != "all":
             stmt = stmt.where(Opportunity.status == status_filter)
         stmt = stmt.order_by(desc(Opportunity.posted_date), desc(Opportunity.id)).limit(LIMIT)
         rows = db.scalars(stmt).all()
@@ -333,7 +334,7 @@ def opp_detail(request: Request, opp_id: int) -> HTMLResponse:
         # ai summary
         ai_summary = db.scalar(
             select(AIAnalysis)
-            .where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "solicitation_analysis")
+            .where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "solicitation_summary")
             .order_by(desc(AIAnalysis.created_at))
         )
 
@@ -442,6 +443,8 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
         return RedirectResponse("/login", status_code=303)
 
     active_tab = request.query_params.get("tab", "overview")
+    action_error = request.query_params.get("error")
+    action_done = request.query_params.get("done")
 
     with session_scope() as db:
         opp = db.get(Opportunity, opp_id)
@@ -455,7 +458,7 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             select(BidDecision).where(BidDecision.opportunity_id == opp_id).order_by(desc(BidDecision.created_at))
         )
         ai_summary = db.scalar(
-            select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "solicitation_analysis")
+            select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "solicitation_summary")
             .order_by(desc(AIAnalysis.created_at))
         )
 
@@ -487,12 +490,24 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             )
 
         if active_tab == "products":
+            from govcon.intelligence.sourcing import supplier_leads
+            tab_ctx["supplier_leads"] = supplier_leads(db, opp)
             tab_ctx["ai_sourcing"] = db.scalar(
                 select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "sourcing_analysis")
                 .order_by(desc(AIAnalysis.created_at))
             )
 
         if active_tab == "pricing":
+            from govcon.matching.pricing import recent_award_comps
+            tab_ctx["historical_prices"] = recent_award_comps(
+                db, nsn=opp.nsn, psc_code=opp.psc_code, limit=20
+            )
+            tab_ctx["pricing_evidence"] = db.scalar(
+                select(AuditEvent).where(
+                    AuditEvent.opportunity_id == opp_id,
+                    AuditEvent.action_type == "pricing_recorded",
+                ).order_by(desc(AuditEvent.created_at), desc(AuditEvent.id))
+            )
             tab_ctx["ai_pricing"] = db.scalar(
                 select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "pricing_analysis")
                 .order_by(desc(AIAnalysis.created_at))
@@ -547,6 +562,12 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             if sub is None and proposal and proposal.submission_id:
                 sub = db.get(Submission, proposal.submission_id)
             tab_ctx["submission"] = sub
+            tab_ctx["submission_authorized"] = db.scalar(
+                select(AuditEvent.id).where(
+                    AuditEvent.opportunity_id == opp_id,
+                    AuditEvent.action_type == "submission_authorized",
+                ).order_by(desc(AuditEvent.created_at), desc(AuditEvent.id))
+            ) is not None
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
 
         if active_tab == "activity":
@@ -572,10 +593,150 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             "bid_decision": bid_decision,
             "ai_summary": ai_summary,
             "active_tab": active_tab,
+            "action_error": action_error if action_error in {"missing_inputs", "failed"} else None,
+            "action_done": action_done if action_done in {"summary", "compliance", "decision", "proposal", "submission", "pricing", "awards"} else None,
             "active_page": "pipeline",
             **tab_ctx,
         }
         return _render(request, "workspace.html", ctx, user)
+
+
+_WORKFLOW_TABS = {
+    "summary": "overview",
+    "compliance": "compliance",
+    "decision": "ai_decision",
+    "proposal": "proposal",
+    "submission": "submission",
+}
+
+
+def workspace_run(
+    request: Request, opp_id: int, action: str,
+    external_ai_authorized: Annotated[str | None, Form()] = None,
+) -> HTMLResponse:
+    """Run an explicit workflow step from the workspace with its existing gates."""
+    import logging
+    from govcon.audit import record_audit
+    from govcon.config import get_settings
+
+    if action not in _WORKFLOW_TABS:
+        return HTMLResponse("Unknown workflow action", status_code=404)
+    tab = _WORKFLOW_TABS[action]
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        require_permission(user, "approve" if action in {"proposal", "submission"} else "review")
+    except PermissionDenied:
+        return HTMLResponse("You do not have permission for this action", status_code=403)
+    if action in {"summary", "compliance", "decision", "proposal"} and external_ai_authorized != "yes":
+        return HTMLResponse("Confirm external AI processing before running this step", status_code=400)
+
+    settings = get_settings()
+    try:
+        with session_scope() as db:
+            opp = db.get(Opportunity, opp_id)
+            if opp is None:
+                return HTMLResponse("Opportunity not found", status_code=404)
+            if action == "summary":
+                from govcon.enrich.summarize import run_solicitation_analysis
+                if run_solicitation_analysis(db, opp, settings=settings) is None:
+                    raise ValueError("missing_inputs")
+            elif action == "compliance":
+                from govcon.compliance.pipeline import run_compliance_pipeline
+                run_compliance_pipeline(db, opp_id, settings=settings)
+            elif action == "decision":
+                from govcon.decision.engine import run_preliminary_decision_package
+                run_preliminary_decision_package(db, opportunity_id=opp_id, settings=settings)
+            elif action == "proposal":
+                from govcon.proposals.service import generate_proposal
+                generate_proposal(db, opportunity_id=opp_id, actor=user, settings=settings)
+            elif action == "submission":
+                from govcon.submissions.service import generate_submission_package
+                generate_submission_package(db, opportunity_id=opp_id, actor=user, settings=settings)
+            record_audit(db, user_id=user.id, opportunity_id=opp_id,
+                         action_type=f"workspace_{action}_run", entity_type="opportunity", entity_id=opp_id)
+    except ValueError as exc:
+        logging.getLogger("govcon.web.routes").warning("workflow %s for %s: %s", action, opp_id, exc)
+        return RedirectResponse(f"/workspace/{opp_id}?tab={tab}&error=missing_inputs", status_code=303)
+    except Exception:
+        logging.getLogger("govcon.web.routes").exception("workflow %s failed for %s", action, opp_id)
+        return RedirectResponse(f"/workspace/{opp_id}?tab={tab}&error=failed", status_code=303)
+    return RedirectResponse(f"/workspace/{opp_id}?tab={tab}&done={action}", status_code=303)
+
+
+def workspace_pricing_save(
+    request: Request, opp_id: int,
+    supplier: Annotated[str, Form()],
+    sourcing_cost: Annotated[str, Form()],
+    quote_price: Annotated[str, Form()],
+    evidence_reference: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """Record human-verified supplier cost and proposed bid price with provenance."""
+    from govcon.audit import record_audit
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        require_permission(user, "review")
+    except PermissionDenied:
+        return HTMLResponse("You do not have permission for this action", status_code=403)
+    supplier = supplier.strip()
+    evidence_reference = evidence_reference.strip()
+    try:
+        cost, price = Decimal(sourcing_cost), Decimal(quote_price)
+    except InvalidOperation:
+        return HTMLResponse("Enter valid amounts", status_code=400)
+    if not supplier or not evidence_reference or len(evidence_reference) > 1000 or not cost.is_finite() or not price.is_finite() or cost <= 0 or price < 0:
+        return HTMLResponse("Supplier, evidence reference, and valid amounts are required", status_code=400)
+    with session_scope() as db:
+        pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
+        if pursuit is None:
+            return HTMLResponse("Start a workspace before recording pricing", status_code=400)
+        old = {"supplier": pursuit.supplier, "sourcing_cost": str(pursuit.sourcing_cost) if pursuit.sourcing_cost is not None else None,
+               "quote_price": str(pursuit.quote_price) if pursuit.quote_price is not None else None}
+        pursuit.supplier = supplier
+        pursuit.sourcing_cost = cost
+        pursuit.quote_price = price
+        record_audit(db, action_type="pricing_recorded", user_id=user.id,
+                     opportunity_id=opp_id, entity_type="pursuit", entity_id=pursuit.id,
+                     old_value=old, new_value={"supplier": supplier, "sourcing_cost": str(cost),
+                                               "quote_price": str(price), "evidence_reference": evidence_reference})
+    return RedirectResponse(f"/workspace/{opp_id}?tab=pricing&done=pricing", status_code=303)
+
+
+def workspace_award_sample(request: Request, opp_id: int) -> HTMLResponse:
+    """Add public award history for a selected opportunity without a watchlist."""
+    import logging
+    from govcon.audit import record_audit
+    from govcon.ingest.usaspending import ingest_award_sample_for_opportunity
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        require_permission(user, "review")
+    except PermissionDenied:
+        return HTMLResponse("You do not have permission for this action", status_code=403)
+    try:
+        with session_scope() as db:
+            opp = db.get(Opportunity, opp_id)
+            if opp is None:
+                return HTMLResponse("Opportunity not found", status_code=404)
+            stats, more = ingest_award_sample_for_opportunity(db, opp)
+            record_audit(db, action_type="award_sample_ingested", user_id=user.id,
+                         opportunity_id=opp_id, entity_type="opportunity", entity_id=opp_id,
+                         new_value={"fetched": stats.fetched, "more_pages_available": more})
+    except ValueError:
+        return RedirectResponse(f"/workspace/{opp_id}?tab=awards&error=missing_inputs", status_code=303)
+    except Exception:
+        logging.getLogger("govcon.web.routes").exception("award sample failed for %s", opp_id)
+        return RedirectResponse(f"/workspace/{opp_id}?tab=awards&error=failed", status_code=303)
+    return RedirectResponse(f"/workspace/{opp_id}?tab=awards&done=awards", status_code=303)
 
 
 def _get_competitor_detail(db: OrmSession, opp: Opportunity) -> list[Any]:
@@ -732,8 +893,8 @@ def workspace_approve(
 def _trigger_proposal_generation(db: Any, *, opp_id: int, actor: Any) -> None:
     """Call Phase 11 generate_proposal + generate_submission_package.
 
-    Uses skip_ai=True so the UI always shows a real draft (with BLOCKER
-    placeholders for missing requirements) even when no AI key is configured.
+    Generates a placeholder draft with visible blockers. AI drafting requires
+    a separate explicit workspace action and external processing confirmation.
     Falls back gracefully if the services raise; errors are logged, not raised.
     """
     import logging
@@ -741,16 +902,7 @@ def _trigger_proposal_generation(db: Any, *, opp_id: int, actor: Any) -> None:
     try:
         from govcon.proposals.service import generate_proposal
         from govcon.submissions.service import generate_submission_package
-        from govcon.config import get_settings
-        settings = get_settings()
-        # skip_ai=True → placeholder draft with [[BLOCKER:...]] markers;
-        # real AI generation happens if a key is available.
-        skip = not bool(
-            getattr(settings, "deepseek_api_key", None)
-            or getattr(settings, "anthropic_api_key", None)
-            or getattr(settings, "openai_api_key", None)
-        )
-        generate_proposal(db, opportunity_id=opp_id, actor=actor, skip_ai=skip)
+        generate_proposal(db, opportunity_id=opp_id, actor=actor, skip_ai=True)
         generate_submission_package(db, opportunity_id=opp_id, actor=actor)
     except Exception as exc:
         _log.warning("auto-generate on approve_to_bid failed for opp %s: %s", opp_id, exc)
@@ -760,6 +912,7 @@ def workspace_proposal_approve(
     request: Request,
     opp_id: int,
     decision: Annotated[str, Form()],
+    override_reason: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
     try:
         user = _require_login(request)
@@ -770,15 +923,14 @@ def workspace_proposal_approve(
     except PermissionDenied:
         return RedirectResponse(f"/workspace/{opp_id}?tab=proposal", status_code=303)
 
-    with session_scope() as db:
-        proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
-        if proposal:
-            if decision == "APPROVE_FOR_SUBMISSION":
-                proposal.status = "final_approved"
-                proposal.final_approved_by_user_id = user.id
-                proposal.final_approved_at = datetime.now(UTC)
-            elif decision == "RETURN_FOR_FIX":
-                proposal.status = "returned_for_fix"
+    from govcon.proposals.service import finalize_proposal
+    from govcon.compliance.submission_preflight import ReadinessBlocked
+    try:
+        with session_scope() as db:
+            finalize_proposal(db, opportunity_id=opp_id, action=decision,
+                              actor=user, override_reason=(override_reason or None))
+    except (ReadinessBlocked, ValueError):
+        return RedirectResponse(f"/workspace/{opp_id}?tab=proposal&error=missing_inputs", status_code=303)
     return RedirectResponse(f"/workspace/{opp_id}?tab=proposal", status_code=303)
 
 
@@ -786,6 +938,7 @@ def workspace_submission_approve(
     request: Request,
     opp_id: int,
     decision: Annotated[str, Form()],
+    confirmation_number: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
     try:
         user = _require_login(request)
@@ -806,9 +959,26 @@ def workspace_submission_approve(
             proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
             if proposal and proposal.submission_id:
                 sub = db.get(Submission, proposal.submission_id)
-        if sub and decision == "approve":
-            sub.status = "submitted"
-            sub.submitted_at = datetime.now(UTC)
+        proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
+        if sub is None or proposal is None or proposal.status != "final_approved" or sub.status != "ready":
+            return HTMLResponse("A ready package and final approved proposal are required", status_code=400)
+        if decision == "approve":
+            from govcon.audit import record_audit
+            record_audit(db, action_type="submission_authorized", user_id=user.id,
+                         opportunity_id=opp_id, entity_type="submission", entity_id=sub.id)
+        elif decision == "record_submitted":
+            authorized = db.scalar(select(AuditEvent.id).where(
+                AuditEvent.opportunity_id == opp_id,
+                AuditEvent.action_type == "submission_authorized",
+            ))
+            reference = (confirmation_number or "").strip()
+            if authorized is None or not reference:
+                return HTMLResponse("Authorization and a real confirmation reference are required", status_code=400)
+            from govcon.proposals.service import record_submission_confirmation
+            record_submission_confirmation(db, opportunity_id=opp_id,
+                                           confirmation_number=reference, actor=user)
+        else:
+            return HTMLResponse("Unknown submission action", status_code=400)
     return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
 
 
@@ -914,6 +1084,7 @@ def pipeline(request: Request) -> HTMLResponse:
             select(Match, Opportunity)
             .join(Opportunity, Match.opportunity_id == Opportunity.id)
             .where(Match.status.in_(["new", "seen", "reviewing"]))
+            .where(Opportunity.status == "open")
             .where(~Match.opportunity_id.in_(list(matched_opp_ids) or [-1]))
             .limit(50)
         ).all()

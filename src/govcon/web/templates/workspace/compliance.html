@@ -1,7 +1,11 @@
 <!-- Compliance tab -->
+<form method="post" action="/workspace/{{ opp.id }}/run/compliance" class="mb-1">
+  <label><input type="checkbox" name="external_ai_authorized" value="yes" required> I authorize sending requirements and evidence to the configured AI services.</label>
+  <button class="btn btn-primary" type="submit">Run compliance checks</button>
+</form>
 {% if not compliance_run %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Run <code>govcon compliance run --opp-id {{ opp.id }}</code>.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Start the checks above after collecting solicitation documents.</p>
 </div>
 {% else %}
 <div class="card">

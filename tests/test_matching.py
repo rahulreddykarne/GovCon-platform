@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 from govcon.cli import app
 from govcon.matching.engine import evaluate_match, run_matching
 from govcon.matching.watchlists import create_watchlist
-from govcon.models import Match, Opportunity, Watchlist
+from govcon.models import Match, Opportunity, OpportunityEvent, Watchlist
 from govcon.seed import DEMO_WATCHLIST_NAME
 
 runner = CliRunner()
@@ -100,6 +100,7 @@ def _purge_test_matches(session: Session) -> None:
             Match.opportunity_id.in_(test_opportunity_ids) | Match.watchlist_id.in_(test_watchlist_ids)
         )
     )
+    session.execute(delete(OpportunityEvent).where(OpportunityEvent.opportunity_id.in_(test_opportunity_ids)))
     session.execute(delete(Opportunity).where(Opportunity.source_id.like("test-%")))
     session.execute(
         delete(Watchlist).where(

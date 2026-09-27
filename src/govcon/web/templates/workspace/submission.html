@@ -1,5 +1,8 @@
 <!-- Submission tab -->
 {% if review_session and review_session.status == 'approved_to_bid' and proposal and proposal.status in ('ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix', 'draft') %}
+  <form method="post" action="/workspace/{{ opp.id }}/run/submission" class="mb-1">
+    <button class="btn btn-primary" type="submit">Build submission checklist</button>
+  </form>
   {% if submission %}
   <div class="card">
     <div class="card-header">
@@ -27,13 +30,21 @@
     <p>{{ submission.instructions }}</p>
     {% endif %}
 
-    <!-- Final submit approval -->
+    <!-- Authorization and external submission are separate actions. -->
     {% if can_approve and submission.status == 'ready' %}
     <div class="mt-2 d-flex gap-1">
+      {% if not submission_authorized %}
       <form method="post" action="/workspace/{{ opp.id }}/submission/approve">
         <input type="hidden" name="decision" value="approve">
         <button type="submit" class="btn btn-success">Authorize Submission</button>
       </form>
+      {% else %}
+      <form method="post" action="/workspace/{{ opp.id }}/submission/approve">
+        <input type="hidden" name="decision" value="record_submitted">
+        <label>Portal or email confirmation reference <input name="confirmation_number" required></label>
+        <button type="submit" class="btn btn-success">Record Actual Submission</button>
+      </form>
+      {% endif %}
     </div>
     {% endif %}
 

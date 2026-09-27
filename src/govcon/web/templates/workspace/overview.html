@@ -1,4 +1,9 @@
 <!-- Overview tab -->
+<form method="post" action="/workspace/{{ opp.id }}/run/summary" class="mb-1">
+  <label><input type="checkbox" name="external_ai_authorized" value="yes" required> I authorize sending extracted solicitation text to the configured AI provider.</label>
+  <button class="btn btn-secondary" type="submit">Analyze solicitation documents</button>
+  <span class="text-sm text-muted">Requires downloaded and extracted documents plus an AI provider.</span>
+</form>
 <div class="workspace-layout">
   <div>
     <!-- Sidebar summary -->

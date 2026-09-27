@@ -49,6 +49,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         watchlist_toggle,
         watchlists,
         workspace,
+        workspace_award_sample,
+        workspace_pricing_save,
+        workspace_run,
         workspace_approve,
         workspace_comment,
         workspace_complete_review,
@@ -75,6 +78,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Workspace
     app.add_api_route("/workspace/{opp_id}",                    workspace,                  methods=["GET"])
+    app.add_api_route("/workspace/{opp_id}/run/{action}",       workspace_run,              methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/pricing",            workspace_pricing_save,     methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/award-sample",       workspace_award_sample,     methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/comment",            workspace_comment,          methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/complete-review",    workspace_complete_review,  methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/approve",            workspace_approve,          methods=["POST"])

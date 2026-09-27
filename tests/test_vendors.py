@@ -35,7 +35,7 @@ runner = CliRunner()
 FAST_WAIT = wait_exponential(multiplier=0.01, min=0.01, max=0.05)
 FIXTURE = repo_root() / "tests" / "fixtures" / "sam_entity_v3.json"
 UEI = "ZJEUBM5FYLQ2"
-NOW = datetime(2026, 9, 26, 20, 30, tzinfo=UTC)
+NOW = datetime.now(UTC).replace(microsecond=0)
 
 
 @pytest.fixture
@@ -130,6 +130,18 @@ def _opportunity(session: Session, **overrides) -> Opportunity:
     session.add(row)
     session.flush()
     return row
+
+
+def test_supplier_leads_are_historical_not_verified(session: Session) -> None:
+    from govcon.intelligence.sourcing import supplier_leads
+
+    _award(session)
+    opportunity = _opportunity(session)
+    leads = supplier_leads(session, opportunity)
+    assert leads
+    assert leads[0].uei == UEI
+    assert leads[0].match_basis == "exact NSN"
+    assert leads[0].registration_status is None
 
 
 def test_parse_entity_record_maps_public_fields() -> None:

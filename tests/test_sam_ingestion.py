@@ -278,7 +278,7 @@ def test_raw_source_json_remains_available(session: Session) -> None:
         assert opportunity.estimated_value_max is None
         assert opportunity.naics_code == "236220"
         assert opportunity.psc_code == "Z"
-        assert opportunity.status == "open"
+        assert opportunity.status == "awarded"
         assert opportunity.raw_hash
         snapshot = session.scalar(
             select(OpportunitySnapshot).where(OpportunitySnapshot.opportunity_id == opportunity.id)
@@ -294,6 +294,7 @@ def test_raw_source_json_remains_available(session: Session) -> None:
 def test_tracked_field_diffs_reference_the_new_snapshot(session: Session) -> None:
     record = _record()
     record["noticeId"] = "phase1-diff-fields"
+    record["type"] = "Solicitation"
     record["resourceLinks"] = ["https://sam.gov/files/original.pdf"]
     changed = deepcopy(record)
     changed["title"] = "Bolt NSN 5305-00-123-4567 quantity 4 EA"
@@ -485,6 +486,7 @@ def test_archive_sweep_does_not_call_the_network(session: Session, monkeypatch: 
     monkeypatch.setattr("govcon.ingest.sam_opportunities.request_with_retry", boom)
     expired = _record()
     expired["noticeId"] = "phase1-archive-past"
+    expired["type"] = "Solicitation"
     expired["archiveDate"] = "2020-01-01"
     expired["active"] = "Yes"
     current = deepcopy(expired)
@@ -495,6 +497,9 @@ def test_archive_sweep_does_not_call_the_network(session: Session, monkeypatch: 
         session.commit()
         past = session.scalar(select(Opportunity).where(Opportunity.source_id == "phase1-archive-past"))
         future = session.scalar(select(Opportunity).where(Opportunity.source_id == "phase1-archive-future"))
+        # Simulate a row ingested before its archive date passed.
+        past.status = "open"
+        session.flush()
         watched = [past.id, future.id]
         before = session.scalar(
             select(func.count()).select_from(OpportunitySnapshot).where(OpportunitySnapshot.opportunity_id.in_(watched))

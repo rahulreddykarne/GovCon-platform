@@ -249,7 +249,7 @@ def evaluate_match(
 
 
 def _opportunity_query(watchlist: Watchlist):
-    query = select(Opportunity)
+    query = select(Opportunity).where(Opportunity.status == "open")
     configured_sources = _non_empty(watchlist.sources)
     if configured_sources:
         query = query.where(Opportunity.source.in_(configured_sources))

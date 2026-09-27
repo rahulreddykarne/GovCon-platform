@@ -163,6 +163,51 @@ class TestAuthentication:
         assert resp.status_code == 303
 
 
+def test_workspace_actions_require_login_and_role(client, db_session) -> None:
+    opp = _make_opp(db_session)
+    assert client.post(f"/workspace/{opp.id}/run/compliance").status_code == 303
+    _, token = _make_user(db_session, "web_action_readonly@example.com", "read_only")
+    response = client.post(
+        f"/workspace/{opp.id}/run/compliance", cookies={"govcon_session": token}
+    )
+    assert response.status_code == 403
+
+
+def test_summary_action_reports_missing_documents(client, db_session) -> None:
+    opp = _make_opp(db_session)
+    _, token = _make_user(db_session, "web_action_reviewer@example.com", "reviewer")
+    response = client.post(
+        f"/workspace/{opp.id}/run/summary",
+        data={"external_ai_authorized": "yes"}, cookies={"govcon_session": token}
+    )
+    assert response.status_code == 303
+    assert "error=missing_inputs" in response.headers["location"]
+
+
+def test_pricing_requires_provenance_and_records_real_input(client, db_session) -> None:
+    from decimal import Decimal
+    from govcon.models import AuditEvent, Pursuit
+
+    user, token = _make_user(db_session, "web_pricing_reviewer@example.com", "reviewer")
+    unique = secrets.token_hex(6)
+    opp = Opportunity(source="test", source_id=f"WEB-PRICE-{unique}", title="Pricing test", status="open", raw={})
+    db_session.add(opp)
+    db_session.flush()
+    pursuit = Pursuit(opportunity_id=opp.id, stage="evaluating")
+    db_session.add(pursuit)
+    db_session.commit()
+    payload = {"supplier": "Actual Supplier", "sourcing_cost": "120.00", "quote_price": "150.00"}
+    invalid = client.post(f"/workspace/{opp.id}/pricing", data={**payload, "evidence_reference": ""}, cookies={"govcon_session": token})
+    assert invalid.status_code == 400
+    response = client.post(f"/workspace/{opp.id}/pricing", data={**payload, "evidence_reference": "Quote Q-123"}, cookies={"govcon_session": token})
+    assert response.status_code == 303
+    db_session.refresh(pursuit)
+    assert pursuit.sourcing_cost == Decimal("120.00")
+    assert pursuit.quote_price == Decimal("150.00")
+    event = db_session.scalar(select(AuditEvent).where(AuditEvent.opportunity_id == opp.id, AuditEvent.action_type == "pricing_recorded"))
+    assert event is not None and event.new_value["evidence_reference"] == "Quote Q-123"
+
+
 class TestMainPages:
     """AC: All 9 pages render for authenticated users."""
 
@@ -510,21 +555,35 @@ class TestApproveToGenerates:
         # Step 3: Final-approve proposal
         client.post(
             f"/workspace/{opp.id}/proposal/approve",
-            data={"decision": "APPROVE_FOR_SUBMISSION"},
+            data={"decision": "APPROVE_FOR_SUBMISSION", "override_reason": "Fixture reviewer accepted missing preflight"},
             cookies={"govcon_session": token},
         )
         db_session.expire(proposal)
         assert proposal.status == "final_approved"
 
-        # Step 4: Set submission to ready, authorize
+        # Step 4: Final approval marks the package ready. Authorization alone
+        # must not claim that a portal submission happened.
         sub = db_session.scalar(select(Submission).where(Submission.opportunity_id == opp.id))
         assert sub is not None
-        sub.status = "ready"
-        db_session.commit()
+        assert sub.status == "ready"
 
         client.post(
             f"/workspace/{opp.id}/submission/approve",
             data={"decision": "approve"},
+            cookies={"govcon_session": token},
+        )
+        db_session.expire(sub)
+        assert sub.status == "ready"
+
+        missing = client.post(
+            f"/workspace/{opp.id}/submission/approve",
+            data={"decision": "record_submitted"},
+            cookies={"govcon_session": token},
+        )
+        assert missing.status_code == 400
+        client.post(
+            f"/workspace/{opp.id}/submission/approve",
+            data={"decision": "record_submitted", "confirmation_number": "TEST-PORTAL-RECEIPT"},
             cookies={"govcon_session": token},
         )
         db_session.expire(sub)

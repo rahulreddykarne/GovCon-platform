@@ -425,16 +425,14 @@ def finalize_proposal(
         session.flush()
 
         # Move pursuit to ready_to_submit.
-        # The human final approval itself serves as an authorized override for
-        # non-hard blockers (e.g. missing pre-flight run). Hard blockers like a
-        # passed deadline are never overridable.
-        effective_override = override_reason or "human_final_approval_gate"
+        # An override must be an explicit, audited human reason. Approval alone
+        # cannot silently waive missing pre-flight evidence.
         try:
             move_to_ready_to_submit(
                 session,
                 opportunity_id=opportunity_id,
                 actor=actor,
-                override_reason=effective_override,
+                override_reason=override_reason,
             )
         except ReadinessBlocked as exc:
             # Only hard/non-overridable blockers should propagate
@@ -450,6 +448,7 @@ def finalize_proposal(
         ).first()
         if submission is not None:
             submission.readiness_status = "ready"
+            submission.status = "ready"
             session.flush()
 
         _send_notification(

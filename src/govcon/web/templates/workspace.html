@@ -36,6 +36,11 @@
   <a href="?tab=activity"       {% if cur == 'activity'       %}class="active"{% endif %}>Activity</a>
 </nav>
 
+{% if action_error %}
+<div class="alert alert-error">{% if action_error == 'missing_inputs' %}This step needs more source documents, approved facts, or an earlier approval. Check the current tab before retrying.{% else %}The step failed. Check the server log for details; no result was recorded as complete.{% endif %}</div>
+{% endif %}
+{% if action_done %}<div class="alert alert-success">{{ action_done|capitalize }} step completed. Review the result below before continuing.</div>{% endif %}
+
 <!-- Tab content -->
 {% if active_tab == 'overview' %}
   {% include "workspace/overview.html" %}

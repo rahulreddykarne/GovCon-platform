@@ -53,6 +53,7 @@ from tenacity import wait_exponential
 from govcon.config import Settings, get_settings
 from govcon.http import build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
+from govcon.ingest.status import opportunity_status
 from govcon.ingest.snapshots import (
     NormalizedOpportunity,
     canonical_content_hash,
@@ -335,7 +336,13 @@ def _to_opportunity(
         posted_date=posted,
         response_deadline=deadline,
         archive_date=None,
-        status="open",
+        status=opportunity_status(
+            source=SOURCE_DIBBS,
+            notice_type="RFQ",
+            active=None,
+            response_deadline=deadline,
+            archive_date=None,
+        ),
         poc=poc,
         links=_record_links(fields["solicitation_number"], index_name, fields["file_name"]),
         raw=raw,

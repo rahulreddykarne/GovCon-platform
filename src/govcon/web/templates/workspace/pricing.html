@@ -1,4 +1,29 @@
 <!-- Pricing tab -->
+<div class="card">
+  <div class="card-header"><span class="card-title">Historical award prices</span></div>
+  <p class="text-sm text-muted">Award amounts are shown for context. Unit prices appear only when explicitly published; award amounts are never divided into an assumed unit price.</p>
+  {% if historical_prices %}
+  <div class="table-wrap"><table><thead><tr><th>Date</th><th>Recipient</th><th>Match</th><th>Award amount</th><th>Published unit price</th></tr></thead><tbody>
+  {% for point in historical_prices %}<tr><td>{{ point.action_date or 'Unknown' }}</td><td>{{ point.vendor_name or 'Unknown' }}</td><td>{{ point.nsn or point.psc_code or 'Unknown' }}</td><td>{{ ('$%.2f'|format(point.amount|float)) if point.amount is not none else 'Unknown' }}</td><td>{{ ('$%.2f'|format(point.unit_price|float)) if point.unit_price is not none else 'Unknown' }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="text-muted">No comparable awards are stored yet.</p>{% endif %}
+</div>
+
+{% if pursuit %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Record verified supplier pricing <span class="label-human">Human</span></span></div>
+  <p class="text-sm text-muted">Enter a real supplier quote and its document or contact reference. These total amounts feed the decision package; historical awards are context only.</p>
+  <form method="post" action="/workspace/{{ opp.id }}/pricing">
+    <div class="d-flex gap-1 flex-wrap">
+      <label>Supplier<br><input name="supplier" required value="{{ pursuit.supplier or '' }}"></label>
+      <label>Supplier cost ($)<br><input name="sourcing_cost" type="number" min="0.01" step="0.01" required value="{{ pursuit.sourcing_cost or '' }}"></label>
+      <label>Proposed bid price ($)<br><input name="quote_price" type="number" min="0" step="0.01" required value="{{ pursuit.quote_price or '' }}"></label>
+      <label>Quote or contact reference<br><input name="evidence_reference" required maxlength="1000" value="{{ pricing_evidence.new_value.get('evidence_reference', '') if pricing_evidence and pricing_evidence.new_value else '' }}"></label>
+    </div>
+    <button class="btn btn-primary mt-1" type="submit">Save pricing evidence</button>
+  </form>
+</div>
+{% endif %}
 {% if ai_pricing %}
 <div class="card">
   <div class="card-header">

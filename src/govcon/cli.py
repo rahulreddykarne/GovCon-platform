@@ -637,6 +637,26 @@ def ingest_sam_archive_sweep() -> None:
     _echo_ingest(run_id, status, stats)
 
 
+@ingest_app.command("status-refresh")
+def ingest_status_refresh() -> None:
+    """Reclassify stored SAM and DIBBS notices from type and dates, without network calls."""
+    from govcon.ingest.runs import finish_run, start_run
+    from govcon.ingest.status import refresh_opportunity_statuses
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope(settings) as session:
+        run = start_run(session, "status_refresh")
+        stats = refresh_opportunity_statuses(session)
+        finish_run(run, stats, status="succeeded")
+        run_id = run.id
+    _echo_ingest(run_id, "succeeded", stats)
+
+
 def _parse_decimal(value: str | None):
     from decimal import Decimal
 

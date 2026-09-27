@@ -21,6 +21,7 @@ exports/
 data-live/
 logs-live/
 outbox-live/
+/work/
 
 # Python
 __pycache__/

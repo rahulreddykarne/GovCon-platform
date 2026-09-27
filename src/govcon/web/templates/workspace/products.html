@@ -1,4 +1,17 @@
 <!-- Products & Suppliers tab -->
+<div class="card">
+  <div class="card-header"><span class="card-title">Historical awardee leads</span></div>
+  <p class="text-sm text-muted">These organizations won related past awards. They are research leads; availability, capability, and current supplier pricing have not been verified.</p>
+  {% if supplier_leads %}
+  <div class="table-wrap"><table><thead><tr><th>Name</th><th>UEI</th><th>Match</th><th>Past awards</th><th>Last award</th><th>SAM registration</th></tr></thead><tbody>
+  {% for lead in supplier_leads %}<tr>
+    <td>{{ lead.name or 'Unknown' }}</td><td>{{ lead.uei or 'Unknown' }}</td>
+    <td>{{ lead.match_basis }}</td><td>{{ lead.award_count }}</td><td>{{ lead.last_award or 'Unknown' }}</td>
+    <td>{{ lead.registration_status or 'Not checked' }}</td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="text-muted">No related awardees are stored yet.</p>{% endif %}
+</div>
 {% if ai_sourcing %}
 <div class="card">
   <div class="card-header">

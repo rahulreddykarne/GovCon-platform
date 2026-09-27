@@ -34,6 +34,16 @@ from govcon.scheduler.jobs import StepResult
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _offline_embedding_provider(monkeypatch):
+    """Scheduler tests exercise chain behavior without loading a network model."""
+    class Provider:
+        def embed(self, text: str) -> list[float]:
+            return [0.01] * 384
+
+    monkeypatch.setattr("govcon.enrich.embeddings.get_default_provider", lambda model_name=None: Provider())
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

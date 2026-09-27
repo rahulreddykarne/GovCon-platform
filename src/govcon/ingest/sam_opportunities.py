@@ -36,6 +36,7 @@ from tenacity.wait import wait_base
 from govcon.config import Settings, get_settings
 from govcon.http import RETRYABLE_STATUS, build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
+from govcon.ingest.status import opportunity_status
 from govcon.ingest.snapshots import (
     SOURCE_SAM,
     NormalizedOpportunity,
@@ -258,13 +259,18 @@ def _description_body(value: object) -> str | None:
 
 
 def _status(raw: dict) -> str:
-    kind = " ".join(_text(raw.get(key)) or "" for key in ("type", "baseType", "archiveType")).lower()
-    if "cancel" in kind:
+    kinds = " ".join(filter(None, (_text(raw.get(key)) for key in ("type", "baseType", "archiveType"))))
+    if "cancel" in kinds.lower():
         return "cancelled"
-    active = (_text(raw.get("active")) or "").lower()
-    if active == "no":
-        return "archived"
-    return "open"
+    return opportunity_status(
+        source=SOURCE_SAM,
+        notice_type=_text(raw.get("type") or raw.get("baseType") or raw.get("archiveType")),
+        active=_text(raw.get("active")),
+        response_deadline=_parse_datetime(
+            raw.get("responseDeadLine") or raw.get("reponseDeadLine") or raw.get("responseDeadline")
+        ),
+        archive_date=_parse_date(raw.get("archiveDate")),
+    )
 
 
 def _agency_path(raw: dict) -> str | None:

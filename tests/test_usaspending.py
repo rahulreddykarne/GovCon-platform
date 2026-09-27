@@ -25,6 +25,7 @@ from govcon.ingest.usaspending import (
     UsaSpendingError,
     derive_quantity_and_unit_price,
     ingest_award_records,
+    ingest_award_sample_for_opportunity,
     load_search_document,
     normalize_award,
     plan_pull,
@@ -100,6 +101,29 @@ def _award(session: Session, **overrides) -> Award:
     session.add(row)
     session.flush()
     return row
+
+
+def test_opportunity_award_sample_uses_its_psc(session: Session, tmp_path) -> None:
+    opportunity = Opportunity(
+        source="test", source_id=f"award-sample-{uuid4().hex}", title="Medical supply",
+        psc_code="6515", status="open", raw={},
+    )
+    session.add(opportunity)
+    session.flush()
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["filters"]["psc_codes"] == ["6515"]
+        assert body["page"] == 1 and body["limit"] == 100
+        return httpx.Response(200, json=payload)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        stats, more = ingest_award_sample_for_opportunity(
+            session, opportunity, client=client, settings=_settings(tmp_path)
+        )
+    assert stats.fetched >= 1
+    assert isinstance(more, bool)
 
 
 def _search_row(**overrides) -> dict:

@@ -590,7 +590,7 @@ def test_approve_for_submission_sets_final_approved(session):
         opportunity_id=opp.id,
         action="APPROVE_FOR_SUBMISSION",
         actor=approver,
-        override_reason=None,
+        override_reason="Fixture reviewer accepted missing preflight",
     )
 
     assert result["status"] == "final_approved"
@@ -599,6 +599,19 @@ def test_approve_for_submission_sets_final_approved(session):
     proposal = session.get(Proposal, result["proposal_id"])
     assert proposal.final_approved_by_user_id == approver.id
     assert proposal.final_approved_at is not None
+
+
+def test_final_approval_rejects_silent_readiness_override(session):
+    from govcon.proposals.service import generate_proposal, finalize_proposal
+    from govcon.compliance.submission_preflight import ReadinessBlocked
+
+    opp = _opp(session)
+    _approved_pursuit(session, opp)
+    generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
+    approver = _user(session, "approver")
+    with pytest.raises(ReadinessBlocked):
+        finalize_proposal(session, opportunity_id=opp.id,
+                          action="APPROVE_FOR_SUBMISSION", actor=approver)
 
 
 def test_return_for_fix_sets_returned_status(session):
@@ -652,6 +665,7 @@ def test_final_approval_is_audited(session):
         opportunity_id=opp.id,
         action="APPROVE_FOR_SUBMISSION",
         actor=approver,
+        override_reason="Fixture reviewer accepted missing preflight",
     )
 
     events = session.scalars(

@@ -240,19 +240,19 @@ def step_semantic_match(session: Session, settings) -> StepResult:
 
 
 def step_midday_deadline_check(session: Session, settings) -> StepResult:
-    """Lightweight deadline/amendment check: archive sweep only (no network quota used)."""
+    """Refresh local bid eligibility without using source API quota."""
     from govcon.ingest.runs import IngestStats, finish_run, start_run
-    from govcon.ingest.sam_opportunities import archive_expired_sam_opportunities
+    from govcon.ingest.status import refresh_opportunity_statuses
 
     run = start_run(session, "sched:midday_check")
     try:
-        stats = archive_expired_sam_opportunities(session)
+        stats = refresh_opportunity_statuses(session)
         finish_run(run, stats, status="succeeded")
         return StepResult(
             step="midday_deadline_check",
             status="succeeded",
             updated=stats.updated,
-            extra={"archived": stats.updated},
+            extra={"reclassified": stats.updated},
         )
     except Exception as exc:
         from govcon.ingest.runs import IngestStats
@@ -263,19 +263,19 @@ def step_midday_deadline_check(session: Session, settings) -> StepResult:
 
 
 def step_archive_sweep(session: Session) -> StepResult:
-    """Archive SAM rows whose archive date has passed."""
+    """Reclassify SAM and DIBBS rows as dates and source facts change."""
     from govcon.ingest.runs import IngestStats, finish_run, start_run
-    from govcon.ingest.sam_opportunities import archive_expired_sam_opportunities
+    from govcon.ingest.status import refresh_opportunity_statuses
 
     run = start_run(session, "sched:archive_sweep")
     try:
-        stats = archive_expired_sam_opportunities(session)
+        stats = refresh_opportunity_statuses(session)
         finish_run(run, stats, status="succeeded")
         return StepResult(
             step="archive_sweep",
             status="succeeded",
             updated=stats.updated,
-            extra={"archived": stats.updated},
+            extra={"reclassified": stats.updated},
         )
     except Exception as exc:
         from govcon.ingest.runs import IngestStats
@@ -303,13 +303,14 @@ def step_cache_refresh(session: Session, settings) -> StepResult:
 
 
 def step_analytics_refresh(session: Session) -> StepResult:
-    """Analytics refresh — deferred to Phase 15."""
-    logger.info("analytics_refresh: Phase 15 analytics not yet implemented; step is a no-op")
-    return StepResult(
-        step="analytics_refresh",
-        status="succeeded",
-        extra={"note": "Phase 15 analytics engine not yet implemented; no-op"},
-    )
+    """Exercise the same persisted-data analytics calculation used by the UI."""
+    from govcon.learning.analytics import outcome_analytics
+    try:
+        report = outcome_analytics(session)
+        return StepResult(step="analytics_refresh", status="succeeded", extra={"submitted": report.total_submitted, "no_bid": report.total_no_bid})
+    except Exception as exc:
+        logger.error("analytics_refresh failed: %s", exc)
+        return StepResult(step="analytics_refresh", status="failed", error=str(exc))
 
 
 def step_vacuum_analyze(session: Session, settings) -> StepResult:

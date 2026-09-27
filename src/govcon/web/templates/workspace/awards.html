@@ -1,7 +1,11 @@
 <!-- Awards tab -->
+<form method="post" action="/workspace/{{ opp.id }}/award-sample" class="mb-1">
+  <button class="btn btn-secondary" type="submit">Load public award sample</button>
+  <span class="text-sm text-muted">First 100 related contract awards from the past three years. Configure a watchlist for full ongoing award ingestion.</span>
+</form>
 {% if not awards %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No historical award data. Run <code>govcon awards fetch-nsn</code>.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No related award data stored yet. Load a public sample above.</p>
 </div>
 {% else %}
 <div class="card">
