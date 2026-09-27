@@ -35,6 +35,8 @@ compliance_app = typer.Typer(help="High-reliability compliance matrix, validatio
 proposal_app = typer.Typer(help="Post-approval proposal generation and final approval (Phase 11).")
 submission_app = typer.Typer(help="Submission package generation and tracking (Phase 11).")
 mcp_app = typer.Typer(help="Model Context Protocol server (Phase 12).")
+embed_app = typer.Typer(help="Embedding generation and semantic search (Phase 13).")
+semantic_app = typer.Typer(help="Semantic recommendations (Phase 13).")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -52,6 +54,8 @@ app.add_typer(compliance_app, name="compliance")
 app.add_typer(proposal_app, name="proposal")
 app.add_typer(submission_app, name="submission")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(embed_app, name="embed")
+app.add_typer(semantic_app, name="semantic")
 
 
 def main() -> None:
@@ -2232,3 +2236,82 @@ def submission_confirm(
     except (PermissionDenied, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
+
+
+# ── embed commands (Phase 13) ─────────────────────────────────────────────────
+
+
+@embed_app.command("run")
+def embed_run(
+    all_opps: bool = typer.Option(False, "--all", help="Re-embed already-embedded opportunities."),
+    batch_size: int = typer.Option(200, "--batch-size", help="Flush interval (rows)."),
+) -> None:
+    """Generate embeddings for opportunities that have none (or all when --all)."""
+    from govcon.enrich.embeddings import get_default_provider, run_embedding_job
+
+    settings = _settings()
+    provider = get_default_provider(settings.embedding_model)
+    with session_scope(settings) as session:
+        stats = run_embedding_job(
+            session,
+            provider,
+            batch_size=batch_size,
+            only_missing=not all_opps,
+        )
+    typer.echo(f"embedded: {stats['embedded']}  skipped: {stats['skipped']}")
+
+
+@embed_app.command("watchlists")
+def embed_watchlists(
+    watchlist_id: int | None = typer.Option(None, "--watchlist", help="Rebuild a single watchlist profile."),
+) -> None:
+    """Build or rebuild watchlist profile embeddings."""
+    from govcon.enrich.embeddings import build_watchlist_profiles, get_default_provider
+
+    settings = _settings()
+    provider = get_default_provider(settings.embedding_model)
+    with session_scope(settings) as session:
+        stats = build_watchlist_profiles(session, provider, watchlist_id=watchlist_id)
+    typer.echo(f"updated: {stats['updated']}")
+
+
+# ── semantic commands (Phase 13) ──────────────────────────────────────────────
+
+
+@semantic_app.command("similar")
+def semantic_similar(
+    opportunity_id: int = typer.Argument(..., help="Opportunity ID to find similar ones for."),
+    limit: int = typer.Option(10, "--limit", help="Maximum results."),
+) -> None:
+    """Find opportunities semantically similar to a given opportunity."""
+    import json
+
+    from govcon.matching.semantic import similar_opportunities as _similar
+
+    settings = _settings()
+    with session_scope(settings) as session:
+        result = _similar(session, opportunity_id, limit=limit)
+    typer.echo(json.dumps(result, indent=2, default=str))
+
+
+@semantic_app.command("recommendations")
+def semantic_recommendations(
+    watchlist_id: int | None = typer.Option(None, "--watchlist", help="Watchlist ID for semantic match category."),
+    limit: int = typer.Option(10, "--limit", help="Max results per category."),
+) -> None:
+    """Show recommendations in all five categories for a watchlist."""
+    import json
+
+    from govcon.enrich.embeddings import get_default_provider
+    from govcon.matching.semantic import all_recommendations
+
+    settings = _settings()
+    provider = get_default_provider(settings.embedding_model)
+    with session_scope(settings) as session:
+        result = all_recommendations(
+            session,
+            provider,
+            watchlist_id=watchlist_id,
+            limit=limit,
+        )
+    typer.echo(json.dumps(result, indent=2, default=str))

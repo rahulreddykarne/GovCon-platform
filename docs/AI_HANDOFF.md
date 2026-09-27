@@ -1080,3 +1080,70 @@ None.
 ### Recommended next phase
 
 `PHASE_12_MCP.md` — MCP server. Do not implement in this run.
+
+---
+
+## Phase 13 — Semantic search & recommendations
+
+**Status:** COMPLETE  
+**Date:** 2026-09-27  
+**Model:** claude-sonnet-4-6  
+**Branch:** cursor/phase-13-semantic-search-c5b0
+
+### What was implemented
+
+- **`src/govcon/enrich/embeddings.py`** — Full implementation: `EmbeddingProvider` protocol, `SentenceTransformerProvider` (lazy-loaded `all-MiniLM-L6-v2`), `get_default_provider()`, `opportunity_text()`, `watchlist_profile_text()`, `_mean_pool()`, `embed_opportunity()`, `run_embedding_job()`, `build_watchlist_profiles()`, `compute_win_profile()` (requires ≥3 wins), `compute_pursued_profile()`.
+- **`src/govcon/matching/semantic.py`** — Full implementation: five category constants, `is_eligible_for_pursuit()`, `_vector_search()` (pgvector `<=>` cosine distance), `similar_opportunities()` (vector → heuristic fallback), `semantic_recommendations_for_watchlist()` (excludes rule-matched opps), `win_profile_recommendations()`, `pursued_profile_recommendations()`, `recompete_radar()` (shared PSC/agency with past award), `all_recommendations()` (all five categories).
+- **`src/govcon/mcp/operations.py`** — `op_similar_opportunities` replaced: now delegates to `matching.semantic.similar_opportunities`. DEV-007 resolved.
+- **`src/govcon/models.py`** — Added `embedding: Vector(384)` and `embedding_updated_at: DateTime` to `Watchlist`.
+- **`alembic/versions/f2a3b4c5d6e7_phase13_semantic_search.py`** — Migration: `watchlists.embedding` column, `watchlists.embedding_updated_at` column, HNSW vector index on `opportunities.embedding` (cosine ops, m=16, ef_construction=64), HNSW index on `watchlists.embedding`.
+- **`src/govcon/cli.py`** — Added `embed_app` and `semantic_app` sub-typers; commands: `govcon embed run [--all] [--batch-size N]`, `govcon embed watchlists [--watchlist N]`, `govcon semantic similar <opp_id> [--limit N]`, `govcon semantic recommendations [--watchlist N] [--limit N]`.
+- **`pyproject.toml`** — Added `sentence-transformers>=3.0` dependency.
+- **`tests/test_semantic_search.py`** — 24 tests with `MockEmbeddingProvider` (no real model loaded in CI).
+
+### Acceptance criteria verification
+
+| Criterion | Verified by | Result |
+|---|---|---|
+| AC-1: Semantic match works with no keyword overlap | `test_semantic_match_no_keyword_overlap` (different PSC, zero token overlap in titles, still found by vector) | PASS |
+| AC-2: Search stays interactive at target scale | `test_hnsw_index_exists` (HNSW index confirmed in pg_indexes), `test_vector_search_executes_without_seqscan_error` | PASS |
+| AC-3: Ineligible opportunity flagged, not auto-pursued | `test_ineligible_opportunity_flagged_in_results`, `test_is_eligible_for_pursuit` | PASS |
+
+Additional spec tasks verified:
+- Task 1 (embed opportunity text): `test_run_embedding_job`, `test_opportunity_text_combines_fields`
+- Task 2 (vector index): `test_hnsw_index_exists`, `test_watchlist_embedding_columns_exist`
+- Task 3 (watchlist profiles): `test_build_watchlist_profiles`, `test_watchlist_profile_persisted_to_db`, `test_watchlist_profile_text_combines_fields`
+- Task 4 (semantic-only recommendations): `test_semantic_recommendations_for_watchlist_no_profile`, `test_semantic_recommendations_excludes_rule_matches`, `test_all_recommendations_returns_categories`
+- Task 5 (win-profile ≥3 wins): `test_win_profile_returns_none_when_insufficient`, `test_win_profile_returns_embedding_with_sufficient_wins`, `test_win_profile_needs_min_wins`
+- Task 6 (no bypass hard eligibility): `test_ineligible_opportunity_flagged_in_results`, `test_is_eligible_for_pursuit`
+- Task 7 (similar_opportunities MCP): `test_mcp_similar_opportunities_uses_vector`, `test_dev_007_resolved_vector_replaces_heuristic`
+
+Five recommendation categories implemented as specified:
+- `Rule match` — Phase 2 rule engine (unchanged)
+- `Semantic match` — vector search against watchlist profile embedding, keyword-miss opps only
+- `Similar to won bids` — mean embedding of ≥3 won opportunities
+- `Similar to pursued bids` — mean embedding of actively pursued opportunities
+- `Recompete radar` — open opportunities sharing PSC or agency with past awards
+
+### ⚠️ VERIFY items
+Phase 13 has no `⚠️ VERIFY` items. The spec references `all-MiniLM-L6-v2` as an example model; the config setting `EMBEDDING_MODEL` is already in `Settings` and can be overridden. No external API is called.
+
+### Known deviations
+- DEV-007 resolved: `op_similar_opportunities` now uses pgvector.
+- DEV-008: HNSW index in migration uses non-CONCURRENTLY (Alembic runs inside a transaction; `CONCURRENTLY` would fail). Documented in migration comment. Production teams should pre-create with `CONCURRENTLY` before Alembic upgrade.
+
+### Design decisions
+- ADR-044: sentence-transformers local, HNSW index parameters, watchlist profile text construction.
+- ADR-045: Five categories; ineligible flagged not filtered; `is_eligible_for_pursuit()` gate.
+- ADR-046: Win-profile requires ≥3 genuine wins (graceful empty otherwise).
+
+### Test results
+- `tests/test_semantic_search.py` — **24 passed**
+- Full suite — **237 passed, 1 skipped** (was 213+1-skipped before Phase 13)
+
+### Unresolved blockers
+None.
+
+### Recommended next phase
+
+**`PHASE_14_WEB_UI.md`** — Web UI. Do not implement in this run.

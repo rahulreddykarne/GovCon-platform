@@ -205,6 +205,8 @@ class Watchlist(TimestampMixin, Base):
     sources: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     notes: Mapped[str | None] = mapped_column(Text)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(_ts())
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384))
+    embedding_updated_at: Mapped[datetime | None] = mapped_column(_ts())
 
 
 class Match(TimestampMixin, Base):
