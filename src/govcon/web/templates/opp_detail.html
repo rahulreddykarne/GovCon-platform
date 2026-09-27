@@ -106,7 +106,7 @@
               <td>{{ a.action_date or "—" }}</td>
               <td>{{ a.recipient_name or a.recipient_uei or "—" }}</td>
               <td>{{ a.awarding_agency or "—" }}</td>
-              <td>{{ "$%,.0f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
+              <td>{{ "${:,.0f}".format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
             </tr>
             {% endfor %}
           </tbody>

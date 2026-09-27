@@ -301,11 +301,41 @@ def ingest_sam(
         help="Posted-to date (MM/dd/yyyy or YYYY-MM-DD). Defaults to today UTC.",
     ),
     limit: int = typer.Option(1000, min=1, max=1000, help="Records per page. SAM.gov maximum is 1000."),
+    file: str | None = typer.Option(
+        None,
+        "--file",
+        help="Ingest a local SAM opportunities JSON file (opportunitiesData array). Does not call the network.",
+    ),
 ) -> None:
     """Ingest SAM.gov opportunities. The default window is the last 3 days."""
+    import json as _json
     from govcon.ingest.runs import IngestStats, finish_run, start_run
-    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, pull_sam_opportunities
+    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, ingest_opportunity_records, pull_sam_opportunities
     from govcon.logging import redact
+
+    if file:
+        try:
+            settings = _settings()
+            settings.require_database_url()
+        except ConfigError as exc:
+            _fail_config(exc)
+            return
+        fixture_path = _pathlib.Path(file)
+        if not fixture_path.exists():
+            typer.echo(f"fixture file not found: {file}", err=True)
+            raise typer.Exit(code=2)
+        payload = _json.loads(fixture_path.read_text(encoding="utf-8"))
+        records = payload.get("opportunitiesData", payload) if isinstance(payload, dict) else payload
+        with session_scope(settings) as session:
+            run = start_run(session, "sam_opportunities")
+            stats = ingest_opportunity_records(session, records)
+            status = _run_status(stats)
+            finish_run(run, stats, status=status)
+            run_id = run.id
+        _echo_ingest(run_id, status, stats)
+        if status == "failed":
+            raise typer.Exit(code=1)
+        return
 
     window_from, window_to = _posted_window_from_options(posted_from, posted_to, default_recent=True)
     try:

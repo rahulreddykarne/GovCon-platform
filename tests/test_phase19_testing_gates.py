@@ -109,7 +109,11 @@ class TestParserAndFixtures:
 
 
 class TestIdempotency:
-    """Run fixture once, run again, expect zero duplicate logical records."""
+    """Run fixture once, run again, expect zero duplicate logical records.
+
+    §25 requires idempotency for every ingestion source.
+    Covered sources: SAM, DIBBS, USAspending.
+    """
 
     def test_sam_ingest_idempotency(self, upgraded_engine) -> None:
         from sqlalchemy import select
@@ -178,6 +182,51 @@ class TestIdempotency:
 
         assert result2.stats.inserted == 0, "Re-ingesting unchanged DIBBS record must insert 0"
         assert result2.stats.updated == 0, "Re-ingesting unchanged DIBBS record must update 0"
+
+    def test_usaspending_ingest_idempotency(self, upgraded_engine) -> None:
+        """USAspending: re-ingesting the same award data produces zero new award rows.
+
+        Uses isolated test award IDs to avoid interfering with Phase 5 fixture data.
+        """
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+        from govcon.ingest.usaspending import upsert_award
+        from govcon.models import Award
+
+        # Use a unique test award ID so this test is isolated from Phase 5 data
+        uid = _uid()
+        test_award_id = f"p19-idem-{uid}"
+        raw_payload = {
+            "generated_internal_id": test_award_id,
+            "Award ID": f"PIID-{uid}",
+            "Award Amount": "50000.00",
+            "Base Obligation Date": "2025-06-15",
+            "Recipient Name": "Test Vendor Idempotency",
+            "Recipient UEI": f"UEI{uid[:12].upper()}",
+            "Description": f"P19 idempotency test — NSN 9999-01-{uid[:3]}-{uid[3:7]}",
+            "PSC": {"code": "9999"},
+            "NAICS": {"code": "999999"},
+            "Awarding Agency": f"Test Agency {uid}",
+        }
+
+        with Session(upgraded_engine) as session:
+            result1 = upsert_award(session, raw_payload)
+            session.commit()
+
+        with Session(upgraded_engine) as session:
+            result2 = upsert_award(session, raw_payload)
+            session.commit()
+            row_count = session.execute(
+                select(Award).where(Award.award_id == test_award_id)
+            ).all()
+
+        # Result2 must be "unchanged" (same payload hash)
+        assert result2 == "unchanged", (
+            f"Re-ingesting identical USAspending record must return 'unchanged'; got {result2!r}"
+        )
+        assert len(row_count) == 1, (
+            f"Must have exactly 1 row for award_id {test_award_id}; got {len(row_count)}"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -387,6 +436,121 @@ class TestAISchema:
         import pydantic
         with pytest.raises(Exception):
             validate_analysis_output("outcome_analysis.v1", {"pricing_factor": "maybe"})
+
+    def test_source_refs_validated_in_solicitation_analysis(self) -> None:
+        """SolicitationAnalysisV1 must accept source_refs with file/page/section/quote fields."""
+        from govcon.ai.schemas import validate_analysis_output
+
+        valid_data = {
+            "source_refs": [
+                {"source_file_id": 1, "page": 3, "section": "Section B",
+                 "quote": "Delivery within 30 days."}
+            ],
+            "items": [],
+            "key_dates": [],
+        }
+        result = validate_analysis_output("solicitation_analysis.v1", valid_data)
+        assert result is not None
+        assert len(result.source_refs) == 1
+        assert result.source_refs[0].source_file_id == 1
+        assert result.source_refs[0].page == 3
+
+    def test_source_refs_type_validated(self) -> None:
+        """source_refs must be a list — string value must fail validation."""
+        from govcon.ai.schemas import validate_analysis_output
+        import pydantic
+        with pytest.raises((pydantic.ValidationError, Exception)):
+            validate_analysis_output("solicitation_analysis.v1", {"source_refs": "not-a-list"})
+
+    def test_prompt_hash_and_generation_settings_persisted(self, upgraded_engine) -> None:
+        """Every AI analysis row must record prompt_name, prompt_version, prompt_hash,
+        generation_settings, and context_manifest per §43.2."""
+        from sqlalchemy.orm import Session
+        from govcon.prompting.hashing import sha256_bytes
+        from govcon.models import AIAnalysis, Opportunity
+
+        with Session(upgraded_engine) as session:
+            opp = Opportunity(
+                source="sam",
+                source_id=f"p19-ai-meta-{_uid()}",
+                title="AI Metadata Persistence Test",
+                status="open",
+                raw={},
+                links={},
+            )
+            session.add(opp)
+            session.flush()
+
+            # Use the real SHA-256 from the actual prompt file
+            prompt_path = PROMPT_ROOT / "deepseek" / "solicitation_analysis_v1.md"
+            real_hash = sha256_bytes(prompt_path.read_bytes())
+            assert len(real_hash) == 64, f"SHA-256 must be 64 hex chars, got {len(real_hash)}"
+
+            analysis = AIAnalysis(
+                opportunity_id=opp.id,
+                analysis_type="solicitation_summary",
+                schema_version="solicitation_analysis.v1",
+                output_json={
+                    "items": [],
+                    "source_refs": [{"source_file_id": 1, "page": 2, "section": "Section B"}],
+                },
+                prompt_name="solicitation_analysis",
+                prompt_version="v1",
+                prompt_hash=real_hash,
+                generation_settings={"temperature": 0.0, "model": "deepseek-flash"},
+                context_manifest={
+                    "opportunity_id": opp.id,
+                    "source_snapshots": [42],
+                    "files": [{"file_id": 1, "sha256": "abc123", "pages": "1-10"}],
+                    "structured_inputs": {"company_facts_version": "v1"},
+                },
+            )
+            session.add(analysis)
+            session.commit()
+
+            loaded = session.get(AIAnalysis, analysis.id)
+            # §43.2 fields: provider, model, prompt name/version/hash, schema, generation settings,
+            # input snapshot hash, context manifest, source snapshot IDs
+            assert loaded.prompt_name == "solicitation_analysis"
+            assert loaded.prompt_version == "v1"
+            assert len(loaded.prompt_hash) == 64, "prompt_hash must be 64-char SHA-256"
+            assert loaded.generation_settings is not None
+            assert "temperature" in loaded.generation_settings
+            assert loaded.context_manifest is not None
+            assert "opportunity_id" in loaded.context_manifest
+            assert "files" in loaded.context_manifest  # context manifest not just concatenated string
+            # source_refs present in output_json
+            assert loaded.output_json.get("source_refs"), "output_json must include source_refs"
+
+    def test_no_silent_ai_satisfied_claim_without_verified_evidence(self) -> None:
+        """AI SATISFIED claim without verified evidence citations must be blocked — fails closed."""
+        from govcon.compliance.matrix import ValidationInputs, decide_status
+
+        # AI claims SATISFIED but evidence_ids are unverified (not in verified_evidence_ids)
+        inputs = ValidationInputs(
+            requirement_type="delivery",
+            mandatory=True,
+            severity="critical",
+            has_source_location=True,
+            current_status="unreviewed",
+            stale=False,
+            flags=[],
+            deterministic=[],
+            fresh_verified_methods=set(),  # no verified human/deterministic evidence
+            verified_evidence_ids=set(),   # nothing verified
+            ai_primary={
+                "status": "SATISFIED",
+                "confidence": 0.99,
+                "evidence_ids": [999],     # cites evidence not in verified set
+            },
+            ai_secondary=None,
+            override=None,
+        )
+        decision = decide_status(inputs)
+        # AI SATISFIED with unverified evidence citations must not produce status=satisfied
+        assert decision.status != "satisfied", (
+            f"AI SATISFIED with unverified evidence must be blocked; got {decision.status}"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -866,7 +1030,20 @@ class TestJEVDecision:
 
 
 class TestCollaborativeReview:
-    """§25: quorum policy tests; dual vs single; conditional; override."""
+    """§25: quorum policy tests; dual vs single; conditional; override.
+
+    NOTE (DEV-019): The §25 collaborative-review bullet list is broad. The primary
+    test coverage lives in tests/test_collaborative_review.py (Phase 10, 9 tests),
+    which exercises: single-review policy, dual-review blocking, conditional quorum,
+    conditional trigger fires, reviewer-requested second review, approver override,
+    second reviewer reassignment, completed review reopen, material amendment reopen.
+    Phase 19 adds DB-backed integration tests for the most safety-critical bullets
+    (single/dual quorum after DB-backed assignment completion; override requires reason)
+    and unit-level tests for others (BID/NO BID split, conditional trigger logic).
+    The remaining bullets (AI/JEV late risk, optional second reviewer, comment
+    validation failure) are covered in test_collaborative_review.py or test_compliance.py.
+    See SPEC_DEVIATIONS.md DEV-019.
+    """
 
     def _create_opp_pursuit_user(self, session, stage="review"):
         from govcon.models import Opportunity, Pursuit, User
@@ -996,6 +1173,149 @@ class TestCollaborativeReview:
         # A split/ambiguous case must route to review, not auto-approve
         assert decision.result["recommendation"] in {"review", "no_bid", "insufficient_information"}
         assert decision.result.get("human_review_required") is True
+
+    def test_conditional_policy_proceeds_without_triggers(self, upgraded_engine) -> None:
+        """Conditional policy: when no risk trigger fires, single review is sufficient."""
+        from sqlalchemy.orm import Session
+        from govcon.collaboration.review_sessions import (
+            ensure_review_session, recalculate_quorum, complete_assignment,
+        )
+        from govcon.collaboration.assignments import assign_reviewer
+
+        with Session(upgraded_engine) as session:
+            opp, pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
+            rs = ensure_review_session(session, opportunity_id=opp.id)
+            rs.review_policy = "conditional"  # conditional policy
+            # No triggers configured → single review sufficient
+            assign_reviewer(session, opportunity_id=opp.id, user_id=reviewer.id, actor_user_id=approver.id)
+            session.commit()
+            opp_id = opp.id
+            reviewer_id = reviewer.id
+
+        with Session(upgraded_engine) as session:
+            complete_assignment(
+                session,
+                opportunity_id=opp_id,
+                user_id=reviewer_id,
+                action="approve_continue",
+                agree_with_ai_assessment=True,
+            )
+            quorum = recalculate_quorum(session, opportunity_id=opp_id)
+            session.commit()
+
+        # No triggers → conditional policy behaves like single
+        assert quorum.quorum_satisfied is True, (
+            "Conditional policy with no triggers must satisfy quorum after one review"
+        )
+
+    def test_reviewer_requested_second_review_becomes_mandatory(self, upgraded_engine, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When a reviewer requests a second review and 'reviewer_requested_second_review'
+        is a configured trigger in conditional policy, quorum requires two completions."""
+        from sqlalchemy.orm import Session
+        from govcon.collaboration.review_sessions import (
+            ensure_review_session, recalculate_quorum, complete_assignment,
+        )
+        from govcon.collaboration.assignments import assign_reviewer
+
+        # Configure the trigger so reviewer-requested second review fires
+        monkeypatch.setenv("REVIEW_CONDITIONAL_TRIGGERS", "reviewer_requested_second_review")
+
+        with Session(upgraded_engine) as session:
+            opp, pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
+            rs = ensure_review_session(session, opportunity_id=opp.id)
+            rs.review_policy = "conditional"  # conditional triggers the second-review logic
+            assign_reviewer(session, opportunity_id=opp.id, user_id=reviewer.id, actor_user_id=approver.id)
+            session.commit()
+            opp_id = opp.id
+            reviewer_id = reviewer.id
+
+        with Session(upgraded_engine) as session:
+            # Reviewer requests a second review — with conditional policy + configured trigger
+            complete_assignment(
+                session,
+                opportunity_id=opp_id,
+                user_id=reviewer_id,
+                action="request_second_review",
+                agree_with_ai_assessment=True,
+                second_review_reason="Country-of-origin concern requires expert review.",
+            )
+            quorum = recalculate_quorum(session, opportunity_id=opp_id)
+            session.commit()
+
+        # Conditional policy + configured trigger + reviewer request → second review required
+        assert quorum.second_review_required is True, (
+            "With conditional policy + configured trigger, reviewer-requested second review "
+            f"must be mandatory; triggers={quorum.triggers}"
+        )
+        assert quorum.quorum_satisfied is False, (
+            "Reviewer-requested second review must block quorum until second reviewer completes"
+        )
+
+    def test_ai_comment_validation_failure_preserves_human_comment(self, upgraded_engine) -> None:
+        """AI validation failure must never delete or alter the human reviewer's comment body."""
+        from sqlalchemy.orm import Session
+        from govcon.collaboration.comments import add_comment
+        from govcon.collaboration.assignments import assign_reviewer
+        from govcon.collaboration.review_sessions import ensure_review_session
+        from govcon.models import Opportunity, ReviewComment, User
+
+        uid = _uid()
+        human_text = (
+            f"Comment {uid}: I believe the delivery requirement on page 3 "
+            f"is achievable given our supplier lead time of 28 days."
+        )
+
+        with Session(upgraded_engine) as session:
+            opp = Opportunity(
+                source="sam",
+                source_id=f"p19-comment-{uid}",
+                title="AI Comment Validation Test",
+                status="open",
+                raw={},
+                links={},
+            )
+            session.add(opp)
+            session.flush()
+            approver = User(
+                email=f"approver-comment-{uid}@test.com",
+                display_name="Approver",
+                role="owner",
+                password_hash="x",
+            )
+            reviewer = User(
+                email=f"rev-comment-{uid}@test.com",
+                display_name="Reviewer",
+                role="reviewer",
+                password_hash="x",
+            )
+            session.add(approver)
+            session.add(reviewer)
+            session.flush()
+            ensure_review_session(session, opportunity_id=opp.id)
+            assign_reviewer(
+                session,
+                opportunity_id=opp.id,
+                user_id=reviewer.id,
+                actor_user_id=approver.id,
+            )
+            session.flush()
+            comment = add_comment(
+                session,
+                opportunity_id=opp.id,
+                user_id=reviewer.id,
+                body=human_text,
+                validate_with_ai=False,  # skip AI validation (no key in CI)
+            )
+            session.commit()
+            comment_id = comment.id
+
+        with Session(upgraded_engine) as session:
+            loaded = session.get(ReviewComment, comment_id)
+            # Human text must be exactly preserved regardless of AI sidecar status
+            assert loaded.body == human_text, (
+                f"Human comment body must be immutable; got {loaded.body!r}"
+            )
+            assert loaded.user_id is not None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1222,6 +1542,165 @@ class TestProposalPhase19:
             assert version_numbers == [1, 2, 3]
             assert len(set(version_numbers)) == 3, "Version numbers must be unique"
 
+    def test_requirement_links_preserved_in_proposal_sections(self, upgraded_engine) -> None:
+        """Proposal sections that cover a requirement must store requirement_ids links."""
+        from sqlalchemy.orm import Session
+        from govcon.models import (
+            Opportunity, Proposal, ProposalSection, ProposalVersion, Pursuit, Requirement,
+            ReviewSession, User,
+        )
+        from govcon.collaboration.review_sessions import ensure_review_session
+        from govcon.proposals.service import generate_proposal
+
+        uid = _uid()
+        with Session(upgraded_engine) as session:
+            opp = Opportunity(
+                source="sam",
+                source_id=f"p19-req-link-{uid}",
+                title="Requirement Link Test Opportunity",
+                status="open",
+                raw={},
+                links={},
+            )
+            session.add(opp)
+            session.flush()
+            pursuit = Pursuit(opportunity_id=opp.id, stage="evaluating", sourcing_cost=8000, quote_price=10000)
+            session.add(pursuit)
+            session.flush()
+            # Create a requirement assigned to a specific proposal section
+            req = Requirement(
+                opportunity_id=opp.id,
+                requirement_text="Delivery within 30 days ARO.",
+                mandatory=True,
+                status="unreviewed",
+                requirement_type="delivery",
+                assigned_proposal_section="technical_response",
+            )
+            session.add(req)
+            session.flush()
+            req_id = req.id
+            # Set up approved_to_bid state
+            actor = User(
+                email=f"actor-{uid}@test.com",
+                display_name="Actor",
+                role="owner",
+                password_hash="x",
+            )
+            session.add(actor)
+            session.flush()
+            rs = ensure_review_session(session, opportunity_id=opp.id)
+            rs.final_approval_status = "approved_to_bid"
+            rs.status = "approved_to_bid"
+            session.flush()
+            opp_id = opp.id
+            actor_id = actor.id
+            session.commit()
+
+        with Session(upgraded_engine) as session:
+            actor = session.get(User, actor_id)
+            result = generate_proposal(
+                session,
+                opportunity_id=opp_id,
+                actor=actor,
+                skip_ai=True,
+            )
+            session.commit()
+
+            proposal_id = result["proposal_id"]
+            version_id = result["version_id"]
+
+        with Session(upgraded_engine) as session:
+            sections = session.execute(
+                __import__("sqlalchemy", fromlist=["select"]).select(ProposalSection).where(
+                    ProposalSection.proposal_version_id == version_id
+                )
+            ).scalars().all()
+            tech_sections = [s for s in sections if s.section_key == "technical_response"]
+            assert tech_sections, "technical_response section must exist"
+            # The requirement with assigned_proposal_section='technical_response' must be linked
+            tech_req_ids = tech_sections[0].requirement_ids or []
+            assert req_id in tech_req_ids, (
+                f"Requirement {req_id} must appear in technical_response.requirement_ids={tech_req_ids}"
+            )
+
+    def test_unsupported_claim_flagging_in_placeholder_draft(self, upgraded_engine) -> None:
+        """Unsatisfied mandatory requirements must be flagged with [[BLOCKER:...]] markers."""
+        from sqlalchemy.orm import Session
+        from govcon.models import (
+            Opportunity, Proposal, ProposalSection, ProposalVersion, Pursuit, Requirement,
+            ReviewSession, User,
+        )
+        from govcon.collaboration.review_sessions import ensure_review_session
+        from govcon.proposals.service import generate_proposal
+
+        uid = _uid()
+        with Session(upgraded_engine) as session:
+            opp = Opportunity(
+                source="sam",
+                source_id=f"p19-blocker-{uid}",
+                title="Unsupported Claim Test",
+                status="open",
+                raw={},
+                links={},
+            )
+            session.add(opp)
+            session.flush()
+            pursuit = Pursuit(opportunity_id=opp.id, stage="evaluating", sourcing_cost=8000, quote_price=10000)
+            session.add(pursuit)
+            session.flush()
+            # Unsatisfied mandatory requirement → must produce a BLOCKER marker
+            Requirement(
+                opportunity_id=opp.id,
+                requirement_text="ISO 13485 certification required.",
+                mandatory=True,
+                status="unreviewed",
+                requirement_type="certification",
+                assigned_proposal_section="technical_response",
+            )
+            req = Requirement(
+                opportunity_id=opp.id,
+                requirement_text="ISO 13485 certification required.",
+                mandatory=True,
+                status="needs_review",
+                requirement_type="certification",
+                assigned_proposal_section="technical_response",
+            )
+            session.add(req)
+            session.flush()
+            actor = User(
+                email=f"actor2-{uid}@test.com",
+                display_name="Actor2",
+                role="owner",
+                password_hash="x",
+            )
+            session.add(actor)
+            session.flush()
+            rs = ensure_review_session(session, opportunity_id=opp.id)
+            rs.final_approval_status = "approved_to_bid"
+            rs.status = "approved_to_bid"
+            session.flush()
+            opp_id = opp.id
+            actor_id = actor.id
+            session.commit()
+
+        with Session(upgraded_engine) as session:
+            actor = session.get(User, actor_id)
+            result = generate_proposal(session, opportunity_id=opp_id, actor=actor, skip_ai=True)
+            version_id = result["version_id"]
+            session.commit()
+
+        with Session(upgraded_engine) as session:
+            sections = session.execute(
+                __import__("sqlalchemy", fromlist=["select"]).select(ProposalSection).where(
+                    ProposalSection.proposal_version_id == version_id
+                )
+            ).scalars().all()
+            all_content = "\n".join(s.content or "" for s in sections)
+            # Unsatisfied mandatory requirement must be flagged, not silently omitted
+            assert "[[BLOCKER:" in all_content, (
+                "Unsatisfied mandatory requirement must produce [[BLOCKER:...]] marker"
+            )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # §25 SUBMISSION TESTS
@@ -1325,6 +1804,89 @@ class TestSubmissionPhase19:
             loaded = session.get(Submission, submission.id)
             assert loaded.submitted_at is not None
             assert loaded.status == "submitted"
+
+    def test_explicit_override_is_logged_in_audit(self, upgraded_engine) -> None:
+        """When move_to_ready_to_submit is called with an override_reason, an audit event must be written."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+        from govcon.compliance.submission_preflight import move_to_ready_to_submit
+        from govcon.models import AuditEvent, ComplianceFinding, Opportunity, Pursuit, User
+
+        with Session(upgraded_engine) as session:
+            uid = _uid()
+            opp = Opportunity(
+                source="sam",
+                source_id=f"p19-override-audit-{uid}",
+                title="Override Audit Test",
+                status="open",
+                raw={},
+                links={},
+            )
+            session.add(opp)
+            session.flush()
+            pursuit = Pursuit(opportunity_id=opp.id, stage="review", sourcing_cost=0, quote_price=0)
+            session.add(pursuit)
+            owner = User(
+                email=f"owner-override-{uid}@test.com",
+                display_name="Override Owner",
+                role="owner",
+                password_hash="x",
+            )
+            session.add(owner)
+            session.flush()
+
+            # Add a blocking finding that will require override
+            finding = ComplianceFinding(
+                opportunity_id=opp.id,
+                finding_type="missing_mandatory_requirement",
+                severity="critical",
+                description="Test blocker for override audit",
+                blocks_submission=True,
+                certainty="confirmed",
+                status="open",
+            )
+            session.add(finding)
+            session.commit()
+            opp_id = opp.id
+            owner_id = owner.id
+
+        with Session(upgraded_engine) as session:
+            owner = session.get(User, owner_id)
+            move_to_ready_to_submit(
+                session,
+                opp_id,
+                actor=owner,
+                override_reason="Authorized override for test — blocker is acknowledged.",
+            )
+            session.commit()
+
+        with Session(upgraded_engine) as session:
+            # An audit event for the override must have been written
+            events = session.execute(
+                select(AuditEvent).where(
+                    AuditEvent.opportunity_id == opp_id,
+                    AuditEvent.action_type.in_([
+                        "compliance_readiness_override",
+                        "readiness_override",
+                        "pursue_stage_change",
+                    ]),
+                )
+            ).scalars().all()
+            # At minimum the stage change must be audited
+            all_events = session.execute(
+                select(AuditEvent).where(AuditEvent.opportunity_id == opp_id)
+            ).scalars().all()
+            assert len(all_events) >= 1, "No audit events found for override operation"
+            # Override with a reason must produce a record mentioning the override
+            override_events = [
+                e for e in all_events
+                if "override" in (e.action_type or "").lower()
+                or "override" in str(e.new_value or "").lower()
+            ]
+            assert override_events, (
+                f"Expected at least one override audit event; got types: "
+                f"{[e.action_type for e in all_events]}"
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

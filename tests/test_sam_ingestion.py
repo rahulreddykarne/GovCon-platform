@@ -35,7 +35,7 @@ from govcon.ingest.sam_opportunities import (
     parse_quantity,
     pull_sam_opportunities,
 )
-from govcon.models import Contact, IngestionRun, Opportunity, OpportunityEvent, OpportunitySnapshot
+from govcon.models import Contact, IngestionRun, Match, Opportunity, OpportunityEvent, OpportunitySnapshot
 
 runner = CliRunner()
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sam_opportunities_search.json"
@@ -69,6 +69,7 @@ def _purge(db: Session, source_ids: set[str], emails: set[str] | None = None) ->
     )
     db.execute(delete(OpportunityEvent).where(OpportunityEvent.opportunity_id.in_(opportunity_ids)))
     db.execute(delete(OpportunitySnapshot).where(OpportunitySnapshot.opportunity_id.in_(opportunity_ids)))
+    db.execute(delete(Match).where(Match.opportunity_id.in_(opportunity_ids)))
     db.execute(delete(Contact).where(Contact.first_seen_opportunity_id.in_(opportunity_ids)))
     if emails:
         db.execute(delete(Contact).where(Contact.email.in_(emails)))

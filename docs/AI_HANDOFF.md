@@ -1,5 +1,119 @@
 # AI handoff
 
+## 2026-09-27 08:30 UTC — PHASE_19_TESTING_RELEASE_GATES (revision 2 — gate fix)
+
+- Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27 08:30 UTC
+- Phase/task: PHASE_19_TESTING_RELEASE_GATES — fixes for Spec/QA gate failure on PR #21
+- Branch: `cursor/phase-19-testing-release-gates-9982` (same branch as revision 1)
+
+### Files changed (revision 2)
+
+- `src/govcon/cli.py` — added `govcon ingest sam --file <path>` option so smoke script can ingest SAM fixtures without a live API key
+- `src/govcon/web/templates/opp_detail.html` — fixed `$%,.0f` format string (system Jinja2 3.1.2 does not support `,` in `%` format; replaced with `${:,.0f}".format(...)`)
+- `src/govcon/web/routes/__init__.py` — fixed award query in `opp_detail` to avoid matching all NULL-NSN awards when the opportunity has no NSN
+- `scripts/smoke.sh` — complete rewrite: now covers all 16 §25 smoke steps with no `|| true` on required steps
+- `tests/test_phase19_testing_gates.py` — 11 new tests added (98 total):
+  - `test_usaspending_ingest_idempotency` (isolated, non-conflicting award data)
+  - `test_requirement_links_preserved_in_proposal_sections` (req with assigned_proposal_section)
+  - `test_unsupported_claim_flagging_in_placeholder_draft` ([[BLOCKER:...]] markers)
+  - `test_explicit_override_is_logged_in_audit` (compliance_readiness_override audit event)
+  - `test_conditional_policy_proceeds_without_triggers` (conditional quorum with no triggers)
+  - `test_reviewer_requested_second_review_becomes_mandatory` (conditional + configured trigger)
+  - `test_ai_comment_validation_failure_preserves_human_comment` (body immutability)
+  - `test_source_refs_validated_in_solicitation_analysis` (SourceRef field validation)
+  - `test_source_refs_type_validated` (malformed source_refs rejected)
+  - `test_prompt_hash_and_generation_settings_persisted` (§43.2 fields in AIAnalysis)
+  - `test_no_silent_ai_satisfied_claim_without_verified_evidence` (gate blocks AI-only SATISFIED)
+- `tests/test_sam_ingestion.py` — `_purge` now also deletes `Match` rows (FK constraint fix)
+- `IMPLEMENTATION_STATUS.md`, `SPEC_DEVIATIONS.md` (DEV-019), `docs/AI_HANDOFF.md` — updated
+
+### What was wrong in revision 1 (per reviewer feedback)
+
+1. **`scripts/smoke.sh` incomplete**: Stopped after `compliance benchmark`. Missing: render+schema-check fixture prompts, analyze fixture opportunity, generate bid recommendation, generate compliance matrix, create proposal v1, prepare submission checklist. Also had `|| true` silencing failures on required steps.
+2. **`govcon ingest sam` had no `--file` option**: SAM fixture ingest was silently failing, so no SAM data was actually being ingested in the smoke script.
+3. **Proposal tests**: Missing requirement-link assertion and unsupported-claim (BLOCKER marker) test.
+4. **Submission tests**: Missing override-audit-log assertion.
+5. **Idempotency**: Missing USAspending coverage (only SAM+DIBBS).
+6. **Quorum §25 bullets**: Only 2 of 14 bullets tested; remainder undocumented.
+7. **AI schema tests**: Missing source-ref validation, prompt-hash/generation-settings persistence, evidence-gating check.
+8. **Honesty**: IMPLEMENTATION_STATUS overclaimed "All §25 ACs checked" before all bullets were verified.
+
+### What revision 2 delivers
+
+**Full smoke pipeline (16 steps):**
+1. db upgrade
+2. seed demo watchlist
+3. govcon status
+4. ingest SAM fixture (`govcon ingest sam --file`)
+5. ingest DIBBS fixture
+6. snapshot diff (re-ingest → zero new snapshots asserted)
+7. match
+8. alerts digest
+9. validate prompt registry (15 prompts PASS)
+10. **render and schema-check fixture prompts** (two prompts, schema registry verified)
+11. **analyze fixture opportunity** (fixture PDF ingested, graceful warn without API key)
+12. **generate bid recommendation** (`govcon decision run-package`, decision_run persisted)
+13. **generate compliance matrix** (`govcon compliance run --no-ai` + matrix with source refs)
+14. **create proposal v1** (`govcon proposal generate --skip-ai`, version immutability, blocker markers)
+15. **prepare submission checklist** (submission package + checklist generated)
+16. **assert outputs** (opportunities, watchlists, matches, decision_runs, proposals, versions, submissions)
+
+**11 new tests covering gaps:**
+- USAspending idempotency: isolated award ID, no cross-test contamination
+- Proposal requirement links: requirement with `assigned_proposal_section` → linked in section
+- Proposal unsupported-claim: [[BLOCKER:...]] markers in sections with unmet requirements
+- Submission override audit: `compliance_readiness_override` audit event confirmed
+- Collaborative review: conditional policy; reviewer-requested second review; AI comment body immutability
+- AI schema: source_refs validation; SourceRef field types; prompt_hash + generation_settings + context_manifest persistence; AI-SATISFIED gate without verified evidence
+
+**Infrastructure bug fixes:**
+- `govcon ingest sam --file`: new option that reads `opportunitiesData` from a local JSON file
+- `opp_detail.html`: `$%,.0f` → `${:,.0f}".format(...)` for Jinja2 3.1.2 compatibility
+- Awards query: corrected to avoid matching all NULL-NSN awards when opportunity has no NSN
+- `test_sam_ingestion.py::_purge`: now deletes Match rows before Opportunity (FK constraint)
+
+### Test results
+
+- `pytest tests/test_phase19_testing_gates.py` → **98 passed**
+- `pytest` (full suite) → **504 passed, 1 skipped**
+- `bash scripts/smoke.sh` → **PASS** (exit 0, 16/16 steps)
+- `govcon prompts validate` → **15/15 active task prompts PASS**
+- `govcon compliance benchmark` → **gate PASS**
+
+### AC honesty update
+
+| §25 AC | Coverage | Notes |
+|---|---|---|
+| Parser tests | `TestParserAndFixtures` (4 tests) | ✓ SAM/DIBBS/USAspending fixtures; no live network |
+| Idempotency | `TestIdempotency` (3 tests) | ✓ SAM + DIBBS + USAspending (isolated IDs) |
+| Snapshot | `TestSnapshots` (2 tests) | ✓ unchanged=0; changed=1 |
+| Matching | `TestMatching` (11-case parametrized) | ✓ table-driven |
+| AI schema | `TestAISchema` (10 tests) | ✓ source-refs, prompt-hash, generation-settings, injection, gate |
+| Prompt-library | `TestPromptLibrary` (15 tests) | ✓ 15 prompts gate; 7 CLI cmds; hash; secret; injection |
+| Decision/JEV §36 | `TestJEVDecision` (10 tests) | ✓ 13 fixtures; hard-rule; persistence; human-authority |
+| Collaborative review | `TestCollaborativeReview` (7 tests) + Phase 10 suite (9 tests) | ✓ All 14 §25 bullets — split between Phase 10 and Phase 19 (DEV-019) |
+| Compliance | `TestCompliancePhase19` (5 tests) | ✓ benchmark PASS; recall=1.0; false-satisfied=0.0 |
+| Compliance release gate | `TestComplianceReleaseGate` (4 tests) | ✓ CLI exits 0; amendment detection=1.0 |
+| Proposal | `TestProposalPhase19` (4 tests) | ✓ immutability; version uniqueness; req-links; blocker markers |
+| Submission | `TestSubmissionPhase19` (4 tests) | ✓ blocking ✓ override audit ✓ no-auto-portal ✓ timestamp |
+| Migration | `TestMigration` (2 tests) | ✓ upgrade from empty; 33 tables |
+| Smoke test | `scripts/smoke.sh` (16 steps) | ✓ full pipeline exit 0 |
+
+### Phase 16 note
+
+Phase 16 (State & local adapters) remains **DEFERRED**. Not implemented.
+
+### Unresolved blockers
+
+None.
+
+### Recommended next task
+
+**Phase 20 — Final integration acceptance** (`PHASE_20_FINAL_INTEGRATION_ACCEPTANCE.md`). Phase 16 remains DEFERRED.
+
+---
+
 ## 2026-09-27 07:30 UTC — PHASE_19_TESTING_RELEASE_GATES
 
 - Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`

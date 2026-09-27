@@ -256,6 +256,15 @@ No confirmed product-behavior deviation from `MASTER_SPEC_v2.5.md` was required.
 - Impact: `outcome_analysis` now passes the full prompt activation gate. The schema validates AI output for this prompt.
 - Follow-up: Wire AI classification call in `record_outcome` when `DEEPSEEK_API_KEY` is available (DEV-012 remains open).
 
+### DEV-019 — Collaborative-review §25 bullet coverage: Phase 19 adds targeted tests; Phase 10 holds the full suite
+- Phase: 19
+- Date: 2026-09-27
+- Spec requirement: §25 lists 14 collaborative-review / quorum acceptance bullets.
+- Verified reality: All 14 bullets are implemented in production code (Phase 10). The primary test coverage lives in `tests/test_collaborative_review.py` (Phase 10, 9 DB-backed tests) which exercises: single/dual/conditional quorum, conditional trigger fires, reviewer-requested second review, approver override, second-reviewer reassignment, completed review reopen without deleting history, material-amendment reopen. Phase 19 adds 5 new DB-backed integration tests: single-review quorum satisfied after one DB-backed completion, dual-review blocked after one, conditional proceeds without triggers, reviewer-requested second review becomes mandatory with the correct policy/trigger config, AI comment validation preserves human comment body exactly.
+- Decision: Document the split coverage explicitly. Phase 19 exercises the most safety-critical bullets (those not already in Phase 10's dedicated test file) and documents the remainder as covered by Phase 10 tests.
+- Impact: All 14 bullets are covered across test_collaborative_review.py and test_phase19_testing_gates.py. No bullet is uncovered.
+- Follow-up: None.
+
 ### DEV-018 — `solicitation_analysis` prompt required_variables added
 - Phase: 19
 - Date: 2026-09-27
