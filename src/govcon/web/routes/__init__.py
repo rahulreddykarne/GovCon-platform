@@ -114,6 +114,20 @@ def _render(request: Request, template: str, ctx: dict[str, Any], user: User) ->
     return _templates.TemplateResponse(request, template, ctx)
 
 
+def _opportunity_external_links(links: dict | None) -> list[tuple[str, str]]:
+    """Flatten SAM's URL strings and link arrays for the detail page."""
+    if not isinstance(links, dict):
+        return []
+    result: list[tuple[str, str]] = []
+    for label, value in links.items():
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            url = item.get("href") if isinstance(item, dict) else item
+            if isinstance(url, str) and url.startswith(("https://", "http://")):
+                result.append((str(label), url))
+    return result
+
+
 # ── Login / logout ────────────────────────────────────────────────────────────
 
 
@@ -374,8 +388,13 @@ def opp_detail(request: Request, opp_id: int) -> HTMLResponse:
             .order_by(desc(BidDecision.created_at))
         )
 
+        external_links = _opportunity_external_links(opp.links)
+        source_url = next((url for label, url in external_links if label in {"html_url", "ui"}), None)
+
         return _render(request, "opp_detail.html", {
             "opp": opp,
+            "external_links": external_links,
+            "source_url": source_url,
             "deadline_label": deadline_label,
             "deadline_class": deadline_cls,
             "workspace_id": workspace_id,

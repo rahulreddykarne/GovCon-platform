@@ -262,6 +262,26 @@ class TestMainPages:
         assert resp.status_code == 200
         assert b"Phase 14" in resp.content or b"Test" in resp.content
 
+    def test_opp_detail_renders_sam_link_arrays(self, client, db_session):
+        previous_links = self.opp.links
+        try:
+            self.opp.links = {
+                "ui": "https://sam.gov/opp/example/view",
+                "self": [{"rel": "self", "href": "https://api.sam.gov/example"}],
+                "resource_links": ["https://sam.gov/attachment.pdf"],
+                "empty": [None, {"href": "javascript:alert(1)"}],
+            }
+            db_session.commit()
+            resp = client.get(f"/opp/{self.opp.id}", cookies=self.cookies)
+            assert resp.status_code == 200
+            assert "https://sam.gov/opp/example/view" in resp.text
+            assert "https://api.sam.gov/example" in resp.text
+            assert "https://sam.gov/attachment.pdf" in resp.text
+            assert "javascript:alert(1)" not in resp.text
+        finally:
+            self.opp.links = previous_links
+            db_session.commit()
+
     def test_workspace_overview_renders(self, client):
         """Workspace page renders even without a pursuit."""
         resp = client.get(f"/workspace/{self.opp.id}?tab=overview", cookies=self.cookies)
