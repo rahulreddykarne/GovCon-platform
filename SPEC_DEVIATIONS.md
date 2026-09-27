@@ -279,3 +279,23 @@ Core security infrastructure (data classification, AI gateway, credential rules,
 Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as part of the prompt registry work. Phase 18 confirms their production bodies and `status: active` are correct.
 
 §24A (collaboration, authentication, and concurrency) was fully delivered by Phase 10. Phase 18 does not re-implement any auth/concurrency stack; only the security-data ACs from §24 were in scope for this phase.
+
+## Phase 20
+
+### DEV-020 — market_analysis, supplier_analysis, pricing_analysis activated in Phase 20 (not earlier)
+- Phase: 20
+- Date: 2026-09-27
+- Spec requirement: §39.2–39.4 define market_analysis_v1.md, supplier_analysis_v1.md, and pricing_analysis_v1.md as production prompt files. Appendix D DoD items 6–7 require AI supplier/pricing analysis to be available.
+- Verified external/repository reality: All three prompts were still `status: placeholder` at Phase 20 start. No prior phase had activated them or registered their output schemas.
+- Decision: Activate all three prompts with production text derived from §39.2–39.4. Register MarketAnalysisV1, SupplierAnalysisV1, and PricingAnalysisV1 Pydantic schemas in SCHEMA_REGISTRY. All three pass the full activation gate (template, variable, schema, secret-scan, injection checks). Phase 20 does NOT implement a service layer that calls these prompts automatically — they are prompt-registry ready for any downstream phase or manual invocation.
+- Reason: Phase 20 is the final integration acceptance phase and must close all gaps in the Appendix D DoD. The service-layer integration (auto-run on opportunity analysis) is not required by v1 DoD and is out of scope per §28.
+- Impact: DoD items 6 and 7 are now met. 18 active task prompts total (up from 15 in Phase 19). SCHEMA_REGISTRY expanded with 3 new schemas. market_analysis, supplier_analysis, and pricing_analysis are all prompt-registry ready and can be called via the structured AI interface.
+- Follow-up: Wire supplier_analysis and pricing_analysis into an intelligence service when needed post-v1.
+
+### Note — Phase 16 waiver confirmed for Phase 20 DoD
+- Phase: 20
+- Date: 2026-09-27
+- Spec requirement: PHASE_20_FINAL_INTEGRATION_ACCEPTANCE.md lists Phase 16 as a dependency.
+- Decision: Phase 16 remains DEFERRED per standing user waiver (DEV-015). The v1 DoD is considered met for Phases 0–15, 17–19. Phase 20 explicitly documents this waiver in IMPLEMENTATION_STATUS.md, SPEC_DEVIATIONS.md, DECISIONS.md, and AI_HANDOFF.md.
+- Impact: No state/local adapter tests are included. No Phase 16 functionality is tested or exercised.
+- Follow-up: None. Phase 16 remains DEFERRED unless explicitly re-enabled.

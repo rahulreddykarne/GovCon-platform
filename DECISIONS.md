@@ -456,3 +456,19 @@ Record durable architecture/implementation decisions.
   4. No new migrations, CLI commands, or runtime modules are required.
 - Alternatives considered: Re-implement security from scratch in Phase 18 (rejected: duplicates working Phase 0 code and creates inconsistency). Add a separate security CLI command (rejected: gateway is already called by every AI provider call).
 - Consequences: All four §24 ACs are provably satisfied by the test suite without duplication. The security module's public surface (`govcon.security.classification`, `govcon.security.secrets`, `govcon.ai.gateway`, `govcon.logging`) is stable and used by every AI call path. No Phase 18-specific Alembic migration is needed.
+
+### ADR-056 — Phase 20: activate market/supplier/pricing analysis prompts; no new service layer
+- Phase: 20
+- Date: 2026-09-27
+- Context: §39.2–39.4 define production prompt bodies for market_analysis, supplier_analysis, and pricing_analysis. These were left as placeholders through Phase 19. Appendix D DoD items 6 and 7 require AI-powered supplier research and pricing analysis to be part of the v1 platform.
+- Decision: Activate all three prompts with production text from §39.2–39.4. Each prompt: (a) includes the shared source-security, no-fabrication, and evidence fragments; (b) declares required_variables; (c) confines untrusted input to data blocks. Register matching Pydantic schemas (MarketAnalysisV1, SupplierAnalysisV1, PricingAnalysisV1) in SCHEMA_REGISTRY. Do NOT add a service-layer orchestrator that calls these prompts automatically — the v1 DoD only requires the prompts to be prompt-registry ready, not wired into an end-to-end pipeline.
+- Alternatives considered: Build a full market/supplier/pricing analysis pipeline (rejected: out-of-scope per §28; the intelligence/sourcing.py stub and Phase 5/6 award intelligence already address the human-readable data; AI analysis is additive). Keep as placeholders (rejected: DoD items 6–7 explicitly require AI analysis capability).
+- Consequences: 18 active task prompts (up from 15). SCHEMA_REGISTRY now covers all 7 non-compliance analysis types. All three prompts pass the full activation gate. The pricing_analysis prompt explicitly forbids autonomous price setting (§28 non-goal). No migration required.
+
+### ADR-057 — Phase 20: fix _purge FK cascade in test_sam_ingestion.py
+- Phase: 20
+- Date: 2026-09-27
+- Context: After the smoke test runs on a shared test database, all 21 FK-dependent tables referencing `opportunities` may have rows for the fixture opportunity. The original `_purge` helper only deleted 5 tables and would fail with FK violations when compliance, AI, proposal, or submission data existed.
+- Decision: Rewrite `_purge` with raw SQL to delete from all 21 dependent tables in correct topological order, including: proposal_sections → proposal_versions (+ circular FK null-out) → proposals → submissions → outcome_feedback → review_notes → review_comments → review_assignments → review_sessions → bid_decisions → decision_runs → pursuits → compliance_findings → requirement_evidence → requirements → compliance_runs → ai_analyses → files → notifications → audit_events → opportunity_events → opportunity_snapshots → matches → contacts. Add pre-test cleanup call for the three tests that use PUBLISHED_NOTICE_ID to ensure test isolation even on databases contaminated by a prior smoke run.
+- Alternatives considered: Use TRUNCATE ... CASCADE (too destructive; clears unrelated data). Add ON DELETE CASCADE to all FK constraints (migration risk; changes production behavior). Use a test transaction rollback (not possible since these tests commit).
+- Consequences: test_sam_ingestion tests are now idempotent and isolated regardless of whether smoke.sh ran against the same database first. No schema change. No behavior change.

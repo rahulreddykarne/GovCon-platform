@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from tenacity import wait_exponential
 from typer.testing import CliRunner
@@ -35,7 +35,18 @@ from govcon.ingest.sam_opportunities import (
     parse_quantity,
     pull_sam_opportunities,
 )
-from govcon.models import Contact, IngestionRun, Match, Opportunity, OpportunityEvent, OpportunitySnapshot
+from govcon.models import (
+    ComplianceFinding,
+    ComplianceRun,
+    Contact,
+    IngestionRun,
+    Match,
+    Opportunity,
+    OpportunityEvent,
+    OpportunitySnapshot,
+    Requirement,
+    RequirementEvidence,
+)
 
 runner = CliRunner()
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sam_opportunities_search.json"
@@ -63,17 +74,47 @@ def session(upgraded_engine) -> Session:
 
 
 def _purge(db: Session, source_ids: set[str], emails: set[str] | None = None) -> None:
+    """Remove all rows associated with the given SAM source_ids, respecting FK order.
+
+    Uses raw SQL to delete in reverse-dependency order so this remains correct
+    even after phases 7–19 add compliance, AI-analysis, proposal, and submission
+    rows for the same fixture opportunity.
+    """
     db.rollback()
-    opportunity_ids = select(Opportunity.id).where(
-        Opportunity.source == "sam", Opportunity.source_id.in_(source_ids)
-    )
-    db.execute(delete(OpportunityEvent).where(OpportunityEvent.opportunity_id.in_(opportunity_ids)))
-    db.execute(delete(OpportunitySnapshot).where(OpportunitySnapshot.opportunity_id.in_(opportunity_ids)))
-    db.execute(delete(Match).where(Match.opportunity_id.in_(opportunity_ids)))
-    db.execute(delete(Contact).where(Contact.first_seen_opportunity_id.in_(opportunity_ids)))
+    ids_list = list(source_ids)
+    opp_sub = "SELECT id FROM opportunities WHERE source = 'sam' AND source_id = ANY(:ids)"
+    p = {"ids": ids_list}
+    # Delete in topological order (leaves first, then their parents).
+    # proposal_sections → proposal_versions (circular with proposals.current_version_id)
+    db.execute(text(f"DELETE FROM proposal_sections WHERE proposal_version_id IN (SELECT id FROM proposal_versions WHERE proposal_id IN (SELECT id FROM proposals WHERE opportunity_id IN ({opp_sub})))"), p)
+    db.execute(text(f"UPDATE proposals SET current_version_id = NULL WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM proposal_versions WHERE proposal_id IN (SELECT id FROM proposals WHERE opportunity_id IN ({opp_sub}))"), p)
+    db.execute(text(f"DELETE FROM proposals WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM submissions WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM outcome_feedback WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM review_notes WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM review_comments WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM review_assignments WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM review_sessions WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM bid_decisions WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM decision_runs WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM pursuits WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM compliance_findings WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM requirement_evidence WHERE requirement_id IN (SELECT id FROM requirements WHERE opportunity_id IN ({opp_sub}))"), p)
+    # requirements.compliance_run_id → compliance_runs: delete requirements first
+    db.execute(text(f"DELETE FROM requirements WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM compliance_runs WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM ai_analyses WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM files WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM notifications WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM audit_events WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM opportunity_events WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM opportunity_snapshots WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM matches WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"DELETE FROM contacts WHERE first_seen_opportunity_id IN ({opp_sub})"), p)
     if emails:
         db.execute(delete(Contact).where(Contact.email.in_(emails)))
-    db.execute(delete(Opportunity).where(Opportunity.source == "sam", Opportunity.source_id.in_(source_ids)))
+    db.execute(text("DELETE FROM opportunities WHERE source = 'sam' AND source_id = ANY(:ids)"), {"ids": ids_list})
     db.commit()
 
 
@@ -133,6 +174,7 @@ def test_nsn_quantity_and_estimated_value_are_explicit_only() -> None:
 
 
 def test_rerun_unchanged_fixture_inserts_nothing_new(session: Session) -> None:
+    _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
     record = _record()
     try:
         first = ingest_opportunity_records(session, [record])
@@ -159,6 +201,7 @@ def test_rerun_unchanged_fixture_inserts_nothing_new(session: Session) -> None:
 
 
 def test_changed_payload_creates_one_snapshot_and_deadline_event(session: Session) -> None:
+    _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
     record = _record()
     changed = deepcopy(record)
     changed["responseDeadLine"] = "2026-11-15T17:00:00-05:00"
@@ -197,6 +240,7 @@ def test_changed_payload_creates_one_snapshot_and_deadline_event(session: Sessio
 
 
 def test_raw_source_json_remains_available(session: Session) -> None:
+    _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
     record = _record()
     try:
         ingest_opportunity_records(session, [record])

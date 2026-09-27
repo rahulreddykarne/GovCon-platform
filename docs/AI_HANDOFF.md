@@ -1,5 +1,98 @@
 # AI handoff
 
+## 2026-09-27 — PHASE_20_FINAL_INTEGRATION_ACCEPTANCE
+
+- Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27
+- Phase/task: PHASE_20_FINAL_INTEGRATION_ACCEPTANCE
+- Branch: `cursor/phase-20-final-integration-acceptance-b7c9`
+
+### Summary
+
+Phase 20 is the final integration acceptance phase for GovCon v1. It closes the last open gaps in the Appendix D Definition of Done and confirms §26 feature checklist parity across Phases 0–15, 17–19 (Phase 16 waived per standing user instruction).
+
+### What was implemented
+
+**Gaps closed — Appendix D DoD items 6 and 7:**
+
+1. **`src/govcon/prompts/deepseek/market_analysis_v1.md`** — Activated with production text from §39.2. Status: `active`. Includes shared source-security, no-fabrication, and evidence fragments. Declares `required_variables: OPPORTUNITY_JSON, AWARDS_JSON, VENDOR_PROFILES_JSON`. Passes all activation gate checks.
+
+2. **`src/govcon/prompts/deepseek/supplier_analysis_v1.md`** — Activated with production text from §39.3. Status: `active`. Covers: exact/partial requirement matches, unsupported claims, specification mismatches, delivery/lead-time risk, origin compliance gaps, quote/commercial risks, evidence-still-required list. Declares `required_variables: REQUIREMENTS_JSON, SUPPLIER_RECORDS_JSON`. Passes all activation gate checks. (DoD 6: AI research/structure supplier and product options)
+
+3. **`src/govcon/prompts/deepseek/pricing_analysis_v1.md`** — Activated with production text from §39.4. Status: `active`. Covers: historical comparability, proposed price position, margin quality, cost-risk signals, missing cost inputs, pricing evidence gaps. Explicitly forbids autonomous price setting (§28 non-goal). Declares `required_variables: PRICING_INPUTS_JSON, HISTORICAL_AWARDS_JSON`. Passes all activation gate checks. (DoD 7: AI pricing/commercial analysis)
+
+4. **`src/govcon/ai/schemas.py`** — Three new Pydantic schema classes added:
+   - `MarketAnalysisV1` → `"market_analysis.v1"` in SCHEMA_REGISTRY
+   - `SupplierAnalysisV1` → `"supplier_analysis.v1"` in SCHEMA_REGISTRY
+   - `PricingAnalysisV1` → `"pricing_analysis.v1"` in SCHEMA_REGISTRY
+   - Supporting models: `ComparableAward`, `SupplierCandidate`
+
+**Test suite changes:**
+
+5. **`tests/test_phase20_final_acceptance.py`** — 81 new tests:
+   - `TestAppendixDDoD` — 27 tests, one per Appendix D DoD item (Phase 16 waiver documented)
+   - `TestFeatureChecklist` — 24 tests confirming §26 feature checklist capabilities
+   - `TestNewPromptActivationGate` — 11 tests confirming market/supplier/pricing pass activation gate
+   - `TestNewSchemas` — 14 tests for MarketAnalysisV1, SupplierAnalysisV1, PricingAnalysisV1
+   - `TestNonGoalsNotImplemented` — 4 tests confirming §28 non-goals are absent
+
+6. **`tests/test_http_prompts.py`** — Updated `activated_phase20` set to include the 3 new active prompts; total active count is now 18.
+
+7. **`tests/test_sam_ingestion.py`** — Rewrote `_purge` helper with comprehensive FK cascade (21 tables in correct topological order); added pre-test cleanup for PUBLISHED_NOTICE_ID tests to ensure isolation even on smoke-contaminated databases. (ADR-057)
+
+### Test results
+
+- `pytest tests/test_phase20_final_acceptance.py` → **81 passed**
+- `pytest` (full suite) → **585 passed, 1 skipped**
+- `bash scripts/smoke.sh` → **PASS** (exit 0, 16/16 steps)
+- `govcon prompts validate` → **18/18 active task prompts PASS** (up from 15)
+- `govcon compliance benchmark` → **gate PASS**
+
+### Appendix D DoD status
+
+| DoD Item | Status | Coverage |
+|---|---|---|
+| 1. Ingest federal opportunities | ✓ | Phase 1 SAM ingestion |
+| 2. Receive filtered matches | ✓ | Phase 2 matching engine |
+| 3. Inspect amendments/history | ✓ | Phase 1 snapshots + events |
+| 4. AI analyze solicitation files | ✓ | Phase 7/9 solicitation_analysis + dual extraction |
+| 5. Inspect historical pricing and winners | ✓ | Phase 5 USAspending awards |
+| 6. AI research/structure supplier options | ✓ | **Phase 20** supplier_analysis_v1 activated |
+| 7. AI build pricing/commercial analysis | ✓ | **Phase 20** pricing_analysis_v1 activated |
+| 8. Compliance matrix | ✓ | Phase 9 dual extraction + reconciler + validators |
+| 9. JEV bid recommendation | ✓ | Phase 8 decision engine |
+| 10. Consolidated decision package | ✓ | Phase 8 decision package |
+| 11. Assign reviewers | ✓ | Phase 10 |
+| 12. Parallel review | ✓ | Phase 10 dual/conditional quorum |
+| 13. AI comment validation | ✓ | Phase 10 reviewer_comment_validation |
+| 14. Quorum + consolidated review | ✓ | Phase 10 |
+| 15. Approve/return/reject bid | ✓ | Phase 10 finalize_approval |
+| 16. Versioned proposal generation | ✓ | Phase 11 |
+| 17. Submission instructions + checklist | ✓ | Phase 11 |
+| 18. Red-team + coverage + pre-flight | ✓ | Phase 9/11 |
+| 19. Final human submission approval | ✓ | Phase 11 finalize_proposal |
+| 20. Manual submit + confirmation | ✓ | Phase 11 record_submission_confirmation |
+| 21. Track outcomes | ✓ | Phase 15 outcome_feedback |
+| 22. Debrief/lessons learned | ✓ | Phase 15 debrief_notes |
+| 23. Outcome-informed analysis | ✓ | Phase 15 outcome_analytics |
+| 24. Prompt registry for all AI calls | ✓ | All phases |
+| 25. Reproducible AI output metadata | ✓ | All phases (prompt_hash, provider, model) |
+| 26. Regression gate | ✓ | Phase 9/19 activation gate + benchmark |
+| 27. Prompt rollback | ✓ | Phase 9 rollback_prompt |
+| **Phase 16 (state/local)** | DEFERRED | User waiver — DEV-015 |
+
+### ADRs recorded
+
+- ADR-056: Activate market/supplier/pricing analysis prompts; no new service layer
+- ADR-057: Fix _purge FK cascade in test_sam_ingestion.py
+
+### Deviations recorded
+
+- DEV-020: market/supplier/pricing prompts activated in Phase 20 (not earlier phases)
+- DEV-020 note: Phase 16 waiver confirmed for Phase 20 DoD
+
+---
+
 ## 2026-09-27 08:30 UTC — PHASE_19_TESTING_RELEASE_GATES (revision 2 — gate fix)
 
 - Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`

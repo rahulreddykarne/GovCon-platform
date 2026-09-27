@@ -65,7 +65,19 @@ def test_placeholder_prompts_load() -> None:
     activated_phase15 = {
         "outcome_analysis",
     }
-    all_active = activated_phase7 | activated_phase9 | activated_phase10 | activated_phase11 | activated_phase15
+    activated_phase20 = {
+        "market_analysis",
+        "supplier_analysis",
+        "pricing_analysis",
+    }
+    all_active = (
+        activated_phase7
+        | activated_phase9
+        | activated_phase10
+        | activated_phase11
+        | activated_phase15
+        | activated_phase20
+    )
     for asset in assets:
         assert asset.version == "v1"
         assert len(asset.content_hash) == 64
