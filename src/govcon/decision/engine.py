@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -13,6 +14,9 @@ from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
 from govcon.decision.bundles import bundle_definition, load_decision_spec_metadata
+
+logger = logging.getLogger("govcon.decision.engine")
+from govcon.ai.gateway import AIGatewayBlocked
 from govcon.decision.provider import (
     DecisionProviderUnavailable,
     ProviderDecision,
@@ -300,6 +304,13 @@ def run_decision_bundle(
                 latency_ms=jev_result.latency_ms,
                 raw_response=jev_result.raw_response,
             )
+        except AIGatewayBlocked as exc:
+            logger.info(
+                "ai_gateway decision=block classification=%s provider=jev purpose=decision_bundle:%s action=fallback_to_rules",
+                exc.classification.value,
+                bundle_name,
+            )
+            jev_error = exc
         except DecisionProviderUnavailable as exc:
             jev_error = exc
     elif primary == "llm":

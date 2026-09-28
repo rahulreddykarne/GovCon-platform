@@ -234,9 +234,19 @@ def run_jev_routing(
     amendment: dict[str, Any] | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
-    """Route matrix risk through the Phase 8 ``compliance_and_amendment`` bundle."""
+    """Route matrix risk through the Phase 8 ``compliance_and_amendment`` bundle.
+
+    If the AI gateway blocks the JEV call (e.g. ``AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=false``),
+    routing is recorded as ``skipped_gateway_block`` and the compliance run continues.  No
+    compliance rows are rolled back solely because JEV is policy-blocked.
+    """
+    import logging
+
+    from govcon.ai.gateway import AIGatewayBlocked
     from govcon.compliance.metrics import coverage_counts
     from govcon.decision.engine import build_decision_state, run_decision_bundle
+
+    _routing_logger = logging.getLogger("govcon.compliance.validator")
 
     settings = settings or get_settings()
     requirements = active_requirements(session, opportunity_id)
@@ -245,7 +255,33 @@ def run_jev_routing(
     state["compliance"] = compliance_state(requirements, counts)
     if amendment is not None:
         state["amendment"] = {"count": amendment.get("amendment_count", 0), "material": bool(amendment.get("material"))}
-    execution = run_decision_bundle(session, opportunity_id=opportunity_id, bundle_name="compliance_and_amendment", state=state, settings=settings)
+    try:
+        execution = run_decision_bundle(session, opportunity_id=opportunity_id, bundle_name="compliance_and_amendment", state=state, settings=settings)
+    except AIGatewayBlocked as exc:
+        _routing_logger.info(
+            "ai_gateway decision=block classification=%s provider=jev purpose=decision_bundle:compliance_and_amendment action=routing_skipped",
+            exc.classification.value,
+        )
+        skipped_output: dict[str, Any] = {
+            "decision_run_id": None,
+            "provider": "skipped_gateway_block",
+            "model": None,
+            "result": {},
+            "added_blocks": [],
+            "routed_to_review": [],
+            "second_validation_required": None,
+            "note": f"JEV routing skipped: AI gateway blocked classification={exc.classification.value}",
+        }
+        run = record_run(
+            session,
+            opportunity_id=opportunity_id,
+            run_type="jev_routing",
+            run_version=ROUTING_VERSION,
+            output=skipped_output,
+            source_snapshot_ids=state.get("source_snapshot_ids"),
+        )
+        return {"run_id": run.id, **skipped_output}
+
     by_id = {r.id: r for r in requirements}
     added_blocks: list[int] = []
     routed_review: list[int] = []
