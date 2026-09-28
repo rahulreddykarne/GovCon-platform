@@ -262,6 +262,7 @@ pytest tests/test_live_e2e_fixes.py::TestComplianceSchemaCoercionDEV024Addendum 
   `list[str]`, `country_of_origin_references` as `list[str]`, and `missing_information` with
   `field`/`reason` keys natively (prompt-text follow-up, not blocking).
 - DIBBS digit-suffix solicitations: no RFQ PDF URL derived (DEV-023 follow-up still open).
+- A local live re-test after PR #24 found `country_of_origin_references` as a top-level dict. The follow-up validator on `fix-dev025-country-origin-dict` accepts this shape; a second run persisted a strict-schema solicitation analysis for opp 8836. That analysis has no source references or line items, so its content still needs human review before use in a bid.
 - DEV-020 auto-sourcing/pricing service remains out of scope.
 
 
