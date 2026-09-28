@@ -23,6 +23,29 @@ from govcon.models import Opportunity, StoredFile
 
 logger = logging.getLogger("govcon.enrich.attachments")
 
+_DIBBS_DOCS_HOST = "dibbs2.bsm.dla.mil"
+_DIBBS_MAIN_HOST = "dibbs.bsm.dla.mil"
+
+
+def _is_dibbs_url(url: str) -> bool:
+    """Return True when the URL points to a DIBBS document host that may serve a consent banner."""
+    return _DIBBS_DOCS_HOST in url or _DIBBS_MAIN_HOST in url
+
+
+def _dibbs_rfq_pdf_url(solicitation_number: str) -> str | None:
+    """Derive the per-solicitation RFQ PDF URL from a DIBBS solicitation number.
+
+    URL pattern: ``https://dibbs2.bsm.dla.mil/Downloads/RFQ/{last_letter}/{solicitation}.PDF``
+    For example, SPE4A526T443K → .../Downloads/RFQ/K/SPE4A526T443K.PDF
+    """
+    sn = (solicitation_number or "").strip().upper()
+    if not sn:
+        return None
+    last = sn[-1]
+    if not last.isalpha():
+        return None
+    return f"https://{_DIBBS_DOCS_HOST}/Downloads/RFQ/{last}/{sn}.PDF"
+
 
 def download_attachments(
     session: Session,
@@ -61,7 +84,12 @@ def download_attachments(
 
 
 def _collect_attachment_urls(opp: Opportunity) -> list[tuple[str, str]]:
-    """Extract attachment URLs and filenames from the opportunity's links/raw."""
+    """Extract attachment URLs and filenames from the opportunity's links/raw.
+
+    For SAM opportunities the standard ``resourceLinks`` / ``attachments`` keys are used.
+    For DIBBS opportunities the per-solicitation RFQ PDF is derived from the solicitation
+    number using the known DIBBS document-host URL pattern.
+    """
     urls: list[tuple[str, str]] = []
     links = opp.links or {}
 
@@ -92,6 +120,19 @@ def _collect_attachment_urls(opp: Opportunity) -> list[tuple[str, str]]:
             if url and not any(u == url for u, _ in urls):
                 urls.append((url, _url_filename(url)))
 
+    # DIBBS opportunities: derive the per-solicitation RFQ PDF URL from the
+    # solicitation number.  The links dict stores the batch archive ("package")
+    # but not the individual solicitation PDF, which follows the known pattern
+    # https://dibbs2.bsm.dla.mil/Downloads/RFQ/{last_letter}/{solicitation}.PDF
+    if getattr(opp, "source", None) == "dibbs":
+        sol_num = opp.solicitation_number or (opp.raw or {}).get("solicitation_number")
+        if sol_num:
+            pdf_url = _dibbs_rfq_pdf_url(sol_num)
+            if pdf_url and not any(u == pdf_url for u, _ in urls):
+                filename = f"{sol_num.strip().upper()}.PDF"
+                urls.append((pdf_url, filename))
+                logger.debug("dibbs rfq_pdf_url derived solicitation=%s url=%s", sol_num, pdf_url)
+
     return urls
 
 
@@ -110,9 +151,21 @@ def _download_one(
     settings: Settings,
     client: httpx.Client,
 ) -> StoredFile | None:
-    """Download a single file, compute SHA-256, extract text, and persist."""
+    """Download a single file, compute SHA-256, extract text, and persist.
+
+    For DIBBS document-host URLs the DoD notice-and-consent banner is handled
+    automatically via ``fetch_consented``.
+    """
     try:
-        resp = request_with_retry(client, "GET", url)
+        if _is_dibbs_url(url):
+            from govcon.ingest.dibbs import DibbsError, fetch_consented
+            try:
+                resp = fetch_consented(client, url, interval=settings.dibbs_request_interval_seconds)
+            except DibbsError as exc:
+                logger.warning("dibbs consent failed for %s: %s", url, exc)
+                return None
+        else:
+            resp = request_with_retry(client, "GET", url)
         if resp.status_code != 200:
             logger.warning("download failed for %s: HTTP %d", url, resp.status_code)
             return None
