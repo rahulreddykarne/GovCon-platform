@@ -612,6 +612,25 @@ class TestSolicitationAnalysisDEV024AddendumCoercion:
         result = SolicitationAnalysisV1.model_validate(data)
         assert result.country_of_origin_references == ["DFARS 252.225-7001", "FAR 52.225-1"]
 
+    def test_coor_single_reference_dict(self) -> None:
+        result = SolicitationAnalysisV1.model_validate({
+            "country_of_origin_references": {"clause": "FAR 52.225-1", "description": "Buy American"},
+        })
+        assert result.country_of_origin_references == ["FAR 52.225-1"]
+
+    def test_coor_reference_map_preserves_values(self) -> None:
+        result = SolicitationAnalysisV1.model_validate({
+            "country_of_origin_references": {
+                "FAR 52.225-1": "Buy American",
+                "trade_agreements": {"applies": False},
+                "unknown": None,
+            },
+        })
+        assert result.country_of_origin_references == [
+            "FAR 52.225-1: Buy American",
+            'trade_agreements: {"applies": false}',
+        ]
+
     def test_coor_list_of_dicts_reference_key(self) -> None:
         data = {
             "country_of_origin_references": [

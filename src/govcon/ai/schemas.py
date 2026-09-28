@@ -7,6 +7,7 @@ stored as valid.
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -206,11 +207,21 @@ class SolicitationAnalysisV1(BaseModel):
     @field_validator("country_of_origin_references", mode="before")
     @classmethod
     def coerce_country_of_origin_references(cls, v: object) -> object:
-        """Coerce list[dict] (or other non-list[str] shapes) to list[str].
+        """Coerce reference objects and maps to list[str] without dropping values.
 
         Observed live shape: list[dict] where each dict has keys such as
         ``clause``, ``reference``, ``description``, ``text``.
         """
+        if isinstance(v, dict):
+            preferred = ("clause", "reference", "text", "description", "name", "value")
+            if any(key in v for key in preferred):
+                v = [v]
+            else:
+                return [
+                    f"{key}: {value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)}"
+                    for key, value in v.items()
+                    if value is not None and (not isinstance(value, str) or value.strip())
+                ]
         if isinstance(v, list):
             result: list[str] = []
             for item in v:
