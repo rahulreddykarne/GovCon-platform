@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SourceRef(BaseModel):
@@ -66,6 +66,14 @@ class EvaluationFactor(BaseModel):
     description: str | None = None
     source_refs: list[SourceRef] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_from_string(cls, v: object) -> object:
+        """Accept a bare string as the factor name."""
+        if isinstance(v, str):
+            return {"name": v}
+        return v
+
 
 class PricingStructure(BaseModel):
     format: str | None = None
@@ -92,6 +100,14 @@ class MissingInfo(BaseModel):
     reason: str
     impact: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_from_string(cls, v: object) -> object:
+        """Accept a bare string as both field and reason."""
+        if isinstance(v, str):
+            return {"field": v, "reason": v}
+        return v
+
 
 class SolicitationAnalysisV1(BaseModel):
     """Schema for solicitation_analysis.v1 output."""
@@ -113,6 +129,27 @@ class SolicitationAnalysisV1(BaseModel):
     missing_information: list[MissingInfo] = Field(default_factory=list)
     source_refs: list[SourceRef] = Field(default_factory=list)
     clauses: list[str] = Field(default_factory=list)
+
+    @field_validator("evaluation_factors", mode="before")
+    @classmethod
+    def coerce_evaluation_factors(cls, v: object) -> object:
+        """Accept a dict of {name: weight/description} as a list of factors."""
+        if isinstance(v, dict):
+            return [
+                {"name": k, "description": str(val) if val is not None else None}
+                for k, val in v.items()
+            ]
+        if not isinstance(v, list):
+            return []
+        return v
+
+    @field_validator("missing_information", mode="before")
+    @classmethod
+    def coerce_missing_information(cls, v: object) -> object:
+        """Ensure the field is always a list; individual items coerced by MissingInfo."""
+        if not isinstance(v, list):
+            return []
+        return v
 
 
 class ReviewEvidenceItem(BaseModel):
