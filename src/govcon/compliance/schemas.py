@@ -13,6 +13,16 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 Severity = Literal["critical", "high", "medium", "low"]
 ComplianceStatus = Literal["SATISFIED", "MISSING", "UNKNOWN", "NEEDS_REVIEW", "NOT_APPLICABLE", "STALE"]
 
+# Coercive mapping: string confidence labels → float midpoints.
+# Models sometimes return "high"/"medium"/"low" instead of a 0-1 float.
+_CONFIDENCE_LABEL_MAP: dict[str, float] = {
+    "high": 0.85,
+    "medium": 0.55,
+    "low": 0.20,
+    "very_high": 0.95,
+    "very_low": 0.10,
+}
+
 
 def _lower_or_none(value):
     if isinstance(value, str):
@@ -48,6 +58,35 @@ class ExtractedRequirement(BaseModel):
     clause_references: list[str] = Field(default_factory=list)
 
     _normalize_severity = field_validator("severity", "requirement_type", mode="before")(_lower_or_none)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def coerce_confidence_label(cls, v: object) -> object:
+        """Accept string confidence labels ('high', 'medium', 'low') as well as floats."""
+        if isinstance(v, str):
+            key = v.strip().lower()
+            return _CONFIDENCE_LABEL_MAP.get(key)
+        return v
+
+    @field_validator("normalized_values", mode="before")
+    @classmethod
+    def coerce_normalized_values(cls, v: object) -> object:
+        """Flatten list-valued entries: take the first scalar or drop the entry."""
+        if not isinstance(v, dict):
+            return {}
+        result: dict[str, str | int | float | bool | None] = {}
+        for key, val in v.items():
+            if isinstance(val, list):
+                scalar = next(
+                    (x for x in val if x is None or isinstance(x, (str, int, float, bool))),
+                    None,
+                )
+                result[key] = scalar
+            elif isinstance(val, (str, int, float, bool)) or val is None:
+                result[key] = val
+            else:
+                result[key] = str(val)
+        return result
 
 
 class RequirementExtractionV1(BaseModel):
