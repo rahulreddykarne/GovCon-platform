@@ -128,7 +128,7 @@ class ConflictStatement(BaseModel):
     source_file_id: int | None = None
     page: int | None = None
     section: str | None = None
-    quote: str
+    quote: str | None = None
     value: str | None = None
     source_version: str | None = None
 
@@ -209,6 +209,44 @@ class AmendmentAnalysisV1(BaseModel):
     material: bool | None = None
     changes: list[AmendmentChange] = Field(default_factory=list)
     unresolved_conflicts: list[str] = Field(default_factory=list)
+
+    @field_validator("unresolved_conflicts", mode="before")
+    @classmethod
+    def coerce_unresolved_conflicts(cls, v: object) -> object:
+        """Coerce list[dict] or other non-list[str] shapes to list[str].
+
+        Observed live shape: list[dict] where each dict describes a conflict.
+        Prefer ``description`` / ``text`` / ``topic`` keys; fall back to
+        stringifying the whole dict.  Non-list input → empty list.
+        """
+        if v is None:
+            return []
+        if isinstance(v, list):
+            result: list[str] = []
+            for item in v:
+                if isinstance(item, str):
+                    result.append(item)
+                elif isinstance(item, dict):
+                    text = (
+                        item.get("description")
+                        or item.get("text")
+                        or item.get("topic")
+                        or item.get("summary")
+                        or item.get("conflict")
+                    )
+                    if isinstance(text, str) and text.strip():
+                        result.append(text.strip())
+                    else:
+                        stringified = "; ".join(
+                            f"{k}: {val}" for k, val in item.items()
+                            if val is not None and not isinstance(val, (dict, list))
+                        )
+                        if stringified:
+                            result.append(stringified)
+                elif item is not None:
+                    result.append(str(item))
+            return result
+        return []
 
 
 class ProposalDraftSection(BaseModel):

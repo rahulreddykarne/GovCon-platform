@@ -103,9 +103,23 @@ class MissingInfo(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def coerce_from_string(cls, v: object) -> object:
-        """Accept a bare string as both field and reason."""
+        """Accept a bare string or non-standard dict keys as field/reason.
+
+        Handles observed live shapes:
+        - bare string → {"field": v, "reason": v}
+        - {"item": ..., "status": ...} → {"field": item, "reason": status}
+        - {"description": ...} or other single-key dicts → field=value, reason=value
+        """
         if isinstance(v, str):
             return {"field": v, "reason": v}
+        if isinstance(v, dict):
+            if "field" not in v and "item" in v:
+                item_val = str(v["item"]) if v.get("item") is not None else ""
+                status_val = str(v.get("status", item_val)) if v.get("status") is not None else item_val
+                remapped: dict[str, object] = {"field": item_val, "reason": status_val}
+                if "impact" in v:
+                    remapped["impact"] = v["impact"]
+                return remapped
         return v
 
 
@@ -140,6 +154,90 @@ class SolicitationAnalysisV1(BaseModel):
                 for k, val in v.items()
             ]
         if not isinstance(v, list):
+            return []
+        return v
+
+    @field_validator("past_performance_requirements", mode="before")
+    @classmethod
+    def coerce_past_performance_requirements(cls, v: object) -> object:
+        """Coerce dict or list[dict] to list[str]; no facts are invented.
+
+        Observed live shapes:
+        - dict {key: value, ...} → extract string values (non-empty)
+        - list[dict] → stringify each dict using its most descriptive value
+        """
+        if isinstance(v, dict):
+            parts: list[str] = []
+            for val in v.values():
+                if isinstance(val, str) and val.strip():
+                    parts.append(val.strip())
+                elif val is not None and not isinstance(val, (dict, list)):
+                    parts.append(str(val))
+            return parts
+        if isinstance(v, list):
+            result: list[str] = []
+            for item in v:
+                if isinstance(item, str):
+                    result.append(item)
+                elif isinstance(item, dict):
+                    text = (
+                        item.get("description")
+                        or item.get("requirement")
+                        or item.get("text")
+                        or item.get("value")
+                        or item.get("name")
+                    )
+                    if isinstance(text, str) and text.strip():
+                        result.append(text.strip())
+                    else:
+                        stringified = "; ".join(
+                            f"{k}: {val}" for k, val in item.items()
+                            if val is not None and not isinstance(val, (dict, list))
+                        )
+                        if stringified:
+                            result.append(stringified)
+                elif item is not None:
+                    result.append(str(item))
+            return result
+        if v is None:
+            return []
+        return v
+
+    @field_validator("country_of_origin_references", mode="before")
+    @classmethod
+    def coerce_country_of_origin_references(cls, v: object) -> object:
+        """Coerce list[dict] (or other non-list[str] shapes) to list[str].
+
+        Observed live shape: list[dict] where each dict has keys such as
+        ``clause``, ``reference``, ``description``, ``text``.
+        """
+        if isinstance(v, list):
+            result: list[str] = []
+            for item in v:
+                if isinstance(item, str):
+                    result.append(item)
+                elif isinstance(item, dict):
+                    text = (
+                        item.get("clause")
+                        or item.get("reference")
+                        or item.get("text")
+                        or item.get("description")
+                        or item.get("name")
+                        or item.get("value")
+                    )
+                    if isinstance(text, str) and text.strip():
+                        result.append(text.strip())
+                    else:
+                        stringified = "; ".join(
+                            f"{k}: {val}" for k, val in item.items()
+                            if val is not None and not isinstance(val, (dict, list))
+                        )
+                        if stringified:
+                            result.append(stringified)
+                elif item is not None:
+                    result.append(str(item))
+            return result
+        if v is None:
             return []
         return v
 

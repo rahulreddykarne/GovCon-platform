@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session
 from govcon.ai.gateway import AIGatewayBlocked
 from govcon.ai.schemas import EvaluationFactor, MissingInfo, SolicitationAnalysisV1
 from govcon.compliance.schemas import (
+    AmendmentAnalysisV1,
+    ContradictionDetectionV1,
     ExtractedRequirement,
     RequirementExtractionV1,
     _CONFIDENCE_LABEL_MAP,
@@ -521,3 +523,363 @@ class TestSolicitationAnalysisSchemaCoercion:
         info = MissingInfo.model_validate("Delivery address unknown")
         assert info.field == "Delivery address unknown"
         assert info.reason == "Delivery address unknown"
+
+
+# ===========================================================================
+# Fix 4 — DEV-024 addendum: additional live opp 8836 re-run mismatch shapes
+# ===========================================================================
+
+
+class TestSolicitationAnalysisDEV024AddendumCoercion:
+    """Regression tests for the three new mismatch shapes observed in the opp 8836 re-run.
+
+    These shapes were NOT covered by the original DEV-024 fix (fd5b51c):
+    1. ``past_performance_requirements`` returned as a dict instead of list[str].
+    2. ``country_of_origin_references`` returned as list[dict] instead of list[str].
+    3. ``missing_information`` items used ``item``/``status`` keys instead of
+       ``field``/``reason``.
+
+    All coercions are fact-preserving — no solicitation facts are invented.
+    """
+
+    # ------------------------------------------------------------------
+    # past_performance_requirements — dict shape
+    # ------------------------------------------------------------------
+
+    def test_ppr_dict_coerced_to_list_of_strings(self) -> None:
+        data = {
+            "past_performance_requirements": {
+                "number": "2 references",
+                "recency": "Within last 3 years",
+                "description": "Similar scope and dollar value",
+            }
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert isinstance(result.past_performance_requirements, list)
+        assert len(result.past_performance_requirements) == 3
+        assert "2 references" in result.past_performance_requirements
+        assert "Within last 3 years" in result.past_performance_requirements
+
+    def test_ppr_dict_single_key(self) -> None:
+        data = {"past_performance_requirements": {"requirement": "Two similar contracts"}}
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert result.past_performance_requirements == ["Two similar contracts"]
+
+    def test_ppr_list_of_dicts_coerced(self) -> None:
+        data = {
+            "past_performance_requirements": [
+                {"description": "At least two contracts of similar scope"},
+                {"description": "References within 3 years"},
+            ]
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert len(result.past_performance_requirements) == 2
+        assert result.past_performance_requirements[0] == "At least two contracts of similar scope"
+
+    def test_ppr_list_of_strings_unchanged(self) -> None:
+        """Existing list[str] shape still passes through unchanged."""
+        data = {
+            "past_performance_requirements": [
+                "Two similar contracts within last 3 years",
+                "References must be verifiable",
+            ]
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert result.past_performance_requirements == [
+            "Two similar contracts within last 3 years",
+            "References must be verifiable",
+        ]
+
+    def test_ppr_none_becomes_empty_list(self) -> None:
+        result = SolicitationAnalysisV1.model_validate({"past_performance_requirements": None})
+        assert result.past_performance_requirements == []
+
+    def test_ppr_empty_dict_returns_empty_list(self) -> None:
+        result = SolicitationAnalysisV1.model_validate({"past_performance_requirements": {}})
+        assert result.past_performance_requirements == []
+
+    # ------------------------------------------------------------------
+    # country_of_origin_references — list[dict] shape
+    # ------------------------------------------------------------------
+
+    def test_coor_list_of_dicts_clause_key(self) -> None:
+        data = {
+            "country_of_origin_references": [
+                {"clause": "DFARS 252.225-7001", "description": "Trade Agreements Act"},
+                {"clause": "FAR 52.225-1"},
+            ]
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert result.country_of_origin_references == ["DFARS 252.225-7001", "FAR 52.225-1"]
+
+    def test_coor_list_of_dicts_reference_key(self) -> None:
+        data = {
+            "country_of_origin_references": [
+                {"reference": "DFARS 252.225-7014"},
+                {"text": "Buy American Act applies"},
+            ]
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert result.country_of_origin_references == [
+            "DFARS 252.225-7014",
+            "Buy American Act applies",
+        ]
+
+    def test_coor_list_of_dicts_no_preferred_key_stringified(self) -> None:
+        """Dicts without a preferred text key are stringified key: value pairs."""
+        data = {
+            "country_of_origin_references": [
+                {"country": "USA", "compliant": True},
+            ]
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert len(result.country_of_origin_references) == 1
+        assert "country: USA" in result.country_of_origin_references[0]
+
+    def test_coor_list_of_strings_unchanged(self) -> None:
+        data = {"country_of_origin_references": ["DFARS 252.225-7001", "FAR 52.225-1"]}
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert result.country_of_origin_references == ["DFARS 252.225-7001", "FAR 52.225-1"]
+
+    def test_coor_none_becomes_empty_list(self) -> None:
+        result = SolicitationAnalysisV1.model_validate({"country_of_origin_references": None})
+        assert result.country_of_origin_references == []
+
+    def test_coor_empty_list_stays_empty(self) -> None:
+        result = SolicitationAnalysisV1.model_validate({"country_of_origin_references": []})
+        assert result.country_of_origin_references == []
+
+    # ------------------------------------------------------------------
+    # missing_information — item/status keys
+    # ------------------------------------------------------------------
+
+    def test_missing_info_item_status_keys(self) -> None:
+        info = MissingInfo.model_validate({"item": "delivery address", "status": "not provided"})
+        assert info.field == "delivery address"
+        assert info.reason == "not provided"
+
+    def test_missing_info_item_only_key(self) -> None:
+        """When only ``item`` is present, reason defaults to the item value."""
+        info = MissingInfo.model_validate({"item": "packing instructions"})
+        assert info.field == "packing instructions"
+        assert info.reason == "packing instructions"
+
+    def test_missing_info_item_status_with_impact(self) -> None:
+        info = MissingInfo.model_validate(
+            {"item": "inspection location", "status": "not specified", "impact": "cannot ship"}
+        )
+        assert info.field == "inspection location"
+        assert info.reason == "not specified"
+        assert info.impact == "cannot ship"
+
+    def test_solicitation_missing_information_item_status_list(self) -> None:
+        data = {
+            "missing_information": [
+                {"item": "delivery address", "status": "not provided"},
+                {"item": "packing requirements", "status": "unknown"},
+                {"item": "inspection location", "status": "not specified"},
+            ]
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        assert len(result.missing_information) == 3
+        assert result.missing_information[0].field == "delivery address"
+        assert result.missing_information[0].reason == "not provided"
+        assert result.missing_information[1].field == "packing requirements"
+        assert result.missing_information[2].field == "inspection location"
+
+    def test_missing_info_field_reason_keys_unchanged(self) -> None:
+        """Existing field/reason shape still passes through unchanged."""
+        info = MissingInfo.model_validate(
+            {"field": "delivery_location", "reason": "Not specified", "impact": "Cannot ship"}
+        )
+        assert info.field == "delivery_location"
+        assert info.reason == "Not specified"
+        assert info.impact == "Cannot ship"
+
+    def test_full_live_opp_8836_rerun_shape(self) -> None:
+        """Combined fixture matching the observed DeepSeek output for opp 8836 re-run.
+
+        This is the canonical regression shape that triggered DEV-024 addendum.
+        All three new mismatches present simultaneously.
+        """
+        data = {
+            "summary": "DLA DIBBS RFQ SPE4A526T443K for NSN 6515 item.",
+            "items": [{"description": "NSN item", "nsn": "6515-01-519-8818", "quantity": 100}],
+            "past_performance_requirements": {
+                "references_required": "Two references",
+                "recency": "Within 3 years",
+            },
+            "country_of_origin_references": [
+                {"clause": "DFARS 252.225-7001", "description": "Compliance required"},
+                {"clause": "DFARS 252.225-7014"},
+            ],
+            "missing_information": [
+                {"item": "packaging instructions", "status": "not specified"},
+                {"item": "inspection location", "status": "not provided"},
+            ],
+            "evaluation_factors": {"Technical Approach": "Pass/fail", "Price": "Lowest"},
+            "certifications": ["SAM registration"],
+            "risk_flags": [],
+        }
+        result = SolicitationAnalysisV1.model_validate(data)
+        # PPR coerced from dict
+        assert isinstance(result.past_performance_requirements, list)
+        assert len(result.past_performance_requirements) >= 1
+        assert any("Two references" in s for s in result.past_performance_requirements)
+        # COOR coerced from list[dict]
+        assert result.country_of_origin_references == [
+            "DFARS 252.225-7001",
+            "DFARS 252.225-7014",
+        ]
+        # MI coerced from item/status keys
+        assert result.missing_information[0].field == "packaging instructions"
+        assert result.missing_information[0].reason == "not specified"
+        assert result.missing_information[1].field == "inspection location"
+        # eval factors coerced from dict (existing coerce)
+        assert len(result.evaluation_factors) == 2
+
+
+# ===========================================================================
+# Fix 5 — ContradictionDetectionV1 null quotes + AmendmentAnalysisV1 dict conflicts
+# ===========================================================================
+
+
+class TestComplianceSchemaCoercionDEV024Addendum:
+    """ContradictionDetectionV1 null quotes and AmendmentAnalysisV1 unresolved_conflicts dicts.
+
+    Both share the same coerce pattern (non-string data where strings are expected)
+    and are cheap to fix without inventing facts.
+    """
+
+    # ------------------------------------------------------------------
+    # ContradictionDetectionV1 — null quotes in ConflictStatement
+    # ------------------------------------------------------------------
+
+    def test_conflict_statement_null_quote_accepted(self) -> None:
+        from govcon.compliance.schemas import ConflictStatement
+
+        cs = ConflictStatement(quote=None, section="Section 3", page=3)
+        assert cs.quote is None
+
+    def test_conflict_statement_string_quote_unchanged(self) -> None:
+        from govcon.compliance.schemas import ConflictStatement
+
+        cs = ConflictStatement(quote="Delivery within 30 days", section="Section 3")
+        assert cs.quote == "Delivery within 30 days"
+
+    def test_contradiction_detection_null_quotes_in_conflict(self) -> None:
+        """ContradictionDetectionV1 must accept null quotes in ConflictStatement items."""
+        data = {
+            "conflicts": [
+                {
+                    "topic": "Delivery date",
+                    "description": "Conflicting dates between Section 3 and 5",
+                    "severity": "high",
+                    "statements": [
+                        {
+                            "source_file_id": 1,
+                            "page": 3,
+                            "section": "Section 3",
+                            "quote": None,
+                        },
+                        {
+                            "source_file_id": 1,
+                            "page": 5,
+                            "section": "Section 5",
+                            "quote": "Delivery by March 1, 2027",
+                        },
+                    ],
+                }
+            ]
+        }
+        result = ContradictionDetectionV1.model_validate(data)
+        assert len(result.conflicts) == 1
+        assert result.conflicts[0].statements[0].quote is None
+        assert result.conflicts[0].statements[1].quote == "Delivery by March 1, 2027"
+
+    def test_contradiction_detection_all_null_quotes(self) -> None:
+        data = {
+            "conflicts": [
+                {
+                    "topic": "Price",
+                    "description": "Different prices",
+                    "severity": "medium",
+                    "statements": [
+                        {"page": 1, "section": "A", "quote": None},
+                        {"page": 2, "section": "B", "quote": None},
+                    ],
+                }
+            ]
+        }
+        result = ContradictionDetectionV1.model_validate(data)
+        assert all(s.quote is None for s in result.conflicts[0].statements)
+
+    # ------------------------------------------------------------------
+    # AmendmentAnalysisV1 — unresolved_conflicts as list[dict]
+    # ------------------------------------------------------------------
+
+    def test_unresolved_conflicts_list_of_dicts_description_key(self) -> None:
+        data = {
+            "material": True,
+            "unresolved_conflicts": [
+                {"description": "Price schedule conflict between amendment 1 and 2"},
+                {"description": "Delivery date discrepancy"},
+            ],
+        }
+        result = AmendmentAnalysisV1.model_validate(data)
+        assert result.unresolved_conflicts == [
+            "Price schedule conflict between amendment 1 and 2",
+            "Delivery date discrepancy",
+        ]
+
+    def test_unresolved_conflicts_list_of_dicts_text_key(self) -> None:
+        data = {
+            "unresolved_conflicts": [
+                {"text": "Quantity changed in amendment 3"},
+                {"topic": "Packaging requirements differ"},
+            ]
+        }
+        result = AmendmentAnalysisV1.model_validate(data)
+        assert result.unresolved_conflicts == [
+            "Quantity changed in amendment 3",
+            "Packaging requirements differ",
+        ]
+
+    def test_unresolved_conflicts_list_of_dicts_no_preferred_key(self) -> None:
+        """Dicts without a preferred text key are stringified."""
+        data = {
+            "unresolved_conflicts": [
+                {"conflict_id": "C1", "severity": "high", "area": "pricing"},
+            ]
+        }
+        result = AmendmentAnalysisV1.model_validate(data)
+        assert len(result.unresolved_conflicts) == 1
+        assert "pricing" in result.unresolved_conflicts[0]
+
+    def test_unresolved_conflicts_list_of_strings_unchanged(self) -> None:
+        data = {
+            "unresolved_conflicts": ["Price conflict", "Delivery conflict"],
+        }
+        result = AmendmentAnalysisV1.model_validate(data)
+        assert result.unresolved_conflicts == ["Price conflict", "Delivery conflict"]
+
+    def test_unresolved_conflicts_none_becomes_empty_list(self) -> None:
+        result = AmendmentAnalysisV1.model_validate({"unresolved_conflicts": None})
+        assert result.unresolved_conflicts == []
+
+    def test_unresolved_conflicts_non_list_becomes_empty_list(self) -> None:
+        result = AmendmentAnalysisV1.model_validate({"unresolved_conflicts": "some string"})
+        assert result.unresolved_conflicts == []
+
+    def test_unresolved_conflicts_mixed_list(self) -> None:
+        """Mixed list of strings and dicts is handled correctly."""
+        data = {
+            "unresolved_conflicts": [
+                "Direct string conflict",
+                {"description": "Dict-based conflict description"},
+            ]
+        }
+        result = AmendmentAnalysisV1.model_validate(data)
+        assert len(result.unresolved_conflicts) == 2
+        assert result.unresolved_conflicts[0] == "Direct string conflict"
+        assert result.unresolved_conflicts[1] == "Dict-based conflict description"

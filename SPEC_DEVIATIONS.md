@@ -341,3 +341,22 @@ Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as p
 - Reason: The coercive approach is preferable to loosening the global prompt gate, and no facts are invented by any adapter.
 - Impact: `PROMPT_FAIL_ON_SCHEMA_ERROR=true` no longer causes spurious failures for these output shapes. The `prompt_fail_on_schema_error` config key remains a no-op (the schema validators themselves determine acceptance); this is a known minor gap.
 - Follow-up: Update the extraction prompts to emit float confidences natively. Update solicitation analysis prompt to emit `evaluation_factors` as a list of objects.
+
+### DEV-025 — SolicitationAnalysisV1 and compliance schemas: additional live opp 8836 mismatch shapes
+- Phase: 7 / 9 (AI prompts and compliance)
+- Date: 2026-09-28
+- Spec requirement: §40 output schemas must validate AI output; `PROMPT_FAIL_ON_SCHEMA_ERROR=true` (default) should reject malformed output.
+- Verified external/repository reality: DeepSeek re-run on opp 8836 produced three more shape mismatches not covered by DEV-024:
+  1. `past_performance_requirements` returned as a `dict` (e.g. `{"number": "2 references", "recency": "Within 3 years"}`) — schema declares `list[str]`.
+  2. `country_of_origin_references` returned as `list[dict]` (e.g. `[{"clause": "DFARS 252.225-7001", "description": "..."}]`) — schema declares `list[str]`.
+  3. `missing_information` items used `item`/`status` keys instead of `field`/`reason` (e.g. `{"item": "delivery address", "status": "not provided"}`).
+  Additionally two compliance schema shapes were observed: `ConflictStatement.quote` returned `null` (field declared non-optional `str`), and `AmendmentAnalysisV1.unresolved_conflicts` items returned as dicts instead of strings.
+- Decision: Add fact-preserving coerce validators:
+  - `SolicitationAnalysisV1.coerce_past_performance_requirements` (`field_validator`): dict → extract string values; `list[dict]` → prefer `description`/`requirement`/`text` key or stringify.
+  - `SolicitationAnalysisV1.coerce_country_of_origin_references` (`field_validator`): `list[dict]` → prefer `clause`/`reference`/`text` key or stringify.
+  - `MissingInfo.coerce_from_string` extended: dict with `item`/`status` keys → map `item→field`, `status→reason`.
+  - `ConflictStatement.quote`: changed from `str` to `str | None = None` (null is valid absence of quote evidence).
+  - `AmendmentAnalysisV1.coerce_unresolved_conflicts` (`field_validator`): `list[dict]` → prefer `description`/`text`/`topic`/`summary`/`conflict` key or stringify; non-list → `[]`.
+- Reason: Same principle as DEV-024 — coercive adapters are preferable to loosening the prompt gate. No solicitation facts are invented by any adapter.
+- Impact: `PROMPT_FAIL_ON_SCHEMA_ERROR=true` (default) no longer causes `analysis_skipped: true` for these five additional shapes. `govcon enrich analyze --opportunity-id <id>` now persists successfully when DeepSeek emits these shapes.
+- Follow-up: Update solicitation analysis prompt to emit `past_performance_requirements` as `list[str]`, `country_of_origin_references` as `list[str]`, and `missing_information` as list of objects with `field`/`reason` keys natively.

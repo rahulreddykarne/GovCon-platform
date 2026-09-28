@@ -145,6 +145,124 @@ govcon enrich analyze --opportunity-id <id>
 - No full smoke-path test against live DIBBS (requires live network + consent banner). All
   tests pass with mocked network.
 - DEV-020 auto-sourcing/pricing service remains out of scope.
+- DEV-025: Three additional SolicitationAnalysisV1 shape mismatches + two compliance schema
+  mismatches remain in prompt output (not yet addressed in prompt text). Fixed with coerce
+  adapters — see the 2026-09-28 entry below.
+
+---
+
+## 2026-09-28 — DEV-025: SolicitationAnalysisV1 + compliance schema coerce addendum (opp 8836 re-run)
+
+- Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-28
+- Phase/task: DEV-025 — additional live opp 8836 mismatch shapes under `PROMPT_FAIL_ON_SCHEMA_ERROR=true`
+- Branch: `cursor/dev-024-schema-coerce-3dc3`
+
+### Summary
+
+The `govcon enrich analyze` command still failed (set `analysis_skipped: true`) on a re-run
+of opp 8836 after the original DEV-024 fix (fd5b51c / PR #23). Three new mismatches in
+`SolicitationAnalysisV1` and two in compliance schemas were not covered by the first round of
+coercive adapters. This entry documents the fix and how to re-test.
+
+---
+
+### Fix 4 — SolicitationAnalysisV1 additional shape mismatches (DEV-025)
+
+**Root cause (three new shapes):**
+
+1. `past_performance_requirements` — DeepSeek returned a `dict` (e.g.
+   `{"references_required": "Two references", "recency": "Within 3 years"}`) where the
+   schema declares `list[str]`. `pydantic` rejected the type mismatch.
+
+2. `country_of_origin_references` — DeepSeek returned `list[dict]` (e.g.
+   `[{"clause": "DFARS 252.225-7001", "description": "Trade Agreements Act"}]`) where the
+   schema declares `list[str]`. Pydantic rejected each dict element.
+
+3. `missing_information` items — DeepSeek used `{"item": "...", "status": "..."}` keys
+   instead of the schema's `{"field": "...", "reason": "..."}`. The existing
+   `MissingInfo.coerce_from_string` only handled bare strings and `field`/`reason` dicts.
+
+**Fix (coerce-and-validate, no facts invented):**
+- `src/govcon/ai/schemas.py`:
+  - `SolicitationAnalysisV1.coerce_past_performance_requirements` (`field_validator`):
+    - `dict` → extract non-empty string values; empty dict → `[]`.
+    - `list[dict]` → prefer `description`/`requirement`/`text`/`value`/`name` key; otherwise
+      stringify with `key: value` pairs.
+    - `None` → `[]`.
+  - `SolicitationAnalysisV1.coerce_country_of_origin_references` (`field_validator`):
+    - `list[dict]` → prefer `clause`/`reference`/`text`/`description`/`name`/`value` key;
+      otherwise stringify. `None` → `[]`.
+  - `MissingInfo.coerce_from_string` extended:
+    - Dict with `item` key (and no `field` key) → map `item→field`, `status→reason` (default
+      to item value when `status` absent). Preserves `impact` if present.
+
+**How to re-test:**
+```sh
+# Default PROMPT_FAIL_ON_SCHEMA_ERROR=true — must NOT produce analysis_skipped: true
+govcon enrich analyze --opportunity-id 8836
+# or any opportunity whose solicitation_analysis returned these shapes
+
+# Unit tests (no live API, no database required):
+pytest tests/test_live_e2e_fixes.py::TestSolicitationAnalysisDEV024AddendumCoercion -v
+```
+
+**Regression tests:** `tests/test_live_e2e_fixes.py::TestSolicitationAnalysisDEV024AddendumCoercion`
+(20 tests, zero DB dependency)
+
+---
+
+### Fix 5 — ContradictionDetectionV1 null quotes + AmendmentAnalysisV1 dict conflicts
+
+**Root cause:**
+
+1. `ConflictStatement.quote` was declared as `quote: str` (non-optional). DeepSeek sometimes
+   returns `null` for quote when no verbatim quote is available. Pydantic rejected `None`.
+
+2. `AmendmentAnalysisV1.unresolved_conflicts` was declared as `list[str]`. DeepSeek returned
+   `list[dict]` (e.g. `[{"description": "Price schedule conflict…", "severity": "high"}]`).
+
+**Fix:**
+- `src/govcon/compliance/schemas.py`:
+  - `ConflictStatement.quote`: changed from `str` to `str | None = None`. A null quote means
+    no verbatim quote evidence was found — this is a valid absence, not an error.
+  - `AmendmentAnalysisV1.coerce_unresolved_conflicts` (`field_validator`):
+    - `list[dict]` → prefer `description`/`text`/`topic`/`summary`/`conflict` key; otherwise
+      stringify. Non-list / `None` → `[]`. Mixed lists handled correctly.
+
+**How to re-test:**
+```sh
+# Unit tests (no live API, no database required):
+pytest tests/test_live_e2e_fixes.py::TestComplianceSchemaCoercionDEV024Addendum -v
+```
+
+**Regression tests:** `tests/test_live_e2e_fixes.py::TestComplianceSchemaCoercionDEV024Addendum`
+(9 tests, zero DB dependency)
+
+---
+
+### Files changed
+
+**Modified:**
+- `src/govcon/ai/schemas.py` — Added `coerce_past_performance_requirements` and
+  `coerce_country_of_origin_references` validators to `SolicitationAnalysisV1`; extended
+  `MissingInfo.coerce_from_string` to handle `item`/`status` key remapping.
+- `src/govcon/compliance/schemas.py` — `ConflictStatement.quote` made optional
+  (`str | None = None`); added `AmendmentAnalysisV1.coerce_unresolved_conflicts`.
+- `tests/test_live_e2e_fixes.py` — 29 new regression tests in two new classes:
+  `TestSolicitationAnalysisDEV024AddendumCoercion` (20 tests) and
+  `TestComplianceSchemaCoercionDEV024Addendum` (9 tests).
+- `SPEC_DEVIATIONS.md` — DEV-025 added under the "Post-v1 Live E2E Fixes" section.
+
+### Remaining gaps (honest)
+
+- `prompt_fail_on_schema_error` config key is still a no-op (coerce validators handle the
+  observed failures; the setting is documented as such in SPEC_DEVIATIONS.md).
+- Solicitation analysis prompt should be updated to emit `past_performance_requirements` as
+  `list[str]`, `country_of_origin_references` as `list[str]`, and `missing_information` with
+  `field`/`reason` keys natively (prompt-text follow-up, not blocking).
+- DIBBS digit-suffix solicitations: no RFQ PDF URL derived (DEV-023 follow-up still open).
+- DEV-020 auto-sourcing/pricing service remains out of scope.
 
 
 
