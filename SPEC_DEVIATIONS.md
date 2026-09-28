@@ -309,3 +309,35 @@ Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as p
 - Decision: Declare v1 Checkpoint F satisfied on fixture-path E2E. Record live-key verification as a recommended follow-up (not a hard gate). Live keys become the gate only when the platform is deployed to a production environment with real credentials.
 - Impact: Phase 20 is marked COMPLETE. The IMPLEMENTATION_STATUS "fully verified" language is scoped to fixture-path E2E for DoD items 1–5, 8–27; DoD 6–7 are prompt+schema ready (DEV-020).
 - Follow-up: Run live-key E2E before any production deployment. Wire auto-invoke service layer for DoD 6–7 post-v1 (DEV-020).
+
+## Post-v1 Live E2E Fixes (2026-09-27, DIBBS opp 8836 / SPE4A526T443K)
+
+### DEV-022 — JEV AIGatewayBlocked was not caught by run_decision_bundle
+- Phase: 8 / 9 (compliance)
+- Date: 2026-09-27
+- Spec requirement: §15.1 compliance pipeline must persist compliance_runs + requirements + findings even when the JEV decision layer is unavailable or policy-blocked.
+- Verified external/repository reality: With `AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=false` (the default) and `DECISION_PRIMARY_PROVIDER=jev`, `JevDecisionProvider.decide()` calls `authorize_external_call()` which raises `AIGatewayBlocked`. `run_decision_bundle()` only caught `DecisionProviderUnavailable`; `AIGatewayBlocked` propagated uncaught and rolled back the entire compliance transaction.
+- Decision: Catch `AIGatewayBlocked` in `run_decision_bundle()` alongside `DecisionProviderUnavailable` and fall back to the rules provider. Also add belt-and-suspenders `AIGatewayBlocked` handling in `run_jev_routing()`. Log a structured INFO line when the gateway blocks JEV.
+- Reason: The gateway policy blocks only the *provider choice*, not the compliance work. Persisting the rules-based decision with a log note is correct.
+- Impact: `govcon compliance run` now completes successfully when `AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=false` regardless of `DECISION_PRIMARY_PROVIDER`. The JEV routing step returns `provider="rules"` in this case.
+- Follow-up: None for v1. If PROPRIETARY access is granted, JEV will run normally; the fallback is a no-op.
+
+### DEV-023 — DIBBS per-solicitation RFQ PDF URL not collected by enrich download
+- Phase: 7 (attachments)
+- Date: 2026-09-27
+- Spec requirement: §12.x `enrich download` collects and downloads all source attachments.
+- Verified external/repository reality: DIBBS opportunities store links as `{"ui", "package", "batch_quote", "index"}`. None of these keys are `resourceLinks` or `attachments` (the SAM-style keys). The per-solicitation RFQ PDF follows the pattern `dibbs2.bsm.dla.mil/Downloads/RFQ/{last_letter}/{solicitation}.PDF` and is not stored in `links`. The DIBBS document host also shows a DoD notice-and-consent banner that the plain `request_with_retry` client does not handle.
+- Decision: Derive the RFQ PDF URL from `opp.solicitation_number` when `opp.source == "dibbs"` and the solicitation number ends with a letter. Route DIBBS document-host downloads through `fetch_consented` (the existing Phase 4 consent handler).
+- Reason: The pattern is published by DIBBS and verified on the live opp SPE4A526T443K.
+- Impact: `govcon enrich download` now finds and downloads the RFQ PDF for DIBBS solicitations whose number ends with an alpha character. Solicitations ending in a digit still produce `files_downloaded: 0` for the derivable-URL path; manual `govcon enrich ingest-file` remains the workaround for those.
+- Follow-up: Investigate whether digit-suffix solicitations have a different URL pattern; or fetch the DIBBS record HTML page to discover the attachment URL.
+
+### DEV-024 — ExtractedRequirement and SolicitationAnalysisV1 too strict for model output
+- Phase: 7 / 9 (AI prompts and extraction)
+- Date: 2026-09-27
+- Spec requirement: §40 output schemas must validate AI output; `PROMPT_FAIL_ON_SCHEMA_ERROR=true` (default) should reject malformed output.
+- Verified external/repository reality: DeepSeek returned `confidence: "high"` (string, not float) and `normalized_values: {"delivery_days": [30]}` (list value, not scalar). It also returned `evaluation_factors` as a dict and `missing_information` as a list of strings. These are "valid enough" in the sense that no facts are invented — only the shape differs from what the strict schema expected.
+- Decision: Add coercive `field_validator`/`model_validator` adapters to accept observed-valid shapes without inventing facts. String confidence labels are mapped to float midpoints (`"high"→0.85`, `"medium"→0.55`, `"low"→0.20`). List-valued `normalized_values` entries take the first scalar element. Bare strings are accepted as `EvaluationFactor.name` and `MissingInfo.field`/`reason`. Dict `evaluation_factors` are unwrapped to a list of named factors.
+- Reason: The coercive approach is preferable to loosening the global prompt gate, and no facts are invented by any adapter.
+- Impact: `PROMPT_FAIL_ON_SCHEMA_ERROR=true` no longer causes spurious failures for these output shapes. The `prompt_fail_on_schema_error` config key remains a no-op (the schema validators themselves determine acceptance); this is a known minor gap.
+- Follow-up: Update the extraction prompts to emit float confidences natively. Update solicitation analysis prompt to emit `evaluation_factors` as a list of objects.

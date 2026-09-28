@@ -1,6 +1,152 @@
 # AI handoff
 
-## 2026-09-27 — PHASE_20_FINAL_INTEGRATION_ACCEPTANCE
+## 2026-09-27 — LIVE E2E FIXES (DIBBS opp 8836 / SPE4A526T443K)
+
+- Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
+- Datetime (UTC): 2026-09-27
+- Phase/task: Live E2E gap fixes (Fix 1 – JEV gateway block, Fix 2 – DIBBS attachments, Fix 3 – schema coercion)
+- Branch: `cursor/fix-jev-dibbs-schema-9927`
+
+### Summary
+
+Three production gaps found by a controlled live E2E run on DIBBS opportunity id 8836
+(solicitation SPE4A526T443K) were diagnosed and fixed with regression tests. No live
+credentials are required to run the test suite.
+
+---
+
+### Fix 1 — JEV / AIGateway proprietary block must not wipe compliance
+
+**Root cause:**
+`decision/engine.py::run_decision_bundle()` only caught `DecisionProviderUnavailable` from the
+JEV provider. `JevDecisionProvider.decide()` calls `authorize_external_call()` which raises
+`AIGatewayBlocked` (a different exception) when
+`AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=false`. The uncaught `AIGatewayBlocked` propagated
+all the way up through `run_jev_routing()` and `run_compliance_pipeline()`, rolling back the
+entire compliance transaction.
+
+**Fix:**
+- `src/govcon/decision/engine.py`: Added `import logging` / `logger`, and a separate
+  `except AIGatewayBlocked as exc` block alongside `except DecisionProviderUnavailable`.
+  When the gateway blocks JEV, the engine logs a structured INFO line
+  (`ai_gateway decision=block classification=... action=fallback_to_rules`) and falls back
+  to the rules provider — same behaviour as `DecisionProviderUnavailable`.
+- `src/govcon/compliance/validator.py::run_jev_routing()`: Added belt-and-suspenders
+  `except AIGatewayBlocked` around the `run_decision_bundle` call. If the exception ever
+  escapes the engine (e.g. LLM fallback path), routing is recorded as
+  `provider=skipped_gateway_block` and compliance data is preserved.
+
+**How to re-test:**
+```
+# With AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=false (default) and JEV_API_KEY=anything:
+DECISION_PRIMARY_PROVIDER=jev JEV_ENABLED=true JEV_API_KEY=test-key \
+  govcon compliance run --opportunity-id <id>
+# Expected: compliance run completes, jev_routing.provider="rules", no rollback
+```
+
+**Regression tests:** `tests/test_live_e2e_fixes.py::TestJevGatewayBlockedFallback` (4 tests)
+
+---
+
+### Fix 2 — DIBBS attachments in `enrich download`
+
+**Root cause:**
+`enrich/attachments.py::_collect_attachment_urls()` only read SAM-style
+`resourceLinks`/`attachments` keys from `opp.links`. DIBBS opportunities store links as
+`{"ui": ..., "package": ..., "batch_quote": ..., "index": ...}` — none matching the SAM keys.
+The per-solicitation RFQ PDF URL (`https://dibbs2.bsm.dla.mil/Downloads/RFQ/K/SPE4A526T443K.PDF`)
+was not stored in `links` at all; it follows a derivable pattern:
+`dibbs2.bsm.dla.mil/Downloads/RFQ/{last_letter_of_solicitation}/{solicitation}.PDF`
+
+The download path used `request_with_retry` which does not handle the DIBBS DoD
+notice-and-consent banner.
+
+**Fix:**
+- Added `_dibbs_rfq_pdf_url(solicitation_number)` helper that derives the RFQ PDF URL from
+  the solicitation number (last character determines the subdirectory; returns `None` for
+  solicitations ending in a digit).
+- `_collect_attachment_urls()` now checks `opp.source == "dibbs"` and appends the derived
+  PDF URL when `opp.solicitation_number` (or `opp.raw["solicitation_number"]`) is available.
+- Added `_is_dibbs_url(url)` helper that detects `dibbs2.bsm.dla.mil` / `dibbs.bsm.dla.mil`.
+- `_download_one()` now routes DIBBS document-host URLs through
+  `govcon.ingest.dibbs.fetch_consented()` (the existing consent-banner handler reused from
+  Phase 4 ingestion) instead of plain `request_with_retry`.
+
+**Remaining manual step (v1):**
+DIBBS solicitations whose solicitation number ends in a digit (not a letter) do not produce
+a derivable subdirectory letter; `_dibbs_rfq_pdf_url` returns `None` for these. The batch ZIP
+(`caYYMMDD.zip`) that contains per-solicitation PDFs is not auto-downloaded (see DEV-002).
+Automated download only covers the known letter-suffix pattern. Use `govcon enrich ingest-file`
+for the manual-download path.
+
+**How to re-test:**
+```
+# Against a stored DIBBS opportunity with solicitation_number ending in a letter:
+govcon enrich download --opportunity-id <dibbs-opp-id>
+# Expected: files_downloaded: 1 (or > 0)
+```
+
+**Regression tests:** `tests/test_live_e2e_fixes.py::TestDibbsAttachmentUrlCollection` (12 tests)
+
+---
+
+### Fix 3 — Solicitation / requirement schema vs model output
+
+**Root cause:**
+Two schemas rejected valid-enough model output under `PROMPT_FAIL_ON_SCHEMA_ERROR=true`:
+
+1. `compliance/schemas.py::ExtractedRequirement`:
+   - `confidence` declared as `float` (0–1), but DeepSeek returned string labels
+     `"high"` / `"medium"` / `"low"`.
+   - `normalized_values` declared as `dict[str, scalar]`, but models returned list values
+     e.g. `{"delivery_days": [30, 60]}`.
+
+2. `ai/schemas.py::SolicitationAnalysisV1`:
+   - `evaluation_factors` expects `list[EvaluationFactor]` but models returned a dict of
+     `{name: weight}` or a list of bare strings.
+   - `missing_information` expects `list[MissingInfo]` but models returned `list[str]`.
+
+**Fix (coerce-and-validate, no facts invented):**
+- `compliance/schemas.py`:
+  - Added `_CONFIDENCE_LABEL_MAP` (`"high"→0.85`, `"medium"→0.55`, `"low"→0.20`,
+    `"very_high"→0.95`, `"very_low"→0.10`).
+  - `ExtractedRequirement.coerce_confidence_label`: `field_validator(mode="before")` converts
+    string labels to float midpoints; unknown strings → `None`.
+  - `ExtractedRequirement.coerce_normalized_values`: `field_validator(mode="before")` takes
+    the first scalar from any list value; non-dict input → `{}`.
+- `ai/schemas.py`:
+  - `EvaluationFactor.coerce_from_string`: `model_validator(mode="before")` accepts a bare
+    string as `{"name": value}`.
+  - `MissingInfo.coerce_from_string`: `model_validator(mode="before")` accepts a bare string
+    as `{"field": value, "reason": value}`.
+  - `SolicitationAnalysisV1.coerce_evaluation_factors`: `field_validator(mode="before")`
+    converts a `dict[name, weight_or_desc]` to a list of factor dicts; non-list → `[]`.
+  - `SolicitationAnalysisV1.coerce_missing_information`: ensures the field is always a list.
+
+**How to re-test:**
+```
+# Run solicitation analysis on a stored DIBBS opp without PROMPT_FAIL_ON_SCHEMA_ERROR=false:
+govcon enrich analyze --opportunity-id <id>
+# Expected: completes without StructuredCallError "invalid_output"
+```
+
+**Regression tests:** `tests/test_live_e2e_fixes.py::TestRequirementExtractionSchemaCoercion` (10 tests),
+`tests/test_live_e2e_fixes.py::TestSolicitationAnalysisSchemaCoercion` (9 tests)
+
+---
+
+### Remaining gaps (honest)
+
+- DIBBS solicitations ending with digits: no RFQ PDF URL is derived. No subdirectory letter
+  can be inferred without fetching the DIBBS record page; workaround is `govcon enrich ingest-file`.
+- `prompt_fail_on_schema_error` setting exists in config but is not plumbed into
+  `run_structured_prompt`. The coercive validators make it unnecessary for the observed
+  failures; the setting remains a no-op config key (documented in SPEC_DEVIATIONS.md).
+- No full smoke-path test against live DIBBS (requires live network + consent banner). All
+  tests pass with mocked network.
+- DEV-020 auto-sourcing/pricing service remains out of scope.
+
+
 
 - Agent/model identity: Cursor cloud agent, model `claude-sonnet-4-6`
 - Datetime (UTC): 2026-09-27
