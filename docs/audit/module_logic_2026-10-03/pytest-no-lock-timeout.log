@@ -1,0 +1,580 @@
+..........................................F............................. [  5%]
+........................................................................ [ 11%]
+........................................................................ [ 16%]
+........................................................................ [ 22%]
+........................................................................ [ 28%]
+........................................................................ [ 33%]
+........................................................................ [ 39%]
+........................................................................ [ 44%]
+........................................................................ [ 50%]
+........................................................................ [ 56%]
+........................................................................ [ 61%]
+........................................................................ [ 67%]
+........................................................................ [ 72%]
+.......................................................................s [ 78%]
+........................................................................ [ 84%]
+........................................................................ [ 89%]
+........................................................................ [ 95%]
+.............................................................            [100%]
+================================== FAILURES ===================================
+__________ test_inputs_removed_after_queueing_wait_for_the_approver ___________
+tests\test_analysis_tasks.py:104: in test_inputs_removed_after_queueing_wait_for_the_approver
+    assert "Supplier analysis is waiting for input" in page and new.blocker_next_action in page
+E   assert ('Supplier analysis is waiting for input' in '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...ndary btn-sm">Run supplier analysis</button>\n    </form>\n    \n  </p>\n</div>\n\n\n\n\n\n</main>\n\n</body>\n</html>' and "Enter a supplier or sourcing cost under Pursuit commercial facts on the workspace's Products & Suppliers tab, then retry the supplier analysis." in '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...ndary btn-sm">Run supplier analysis</button>\n    </form>\n    \n  </p>\n</div>\n\n\n\n\n\n</main>\n\n</body>\n</html>')
+E    +  where "Enter a supplier or sourcing cost under Pursuit commercial facts on the workspace's Products & Suppliers tab, then retry the supplier analysis." = <govcon.models.Task object at 0x000001FB52D335C0>.blocker_next_action
+---------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\telemetry\_api.py", line 240, in _run_sync_endpoint
+    return function(**arguments)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\web\routes\__init__.py", line 896, in workspace_run_analysis
+    task, created = queue_analysis(db, opportunity_id=opp_id, kind=kind, actor_user_id=actor.id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\intelligence\analysis_tasks.py", line 57, in queue_analysis
+    prepare_analysis(session, opportunity_id, kind, settings=settings)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\intelligence\ai_analyses.py", line 262, in prepare_analysis
+    return prepare_structured_call(session, **_REQUESTS[kind](session, opportunity_id, settings))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\ai\structured.py", line 182, in prepare_structured_call
+    authorize_external_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\ai\gateway.py", line 56, in authorize_external_call
+    logger.info(
+Message: 'ai_gateway decision=allow classification=PROPRIETARY provider=deepseek model=default purpose=supplier_analysis'
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(_console_main())
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_analysis_tasks.py", line 98, in test_inputs_removed_after_queueing_wait_for_the_approver
+    results = drain(opportunity_id=opp.id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\testing.py", line 24, in drain
+    ran = run_once(settings, task_types=task_types, opportunity_id=opportunity_id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 194, in run_once
+    logger.info("task %s (%s) claimed by %s", claim.task_id, claim.task_type, worker_id)
+Message: 'task 3 (ai_analysis) claimed by RahulROG:45504:4c95c22c'
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 144, in run_claimed
+    inputs = step.prepare(db, task, ctx)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\handlers\analysis.py", line 46, in _prepare
+    kind = _check_inputs(session, task, ctx)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\handlers\analysis.py", line 37, in _check_inputs
+    raise TaskSuperseded(
+govcon.tasks.errors.TaskSuperseded: the source documents or pursuit facts changed after this analysis was queued; re-queued for the current inputs
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(_console_main())
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_analysis_tasks.py", line 98, in test_inputs_removed_after_queueing_wait_for_the_approver
+    results = drain(opportunity_id=opp.id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\testing.py", line 24, in drain
+    ran = run_once(settings, task_types=task_types, opportunity_id=opportunity_id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 209, in run_once
+    status = run_claimed(settings, claim)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 164, in run_claimed
+    logger.warning("task %s step %s failed: %s", claim.task_id, step.name, type(exc).__name__)
+Message: 'task 3 step analyze failed: TaskSuperseded'
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(_console_main())
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_analysis_tasks.py", line 98, in test_inputs_removed_after_queueing_wait_for_the_approver
+    results = drain(opportunity_id=opp.id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\testing.py", line 24, in drain
+    ran = run_once(settings, task_types=task_types, opportunity_id=opportunity_id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 210, in run_once
+    logger.info("task %s finished with %s", claim.task_id, status)
+Message: 'task 3 finished with cancelled'
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(_console_main())
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_analysis_tasks.py", line 98, in test_inputs_removed_after_queueing_wait_for_the_approver
+    results = drain(opportunity_id=opp.id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\testing.py", line 24, in drain
+    ran = run_once(settings, task_types=task_types, opportunity_id=opportunity_id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 194, in run_once
+    logger.info("task %s (%s) claimed by %s", claim.task_id, claim.task_type, worker_id)
+Message: 'task 4 (ai_analysis) claimed by RahulROG:45504:fa211d13'
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\handlers\analysis.py", line 48, in _prepare
+    return _Call(prepared=prepare_analysis(session, task.opportunity_id, kind, settings=ctx.settings))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\intelligence\ai_analyses.py", line 262, in prepare_analysis
+    return prepare_structured_call(session, **_REQUESTS[kind](session, opportunity_id, settings))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\intelligence\ai_analyses.py", line 167, in _supplier_request
+    raise AnalysisInputMissing(
+govcon.intelligence.ai_analyses.AnalysisInputMissing: record a current supplier quote, or a supplier or sourcing cost on the pursuit, before running supplier analysis
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 144, in run_claimed
+    inputs = step.prepare(db, task, ctx)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\handlers\analysis.py", line 50, in _prepare
+    raise TaskBlocked(str(exc), owner_role="approver",
+govcon.tasks.errors.TaskBlocked: record a current supplier quote, or a supplier or sourcing cost on the pursuit, before running supplier analysis
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(_console_main())
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_analysis_tasks.py", line 98, in test_inputs_removed_after_queueing_wait_for_the_approver
+    results = drain(opportunity_id=opp.id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\testing.py", line 24, in drain
+    ran = run_once(settings, task_types=task_types, opportunity_id=opportunity_id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 209, in run_once
+    status = run_claimed(settings, claim)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 164, in run_claimed
+    logger.warning("task %s step %s failed: %s", claim.task_id, step.name, type(exc).__name__)
+Message: 'task 4 step analyze failed: TaskBlocked'
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(_console_main())
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_analysis_tasks.py", line 98, in test_inputs_removed_after_queueing_wait_for_the_approver
+    results = drain(opportunity_id=opp.id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\testing.py", line 24, in drain
+    ran = run_once(settings, task_types=task_types, opportunity_id=opportunity_id)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 210, in run_once
+    logger.info("task %s finished with %s", claim.task_id, status)
+Message: 'task 4 finished with waiting_for_input'
+Arguments: ()
+------------------------------ Captured log call ------------------------------
+INFO     govcon.ai.gateway:gateway.py:56 ai_gateway decision=allow classification=PROPRIETARY provider=deepseek model=default purpose=supplier_analysis
+INFO     govcon.tasks.worker:worker.py:194 task 3 (ai_analysis) claimed by RahulROG:45504:4c95c22c
+WARNING  govcon.tasks.worker:worker.py:164 task 3 step analyze failed: TaskSuperseded
+INFO     govcon.tasks.worker:worker.py:210 task 3 finished with cancelled
+INFO     govcon.tasks.worker:worker.py:194 task 4 (ai_analysis) claimed by RahulROG:45504:fa211d13
+WARNING  govcon.tasks.worker:worker.py:164 task 4 step analyze failed: TaskBlocked
+INFO     govcon.tasks.worker:worker.py:210 task 4 finished with waiting_for_input
+============================== warnings summary ===============================
+tests/test_analysis_tasks.py: 12 warnings
+tests/test_feature_audit_fixes.py: 12 warnings
+tests/test_fv05_quote_permissions.py: 1 warning
+tests/test_fv06_catalog_rows.py: 2 warnings
+tests/test_fv07_workbook_errors.py: 2 warnings
+tests/test_fv08_finite_numbers.py: 4 warnings
+tests/test_fv09_quote_repeats.py: 1 warning
+tests/test_intelligence_analyses.py: 21 warnings
+tests/test_outcome_suggestions.py: 1 warning
+tests/test_preparation.py: 6 warnings
+tests/test_proposal_generation_task.py: 33 warnings
+tests/test_r2_reviewer_reassign.py: 1 warning
+tests/test_sourcing_company.py: 4 warnings
+tests/test_web_ui.py: 66 warnings
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+tests/test_feature_audit_fixes.py::test_f1_concurrent_pursue_creates_only_one_workspace
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pydantic\_internal\_generate_schema.py:2274: UnsupportedFieldAttributeWarning: The 'alias' attribute with value 'body' was provided to the `Field()` function, which has no effect in the context it was used. 'alias' is field-specific metadata, and can only be attached to a model field using `Annotated` metadata or by assignment. This may have happened because an `Annotated` type alias using the `type` statement was used, or if the `Field()` function was attached to a single member of a union type.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_sam_ingestion.py:608: SAM_API_KEY is not set

@@ -1,0 +1,40 @@
+<!-- Pursuit commercial facts: quote price, sourcing cost, supplier, notes (same rules as MCP update_pursuit) -->
+{% if pursuit %}
+{% set facts_locked = pursuit.stage in ('submitted', 'won', 'lost', 'cancelled', 'no_bid') %}
+<div class="card" id="pursuit-facts">
+  <div class="card-header">
+    <span class="card-title">Pursuit commercial facts <span class="label-human">Human</span></span>
+    <span class="text-muted" style="font-size:12px;">The bid price and costs the analyses, review and proposal use.</span>
+  </div>
+  {% if can_run_analysis and not facts_locked %}
+  <form method="post" action="/workspace/{{ opp.id }}/pursuit-facts">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="hidden" name="expected_version" value="{{ pursuit.version }}">
+    <input type="hidden" name="return_tab" value="{{ active_tab }}">
+    <label>Quote price (total bid, USD)
+      <input type="text" name="quote_price" inputmode="decimal" placeholder="e.g. 12500.00"
+             value="{{ pursuit.quote_price if pursuit.quote_price is not none else '' }}"></label>
+    <label>Sourcing cost (total, USD)
+      <input type="text" name="sourcing_cost" inputmode="decimal" placeholder="e.g. 9800.00"
+             value="{{ pursuit.sourcing_cost if pursuit.sourcing_cost is not none else '' }}"></label>
+    <label>Supplier
+      <input type="text" name="supplier" value="{{ pursuit.supplier or '' }}"></label>
+    <label>Notes
+      <input type="text" name="notes" value="{{ pursuit.notes or '' }}"></label>
+    <button type="submit" class="btn btn-secondary btn-sm">Save commercial facts</button>
+    <div class="text-sm text-muted mt-1">A blank field clears that value. Changing these facts reopens review and
+      returns a generated proposal for fixing, because they relied on the old values.</div>
+  </form>
+  {% else %}
+  <dl class="key-val">
+    <dt>Quote price</dt><dd>{% if pursuit.quote_price is not none %}${{ '{:,.2f}'.format(pursuit.quote_price|float) }}{% else %}not recorded{% endif %}</dd>
+    <dt>Sourcing cost</dt><dd>{% if pursuit.sourcing_cost is not none %}${{ '{:,.2f}'.format(pursuit.sourcing_cost|float) }}{% else %}not recorded{% endif %}</dd>
+    <dt>Supplier</dt><dd>{{ pursuit.supplier or 'not recorded' }}</dd>
+  </dl>
+  {% if facts_locked %}
+  <div class="text-sm text-muted">Locked after submission; an approver records corrections as an audit entry
+    (<code>govcon submission correct-commercial</code>).</div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="6.165" timestamp="2026-10-03T12:42:58.613250-05:00" hostname="RahulROG"><testcase classname="tests.test_r2_worker_resilience" name="test_long_running_worker_survives_a_transient_database_error" time="0.126"><failure message="sqlalchemy.exc.OperationalError: (builtins.Exception) server closed the connection unexpectedly&#10;[SQL: SELECT 1]&#10;(Background on this error at: https://sqlalche.me/e/21/e3q8)">tests\test_r2_worker_resilience.py:80: in test_long_running_worker_survives_a_transient_database_error
+    processed = worker.run_worker(settings, stop_event=stop)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\tasks\worker.py:230: in run_worker
+    ran = run_once(settings, worker_id=worker_id, task_types=task_types)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_r2_worker_resilience.py:38: in fake_run_once
+    raise outcome
+E   sqlalchemy.exc.OperationalError: (builtins.Exception) server closed the connection unexpectedly
+E   [SQL: SELECT 1]
+E   (Background on this error at: https://sqlalche.me/e/21/e3q8)</failure></testcase><testcase classname="tests.test_r2_worker_resilience" name="test_scheduler_embedded_chain_worker_survives_a_database_error" time="5.455"><failure message="AssertionError: the chain worker thread died on the database error&#10;assert False&#10; +  where False = wait(5)&#10; +    where wait = &lt;threading.Event at 0x1163ed6d820: unset&gt;.wait">tests\test_r2_worker_resilience.py:99: in test_scheduler_embedded_chain_worker_survives_a_database_error
+    assert resumed.wait(5), "the chain worker thread died on the database error"
+E   AssertionError: the chain worker thread died on the database error
+E   assert False
+E    +  where False = wait(5)
+E    +    where wait = &lt;threading.Event at 0x1163ed6d820: unset&gt;.wait</failure></testcase></testsuite></testsuites>

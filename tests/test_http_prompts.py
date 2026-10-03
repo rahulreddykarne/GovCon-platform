@@ -31,7 +31,7 @@ def test_user_agent_and_retry() -> None:
 def test_placeholder_prompts_load() -> None:
     root = Settings().resolved_prompt_root()
     assets = iter_markdown_prompts(root)
-    assert len(assets) == 22
+    assert len(assets) == 23  # + supplier_quote_extraction (ADR-071)
     names = {asset.name for asset in assets}
     assert "solicitation_analysis" in names
     assert "source_security_rules" in names
@@ -70,6 +70,9 @@ def test_placeholder_prompts_load() -> None:
         "supplier_analysis",
         "pricing_analysis",
     }
+    activated_automation_stage4 = {
+        "supplier_quote_extraction",  # ADR-071
+    }
     all_active = (
         activated_phase7
         | activated_phase9
@@ -77,6 +80,7 @@ def test_placeholder_prompts_load() -> None:
         | activated_phase11
         | activated_phase15
         | activated_phase20
+        | activated_automation_stage4
     )
     for asset in assets:
         assert asset.version == "v1"

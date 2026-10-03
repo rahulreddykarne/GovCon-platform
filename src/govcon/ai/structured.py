@@ -118,7 +118,39 @@ def enforce_prompt_policy(prompt: PromptAsset, *, classification: DataClassifica
         )
 
 
-def run_structured_prompt(
+@dataclass(frozen=True)
+class PreparedCall:
+    """Everything a provider call needs, resolved inside a transaction.
+
+    Built by :func:`prepare_structured_call`; executing it needs no session.
+    """
+
+    prompt: PromptAsset
+    schema_cls: type[BaseModel]
+    schema_version: str
+    classification: DataClassification
+    provider: Any
+    provider_name: str | None
+    model: str | None
+    system_prompt: str
+    user_prompt: str
+    generation_settings: dict[str, Any]
+    opportunity_id: int | None
+    analysis_type: str
+    variables: dict[str, Any]
+    context_manifest: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ExecutedCall:
+    """A validated provider response, not yet persisted."""
+
+    output: BaseModel
+    result: Any
+    reservation: Any
+
+
+def prepare_structured_call(
     session: Session | None,
     *,
     opportunity_id: int | None,
@@ -130,7 +162,8 @@ def run_structured_prompt(
     provider_name: str | None = None,
     model: str | None = None,
     classification: DataClassification,
-) -> StructuredCallResult:
+) -> PreparedCall:
+    """Resolve the prompt and enforce policy; refuse before any content is sent."""
     settings = settings or get_settings()
     if not isinstance(classification, DataClassification):
         raise TypeError("classification must be a DataClassification")
@@ -175,20 +208,52 @@ def run_structured_prompt(
     }
     if model:
         generation_settings["model"] = model
+    return PreparedCall(
+        prompt=prompt,
+        schema_cls=schema_cls,
+        schema_version=schema_version,
+        classification=classification,
+        provider=provider,
+        provider_name=provider_name,
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        generation_settings=generation_settings,
+        opportunity_id=opportunity_id,
+        analysis_type=analysis_type,
+        variables=variables,
+        context_manifest=context_manifest,
+    )
+
+
+def execute_prepared_call(
+    prepared: PreparedCall,
+    *,
+    settings: Settings | None = None,
+    session: Session | None = None,
+    engine: Any = None,
+) -> ExecutedCall:
+    """Call the provider and validate its JSON, retrying invalid output.
+
+    Workers pass ``engine`` and no session, so no business transaction is open
+    during the call; budget accounting commits on its own connection.
+    """
+    settings = settings or get_settings()
     attempts = 1 + max(0, int(settings.prompt_max_retries_on_invalid_json or 0))
     last_error: StructuredCallError | None = None
     for attempt in range(attempts):
         try:
-            result, reservation = complete_with_budget(provider, session,
-                opportunity_id=opportunity_id,
+            result, reservation = complete_with_budget(prepared.provider, session,
+                opportunity_id=prepared.opportunity_id,
                 settings=settings,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                model=model,
+                engine=engine,
+                system_prompt=prepared.system_prompt,
+                user_prompt=prepared.user_prompt,
+                model=prepared.model,
                 temperature=0.0,
                 json_mode=True,
-                classification=classification,
-                purpose=prompt_name,
+                classification=prepared.classification,
+                purpose=prepared.prompt.name,
             )
         except AIBudgetExceeded as exc:
             raise StructuredCallError("budget_exceeded", str(exc)) from exc
@@ -198,41 +263,84 @@ def run_structured_prompt(
             raise StructuredCallError("provider_error", type(exc).__name__) from exc
         try:
             data = parse_json_response(result)
-            validated = schema_cls.model_validate(data)
+            validated = prepared.schema_cls.model_validate(data)
         except (json.JSONDecodeError, ValueError, ValidationError) as exc:
             last_error = StructuredCallError("invalid_output", f"attempt {attempt + 1}: {type(exc).__name__}")
             # Never log the provider response body; it can echo sensitive input.
-            logger.warning("structured output rejected prompt=%s attempt=%d: %s", prompt_name, attempt + 1, type(exc).__name__)
+            logger.warning("structured output rejected prompt=%s attempt=%d: %s", prepared.prompt.name, attempt + 1, type(exc).__name__)
             continue
-
-        manifest = dict(context_manifest)
-        manifest.setdefault("opportunity_id", opportunity_id)
-        input_hash = hashlib.sha256(
-            json.dumps({"variables": variables, "manifest": manifest}, sort_keys=True, default=str).encode()
-        ).hexdigest()
-        output_json = validated.model_dump(mode="json")
-        analysis = AIAnalysis(
-            opportunity_id=opportunity_id,
-            analysis_type=analysis_type,
-            provider=getattr(result, "provider", None) or getattr(provider, "name", None),
-            model=getattr(result, "model", None) or model,
-            prompt_name=prompt.name,
-            prompt_version=prompt.version,
-            prompt_hash=prompt.content_hash,
-            schema_version=schema_version,
-            generation_settings=generation_settings,
-            input_snapshot_hash=input_hash,
-            context_manifest=manifest,
-            output_json=output_json,
-            source_refs=None,
-            token_usage=getattr(result, "usage", None) or None,
-            estimated_cost=reservation.cost if reservation is not None else None,
-            latency_ms=getattr(result, "latency_ms", None),
-        )
-        if session is not None:
-            session.add(analysis)
-            session.flush()
-        return StructuredCallResult(output=validated, analysis=analysis, prompt=prompt)
+        return ExecutedCall(output=validated, result=result, reservation=reservation)
 
     assert last_error is not None
     raise last_error
+
+
+def build_analysis(prepared: PreparedCall, executed: ExecutedCall) -> AIAnalysis:
+    """The ``ai_analyses`` row for a validated call (not yet added to a session)."""
+    manifest = dict(prepared.context_manifest)
+    manifest.setdefault("opportunity_id", prepared.opportunity_id)
+    input_hash = hashlib.sha256(
+        json.dumps({"variables": prepared.variables, "manifest": manifest}, sort_keys=True, default=str).encode()
+    ).hexdigest()
+    result = executed.result
+    reservation = executed.reservation
+    return AIAnalysis(
+        opportunity_id=prepared.opportunity_id,
+        analysis_type=prepared.analysis_type,
+        provider=getattr(result, "provider", None) or getattr(prepared.provider, "name", None),
+        model=getattr(result, "model", None) or prepared.model,
+        prompt_name=prepared.prompt.name,
+        prompt_version=prepared.prompt.version,
+        prompt_hash=prepared.prompt.content_hash,
+        schema_version=prepared.schema_version,
+        generation_settings=prepared.generation_settings,
+        input_snapshot_hash=input_hash,
+        context_manifest=manifest,
+        output_json=executed.output.model_dump(mode="json"),
+        source_refs=None,
+        token_usage=getattr(result, "usage", None) or None,
+        estimated_cost=reservation.cost if reservation is not None else None,
+        latency_ms=getattr(result, "latency_ms", None),
+    )
+
+
+def persist_structured_result(
+    session: Session | None, prepared: PreparedCall, executed: ExecutedCall
+) -> StructuredCallResult:
+    """Record the validated call as an ``ai_analyses`` row in the caller's transaction."""
+    analysis = build_analysis(prepared, executed)
+    if session is not None:
+        session.add(analysis)
+        session.flush()
+    return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
+
+
+def run_structured_prompt(
+    session: Session | None,
+    *,
+    opportunity_id: int | None,
+    prompt_name: str,
+    analysis_type: str,
+    variables: dict[str, Any],
+    context_manifest: dict[str, Any],
+    settings: Settings | None = None,
+    provider_name: str | None = None,
+    model: str | None = None,
+    classification: DataClassification,
+) -> StructuredCallResult:
+    """Prepare, call and persist in the caller's session (synchronous callers)."""
+    settings = settings or get_settings()
+    prepared = prepare_structured_call(
+        session,
+        opportunity_id=opportunity_id,
+        prompt_name=prompt_name,
+        analysis_type=analysis_type,
+        variables=variables,
+        context_manifest=context_manifest,
+        settings=settings,
+        provider_name=provider_name,
+        model=model,
+        classification=classification,
+    )
+    executed = execute_prepared_call(prepared, settings=settings, session=session)
+    return persist_structured_result(session, prepared, executed)

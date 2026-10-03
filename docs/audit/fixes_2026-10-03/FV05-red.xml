@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="2.587" timestamp="2026-10-03T04:46:37.426740-05:00" hostname="RahulROG"><testcase classname="tests.test_fv05_quote_permissions" name="test_read_only_cli_is_denied_before_supplier_or_quote_write" time="1.483"><failure message="AssertionError: read-only actor successfully entered a quote&#10;assert 0 == 2&#10; +  where 0 = &lt;Result okay&gt;.exit_code">tests\test_fv05_quote_permissions.py:78: in test_read_only_cli_is_denied_before_supplier_or_quote_write
+    assert result.exit_code == 2, "read-only actor successfully entered a quote"
+E   AssertionError: read-only actor successfully entered a quote
+E   assert 0 == 2
+E    +  where 0 = &lt;Result okay&gt;.exit_code</failure></testcase><testcase classname="tests.test_fv05_quote_permissions" name="test_read_only_direct_record_is_denied" time="0.085"><failure message="Failed: DID NOT RAISE PermissionDenied">tests\test_fv05_quote_permissions.py:89: in test_read_only_direct_record_is_denied
+    with pytest.raises(PermissionDenied):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE PermissionDenied</failure></testcase><testcase classname="tests.test_fv05_quote_permissions" name="test_read_only_direct_intake_is_denied_before_file_write" time="0.125"><failure message="Failed: DID NOT RAISE PermissionDenied">tests\test_fv05_quote_permissions.py:106: in test_read_only_direct_intake_is_denied_before_file_write
+    with pytest.raises(PermissionDenied):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE PermissionDenied</failure></testcase></testsuite></testsuites>

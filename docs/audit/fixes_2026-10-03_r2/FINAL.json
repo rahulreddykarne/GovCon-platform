@@ -1,0 +1,38 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FINAL-pytest.log",
+    "tests": "1297",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "1",
+    "time": "257.588"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": [],
+  "typecheck": {
+    "exit_code": 1,
+    "log": "FINAL-typecheck.log",
+    "count": 268,
+    "total": 420,
+    "baseline_count": 268,
+    "new_vs_baseline": [],
+    "baseline_total": 419
+  },
+  "lint": {
+    "exit_code": 1,
+    "log": "FINAL-lint.log",
+    "count": 427,
+    "total": 903,
+    "baseline_count": 425,
+    "new_vs_baseline": [
+      "src\\govcon\\ai\\replay.py: BLE001 Do not catch blind exception: `Exception`",
+      "src\\govcon\\ai\\replay.py: UP047 Generic function `run_recorded` should use type parameters"
+    ],
+    "baseline_total": 901
+  },
+  "build": {
+    "exit_code": 0,
+    "log": "FINAL-build.log"
+  }
+}

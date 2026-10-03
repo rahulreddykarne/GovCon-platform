@@ -14,16 +14,31 @@ _scheduler_settings = None
 
 
 def execute_scheduled_chain(chain_name: str) -> None:
-    """Importable callback for APScheduler's persistent job store."""
+    """Importable callback for APScheduler's persistent job store.
+
+    Queues a durable ``scheduler_chain`` task (ADR-063); a worker runs it and
+    resumes it at the next unfinished step if the worker dies.
+    """
+    from datetime import datetime, timezone
+
     from govcon.config import get_settings
-    from govcon.scheduler.chains import run_chain
-    result = run_chain(chain_name, _scheduler_settings or get_settings(), trigger="scheduler")
-    if result.failed:
-        logger.error("scheduler: chain=%s failed: %s", chain_name, result.error)
+    from govcon.db import session_scope
+    from govcon.scheduler.chain_tasks import queue_chain
+
+    settings = _scheduler_settings or get_settings()
+    slot = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+    with session_scope(settings) as db:
+        task, created = queue_chain(db, chain_name, trigger="scheduler", slot=slot)
+        task_id = task.id
+    logger.info("scheduler: chain=%s queued as task %s%s", chain_name, task_id, "" if created else " (already queued)")
 
 
-def start_blocking_scheduler(settings) -> None:
-    """Only one daemon owns the persistent schedule at a time."""
+def start_blocking_scheduler(settings, *, embedded_worker: bool = True) -> None:
+    """Only one daemon owns the persistent schedule at a time.
+
+    With ``embedded_worker`` the daemon also runs a worker thread for chain
+    tasks, so a single ``govcon scheduler start`` keeps working as before.
+    """
     from sqlalchemy import text
     from govcon.db import make_engine
     engine = make_engine(settings)
@@ -34,13 +49,34 @@ def start_blocking_scheduler(settings) -> None:
             if not acquired:
                 logger.info("scheduler: another daemon owns the schedule")
                 return
+            worker_stop = None
+            if embedded_worker:
+                worker_stop = _start_embedded_worker(settings)
             try:
                 _start_scheduler(settings, leader_connection=connection)
             finally:
+                if worker_stop is not None:
+                    worker_stop.set()
                 connection.execute(text("SELECT pg_advisory_unlock(742901, 2)"))
                 connection.commit()
     finally:
         engine.dispose()
+
+
+def _start_embedded_worker(settings):
+    """Run chain tasks in a daemon thread of the scheduler process."""
+    from threading import Event, Thread
+
+    from govcon.scheduler.chain_tasks import CHAIN_TASK
+    from govcon.tasks.worker import run_worker
+
+    stop = Event()
+    Thread(
+        target=run_worker, kwargs={"settings": settings, "task_types": [CHAIN_TASK], "stop_event": stop},
+        name="scheduler-chain-worker", daemon=True,
+    ).start()
+    logger.info("scheduler: embedded worker started for chain tasks")
+    return stop
 
 
 def _configured_scheduler(settings):

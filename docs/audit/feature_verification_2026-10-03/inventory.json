@@ -1,0 +1,941 @@
+{
+  "cli_commands": [
+    {
+      "group": "app",
+      "command": "status",
+      "symbol": "status",
+      "line": 132
+    },
+    {
+      "group": "db_app",
+      "command": "upgrade",
+      "symbol": "db_upgrade",
+      "line": 189
+    },
+    {
+      "group": "db_app",
+      "command": "seed-demo-watchlist",
+      "symbol": "db_seed_demo_watchlist",
+      "line": 201
+    },
+    {
+      "group": "users_app",
+      "command": "invite",
+      "symbol": "users_invite",
+      "line": 216
+    },
+    {
+      "group": "users_app",
+      "command": "deactivate",
+      "symbol": "users_deactivate",
+      "line": 254
+    },
+    {
+      "group": "users_app",
+      "command": "list",
+      "symbol": "users_list",
+      "line": 274
+    },
+    {
+      "group": "ingest_app",
+      "command": "sam",
+      "symbol": "ingest_sam",
+      "line": 324
+    },
+    {
+      "group": "ingest_app",
+      "command": "dibbs",
+      "symbol": "ingest_dibbs",
+      "line": 421
+    },
+    {
+      "group": "ingest_app",
+      "command": "usaspending",
+      "symbol": "ingest_usaspending",
+      "line": 491
+    },
+    {
+      "group": "ingest_app",
+      "command": "sam-backfill",
+      "symbol": "ingest_sam_backfill",
+      "line": 596
+    },
+    {
+      "group": "ingest_app",
+      "command": "sam-archive-sweep",
+      "symbol": "ingest_sam_archive_sweep",
+      "line": 654
+    },
+    {
+      "group": "ingest_app",
+      "command": "close-expired",
+      "symbol": "ingest_close_expired",
+      "line": 675
+    },
+    {
+      "group": "match_app",
+      "command": "run",
+      "symbol": "match_run",
+      "line": 723
+    },
+    {
+      "group": "match_app",
+      "command": "rebuild",
+      "symbol": "match_rebuild",
+      "line": 738
+    },
+    {
+      "group": "watchlist_app",
+      "command": "add",
+      "symbol": "watchlist_add",
+      "line": 759
+    },
+    {
+      "group": "watchlist_app",
+      "command": "list",
+      "symbol": "watchlist_list",
+      "line": 803
+    },
+    {
+      "group": "watchlist_app",
+      "command": "edit",
+      "symbol": "watchlist_edit",
+      "line": 825
+    },
+    {
+      "group": "alerts_app",
+      "command": "digest",
+      "symbol": "alerts_digest",
+      "line": 898
+    },
+    {
+      "group": "awards_app",
+      "command": "price-history",
+      "symbol": "awards_price_history",
+      "line": 942
+    },
+    {
+      "group": "awards_app",
+      "command": "price-history-psc",
+      "symbol": "awards_price_history_psc",
+      "line": 959
+    },
+    {
+      "group": "awards_app",
+      "command": "history",
+      "symbol": "awards_history",
+      "line": 977
+    },
+    {
+      "group": "awards_app",
+      "command": "top",
+      "symbol": "awards_top",
+      "line": 997
+    },
+    {
+      "group": "awards_app",
+      "command": "recompete",
+      "symbol": "awards_recompete",
+      "line": 1023
+    },
+    {
+      "group": "vendors_app",
+      "command": "show",
+      "symbol": "vendors_show",
+      "line": 1078
+    },
+    {
+      "group": "vendors_app",
+      "command": "competitors",
+      "symbol": "vendors_competitors",
+      "line": 1122
+    },
+    {
+      "group": "contacts_app",
+      "command": "search",
+      "symbol": "contacts_search",
+      "line": 1143
+    },
+    {
+      "group": "watchlist_app",
+      "command": "disable",
+      "symbol": "watchlist_disable",
+      "line": 1172
+    },
+    {
+      "group": "enrich_app",
+      "command": "download",
+      "symbol": "enrich_download",
+      "line": 1196
+    },
+    {
+      "group": "enrich_app",
+      "command": "analyze",
+      "symbol": "enrich_analyze",
+      "line": 1226
+    },
+    {
+      "group": "enrich_app",
+      "command": "intelligence",
+      "symbol": "enrich_intelligence",
+      "line": 1265
+    },
+    {
+      "group": "enrich_app",
+      "command": "process",
+      "symbol": "enrich_process",
+      "line": 1309
+    },
+    {
+      "group": "enrich_app",
+      "command": "ingest-file",
+      "symbol": "enrich_ingest_file",
+      "line": 1339
+    },
+    {
+      "group": "prompts_app",
+      "command": "sync",
+      "symbol": "prompts_sync",
+      "line": 1388
+    },
+    {
+      "group": "prompts_app",
+      "command": "activate",
+      "symbol": "prompts_activate",
+      "line": 1427
+    },
+    {
+      "group": "prompts_app",
+      "command": "rollback",
+      "symbol": "prompts_rollback",
+      "line": 1454
+    },
+    {
+      "group": "prompts_app",
+      "command": "list",
+      "symbol": "prompts_list",
+      "line": 1474
+    },
+    {
+      "group": "prompts_app",
+      "command": "validate",
+      "symbol": "prompts_validate",
+      "line": 1493
+    },
+    {
+      "group": "prompts_app",
+      "command": "render",
+      "symbol": "prompts_render",
+      "line": 1535
+    },
+    {
+      "group": "prompts_app",
+      "command": "diff",
+      "symbol": "prompts_diff",
+      "line": 1583
+    },
+    {
+      "group": "prompts_app",
+      "command": "eval",
+      "symbol": "prompts_eval",
+      "line": 1637
+    },
+    {
+      "group": "decision_app",
+      "command": "run-bundle",
+      "symbol": "decision_run_bundle",
+      "line": 1734
+    },
+    {
+      "group": "decision_app",
+      "command": "run-package",
+      "symbol": "decision_run_package",
+      "line": 1775
+    },
+    {
+      "group": "decision_app",
+      "command": "runs",
+      "symbol": "decision_runs",
+      "line": 1814
+    },
+    {
+      "group": "review_app",
+      "command": "assign",
+      "symbol": "review_assign",
+      "line": 1852
+    },
+    {
+      "group": "review_app",
+      "command": "comment",
+      "symbol": "review_comment",
+      "line": 1885
+    },
+    {
+      "group": "review_app",
+      "command": "complete",
+      "symbol": "review_complete",
+      "line": 1921
+    },
+    {
+      "group": "review_app",
+      "command": "context",
+      "symbol": "review_context",
+      "line": 1963
+    },
+    {
+      "group": "review_app",
+      "command": "approve",
+      "symbol": "review_approve",
+      "line": 1981
+    },
+    {
+      "group": "review_app",
+      "command": "reopen-for-amendment",
+      "symbol": "review_reopen_for_amendment",
+      "line": 2022
+    },
+    {
+      "group": "compliance_app",
+      "command": "run",
+      "symbol": "compliance_run",
+      "line": 2071
+    },
+    {
+      "group": "compliance_app",
+      "command": "inventory",
+      "symbol": "compliance_inventory",
+      "line": 2108
+    },
+    {
+      "group": "compliance_app",
+      "command": "matrix",
+      "symbol": "compliance_matrix_cmd",
+      "line": 2129
+    },
+    {
+      "group": "compliance_app",
+      "command": "coverage",
+      "symbol": "compliance_coverage",
+      "line": 2166
+    },
+    {
+      "group": "compliance_app",
+      "command": "findings",
+      "symbol": "compliance_findings",
+      "line": 2181
+    },
+    {
+      "group": "compliance_app",
+      "command": "clauses-seed",
+      "symbol": "compliance_clauses_seed",
+      "line": 2199
+    },
+    {
+      "group": "compliance_app",
+      "command": "evidence-add",
+      "symbol": "compliance_evidence_add",
+      "line": 2212
+    },
+    {
+      "group": "compliance_app",
+      "command": "override",
+      "symbol": "compliance_override",
+      "line": 2257
+    },
+    {
+      "group": "compliance_app",
+      "command": "proposal-coverage",
+      "symbol": "compliance_proposal_coverage",
+      "line": 2286
+    },
+    {
+      "group": "compliance_app",
+      "command": "preflight",
+      "symbol": "compliance_preflight",
+      "line": 2307
+    },
+    {
+      "group": "compliance_app",
+      "command": "ready",
+      "symbol": "compliance_ready",
+      "line": 2344
+    },
+    {
+      "group": "compliance_app",
+      "command": "benchmark",
+      "symbol": "compliance_benchmark",
+      "line": 2371
+    },
+    {
+      "group": "proposal_app",
+      "command": "generate",
+      "symbol": "proposal_generate",
+      "line": 2402
+    },
+    {
+      "group": "proposal_app",
+      "command": "status",
+      "symbol": "proposal_status",
+      "line": 2426
+    },
+    {
+      "group": "proposal_app",
+      "command": "red-team",
+      "symbol": "proposal_red_team",
+      "line": 2451
+    },
+    {
+      "group": "proposal_app",
+      "command": "approve",
+      "symbol": "proposal_approve",
+      "line": 2494
+    },
+    {
+      "group": "proposal_app",
+      "command": "return",
+      "symbol": "proposal_return",
+      "line": 2529
+    },
+    {
+      "group": "proposal_app",
+      "command": "cancel",
+      "symbol": "proposal_cancel",
+      "line": 2556
+    },
+    {
+      "group": "proposal_app",
+      "command": "export",
+      "symbol": "proposal_export",
+      "line": 2583
+    },
+    {
+      "group": "submission_app",
+      "command": "assemble",
+      "symbol": "submission_assemble",
+      "line": 2639
+    },
+    {
+      "group": "submission_app",
+      "command": "package",
+      "symbol": "submission_package",
+      "line": 2656
+    },
+    {
+      "group": "submission_app",
+      "command": "checklist",
+      "symbol": "submission_checklist",
+      "line": 2682
+    },
+    {
+      "group": "submission_app",
+      "command": "instructions",
+      "symbol": "submission_instructions",
+      "line": 2703
+    },
+    {
+      "group": "submission_app",
+      "command": "email-draft",
+      "symbol": "submission_email_draft",
+      "line": 2723
+    },
+    {
+      "group": "mcp_app",
+      "command": "serve",
+      "symbol": "mcp_serve",
+      "line": 2748
+    },
+    {
+      "group": "submission_app",
+      "command": "correct-commercial",
+      "symbol": "submission_correct_commercial",
+      "line": 2761
+    },
+    {
+      "group": "submission_app",
+      "command": "confirm",
+      "symbol": "submission_confirm",
+      "line": 2790
+    },
+    {
+      "group": "embed_app",
+      "command": "run",
+      "symbol": "embed_run",
+      "line": 2834
+    },
+    {
+      "group": "embed_app",
+      "command": "watchlists",
+      "symbol": "embed_watchlists",
+      "line": 2854
+    },
+    {
+      "group": "semantic_app",
+      "command": "similar",
+      "symbol": "semantic_similar",
+      "line": 2871
+    },
+    {
+      "group": "semantic_app",
+      "command": "recommendations",
+      "symbol": "semantic_recommendations",
+      "line": 2887
+    },
+    {
+      "group": "jobs_app",
+      "command": "list",
+      "symbol": "jobs_list",
+      "line": 2912
+    },
+    {
+      "group": "jobs_app",
+      "command": "run",
+      "symbol": "jobs_run",
+      "line": 2960
+    },
+    {
+      "group": "scheduler_app",
+      "command": "start",
+      "symbol": "scheduler_start",
+      "line": 3031
+    },
+    {
+      "group": "worker_app",
+      "command": "start",
+      "symbol": "worker_start",
+      "line": 3061
+    },
+    {
+      "group": "worker_app",
+      "command": "run",
+      "symbol": "worker_run",
+      "line": 3101
+    },
+    {
+      "group": "tasks_app",
+      "command": "list",
+      "symbol": "tasks_list",
+      "line": 3125
+    },
+    {
+      "group": "tasks_app",
+      "command": "show",
+      "symbol": "tasks_show",
+      "line": 3150
+    },
+    {
+      "group": "tasks_app",
+      "command": "retry",
+      "symbol": "tasks_retry",
+      "line": 3171
+    },
+    {
+      "group": "tasks_app",
+      "command": "cancel",
+      "symbol": "tasks_cancel",
+      "line": 3198
+    },
+    {
+      "group": "pursuit_app",
+      "command": "start",
+      "symbol": "pursuit_start",
+      "line": 3226
+    },
+    {
+      "group": "pursuit_app",
+      "command": "prepare",
+      "symbol": "pursuit_prepare",
+      "line": 3257
+    },
+    {
+      "group": "company_app",
+      "command": "refresh",
+      "symbol": "company_refresh",
+      "line": 3297
+    },
+    {
+      "group": "sourcing_app",
+      "command": "import-catalog",
+      "symbol": "sourcing_import_catalog",
+      "line": 3313
+    },
+    {
+      "group": "sourcing_app",
+      "command": "add-quote",
+      "symbol": "sourcing_add_quote",
+      "line": 3338
+    },
+    {
+      "group": "sourcing_app",
+      "command": "draft-rfq",
+      "symbol": "sourcing_draft_rfq",
+      "line": 3368
+    },
+    {
+      "group": "web_app",
+      "command": "serve",
+      "symbol": "web_serve",
+      "line": 3391
+    }
+  ],
+  "web_routes": [
+    {
+      "path": "/login",
+      "handler": "login_get",
+      "line": 99
+    },
+    {
+      "path": "/login",
+      "handler": "login_post",
+      "line": 100
+    },
+    {
+      "path": "/logout",
+      "handler": "logout_post",
+      "line": 101
+    },
+    {
+      "path": "/",
+      "handler": "inbox",
+      "line": 104
+    },
+    {
+      "path": "/inbox/action",
+      "handler": "inbox_action",
+      "line": 105
+    },
+    {
+      "path": "/notifications",
+      "handler": "notifications",
+      "line": 106
+    },
+    {
+      "path": "/notifications/{notification_id}/read",
+      "handler": "notification_read",
+      "line": 107
+    },
+    {
+      "path": "/notifications/{notification_id}/acknowledge",
+      "handler": "notification_acknowledge",
+      "line": 108
+    },
+    {
+      "path": "/search",
+      "handler": "search",
+      "line": 111
+    },
+    {
+      "path": "/opp/{opp_id}",
+      "handler": "opp_detail",
+      "line": 114
+    },
+    {
+      "path": "/opp/{opp_id}/start-workspace",
+      "handler": "opp_start_workspace",
+      "line": 115
+    },
+    {
+      "path": "/workspace/{opp_id}",
+      "handler": "workspace",
+      "line": 118
+    },
+    {
+      "path": "/workspace/{opp_id}/comment",
+      "handler": "workspace_comment",
+      "line": 119
+    },
+    {
+      "path": "/workspace/{opp_id}/assign",
+      "handler": "workspace_assign_reviewer",
+      "line": 120
+    },
+    {
+      "path": "/workspace/{opp_id}/complete-review",
+      "handler": "workspace_complete_review",
+      "line": 121
+    },
+    {
+      "path": "/workspace/{opp_id}/approve",
+      "handler": "workspace_approve",
+      "line": 122
+    },
+    {
+      "path": "/workspace/{opp_id}/proposal/approve",
+      "handler": "workspace_proposal_approve",
+      "line": 123
+    },
+    {
+      "path": "/workspace/{opp_id}/proposal/retry",
+      "handler": "workspace_proposal_retry",
+      "line": 124
+    },
+    {
+      "path": "/workspace/{opp_id}/proposal/status",
+      "handler": "workspace_proposal_status",
+      "line": 125
+    },
+    {
+      "path": "/workspace/{opp_id}/submission/approve",
+      "handler": "workspace_submission_approve",
+      "line": 126
+    },
+    {
+      "path": "/workspace/{opp_id}/record-outcome",
+      "handler": "workspace_record_outcome",
+      "line": 127
+    },
+    {
+      "path": "/workspace/{opp_id}/analyze/{kind}",
+      "handler": "workspace_run_analysis",
+      "line": 128
+    },
+    {
+      "path": "/pipeline",
+      "handler": "pipeline",
+      "line": 131
+    },
+    {
+      "path": "/watchlists",
+      "handler": "watchlists",
+      "line": 134
+    },
+    {
+      "path": "/watchlists/new",
+      "handler": "watchlist_new_get",
+      "line": 135
+    },
+    {
+      "path": "/watchlists/new",
+      "handler": "watchlist_new_post",
+      "line": 136
+    },
+    {
+      "path": "/watchlists/{wl_id}/edit",
+      "handler": "watchlist_edit_get",
+      "line": 137
+    },
+    {
+      "path": "/watchlists/{wl_id}/edit",
+      "handler": "watchlist_edit_post",
+      "line": 138
+    },
+    {
+      "path": "/watchlists/{wl_id}/toggle",
+      "handler": "watchlist_toggle",
+      "line": 139
+    },
+    {
+      "path": "/watchlists/{wl_id}/rebuild",
+      "handler": "watchlist_rebuild",
+      "line": 140
+    },
+    {
+      "path": "/vendors",
+      "handler": "vendors",
+      "line": 143
+    },
+    {
+      "path": "/ops",
+      "handler": "ops",
+      "line": 146
+    },
+    {
+      "path": "/settings",
+      "handler": "settings_page",
+      "line": 147
+    },
+    {
+      "path": "/workspace/{opp_id}/outcome-suggestions/{suggestion_id}/{action}",
+      "handler": "workspace_outcome_suggestion",
+      "line": 148
+    },
+    {
+      "path": "/settings",
+      "handler": "settings_save",
+      "line": 150
+    },
+    {
+      "path": "/settings/ai-sharing",
+      "handler": "ai_sharing_save",
+      "line": 151
+    },
+    {
+      "path": "/suppliers",
+      "handler": "suppliers_page",
+      "line": 152
+    },
+    {
+      "path": "/suppliers",
+      "handler": "suppliers_save",
+      "line": 153
+    },
+    {
+      "path": "/workspace/{opp_id}/quotes",
+      "handler": "workspace_add_quote",
+      "line": 154
+    },
+    {
+      "path": "/workspace/{opp_id}/rfq",
+      "handler": "workspace_draft_rfq",
+      "line": 155
+    },
+    {
+      "path": "/workspace/{opp_id}/prepare",
+      "handler": "workspace_prepare",
+      "line": 156
+    },
+    {
+      "path": "/ops/tasks/{task_id}/{action}",
+      "handler": "ops_task_action",
+      "line": 157
+    },
+    {
+      "path": "/learning",
+      "handler": "learning",
+      "line": 160
+    },
+    {
+      "path": "/admin/users/invite",
+      "handler": "admin_invite_get",
+      "line": 163
+    },
+    {
+      "path": "/admin/users/invite",
+      "handler": "admin_invite_post",
+      "line": 164
+    }
+  ],
+  "mcp_read_tools": [
+    "competitor_summary",
+    "get_bid_analysis",
+    "get_compliance_matrix",
+    "get_opportunity",
+    "get_opportunity_history",
+    "get_proposal",
+    "learning_summary",
+    "list_matches",
+    "pipeline_summary",
+    "price_history",
+    "search_opportunities",
+    "similar_opportunities",
+    "submission_status",
+    "vendor_profile"
+  ],
+  "mcp_write_tools": [
+    "add_pursuit",
+    "add_review_comment",
+    "assign_reviewer",
+    "create_proposal_version",
+    "record_outcome",
+    "request_ai_comment_validation",
+    "update_match",
+    "update_pursuit"
+  ],
+  "executed_test_counts": {
+    "tests.test_ai_providers": 19,
+    "tests.test_alerts": 21,
+    "tests.test_analysis_tasks": 5,
+    "tests.test_attachment_download": 32,
+    "tests.test_attachments_analysis.TestAIProvider": 3,
+    "tests.test_attachments_analysis.TestAISchemas": 4,
+    "tests.test_attachments_analysis.TestAttachmentIngestion": 4,
+    "tests.test_attachments_analysis.TestContextManifest": 1,
+    "tests.test_attachments_analysis.TestDeepSeekParsing": 3,
+    "tests.test_attachments_analysis.TestPromptSystem": 6,
+    "tests.test_attachments_analysis.TestSolicitationAnalysis": 7,
+    "tests.test_attachments_analysis.TestTextExtraction": 6,
+    "tests.test_audit": 1,
+    "tests.test_chain_tasks": 5,
+    "tests.test_cli_and_schema": 9,
+    "tests.test_collaborative_review": 9,
+    "tests.test_compliance": 26,
+    "tests.test_config_security": 8,
+    "tests.test_decision_engine": 9,
+    "tests.test_decision_signals": 9,
+    "tests.test_dibbs": 18,
+    "tests.test_f01_f10_regressions": 56,
+    "tests.test_f11_f20_regressions": 82,
+    "tests.test_f21_f28_regressions": 55,
+    "tests.test_f29_f33_regressions": 26,
+    "tests.test_feature_audit_fixes": 33,
+    "tests.test_full_coverage_extraction": 2,
+    "tests.test_http_prompts": 2,
+    "tests.test_installed_artifact": 1,
+    "tests.test_intelligence_analyses": 9,
+    "tests.test_m5_m13_regressions": 43,
+    "tests.test_matching": 20,
+    "tests.test_mcp": 6,
+    "tests.test_opportunity_lifecycle": 1,
+    "tests.test_outcome_learning.TestAnalytics": 14,
+    "tests.test_outcome_learning.TestDecisionReportIntegration": 2,
+    "tests.test_outcome_learning.TestMCPOutcome": 7,
+    "tests.test_outcome_learning.TestOutcomeAnalysisPrompt": 3,
+    "tests.test_outcome_learning.TestRecommendationLearningRules": 4,
+    "tests.test_outcome_learning.TestRecordOutcome": 7,
+    "tests.test_outcome_suggestions": 9,
+    "tests.test_page_extraction_ocr": 9,
+    "tests.test_phase19_testing_gates.TestAISchema": 10,
+    "tests.test_phase19_testing_gates.TestCollaborativeReview": 7,
+    "tests.test_phase19_testing_gates.TestCompliancePhase19": 6,
+    "tests.test_phase19_testing_gates.TestComplianceReleaseGate": 5,
+    "tests.test_phase19_testing_gates.TestIdempotency": 3,
+    "tests.test_phase19_testing_gates.TestJEVDecision": 13,
+    "tests.test_phase19_testing_gates.TestMatching": 11,
+    "tests.test_phase19_testing_gates.TestMigration": 2,
+    "tests.test_phase19_testing_gates.TestParserAndFixtures": 4,
+    "tests.test_phase19_testing_gates.TestPromptFixtureDirectory": 3,
+    "tests.test_phase19_testing_gates.TestPromptLibrary": 15,
+    "tests.test_phase19_testing_gates.TestPromptRuntimeAC": 9,
+    "tests.test_phase19_testing_gates.TestProposalPhase19": 4,
+    "tests.test_phase19_testing_gates.TestSnapshots": 2,
+    "tests.test_phase19_testing_gates.TestSubmissionPhase19": 4,
+    "tests.test_phase20_final_acceptance.TestAppendixDDoD": 32,
+    "tests.test_phase20_final_acceptance.TestFeatureChecklist": 23,
+    "tests.test_phase20_final_acceptance.TestNewPromptActivationGate": 10,
+    "tests.test_phase20_final_acceptance.TestNewSchemas": 12,
+    "tests.test_phase20_final_acceptance.TestNonGoalsNotImplemented": 4,
+    "tests.test_preparation": 11,
+    "tests.test_prompt_portability": 3,
+    "tests.test_proposal_generation_task": 31,
+    "tests.test_proposal_submission": 27,
+    "tests.test_ranking_notifications": 15,
+    "tests.test_release_lifecycle": 3,
+    "tests.test_sam_ingestion": 19,
+    "tests.test_scheduler.TestChainAbortOnFailure": 2,
+    "tests.test_scheduler.TestChainDefinitions": 9,
+    "tests.test_scheduler.TestIndependentChains": 1,
+    "tests.test_scheduler.TestIngestStepPersistence": 1,
+    "tests.test_scheduler.TestJobsList": 4,
+    "tests.test_scheduler.TestJobsRun": 5,
+    "tests.test_scheduler.TestNoSilentFailures": 2,
+    "tests.test_scheduler.TestRunVisibility": 3,
+    "tests.test_scheduler.TestSchedulerRunner": 3,
+    "tests.test_scheduler.TestSoftIngestSteps": 5,
+    "tests.test_scheduler.TestStatusCommand": 5,
+    "tests.test_scheduler.TestStepResult": 2,
+    "tests.test_scheduler.TestSundaySweep": 2,
+    "tests.test_security_hardening.TestAIGatewayBlocksDisallowedContent": 19,
+    "tests.test_security_hardening.TestCredentialStorageRules": 8,
+    "tests.test_security_hardening.TestLocalhostDefault": 8,
+    "tests.test_security_hardening.TestNoHardcodedSecretsInSourceModules": 2,
+    "tests.test_security_hardening.TestRepositoryContainsNoLiveCredentials": 3,
+    "tests.test_security_hardening.TestSecretFieldsNeverInLogs": 9,
+    "tests.test_security_hardening.TestSharedPromptFragments": 5,
+    "tests.test_semantic_search": 24,
+    "tests.test_sourcing_company": 9,
+    "tests.test_usaspending": 19,
+    "tests.test_vendors": 9,
+    "tests.test_web_ui": 2,
+    "tests.test_web_ui.TestApprovalPermissions": 2,
+    "tests.test_web_ui.TestApproveToGenerates": 5,
+    "tests.test_web_ui.TestAuditTrail": 1,
+    "tests.test_web_ui.TestAuthentication": 8,
+    "tests.test_web_ui.TestConcurrentAccess": 2,
+    "tests.test_web_ui.TestInboxActions": 4,
+    "tests.test_web_ui.TestMainPages": 11,
+    "tests.test_web_ui.TestRealSourceLinks": 2,
+    "tests.test_web_ui.TestSecurityRequirements": 3,
+    "tests.test_web_ui.TestWatchlistCRUD": 3,
+    "tests.test_web_ui.TestWorkflowGates": 8,
+    "tests.test_workflow_gates": 67
+  }
+}

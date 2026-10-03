@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FV04-protect-restored-pytest.log",
+    "tests": "139",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "29.535"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

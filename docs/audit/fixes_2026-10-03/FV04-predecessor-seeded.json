@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FV04-predecessor-seeded-pytest.log",
+    "tests": "125",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "19.831"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

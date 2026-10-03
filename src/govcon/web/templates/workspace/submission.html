@@ -1,3 +1,4 @@
+{% include "workspace/_outcome_suggestions.html" %}
 <!-- Submission tab -->
 {% if review_session and review_session.status == 'approved_to_bid' and proposal and proposal.status in ('ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix', 'draft') %}
   {% if submission %}

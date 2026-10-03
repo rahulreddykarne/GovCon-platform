@@ -42,8 +42,26 @@ from govcon.security.classification import DataClassification, strictest_classif
 logger = logging.getLogger("govcon.compliance.pipeline")
 
 
-def load_company_facts(settings: Settings) -> dict[str, Any]:
-    """Approved company facts (§38.4) from ``COMPANY_FACTS_PATH``; absent facts stay unknown."""
+class CompanyFactsInvalid(ValueError):
+    """``COMPANY_FACTS_PATH`` is not a JSON object; facts are never guessed from it."""
+
+
+def load_company_facts(settings: Settings, session: Session | None = None) -> dict[str, Any]:
+    """Approved company facts (§38.4); absent facts stay unknown.
+
+    With a session, SAM registration fields refreshed daily (ADR-072) replace
+    the file's values, or are removed when the refresh is stale.
+    """
+    facts = read_company_facts_file(settings)
+    if session is None:
+        return facts
+    from govcon.company.registration import overlay_registration
+
+    return overlay_registration(session, facts, settings=settings)
+
+
+def read_company_facts_file(settings: Settings) -> dict[str, Any]:
+    """The human-maintained facts file at ``COMPANY_FACTS_PATH``, as written."""
     path = settings.company_facts_path
     if path is None:
         return {}
@@ -51,7 +69,13 @@ def load_company_facts(settings: Settings) -> dict[str, Any]:
     if not path.is_file():
         logger.warning("COMPANY_FACTS_PATH %s does not exist; company facts are unknown", path)
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        facts = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise CompanyFactsInvalid(f"company facts file {path.name} is not valid JSON: {exc}") from exc
+    if not isinstance(facts, dict):
+        raise CompanyFactsInvalid(f"company facts file {path.name} must hold a JSON object, not {type(facts).__name__}")
+    return facts
 
 
 def passes_independent(ai_outcomes: list[Any]) -> bool:
@@ -103,7 +127,7 @@ def run_compliance_pipeline(
     opportunity = session.get(Opportunity, opportunity_id)
     if opportunity is None:
         raise ValueError(f"opportunity not found: {opportunity_id}")
-    facts = company_facts if company_facts is not None else load_company_facts(settings)
+    facts = company_facts if company_facts is not None else load_company_facts(settings, session)
     warnings: list[dict[str, Any]] = []
 
     inventory, inventory_run = build_document_inventory(session, opportunity_id)

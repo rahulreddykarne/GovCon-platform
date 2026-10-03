@@ -1,0 +1,25 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "BASELINE-pytest.log",
+    "tests": "1273",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "1",
+    "time": "237.063"
+  },
+  "typecheck": {
+    "exit_code": 1,
+    "log": "BASELINE-typecheck.log",
+    "count": 268
+  },
+  "lint": {
+    "exit_code": 1,
+    "log": "BASELINE-lint.log",
+    "count": 425
+  },
+  "build": {
+    "exit_code": 0,
+    "log": "BASELINE-build.log"
+  }
+}

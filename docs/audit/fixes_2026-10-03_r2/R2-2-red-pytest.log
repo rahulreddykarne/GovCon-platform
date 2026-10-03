@@ -1,0 +1,44 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+________ test_long_running_worker_survives_a_transient_database_error _________
+tests\test_r2_worker_resilience.py:80: in test_long_running_worker_survives_a_transient_database_error
+    processed = worker.run_worker(settings, stop_event=stop)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\tasks\worker.py:230: in run_worker
+    ran = run_once(settings, worker_id=worker_id, task_types=task_types)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_r2_worker_resilience.py:38: in fake_run_once
+    raise outcome
+E   sqlalchemy.exc.OperationalError: (builtins.Exception) server closed the connection unexpectedly
+E   [SQL: SELECT 1]
+E   (Background on this error at: https://sqlalche.me/e/21/e3q8)
+_______ test_scheduler_embedded_chain_worker_survives_a_database_error ________
+tests\test_r2_worker_resilience.py:99: in test_scheduler_embedded_chain_worker_survives_a_database_error
+    assert resumed.wait(5), "the chain worker thread died on the database error"
+E   AssertionError: the chain worker thread died on the database error
+E   assert False
+E    +  where False = wait(5)
+E    +    where wait = <threading.Event at 0x1163ed6d820: unset>.wait
+============================== warnings summary ===============================
+tests/test_r2_worker_resilience.py::test_scheduler_embedded_chain_worker_survives_a_database_error
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread scheduler-chain-worker
+  
+  Traceback (most recent call last):
+    File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\tasks\worker.py", line 230, in run_worker
+      ran = run_once(settings, worker_id=worker_id, task_types=task_types)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_r2_worker_resilience.py", line 93, in fake_run_once
+      raise outcomes.pop(0)
+  sqlalchemy.exc.OperationalError: (builtins.Exception) server closed the connection unexpectedly
+  [SQL: SELECT 1]
+  (Background on this error at: https://sqlalche.me/e/21/e3q8)
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

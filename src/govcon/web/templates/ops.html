@@ -36,6 +36,124 @@
   </div>
 </div>
 
+<!-- Durable tasks (ADR-061) -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Background Tasks</span>
+    <span class="text-muted" style="font-size:0.85rem;">Run <code>govcon worker start</code> to process queued work</span>
+  </div>
+  <div class="stats-grid">
+    {% for status in ['queued', 'running', 'retrying', 'waiting_for_input', 'waiting_for_budget', 'failed', 'succeeded', 'cancelled'] %}
+    <div class="stat-card">
+      <div class="label">{{ status|replace('_', ' ') }}</div>
+      <div class="value{% if status == 'failed' and task_counts.get(status) %} danger{% endif %}">{{ task_counts.get(status, 0) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if oldest_queued %}
+  <p class="text-sm text-muted">Oldest queued task since {{ oldest_queued.strftime('%Y-%m-%d %H:%M') }} UTC.</p>
+  {% endif %}
+
+  <h4>Failed tasks</h4>
+  {% if failed_tasks %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Task</th><th>Type</th><th>Opportunity</th><th>Attempts</th><th>Error</th><th>Owner</th><th>Next action</th><th></th></tr></thead>
+      <tbody>
+        {% for task in failed_tasks %}
+        <tr>
+          <td>#{{ task.id }}</td>
+          <td><code>{{ task.task_type }}</code></td>
+          <td>{% if task.opportunity_id %}<a href="/workspace/{{ task.opportunity_id }}">#{{ task.opportunity_id }}</a>{% else %}—{% endif %}</td>
+          <td>{{ task.attempts }}/{{ task.max_attempts }}</td>
+          <td><small>{{ task.last_error or '—' }}</small></td>
+          <td>{{ task.blocker_owner_role or '—' }}</td>
+          <td><small>{{ task.blocker_next_action or '—' }}</small></td>
+          <td>
+            {% if can_manage_tasks %}
+            <form method="post" action="/ops/tasks/{{ task.id }}/retry">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <button type="submit" class="btn btn-sm btn-secondary">Retry</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">No failed tasks.</p>
+  {% endif %}
+
+  <h4>Waiting for a person or budget</h4>
+  {% if waiting_tasks %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Task</th><th>Type</th><th>Opportunity</th><th>Status</th><th>Reason</th><th>Owner</th><th>Next action</th><th></th></tr></thead>
+      <tbody>
+        {% for task in waiting_tasks %}
+        <tr>
+          <td>#{{ task.id }}</td>
+          <td><code>{{ task.task_type }}</code></td>
+          <td>{% if task.opportunity_id %}<a href="/workspace/{{ task.opportunity_id }}">#{{ task.opportunity_id }}</a>{% else %}—{% endif %}</td>
+          <td>{{ task.status|replace('_', ' ') }}</td>
+          <td><small>{{ task.last_error or '—' }}</small></td>
+          <td>{{ task.blocker_owner_role or '—' }}</td>
+          <td><small>{{ task.blocker_next_action or '—' }}</small></td>
+          <td>
+            {% if can_manage_tasks %}
+            <form method="post" action="/ops/tasks/{{ task.id }}/retry" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <button type="submit" class="btn btn-sm btn-secondary">Retry</button>
+            </form>
+            <form method="post" action="/ops/tasks/{{ task.id }}/cancel" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <button type="submit" class="btn btn-sm btn-danger">Cancel</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">Nothing is waiting.</p>
+  {% endif %}
+</div>
+
+<!-- Measured AI usage (roadmap §6.2) -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">AI usage (last 30 days)</span>
+    <span class="text-muted" style="font-size:0.85rem;">Settled from provider-reported usage; cost only where a rate is configured</span>
+  </div>
+  {% if ai_usage %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Day</th><th>Purpose</th><th>Model</th><th>Calls</th><th>Failed</th><th>Input tokens</th><th>Output tokens</th><th>Cost (USD)</th></tr></thead>
+      <tbody>
+        {% for row in ai_usage %}
+        <tr>
+          <td>{{ row.day.strftime('%Y-%m-%d') }}</td>
+          <td><code>{{ row.purpose }}</code></td>
+          <td>{{ row.model or '—' }}</td>
+          <td>{{ row.calls }}</td>
+          <td>{{ row.failed }}</td>
+          <td>{{ '{:,}'.format(row.input_tokens or 0) }}</td>
+          <td>{{ '{:,}'.format(row.output_tokens or 0) }}</td>
+          <td>{% if row.cost_usd is not none %}{{ '%.4f' % row.cost_usd }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">No AI calls in the last 30 days.</p>
+  {% endif %}
+</div>
+
 <!-- Scheduler Job Chain Summary -->
 <div class="card">
   <div class="card-header">

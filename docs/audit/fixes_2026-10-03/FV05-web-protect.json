@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FV05-web-protect-pytest.log",
+    "tests": "1",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "2.458"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

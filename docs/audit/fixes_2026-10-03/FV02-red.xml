@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="2.624" timestamp="2026-10-03T04:14:06.357555-05:00" hostname="RahulROG"><testcase classname="tests.test_fv02_award_attribution" name="test_contradictory_notice_cannot_establish_an_outcome[agency]" time="1.632"><failure message="assert [&lt;govcon.mode...0203D5451730&gt;] == []&#10;  &#10;  Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D5451730&gt;&#10;  Use -v to get more diff">tests\test_fv02_award_attribution.py:39: in test_contradictory_notice_cannot_establish_an_outcome
+    assert suggestions(db, opp) == []
+E   assert [&lt;govcon.mode...0203D5451730&gt;] == []
+E     
+E     Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D5451730&gt;
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_fv02_award_attribution" name="test_contradictory_notice_cannot_establish_an_outcome[source]" time="0.059"><failure message="assert [&lt;govcon.mode...0203D54C93A0&gt;] == []&#10;  &#10;  Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D54C93A0&gt;&#10;  Use -v to get more diff">tests\test_fv02_award_attribution.py:39: in test_contradictory_notice_cannot_establish_an_outcome
+    assert suggestions(db, opp) == []
+E   assert [&lt;govcon.mode...0203D54C93A0&gt;] == []
+E     
+E     Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D54C93A0&gt;
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_fv02_award_attribution" name="test_contradictory_notice_cannot_establish_an_outcome[old_award]" time="0.064"><failure message="assert [&lt;govcon.mode...0203D54CB380&gt;] == []&#10;  &#10;  Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D54CB380&gt;&#10;  Use -v to get more diff">tests\test_fv02_award_attribution.py:39: in test_contradictory_notice_cannot_establish_an_outcome
+    assert suggestions(db, opp) == []
+E   assert [&lt;govcon.mode...0203D54CB380&gt;] == []
+E     
+E     Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D54CB380&gt;
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_fv02_award_attribution" name="test_contradictory_notice_cannot_establish_an_outcome[future_award]" time="0.103"><failure message="assert [&lt;govcon.mode...0203D54CBBF0&gt;] == []&#10;  &#10;  Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D54CBBF0&gt;&#10;  Use -v to get more diff">tests\test_fv02_award_attribution.py:39: in test_contradictory_notice_cannot_establish_an_outcome
+    assert suggestions(db, opp) == []
+E   assert [&lt;govcon.mode...0203D54CBBF0&gt;] == []
+E     
+E     Left contains one more item: &lt;govcon.models.OutcomeSuggestion object at 0x00000203D54CBBF0&gt;
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

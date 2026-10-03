@@ -1,0 +1,50 @@
+{
+  "offline": true,
+  "model_version": "all-MiniLM-L6-v2@unversioned",
+  "cached_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "counts": {
+    "embedded": 3,
+    "skipped": 0
+  },
+  "repeat_counts": {
+    "embedded": 0,
+    "skipped": 3
+  },
+  "dimension": 384,
+  "similarity_result": {
+    "opportunity_id": 1,
+    "method": "vector",
+    "matches": [
+      {
+        "id": 2,
+        "title": "Nitrile medical exam gloves",
+        "source": "sam",
+        "source_id": "audit-real-embedding-medical",
+        "psc_code": null,
+        "naics_code": null,
+        "nsn": null,
+        "agency_path": null,
+        "status": "open",
+        "response_deadline": "2026-10-17T08:35:01.316788+00:00",
+        "eligible_for_pursuit": true,
+        "eligibility_status": "eligible",
+        "cosine_distance": 0.0631
+      },
+      {
+        "id": 3,
+        "title": "Asphalt highway reconstruction",
+        "source": "sam",
+        "source_id": "audit-real-embedding-road",
+        "psc_code": null,
+        "naics_code": null,
+        "nsn": null,
+        "agency_path": null,
+        "status": "open",
+        "response_deadline": "2026-10-17T08:35:01.316788+00:00",
+        "eligible_for_pursuit": true,
+        "eligibility_status": "eligible",
+        "cosine_distance": 0.9766
+      }
+    ]
+  }
+}

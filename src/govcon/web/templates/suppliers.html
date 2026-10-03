@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Suppliers — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Suppliers</h1>
+    <div class="page-subtitle">Who we buy from, and their catalogs</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Supplier</th><th>UEI / CAGE</th><th>Contact</th><th>Catalog products</th><th>Last catalog import</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><strong>{{ row.supplier.name }}</strong><br><small class="text-muted">{{ row.supplier.provenance }}</small></td>
+          <td>{{ row.supplier.uei or '—' }} / {{ row.supplier.cage_code or '—' }}</td>
+          <td>{{ row.supplier.contact_name or '' }} {{ row.supplier.contact_email or '' }}</td>
+          <td>{{ row.products }}</td>
+          <td>{% if row.last_import %}{{ row.last_import.rows_imported }}/{{ row.last_import.rows_total }} rows, {{ row.last_import.created_at.strftime('%Y-%m-%d') }}{% if row.last_import.errors %} ({{ row.last_import.errors|length }} skipped){% endif %}{% else %}—{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted">No suppliers yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if can_edit %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Add a supplier or import a catalog</span></div>
+  <form method="post" action="/suppliers" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <label>Name <input type="text" name="name" required></label>
+    <label>UEI <input type="text" name="uei"></label>
+    <label>CAGE <input type="text" name="cage_code"></label>
+    <label>Contact name <input type="text" name="contact_name"></label>
+    <label>Contact email <input type="email" name="contact_email"></label>
+    <label>Phone <input type="text" name="phone"></label>
+    <label>Catalog CSV (columns: part_number, manufacturer, nsn, description, unit, list_price, valid_until)
+      <input type="file" name="catalog_file" accept=".csv"></label>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

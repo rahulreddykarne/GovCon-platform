@@ -1,0 +1,25 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FV06-full-pytest.log",
+    "tests": "1217",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "1",
+    "time": "200.337"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": [],
+  "typecheck": {
+    "exit_code": 1,
+    "log": "FV06-full-typecheck.log"
+  },
+  "lint": {
+    "exit_code": 1,
+    "log": "FV06-full-lint.log"
+  },
+  "build": {
+    "exit_code": 0,
+    "log": "FV06-full-build.log"
+  }
+}

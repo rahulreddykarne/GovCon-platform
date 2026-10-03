@@ -1,0 +1,9 @@
+{
+  "stale_registration_removed": true,
+  "stale_cached_vendor_age_days": 30,
+  "sam_active": true,
+  "provenance": {
+    "source": "sam_entity_api (own UEI)",
+    "confidence": "high"
+  }
+}

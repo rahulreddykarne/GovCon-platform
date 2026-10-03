@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="3.993" timestamp="2026-10-03T04:40:10.340369-05:00" hostname="RahulROG"><testcase classname="tests.test_fv04_review_preservation" name="test_automatic_setup_preserves_completed_and_reopened_review[complete-named]" time="1.972"><failure message="AssertionError: automatic preparation reset the human review cycle&#10;assert ('complete', .../UTC')), None) == ('assigned', None, None, None)&#10;  &#10;  At index 0 diff: 'complete' != 'assigned'&#10;  Use -v to get more diff">tests\test_fv04_review_preservation.py:50: in test_automatic_setup_preserves_completed_and_reopened_review
+    assert before == after, "automatic preparation reset the human review cycle"
+E   AssertionError: automatic preparation reset the human review cycle
+E   assert ('complete', .../UTC')), None) == ('assigned', None, None, None)
+E     
+E     At index 0 diff: 'complete' != 'assigned'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_fv04_review_preservation" name="test_automatic_setup_preserves_completed_and_reopened_review[complete-all_active]" time="0.298"><failure message="AssertionError: automatic preparation reset the human review cycle&#10;assert ('complete', .../UTC')), None) == ('assigned', None, None, None)&#10;  &#10;  At index 0 diff: 'complete' != 'assigned'&#10;  Use -v to get more diff">tests\test_fv04_review_preservation.py:50: in test_automatic_setup_preserves_completed_and_reopened_review
+    assert before == after, "automatic preparation reset the human review cycle"
+E   AssertionError: automatic preparation reset the human review cycle
+E   assert ('complete', .../UTC')), None) == ('assigned', None, None, None)
+E     
+E     At index 0 diff: 'complete' != 'assigned'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_fv04_review_preservation" name="test_automatic_setup_preserves_completed_and_reopened_review[reopened-named]" time="0.289"><failure message="AssertionError: automatic preparation reset the human review cycle&#10;assert ('reopened', ...y='Etc/UTC'))) == ('assigned', ...y='Etc/UTC')))&#10;  &#10;  At index 0 diff: 'reopened' != 'assigned'&#10;  Use -v to get more diff">tests\test_fv04_review_preservation.py:50: in test_automatic_setup_preserves_completed_and_reopened_review
+    assert before == after, "automatic preparation reset the human review cycle"
+E   AssertionError: automatic preparation reset the human review cycle
+E   assert ('reopened', ...y='Etc/UTC'))) == ('assigned', ...y='Etc/UTC')))
+E     
+E     At index 0 diff: 'reopened' != 'assigned'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_fv04_review_preservation" name="test_automatic_setup_preserves_completed_and_reopened_review[reopened-all_active]" time="0.358"><failure message="AssertionError: automatic preparation reset the human review cycle&#10;assert ('reopened', ...y='Etc/UTC'))) == ('assigned', ...y='Etc/UTC')))&#10;  &#10;  At index 0 diff: 'reopened' != 'assigned'&#10;  Use -v to get more diff">tests\test_fv04_review_preservation.py:50: in test_automatic_setup_preserves_completed_and_reopened_review
+    assert before == after, "automatic preparation reset the human review cycle"
+E   AssertionError: automatic preparation reset the human review cycle
+E   assert ('reopened', ...y='Etc/UTC'))) == ('assigned', ...y='Etc/UTC')))
+E     
+E     At index 0 diff: 'reopened' != 'assigned'
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

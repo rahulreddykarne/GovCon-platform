@@ -1,0 +1,607 @@
+{
+  "tests.test_ai_providers": {
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_alerts": {
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_analysis_tasks": {
+    "passed": 4,
+    "failed": 1,
+    "skipped": 0
+  },
+  "tests.test_attachment_download": {
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestTextExtraction": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestAttachmentIngestion": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestAISchemas": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestPromptSystem": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestAIProvider": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestSolicitationAnalysis": {
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestDeepSeekParsing": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_attachments_analysis.TestContextManifest": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_audit": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_chain_tasks": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_cli_and_schema": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_collaborative_review": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_compliance": {
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_config_security": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_decision_engine": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_decision_signals": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_dibbs": {
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_f01_f10_regressions": {
+    "passed": 56,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_f11_f20_regressions": {
+    "passed": 82,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_f21_f28_regressions": {
+    "passed": 55,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_f29_f33_regressions": {
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_feature_audit_fixes": {
+    "passed": 33,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_full_coverage_extraction": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv01_pricing": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv02_award_attribution": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv03_preparation_commits": {
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv04_review_preservation": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv05_quote_permissions": {
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv06_catalog_rows": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv07_workbook_errors": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv08_finite_numbers": {
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv09_quote_repeats": {
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv10_review_cycles": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_fv11_model_revision": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_http_prompts": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_installed_artifact": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_intelligence_analyses": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_m5_m13_regressions": {
+    "passed": 43,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_matching": {
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_mcp": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_opportunity_lifecycle": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_outcome_learning.TestRecordOutcome": {
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_outcome_learning.TestAnalytics": {
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_outcome_learning.TestMCPOutcome": {
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_outcome_learning.TestOutcomeAnalysisPrompt": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_outcome_learning.TestRecommendationLearningRules": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_outcome_learning.TestDecisionReportIntegration": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_outcome_suggestions": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_page_extraction_ocr": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestParserAndFixtures": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestIdempotency": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestSnapshots": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestMatching": {
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestAISchema": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestPromptLibrary": {
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestJEVDecision": {
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestCollaborativeReview": {
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestCompliancePhase19": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestComplianceReleaseGate": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestProposalPhase19": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestSubmissionPhase19": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestMigration": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestPromptFixtureDirectory": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase19_testing_gates.TestPromptRuntimeAC": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase20_final_acceptance.TestAppendixDDoD": {
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase20_final_acceptance.TestFeatureChecklist": {
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase20_final_acceptance.TestNewPromptActivationGate": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase20_final_acceptance.TestNewSchemas": {
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_phase20_final_acceptance.TestNonGoalsNotImplemented": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_preparation": {
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_prompt_portability": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_proposal_generation_task": {
+    "passed": 31,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_proposal_submission": {
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_r2_auto_pursue_guardrail": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_r2_reviewer_reassign": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_r2_task_attempts": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_r2_worker_resilience": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_ranking_notifications": {
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_release_lifecycle": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_sam_ingestion": {
+    "passed": 18,
+    "failed": 0,
+    "skipped": 1
+  },
+  "tests.test_scheduler.TestChainDefinitions": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestStatusCommand": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestJobsList": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestJobsRun": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestChainAbortOnFailure": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestIndependentChains": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestRunVisibility": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestNoSilentFailures": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestStepResult": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestIngestStepPersistence": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestSchedulerRunner": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestSundaySweep": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_scheduler.TestSoftIngestSteps": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_security_hardening.TestSecretFieldsNeverInLogs": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_security_hardening.TestAIGatewayBlocksDisallowedContent": {
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_security_hardening.TestLocalhostDefault": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_security_hardening.TestRepositoryContainsNoLiveCredentials": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_security_hardening.TestCredentialStorageRules": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_security_hardening.TestSharedPromptFragments": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_security_hardening.TestNoHardcodedSecretsInSourceModules": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_semantic_search": {
+    "passed": 24,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_sourcing_company": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_usaspending": {
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_vendors": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestAuthentication": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestMainPages": {
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestInboxActions": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestConcurrentAccess": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestApprovalPermissions": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestApproveToGenerates": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestWorkflowGates": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestAuditTrail": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestWatchlistCRUD": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestSecurityRequirements": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui.TestRealSourceLinks": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_web_ui": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tests.test_workflow_gates": {
+    "passed": 67,
+    "failed": 0,
+    "skipped": 0
+  }
+}

@@ -180,7 +180,11 @@ def test_f14_solicitation_analysis_obeys_registry_denial(db, monkeypatch):
 
 
 @pytest.mark.parametrize("primary", ["deepseek", "anthropic", "openai"])
-def test_f15_each_primary_runs_through_web_approval(db, monkeypatch, primary):
+def test_f15_each_primary_drafts_with_ai_after_web_approval(db, monkeypatch, primary):
+    """Approval queues generation (ADR-062); the task drafts with AI for any configured primary."""
+    from types import SimpleNamespace
+    from govcon.tasks.handlers import proposal as handler
+    from govcon.tasks.registry import StepContext
     from govcon.web import routes
     settings = Settings(_env_file=None, ai_primary_provider=primary, **{f"{primary}_api_key": "test-key"})
     # Clear keys inherited from the environment so the test only configures the primary.
@@ -189,15 +193,18 @@ def test_f15_each_primary_runs_through_web_approval(db, monkeypatch, primary):
     monkeypatch.setattr("govcon.config.get_settings", lambda: settings)
     web_session(monkeypatch, db, user(db))
     monkeypatch.setattr(routes, "finalize_approval", Mock())
-    generate = Mock()
-    monkeypatch.setattr("govcon.proposals.service.generate_proposal", generate)
-    monkeypatch.setattr("govcon.submissions.service.generate_submission_package", Mock())
     with TestClient(create_app(settings), follow_redirects=False) as client:
         response = client.post("/workspace/1/approve", data={
             "csrf_token": token(client), "decision": "approve_to_bid", "expected_version": "1",
         })
     assert response.status_code == 303 and "notice=" in response.headers["location"]
-    assert generate.call_args.kwargs["skip_ai"] is False
+    prepared = Mock()
+    prepare = Mock(return_value=prepared)
+    monkeypatch.setattr(handler, "_current_inputs", lambda *args: {"without_ai": False})
+    monkeypatch.setattr("govcon.proposals.drafting.prepare_draft_call", prepare)
+    ctx = StepContext(settings=settings, task_id=1, opportunity_id=1, payload={}, input_revision={})
+    draft = handler._prepare(db, SimpleNamespace(opportunity_id=1), ctx)
+    assert draft.prepared is prepared, f"{primary} must take the AI drafting path, not the placeholder"
 
 
 @pytest.mark.parametrize("primary", ["deepseek", "anthropic", "openai"])

@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="4.016" timestamp="2026-10-03T05:57:47.276091-05:00" hostname="RahulROG"><testcase classname="docs.audit.fixes_2026-10-03.cli_help_recheck" name="test_all_registered_cli_help_still_works" time="3.252" /></testsuite></testsuites>

@@ -3,7 +3,9 @@
 Each builds deterministic, source-backed inputs, runs the registry prompt
 through ``run_structured_prompt`` (classification-checked), and stores the
 validated result as an ``ai_analyses`` row of the matching ``AnalysisType``
-with the source revision it was built from.
+with the source revision it was built from. ``prepare_analysis`` builds the
+same call for the durable ``ai_analysis`` task (ADR-064), whose provider call
+runs with no transaction open.
 
 - Market analysis uses public award and opportunity data → PUBLIC.
 - Supplier and pricing analysis use the pursuit's supplier, cost, and price
@@ -19,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import run_structured_prompt
+from govcon.ai.structured import PreparedCall, prepare_structured_call, run_structured_prompt
 from govcon.compliance.matrix import active_requirements
 from govcon.config import Settings, get_settings
 from govcon.intelligence.competitors import competitor_summary
@@ -82,7 +84,7 @@ def _award_json(point: PricePoint) -> dict[str, Any]:
     }
 
 
-def _run(
+def _request(
     session: Session,
     opportunity: Opportunity,
     *,
@@ -92,24 +94,21 @@ def _run(
     classification: DataClassification,
     settings: Settings,
     manifest: dict[str, Any],
-) -> AIAnalysis:
+) -> dict[str, Any]:
+    """Keyword arguments for the structured call, stamped with the source revision."""
     manifest = {**manifest, SOURCE_REVISION_KEY: current_source_revision(session, opportunity.id)}
-    result = run_structured_prompt(
-        session,
-        opportunity_id=opportunity.id,
-        prompt_name=prompt_name,
-        analysis_type=analysis_type,
-        variables=variables,
-        context_manifest=manifest,
-        settings=settings,
-        classification=classification,
-    )
-    assert result.analysis is not None
-    return result.analysis
+    return {
+        "opportunity_id": opportunity.id,
+        "prompt_name": prompt_name,
+        "analysis_type": analysis_type,
+        "variables": variables,
+        "context_manifest": manifest,
+        "settings": settings,
+        "classification": classification,
+    }
 
 
-def run_market_analysis(session: Session, opportunity_id: int, *, settings: Settings | None = None) -> AIAnalysis:
-    settings = settings or get_settings()
+def _market_request(session: Session, opportunity_id: int, settings: Settings) -> dict[str, Any]:
     opp = _opportunity(session, opportunity_id)
     comps = recent_award_comps(session, nsn=opp.nsn, psc_code=opp.psc_code, limit=25)
     summary = competitor_summary(session, opp.id, limit=10)
@@ -133,7 +132,7 @@ def run_market_analysis(session: Session, opportunity_id: int, *, settings: Sett
                     "business_types": vendor.business_types if vendor else None,
                 }
             )
-    return _run(
+    return _request(
         session,
         opp,
         prompt_name="market_analysis",
@@ -149,24 +148,30 @@ def run_market_analysis(session: Session, opportunity_id: int, *, settings: Sett
     )
 
 
-def run_supplier_analysis(session: Session, opportunity_id: int, *, settings: Settings | None = None) -> AIAnalysis:
-    settings = settings or get_settings()
+def _supplier_request(session: Session, opportunity_id: int, settings: Settings) -> dict[str, Any]:
+    from govcon.sourcing.records import quote_records
+
     opp = _opportunity(session, opportunity_id)
     pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp.id))
-    if pursuit is None or not (pursuit.supplier or pursuit.sourcing_cost is not None):
-        raise AnalysisInputMissing("record a supplier or sourcing cost on the pursuit before running supplier analysis")
-    requirements = [
-        r for r in active_requirements(session, opp.id) if (r.requirement_type or "") in SOURCING_REQUIREMENT_TYPES
-    ]
-    records = [
-        {
+    # Current supplier quotes (ADR-071) are the primary evidence; the pursuit's
+    # free-text supplier and cost remain accepted for older pursuits.
+    records = quote_records(session, opp.id)
+    if pursuit is not None and (pursuit.supplier or pursuit.sourcing_cost is not None):
+        records.append({
             "supplier": pursuit.supplier,
             "sourcing_cost": _num(pursuit.sourcing_cost),
             "notes": pursuit.notes,
             "source": "pursuit record entered by a user",
-        }
+        })
+    if not records:
+        raise AnalysisInputMissing(
+            "record a current supplier quote, or a supplier or sourcing cost on the pursuit, before running "
+            "supplier analysis"
+        )
+    requirements = [
+        r for r in active_requirements(session, opp.id) if (r.requirement_type or "") in SOURCING_REQUIREMENT_TYPES
     ]
-    return _run(
+    return _request(
         session,
         opp,
         prompt_name="supplier_analysis",
@@ -187,29 +192,43 @@ def run_supplier_analysis(session: Session, opportunity_id: int, *, settings: Se
         },
         classification=DataClassification.PROPRIETARY,
         settings=settings,
-        manifest={"requirement_ids": [r.id for r in requirements], "pursuit_id": pursuit.id},
+        manifest={"requirement_ids": [r.id for r in requirements], "pursuit_id": pursuit.id if pursuit else None,
+                  "quote_ids": [r["quote_id"] for r in records if "quote_id" in r]},
     )
 
 
-def run_pricing_analysis(session: Session, opportunity_id: int, *, settings: Settings | None = None) -> AIAnalysis:
-    settings = settings or get_settings()
+def _pricing_request(session: Session, opportunity_id: int, settings: Settings) -> dict[str, Any]:
     opp = _opportunity(session, opportunity_id)
+    from govcon.sourcing.records import lowest_current_total
+
     pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp.id))
-    if pursuit is None or (pursuit.quote_price is None and pursuit.sourcing_cost is None):
-        raise AnalysisInputMissing("record a quote price or sourcing cost on the pursuit before running pricing analysis")
+    quote_price = pursuit.quote_price if pursuit is not None else None
+    cost = pursuit.sourcing_cost if pursuit is not None else None
+    cost_source = "pursuit record entered by a user" if cost is not None else None
+    best = lowest_current_total(session, opp.id) if cost is None else None
+    if best is not None:
+        # The lowest current supplier quote stands in for an unrecorded cost (ADR-071).
+        cost, cost_source = best.total_price, f"lowest current supplier quote #{best.id}"
+    if quote_price is None and cost is None:
+        raise AnalysisInputMissing(
+            "record a quote price or sourcing cost on the pursuit, or a current supplier quote, before running "
+            "pricing analysis"
+        )
     comps = recent_award_comps(session, nsn=opp.nsn, psc_code=opp.psc_code, limit=25)
     quantity = opp.quantity if opp.quantity and opp.quantity > 0 else None
+    markup = ((quote_price - cost) / cost * 100) if quote_price is not None and cost else None
     inputs = {
-        "quote_price_total": _num(pursuit.quote_price),
-        "sourcing_cost_total": _num(pursuit.sourcing_cost),
-        "markup_on_cost_pct": _num(pursuit.margin_pct),
+        "quote_price_total": _num(quote_price),
+        "sourcing_cost_total": _num(cost),
+        "sourcing_cost_source": cost_source,
+        "markup_on_cost_pct": _num(markup),
         "quantity": _num(quantity),
         "unit": opp.unit,
-        "proposed_unit_price": _num(pursuit.quote_price / quantity) if pursuit.quote_price is not None and quantity else None,
-        "unit_cost": _num(pursuit.sourcing_cost / quantity) if pursuit.sourcing_cost is not None and quantity else None,
+        "proposed_unit_price": _num(quote_price / quantity) if quote_price is not None and quantity else None,
+        "unit_cost": _num(cost / quantity) if cost is not None and quantity else None,
         "note": "Arithmetic is computed by the application; markup_on_cost_pct = (price - cost) / cost.",
     }
-    return _run(
+    return _request(
         session,
         opp,
         prompt_name="pricing_analysis",
@@ -220,8 +239,46 @@ def run_pricing_analysis(session: Session, opportunity_id: int, *, settings: Set
         },
         classification=DataClassification.PROPRIETARY,
         settings=settings,
-        manifest={"award_ids": [p.award_id for p in comps], "pursuit_id": pursuit.id},
+        manifest={"award_ids": [p.award_id for p in comps], "pursuit_id": pursuit.id if pursuit else None,
+                  "cost_source": cost_source},
     )
+
+
+_REQUESTS = {
+    "market": _market_request,
+    "supplier": _supplier_request,
+    "pricing": _pricing_request,
+}
+ANALYSIS_KINDS = tuple(_REQUESTS)
+
+
+def prepare_analysis(session: Session, opportunity_id: int, kind: str, *, settings: Settings | None = None) -> PreparedCall:
+    """Build the inputs and check policy in a transaction; the AI call happens later.
+
+    Raises ``AnalysisInputMissing`` when the pursuit lacks the facts the
+    analysis needs, and ``StructuredCallError`` when policy refuses the call.
+    """
+    settings = settings or get_settings()
+    return prepare_structured_call(session, **_REQUESTS[kind](session, opportunity_id, settings))
+
+
+def _run_kind(session: Session, opportunity_id: int, kind: str, settings: Settings | None) -> AIAnalysis:
+    settings = settings or get_settings()
+    result = run_structured_prompt(session, **_REQUESTS[kind](session, opportunity_id, settings))
+    assert result.analysis is not None
+    return result.analysis
+
+
+def run_market_analysis(session: Session, opportunity_id: int, *, settings: Settings | None = None) -> AIAnalysis:
+    return _run_kind(session, opportunity_id, "market", settings)
+
+
+def run_supplier_analysis(session: Session, opportunity_id: int, *, settings: Settings | None = None) -> AIAnalysis:
+    return _run_kind(session, opportunity_id, "supplier", settings)
+
+
+def run_pricing_analysis(session: Session, opportunity_id: int, *, settings: Settings | None = None) -> AIAnalysis:
+    return _run_kind(session, opportunity_id, "pricing", settings)
 
 
 PRODUCERS = {

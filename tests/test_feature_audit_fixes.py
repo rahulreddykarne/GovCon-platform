@@ -155,43 +155,8 @@ def test_f2_empty_review_can_assign_first_reviewer(db, client):
     assert "My Review Actions" in client.get(f"/workspace/{opp.id}?tab=review").text
 
 
-def approval_fixture(db, client):
-    from test_web_ui import TestApproveToGenerates
-    opp, pursuit, review, actor, token = TestApproveToGenerates()._make_opp_for_generate(db, uuid4().hex)
-    client.cookies.set("govcon_session", token)
-    return opp, pursuit, review, actor
-
-
-def test_f3_preserves_approval_and_rolls_back_half_generated_artifacts(db, client, monkeypatch):
-    from govcon.models import Proposal, Submission
-    opp, pursuit, review, actor = approval_fixture(db, client)
-    def fail_package(*args, **kwargs):
-        raise RuntimeError("synthetic package failure")
-    monkeypatch.setattr("govcon.submissions.service.generate_submission_package", fail_package)
-    response = client.post(f"/workspace/{opp.id}/approve", data={
-        "decision": "approve_to_bid", "expected_version": review.version})
-    assert response.status_code == 303
-    db.expire_all()
-    assert db.get(ReviewSession, review.id).status == "approved_to_bid"
-    assert db.get(Pursuit, pursuit.id).stage == "bid_approved"
-    assert db.scalar(select(Proposal).where(Proposal.opportunity_id == opp.id)) is None
-    assert db.scalar(select(Submission).where(Submission.opportunity_id == opp.id)) is None
-
-
-@pytest.mark.xfail(strict=True, reason="F3 API/response change awaits the user's required approval")
-def test_f3_failed_generation_is_honest_and_recoverable(db, client, monkeypatch):
-    opp, _, review, _ = approval_fixture(db, client)
-    def fail_generation(*args, **kwargs):
-        raise RuntimeError("synthetic provider outage")
-    monkeypatch.setattr("govcon.proposals.service.generate_proposal", fail_generation)
-    response = client.post(f"/workspace/{opp.id}/approve", data={
-        "decision": "approve_to_bid", "expected_version": review.version})
-    assert response.status_code == 303
-    assert "error=" in response.headers["location"], "Approval must report a failed proposal generation"
-    page = client.get(f"/workspace/{opp.id}?tab=proposal")
-    assert "generation failed" in page.text.lower()
-    assert f'action="/workspace/{opp.id}/proposal/retry"' in page.text
-    assert "generation in progress" not in page.text.lower()
+# F3 (proposal generation failure and retry) moved to durable tasks under
+# roadmap §9; its acceptance tests live in test_proposal_generation_task.py.
 
 
 def ready_submission(db, client, tmp_path):

@@ -1,0 +1,22 @@
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+____ test_cached_alias_uses_the_resolved_snapshot_commit[all-MiniLM-L6-v2] ____
+tests\test_fv11_model_revision.py:60: in test_cached_alias_uses_the_resolved_snapshot_commit
+    assert value.model_version == f"{name}@{commit}"
+E   AssertionError: assert 'all-MiniLM-L6-v2@unversioned' == 'all-MiniLM-L...aaaaaaaaaaaaa'
+E     
+E     - all-MiniLM-L6-v2@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+E     + all-MiniLM-L6-v2@unversioned
+_ test_cached_alias_uses_the_resolved_snapshot_commit[sentence-transformers/all-MiniLM-L6-v2] _
+tests\test_fv11_model_revision.py:60: in test_cached_alias_uses_the_resolved_snapshot_commit
+    assert value.model_version == f"{name}@{commit}"
+E   AssertionError: assert 'sentence-tra...2@unversioned' == 'sentence-tra...aaaaaaaaaaaaa'
+E     
+E     - sentence-transformers/all-MiniLM-L6-v2@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+E     + sentence-transformers/all-MiniLM-L6-v2@unversioned
+_______ test_cached_alias_revision_change_rebuilds_the_existing_vector ________
+tests\test_fv11_model_revision.py:75: in test_cached_alias_revision_change_rebuilds_the_existing_vector
+    assert not _fresh(opp, second, "Medical gloves Nitrile gloves"), "the changed model alias still appears fresh"
+E   AssertionError: the changed model alias still appears fresh
+E   assert not True
+E    +  where True = _fresh(<govcon.models.Opportunity object at 0x000002833CE0C1A0>, <govcon.enrich.embeddings.SentenceTransformerProvider object at 0x000002833CD1DBE0>, 'Medical gloves Nitrile gloves')

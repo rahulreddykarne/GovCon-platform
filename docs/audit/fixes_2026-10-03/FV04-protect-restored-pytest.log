@@ -1,0 +1,16 @@
+........................................................................ [ 51%]
+...................................................................      [100%]
+============================== warnings summary ===============================
+tests/test_fv03_preparation_commits.py::test_service_writes_are_discarded_when_work_is_invalidated[cancel-summary]
+tests/test_fv03_preparation_commits.py::test_service_writes_are_discarded_when_work_is_invalidated[cancel-compliance]
+tests/test_fv03_preparation_commits.py::test_service_writes_are_discarded_when_work_is_invalidated[cancel-decision]
+tests/test_preparation.py::test_every_entry_point_creates_the_same_pursuit_and_preparation[inbox]
+tests/test_preparation.py::test_every_entry_point_creates_the_same_pursuit_and_preparation[workspace]
+tests/test_preparation.py::test_disabled_auto_preparation_queues_nothing
+tests/test_preparation.py::test_preparation_runs_every_step_and_assigns_reviewers_by_setting[named]
+tests/test_preparation.py::test_preparation_runs_every_step_and_assigns_reviewers_by_setting[all_active]
+tests/test_preparation.py::test_preparation_runs_every_step_and_assigns_reviewers_by_setting[manual]
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

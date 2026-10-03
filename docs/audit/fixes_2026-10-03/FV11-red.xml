@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="0.869" timestamp="2026-10-03T05:26:32.685474-05:00" hostname="RahulROG"><testcase classname="tests.test_fv11_model_revision" name="test_cached_alias_uses_the_resolved_snapshot_commit[all-MiniLM-L6-v2]" time="0.285"><failure message="AssertionError: assert 'all-MiniLM-L6-v2@unversioned' == 'all-MiniLM-L...aaaaaaaaaaaaa'&#10;  &#10;  - all-MiniLM-L6-v2@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&#10;  + all-MiniLM-L6-v2@unversioned">tests\test_fv11_model_revision.py:60: in test_cached_alias_uses_the_resolved_snapshot_commit
+    assert value.model_version == f"{name}@{commit}"
+E   AssertionError: assert 'all-MiniLM-L6-v2@unversioned' == 'all-MiniLM-L...aaaaaaaaaaaaa'
+E     
+E     - all-MiniLM-L6-v2@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+E     + all-MiniLM-L6-v2@unversioned</failure></testcase><testcase classname="tests.test_fv11_model_revision" name="test_cached_alias_uses_the_resolved_snapshot_commit[sentence-transformers/all-MiniLM-L6-v2]" time="0.002"><failure message="AssertionError: assert 'sentence-tra...2@unversioned' == 'sentence-tra...aaaaaaaaaaaaa'&#10;  &#10;  - sentence-transformers/all-MiniLM-L6-v2@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&#10;  + sentence-transformers/all-MiniLM-L6-v2@unversioned">tests\test_fv11_model_revision.py:60: in test_cached_alias_uses_the_resolved_snapshot_commit
+    assert value.model_version == f"{name}@{commit}"
+E   AssertionError: assert 'sentence-tra...2@unversioned' == 'sentence-tra...aaaaaaaaaaaaa'
+E     
+E     - sentence-transformers/all-MiniLM-L6-v2@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+E     + sentence-transformers/all-MiniLM-L6-v2@unversioned</failure></testcase><testcase classname="tests.test_fv11_model_revision" name="test_cached_alias_revision_change_rebuilds_the_existing_vector" time="0.053"><failure message="AssertionError: the changed model alias still appears fresh&#10;assert not True&#10; +  where True = _fresh(&lt;govcon.models.Opportunity object at 0x000002833CE0C1A0&gt;, &lt;govcon.enrich.embeddings.SentenceTransformerProvider object at 0x000002833CD1DBE0&gt;, 'Medical gloves Nitrile gloves')">tests\test_fv11_model_revision.py:75: in test_cached_alias_revision_change_rebuilds_the_existing_vector
+    assert not _fresh(opp, second, "Medical gloves Nitrile gloves"), "the changed model alias still appears fresh"
+E   AssertionError: the changed model alias still appears fresh
+E   assert not True
+E    +  where True = _fresh(&lt;govcon.models.Opportunity object at 0x000002833CE0C1A0&gt;, &lt;govcon.enrich.embeddings.SentenceTransformerProvider object at 0x000002833CD1DBE0&gt;, 'Medical gloves Nitrile gloves')</failure></testcase></testsuite></testsuites>

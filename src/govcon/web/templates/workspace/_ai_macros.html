@@ -6,10 +6,25 @@
 {%- endmacro %}
 
 {% macro run_button(opp_id, kind, label, allowed) -%}
-  {% if allowed %}
-  <form method="post" action="/workspace/{{ opp_id }}/analyze/{{ kind }}" style="display:inline;">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-    <button type="submit" class="btn btn-secondary btn-sm">{{ label }}</button>
-  </form>
+  {% set task = (analysis_tasks or {}).get(kind) %}
+  {% if task and task.status in ('queued', 'running', 'retrying') %}
+  <span class="badge badge-primary" role="status">
+    Analysis {{ 'retrying' if task.status == 'retrying' else task.status }}{% if task.status == 'retrying' and task.last_error %}: {{ task.last_error }}{% endif %}
+  </span>
+  <span class="text-sm text-muted">Reload to see the result.</span>
+  {% else %}
+    {% if task and task.status in ('waiting_for_input', 'waiting_for_budget', 'failed') %}
+    <div class="alert alert-error" role="alert">
+      <strong>{{ kind|title }} analysis {{ 'failed' if task.status == 'failed' else 'is ' ~ task.status|replace('_', ' ') }}.</strong>
+      {% if task.last_error %}{{ task.last_error }}{% endif %}
+      {% if task.blocker_next_action %}<div class="mt-1"><strong>Next action{% if task.blocker_owner_role %} ({{ task.blocker_owner_role }}){% endif %}:</strong> {{ task.blocker_next_action }}</div>{% endif %}
+    </div>
+    {% endif %}
+    {% if allowed %}
+    <form method="post" action="/workspace/{{ opp_id }}/analyze/{{ kind }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-secondary btn-sm">{{ label }}</button>
+    </form>
+    {% endif %}
   {% endif %}
 {%- endmacro %}

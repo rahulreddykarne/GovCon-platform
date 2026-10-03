@@ -1,0 +1,158 @@
+{
+  "offline": true,
+  "model_version": "all-MiniLM-L6-v2@1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "cached_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "counts": {
+    "embedded": 3,
+    "skipped": 0
+  },
+  "repeat_counts": {
+    "embedded": 0,
+    "skipped": 3
+  },
+  "dimension": 384,
+  "unversioned_upgrade_counts": {
+    "embedded": 1,
+    "skipped": 2
+  },
+  "persisted_recommendations": 5,
+  "similarity_result": {
+    "opportunity_id": 1,
+    "method": "vector",
+    "matches": [
+      {
+        "id": 2,
+        "title": "Nitrile medical exam gloves",
+        "source": "sam",
+        "source_id": "fix-real-model-1",
+        "psc_code": null,
+        "naics_code": null,
+        "nsn": null,
+        "agency_path": null,
+        "status": "open",
+        "response_deadline": "2026-10-17T10:30:05.895542+00:00",
+        "eligible_for_pursuit": true,
+        "eligibility_status": "eligible",
+        "cosine_distance": 0.0631
+      },
+      {
+        "id": 3,
+        "title": "Asphalt highway reconstruction",
+        "source": "sam",
+        "source_id": "fix-real-model-2",
+        "psc_code": null,
+        "naics_code": null,
+        "nsn": null,
+        "agency_path": null,
+        "status": "open",
+        "response_deadline": "2026-10-17T10:30:05.895542+00:00",
+        "eligible_for_pursuit": true,
+        "eligibility_status": "eligible",
+        "cosine_distance": 0.9766
+      }
+    ]
+  },
+  "watchlist_model": "all-MiniLM-L6-v2@1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "recommendations": {
+    "categories": {
+      "Semantic match": {
+        "watchlist_id": 1,
+        "category": "Semantic match",
+        "note": "Opportunities with semantic similarity to this watchlist that keyword rules missed.",
+        "matches": [
+          {
+            "id": 2,
+            "title": "Nitrile medical exam gloves",
+            "source": "sam",
+            "source_id": "fix-real-model-1",
+            "psc_code": null,
+            "naics_code": null,
+            "nsn": null,
+            "agency_path": null,
+            "status": "open",
+            "response_deadline": "2026-10-17T10:30:05.895542+00:00",
+            "eligible_for_pursuit": true,
+            "eligibility_status": "eligible",
+            "cosine_distance": 0.0704
+          },
+          {
+            "id": 3,
+            "title": "Asphalt highway reconstruction",
+            "source": "sam",
+            "source_id": "fix-real-model-2",
+            "psc_code": null,
+            "naics_code": null,
+            "nsn": null,
+            "agency_path": null,
+            "status": "open",
+            "response_deadline": "2026-10-17T10:30:05.895542+00:00",
+            "eligible_for_pursuit": true,
+            "eligibility_status": "eligible",
+            "cosine_distance": 0.9736
+          }
+        ]
+      },
+      "Similar to won bids": {
+        "category": "Similar to won bids",
+        "note": "Win-profile requires at least 3 recorded wins (have 0).",
+        "matches": []
+      },
+      "Similar to pursued bids": {
+        "category": "Similar to pursued bids",
+        "matches": [
+          {
+            "id": 1,
+            "title": "Disposable nitrile examination gloves",
+            "source": "sam",
+            "source_id": "fix-real-model-0",
+            "psc_code": null,
+            "naics_code": null,
+            "nsn": null,
+            "agency_path": null,
+            "status": "open",
+            "response_deadline": "2026-10-17T10:30:05.871238+00:00",
+            "eligible_for_pursuit": true,
+            "eligibility_status": "eligible",
+            "cosine_distance": 0.0
+          },
+          {
+            "id": 2,
+            "title": "Nitrile medical exam gloves",
+            "source": "sam",
+            "source_id": "fix-real-model-1",
+            "psc_code": null,
+            "naics_code": null,
+            "nsn": null,
+            "agency_path": null,
+            "status": "open",
+            "response_deadline": "2026-10-17T10:30:05.895542+00:00",
+            "eligible_for_pursuit": true,
+            "eligibility_status": "eligible",
+            "cosine_distance": 0.0631
+          },
+          {
+            "id": 3,
+            "title": "Asphalt highway reconstruction",
+            "source": "sam",
+            "source_id": "fix-real-model-2",
+            "psc_code": null,
+            "naics_code": null,
+            "nsn": null,
+            "agency_path": null,
+            "status": "open",
+            "response_deadline": "2026-10-17T10:30:05.895542+00:00",
+            "eligible_for_pursuit": true,
+            "eligibility_status": "eligible",
+            "cosine_distance": 0.9766
+          }
+        ]
+      },
+      "Recompete radar": {
+        "category": "Recompete radar",
+        "note": "Open opportunities sharing PSC or agency with a past award.",
+        "matches": []
+      }
+    },
+    "note": "Rule match results are in govcon match run output. Semantic match, Similar to won/pursued, and Recompete radar are shown here."
+  }
+}

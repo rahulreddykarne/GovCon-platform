@@ -572,3 +572,390 @@ Record durable architecture/implementation decisions.
   - DIBBS deadlines move earlier, from 23:59 UTC to 19:00 or 20:00 UTC.
   - The scheduler and CLI DIBBS runs record which indexes they ingested.
   - Federal holidays follow 5 U.S.C. 6103 and are computed, not configured. An ad-hoc closure, such as an executive-order day off, is not known.
+
+## 2026-10-03 — Automation roadmap, Stage 1
+
+### ADR-061 — Durable background tasks on a hand-written PostgreSQL queue
+- Phase: Automation roadmap Stage 1 (gap 2)
+- Date: 2026-10-03
+- Context: `docs/AUTOMATION_ROADMAP.md` §4.2 requires the business change and its follow-up work to commit together, external calls outside long transactions, deduplication, lease-checked publication, distinct waiting/retrying/failed states with an owner, and bounded retries. Nothing in the codebase queued work: AI calls ran inside HTTP requests and inside the caller's open transaction. The user chose a hand-written table over the `procrastinate` library (roadmap Q2).
+- Decision:
+  1. **Table.** Migration `a7b8c9d0e1f2` adds `tasks`:
+     - status `queued`, `running`, `waiting_for_input`, `waiting_for_budget`, `retrying`, `succeeded`, `failed`, `cancelled`;
+     - `dedup_key`, a hash of type, opportunity and `input_revision`, unique among non-terminal tasks;
+     - `checkpoint`, plus `blocker_owner_role`, `blocker_owner_user_id` and `blocker_next_action`;
+     - `lease_owner`, `lease_expires_at`, `attempts`, `max_attempts`, `next_attempt_at` and the last error, redacted.
+  2. **Fencing.** `claim_token` is incremented by every claim and never decremented. Publication (`queue.guard_publish`) locks the opportunity first, then the task. It refuses when the status is not `running`, when the lease owner or claim token differs, or when the lease has expired. `attempts` counts toward `max_attempts`. A block gives its attempt back, so waiting on a person or on budget is not a failure.
+  3. **Claiming.** One `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)` takes a due task, or a `running` task whose lease expired.
+  4. **Steps.** Each step is prepare → execute → publish (`tasks/registry.py`):
+     - prepare runs in a short transaction under the locks;
+     - execute runs with no transaction open;
+     - publish runs in a new transaction after the lease check. The step's results, its checkpoint and any next task commit together.
+
+     A heartbeat thread renews the lease every third of its length, but only within the step's timeout. A hung step stops renewing and loses the task.
+  5. **Outcomes** (`tasks/errors.py`):
+
+     | Cause | Outcome |
+     |---|---|
+     | Budget exhaustion | `waiting_for_budget` (owner `owner`) |
+     | Policy block or missing provider | `waiting_for_input` (owner `owner`) |
+     | `TaskBlocked`, `TaskCancelled`, `TaskSuperseded`, `TaskFailedPermanently` | as named |
+     | Anything else | `retrying` with capped, jittered exponential backoff, then terminal `failed` with owner and next action |
+
+     Blocks, cancellations and terminal failures are audited.
+  6. **AI split.** `ai/structured.py` is split into `prepare_structured_call` (prompt registry, classification, policy and gateway, run in a transaction), `execute_prepared_call` (provider call and JSON validation, no session needed) and `persist_structured_result`. `run_structured_prompt` composes them, so its signature and behavior are unchanged. `ai/budget.reserve` and `complete_with_budget` accept an `engine` for callers without a session; accounting still commits on its own connection.
+  7. **Operations.**
+     - CLI: `govcon worker start|run` and `govcon tasks list|show|retry|cancel`.
+     - `/ops` shows task counts, terminal failures and waiting work, with retry and cancel for owners and approvers.
+     - Settings: `TASK_LEASE_SECONDS`, `TASK_DEFAULT_MAX_ATTEMPTS`, `TASK_RETRY_BASE_SECONDS`, `TASK_RETRY_MAX_SECONDS`, `WORKER_POLL_SECONDS`.
+- Alternatives considered:
+  - `procrastinate`: rejected by the user. It is async-first and has no waiting-for-input or budget states and no publish-time lease recheck, so a side table would still be needed.
+  - Using `attempts` as the fencing token: rejected because giving back an attempt on a block could repeat a token.
+  - A broker with a transactional outbox: deferred to roadmap §4.3, only if a broker is introduced.
+- Consequences:
+  - Deployments run `govcon worker start` beside the web app. Without a worker, queued work waits and the UI says so.
+  - `tasks.testing.drain(opportunity_id=…)` runs queued work in-process for tests.
+  - Attachment storage is still local (gap 11), so all workers must share one host for now.
+
+### ADR-062 — Bid approval queues proposal generation as a durable task
+- Phase: Automation roadmap Stage 1 (gap 1, roadmap §9)
+- Date: 2026-10-03
+- Context: The F3 fix made a failed generation visible and retryable, but generation still ran inside the approval request, holding its transaction across the AI call.
+- Decision:
+  1. `finalize_approval(action="approve_to_bid")` calls `workflow.proposal_generation.queue_proposal_generation` in the approval's own transaction. Web, CLI and every other caller therefore behave the same. The approval POST returns at once with "Proposal generation is queued".
+  2. **Inputs.** The task's `input_revision` holds the current source revision, the review id and approval time, the decision-package id, a hash of supplier, cost and quote, and the `without_ai` choice.
+  3. **The `proposal_generation` task** (`tasks/handlers/proposal.py`) has one step:
+     - prepare re-checks the approval, the pursuit, missing artifacts and decision-package freshness, then prepares the drafting call;
+     - execute calls the provider with no transaction open, or uses the placeholder draft when no provider is configured or the person asked for it;
+     - publish re-checks every input under the opportunity lock, then stores the proposal version (`proposals.service.publish_generated_proposal`, shared with synchronous `generate_proposal`) and the submission package in one commit.
+  4. **When inputs change:**
+
+     | Change | Result |
+     |---|---|
+     | Approval withdrawn, pursuit closed, or a proposal/submission already exists | task cancelled |
+     | Stale decision package | `waiting_for_input` (owner approver: regenerate the package and re-approve) |
+     | Any other input changed | superseded by a task for the current inputs |
+     | Material source change (`apply_source_change`) | in-flight generation cancelled under the lock it already holds |
+
+  5. **Proposal tab.** It shows the latest task's state, step, attempts, error, owner and next action, polling `GET /workspace/{id}/proposal/status` every 5 s while the task is active. The retry route keeps every F3 guard: CSRF, `approve`, `expected_version`, locks, approved review, fresh package, no existing artifacts. It now queues instead of generating, and refuses while a task is queued or running. A task waiting on a person is re-queued rather than duplicated. A "Generate a draft without AI" button queues the placeholder path explicitly.
+- Alternatives considered:
+  - Keep generating inline in a savepoint (the F3 state): rejected by roadmap §4.2 req. 2.
+  - Fall back to the placeholder on budget or policy errors as `generate_proposal` does: rejected because roadmap §4.2 req. 6 says these must be visible blocked states. The synchronous CLI/MCP `generate_proposal` keeps its fallback.
+- Consequences:
+  - Re-approving a bid whose proposal or submission already exists queues nothing, so it no longer adds a fresh AI version over human edits (roadmap §9 AC8).
+  - The F3 `proposal_generation_failed` audit event is replaced by the task's audited outcomes (`task_failed`, `task_blocked`, `task_cancelled`). `proposal_generation_retried` remains, with outcome `queued` or `requeued`.
+  - **Tests updated:**
+    - `test_feature_audit_fixes.py`: the synchronous F3 tests moved to `test_proposal_generation_task.py` (§9 AC1–AC8).
+    - `test_web_ui.py`: six tests call `drain` after approving.
+    - `test_f11_f20_regressions.py`: `test_f15_each_primary_*` now asserts the task's prepare step chooses AI drafting for each primary.
+
+### ADR-063 — Scheduler chains run as resumable durable tasks
+- Phase: Automation roadmap Stage 1D (gap 2)
+- Date: 2026-10-03
+- Context: A chain ran inside the `BlockingScheduler` process. If that process died, the run was marked failed only when the next run took the advisory lock, and nothing resumed it (roadmap gap 2).
+- Decision:
+  1. **Queueing.** The APScheduler callback queues a `scheduler_chain` task. The dedup key is the chain name plus the UTC minute of the firing, so a duplicate fire queues once. A worker runs the task.
+  2. **Running** (`scheduler/chain_tasks.py`). The worker takes the same group advisory lock as `run_chain` (key space `742901`).
+     - If another run of the group holds it, the task is cancelled. This matches the old "skipped".
+     - The first attempt creates the `scheduler_job_runs` row and links it through `tasks.scheduler_job_run_id`. Other stale `running` rows in the group are failed, as before.
+  3. **Checkpointing.** Each step runs in its own session. The step's work, its result and its checkpoint commit together, after the lease is re-verified.
+     - A worker that dies mid-chain releases the advisory lock with its connection.
+     - After the lease expires, another worker resumes at the first unfinished step and finishes the same run row.
+     - A hard-failed step is never checkpointed as done.
+  4. **Outcomes.** Soft/hard step semantics and `row_counts` are unchanged.
+     - A hard step failure ends the task `failed`, with owner `owner` and a next action naming `govcon jobs run <chain>`. It is not retried automatically, because re-running ingest is a person's call.
+     - `completed_with_errors` ends the task `succeeded`, with the chain status in the result.
+  5. **Commands.**
+     - `govcon jobs run <chain>` queues the chain (slot `manual`) and runs that task in-process. If the chain is already active, it waits for it. `--inline` keeps the old non-durable path.
+     - `govcon scheduler start` runs an embedded worker thread for chain tasks, so a single-process deployment keeps working. `--no-worker` leaves chains to separate workers.
+  6. Lease renewal continues for up to 4 hours per step, so long ingest steps do not lose their lease.
+- Alternatives considered:
+  - Keep running chains in the scheduler and add a checkpoint table: rejected, because it would be a second resume mechanism beside ADR-061.
+  - Retry hard failures automatically: rejected, because ingest failures usually need a person (credentials, feed outages).
+- Consequences:
+  - Steps that open their own sessions (ingest bookkeeping, VACUUM) commit those parts separately. Re-running a step after a crash relies on ingest idempotency (principle 4).
+  - Network calls in ingest steps still happen inside the step's session, as before. Recorded as DEV-021.
+
+### ADR-064 — Market, supplier and pricing analyses run as durable tasks
+- Phase: Automation roadmap Stage 1C (gap 2)
+- Date: 2026-10-03
+- Context: The workspace's market, supplier and pricing buttons, and `govcon enrich intelligence`, made the AI call inside the request and its open transaction.
+- Decision:
+  1. **Request builders.** `intelligence/ai_analyses.py` builds each analysis's call inputs in one place (`_market_request`, `_supplier_request`, `_pricing_request`). `prepare_analysis` turns them into a `PreparedCall`. `run_*_analysis` still runs synchronously through `run_structured_prompt`.
+  2. **Queueing.** `intelligence/analysis_tasks.queue_analysis` first prepares the call in the request, which checks missing pursuit facts and data-classification policy without contacting the provider. Problems are reported at once and nothing is queued. Otherwise it queues an `ai_analysis` task.
+     - The task's inputs are the kind and the source revision, plus the commercial-facts hash for supplier and pricing.
+     - The same analysis on the same inputs is queued once while active.
+  3. **The `ai_analysis` task.**
+     - Prepare re-checks that the inputs are unchanged; if not, the task is superseded by one for the current inputs.
+     - Missing inputs become `waiting_for_input`, with owner approver and the next action naming the Pursuit fields.
+     - Execute calls the provider with no transaction open. Publish re-checks the inputs, stores the `ai_analyses` row and audits `ai_analysis_completed`.
+  4. **Interfaces.** The tab's run button is replaced by the task's status while it is active. A blocked or failed task shows its owner and next action above the button. `govcon enrich intelligence` queues the task and runs it in-process.
+- Alternatives considered: queue without checking inputs (rejected: a missing supplier or a blocked policy would only surface later in a worker, and the existing immediate errors would be lost).
+- Consequences:
+  - The web request returns before the analysis exists. The tab shows "Analysis queued/running" until a worker finishes it.
+  - The solicitation summary and the decision package stay synchronous until Stage 2, which rebuilds both for chunked full-document input and automatic preparation. Converting them now would be done twice.
+
+## 2026-10-03 — Automation roadmap, Stage 2
+
+### ADR-065 — Page-level text, local OCR and an attachment store
+- Phase: Automation roadmap Stage 2A/2B (gaps 3 and 11)
+- Date: 2026-10-03
+- Context: Extraction joined pages into one string, so citations lost page numbers unless the compliance inventory re-read the PDF. Image-only pages were only flagged (ADR-025). File bytes were read and written directly on local disk. The user chose Tesseract (roadmap Q9).
+- Decision:
+  1. **Pages.** Migration `b8c9d0e1f2a3` adds `file_pages`: one row per PDF page, or per worksheet or whole document, with `text_source` (`native`, `ocr`, `none`), OCR confidence and character count. It also adds `files.page_count`, `ocr_pages` and `ocr_failed_pages` (page plus reason). Download and local import write the pages. The compliance inventory reads a PDF's stored pages, OCR'd text included, and falls back to re-reading the bytes for files extracted earlier.
+  2. **OCR** (`enrich/ocr.py`).
+     - A PDF page with fewer than `OCR_MIN_NATIVE_CHARS_PER_PAGE` characters of text layer is rendered by pypdfium2 at `OCR_DPI` and read by Tesseract through pytesseract, up to `OCR_MAX_PAGES_PER_FILE`.
+     - OCR is local, so nothing leaves the host.
+     - A page OCR cannot read stays blank and is listed with its reason, for example "Tesseract OCR is not installed". The inventory then still raises a blocking `unreadable_pages` warning that names the reason. OCR never invents text.
+     - New dependencies: `pytesseract` and `pypdfium2`. The Tesseract binary is a host prerequisite (`winget install UB-Mannheim.TesseractOCR`, `apt install tesseract-ocr`); CI installs it on the Linux job.
+  3. **Store** (`enrich/storage.py`). Every read and write of attachment bytes goes through an `AttachmentStore`. `LocalAttachmentStore` keeps the existing content-addressed, never-overwrite behaviour, selected by `ATTACHMENT_STORE=local`. `govcon worker start` refuses to start while another machine's worker holds a live lease and the store is local (gap 11, roadmap Q8 still open).
+  4. **Download split.** Each download is split into `fetch_attachment` (fetch, store, extract and OCR, with no database session) and `record_fetched` (persist, in a transaction). `download_attachments` composes the two.
+- Alternatives considered:
+  - RapidOCR: rejected by the user's Tesseract choice.
+  - OCR every page: rejected, because pages with a text layer are already exact.
+- Consequences:
+  - Hosts without Tesseract behave as before: blank pages are blocking and the reason is shown.
+  - Local imports (`process_local_file`) still reference the original path. Moving them into the store is part of a future shared-store change.
+
+### ADR-066 — The whole document set is analysed, with named gaps
+- Phase: Automation roadmap Stage 2C (gap 3)
+- Date: 2026-10-03
+- Context: The summary sent about 24 KB of text and dropped the rest. The extraction passes stopped at their budget. The two used different units (bytes and characters).
+- Decision:
+  1. **Chunking.** `documents/chunking.py` turns pages into chunks that each cite file and page; long pages are split at natural boundaries. Chunks are grouped into batches sized in UTF-8 bytes, the unit the budget reserves, so every call stays within the per-call limit.
+  2. **Summary.** The solicitation summary sends every batch with the same registry prompt. The parts are merged deterministically:
+     - lists are concatenated without duplicates;
+     - a single-valued section keeps the first part's answer, and a different answer from a later part is added to `conflicts` rather than dropped.
+
+     One `ai_analyses` row holds the merged result, with summed usage and cost and `coverage` in its manifest.
+  3. **Extraction.** Passes A and B send every batch. Candidates from all parts feed reconciliation. The pass run records `coverage` and every analysis id.
+  4. **When coverage stops early.** If the per-opportunity budget or the provider stops a run part-way, the unsent chunks become gaps that name the files and pages, with a reason such as `budget_exhausted`.
+     - The summary adds a "Not analysed: …" entry to `missing_information`.
+     - The pass is `incomplete`, which makes the reconciliation and matrix runs `incomplete`. Before this, a truncated pass reported `complete`.
+     - Nothing is presented as complete.
+
+     The per-opportunity cap is unchanged (roadmap Q12: keep 120 KB and report gaps); raising `AI_MAX_INPUT_TOKENS_PER_OPPORTUNITY` covers larger solicitations.
+- Alternatives considered: a new map/reduce prompt pair (rejected for now: new safety-relevant prompts need their own evaluation; the existing prompts accept partial source sets).
+- Consequences:
+  - Large solicitations make several AI calls.
+  - `test_f30_multifile_summary_never_sends_oversize_combined_context` now asserts full coverage across calls, each within the per-call limit. A new test covers budget exhaustion.
+
+### ADR-067 — One pursuit service, automatic preparation and an owner Settings page
+- Phase: Automation roadmap Stage 2D (gap 4)
+- Date: 2026-10-03
+- Context: Pursuits were created in three places with different locking and idempotency, and a new pursuit was not prepared.
+- Decision:
+  1. **One service.** `workflow/pursuits.create_or_get_pursuit` is used by the web inbox, Start Workspace, `govcon pursuit start`, the MCP `add_pursuit` tool and the approval gate.
+     - It locks the opportunity and creates the pursuit once. A repeat returns the existing pursuit unchanged; MCP now answers with `created: false` instead of an error (roadmap Q11 default).
+     - It audits `pursuit_created` with its origin.
+     - It queues preparation in the same commit, unless the owner turned automatic preparation off.
+  2. **Preparation.** `opportunity_preparation` (migration `c9d0e1f2a3b4`) runs six checkpointed steps:
+
+     | Step | What it does |
+     |---|---|
+     | documents | fetch, OCR and backfill pages, with no transaction open |
+     | summary | solicitation summary |
+     | compliance | compliance pipeline |
+     | research | queues the market/supplier/pricing tasks; ones missing inputs or blocked by policy are listed with the unblocking action |
+     | decision | decision package |
+     | review | review session plus reviewer assignment |
+
+     The Overview tab shows each step's state and notes, with Prepare now / Re-run preparation buttons (`POST /workspace/{id}/prepare`, `govcon pursuit prepare`).
+  3. **Settings page.** `/settings` is owner-editable (`app_settings` table, audited `app_setting_changed`). It holds automatic preparation on/off, and reviewer assignment: manual, all active reviewers, or named people (roadmap Q10: the owner configures it per circumstances).
+- Consequences:
+  - Starting a pursuit now spends AI budget automatically when a provider is configured; the owner can turn this off.
+  - The summary, compliance and decision steps run existing services in their own session (DEV-023).
+
+## 2026-10-03 — Automation roadmap, Stage 3
+
+### ADR-068 — Measured AI usage instead of quoted prices; no shared daily cap
+- Phase: Automation roadmap Stage 3A (§4.2 item 7, §6.2)
+- Date: 2026-10-03
+- Context: The roadmap asks for shared daily budgets and for measured costs instead of quoted prices. The user decided against a daily budget (roadmap Q3 = no).
+- Decision:
+  - No daily cap is added; this is recorded as DEV-022. The per-call and per-opportunity reservations in `ai/budget.py` stay; they already hold under concurrent workers and retries.
+  - `/ops` gains an "AI usage (last 30 days)" panel, summing `ai_call_usage` by day, purpose and model: calls, failures, settled input and output tokens, and the recorded cost. Cost appears only where an operator rate is configured; nothing is priced from hard-coded figures.
+  - The semantic step reports its work (rows inserted, updated, deactivated) and its duration, so local embedding compute is measured rather than assumed free.
+- Consequences: total daily spend is bounded only by the per-opportunity caps.
+
+### ADR-069 — Persisted recommendations, explainable ranking and guarded auto-pursue
+- Phase: Automation roadmap Stage 3B (gap 5)
+- Date: 2026-10-03
+- Context:
+  - `step_semantic_match` computed recommendations and discarded them.
+  - A match's score was the count of rule groups that passed.
+  - The user chose auto-pursue with guardrails (roadmap Q4 = B) and accepted the suggested weights.
+- Decision:
+  1. **Recommendations.** Migration `d0e1f2a3b4c5` adds `recommendations`. `matching/recommendations.refresh_recommendations` stores:
+     - one row per opportunity, watchlist and category;
+     - the similarity, the evidence item, the embedding model version, and the watchlist and opportunity text hashes.
+
+     Rows the run no longer produces are deactivated, never deleted.
+  2. **Ranking.** `matching/ranking.rank_match` scores six factors from recorded data, 0 to 1 each. Weights:
+
+     | Factor | Weight |
+     |---|---|
+     | rule groups passed | 30 |
+     | semantic similarity | 20 |
+     | similarity to wins | 15 |
+     | value, on a $10K–$10M log scale | 15 |
+     | time to respond, 2–21 days | 10 |
+     | distinct past awardees | 10 |
+
+     A factor without data is marked unavailable and the other weights are rescaled. Each factor keeps its weight, points and evidence in `matches.rank_factors`. `matches.score` remains the rule-hit count.
+  3. **Steps.** A `rank` step follows matching in both ingest chains and the embeddings chain. The inbox sorts by rank and shows "Why this rank".
+  4. **Auto-pursue.** `auto_pursue` follows ranking in the ingest chains and pursues a match only when all of these hold:
+     - it is an active rule match; a semantic recommendation alone never qualifies;
+     - eligibility is `eligible`;
+     - rank is at least the minimum (default 75);
+     - at least the minimum days remain (default 10);
+     - factors with data carry at least half the ranking weight;
+     - there is no pursuit yet and the match was not dismissed;
+     - the daily cap is not reached (default 3, UTC day).
+
+     Pursuit goes through `create_or_get_pursuit(origin="auto_policy")`, so preparation is queued. It is audited as `auto_pursue_applied` with the factors and the policy, and approvers and owners get an `auto_pursued` notification. A highly ranked match with unknown eligibility or thin ranking data is flagged "Needs eligibility decision" in the inbox. The thresholds and the on/off switch are on the Settings page.
+- Alternatives considered: score unknown factors as zero (rejected: it penalises missing data as if it were bad). Rank semantic recommendations without a rule match (rejected by the roadmap: a semantic match alone must never trigger pursuit).
+- Consequences: the ingest chains gain two soft steps; a ranking or auto-pursue failure never blocks alerts.
+
+### ADR-070 — Email delivery, acknowledgement, reminders, escalation and the deadline exception
+- Phase: Automation roadmap Stage 3C (gap 8)
+- Date: 2026-10-03
+- Context: `notify()` only stored in-app rows; reviews had no reminders or escalation. The user authorized a single-reviewer deadline exception (roadmap Q5) under confirmed conditions.
+- Decision:
+  1. **Email.** With `NOTIFY_EMAIL_ENABLED=true` and `SMTP_HOST` set, `notify()` adds a `notification_deliveries` row and a `notification_email` task in the caller's transaction.
+     - The task sends to the user's own address through `send_smtp`, which gains an optional recipient and keeps its TLS rules and redaction. The send happens with no transaction open.
+     - Delivery is `sent`, or `failed` once retries are exhausted, through a new terminal-failure hook on task handlers.
+     - Email is off by default because sending is outward-facing.
+  2. **Acknowledgement.** `notifications.acknowledged_at` and `POST /notifications/{id}/acknowledge` cover action-required types (assignment, second review, approval pending, reminders, escalations, registration expiry, outcome suggestion). Only the recipient can acknowledge.
+  3. **Reminders and escalation.** `collaboration/escalation.run_review_escalations` runs as the soft `review_escalations` step of the midday chain:
+
+     | What | When | To whom | Repeats |
+     |---|---|---|---|
+     | Reminder | an open assignment is older than `REVIEW_REMINDER_HOURS` (48) | the reviewer | at most once a day |
+     | Overdue escalation | older than `REVIEW_OVERDUE_HOURS` (96) | approvers and owners | once |
+     | Deadline escalation | an undecided review whose response deadline is within `REVIEW_ESCALATE_DAYS_BEFORE_DEADLINE` (3) days | approvers and owners | at most once a day per opportunity |
+
+     The migration extends the notification-type constraint, including Stage 4 and 5 types, so it changes once.
+  4. **Deadline exception.** When the owner's `single_reviewer_deadline_exception` setting is on (default on, per the user's authorization), quorum is not met, at least one review is complete, and the response deadline is in the future within `REVIEW_SHORT_DEADLINE_DAYS`, then `finalize_approval` accepts approval to bid with an approver reason of at least 10 characters. It is audited as `review_deadline_exception`, and the override reason starts with "Deadline exception (one review)". Outside those conditions the existing quorum and override rules apply unchanged.
+- Consequences: new settings `NOTIFY_EMAIL_ENABLED`, `REVIEW_REMINDER_HOURS`, `REVIEW_OVERDUE_HOURS` and `REVIEW_ESCALATE_DAYS_BEFORE_DEADLINE`; the midday chain gains a soft step.
+
+## 2026-10-03 — Automation roadmap, Stages 4 and 5
+
+### ADR-071 — Sourcing records, local quote parsing, and explicitly authorized AI quote reading
+- Phase: Automation roadmap Stage 4A (gap 6)
+- Date: 2026-10-03
+- Context: Supplier and pricing analyses refused to run until someone typed a supplier or cost into the pursuit. The user authorized external AI processing of supplier quotes (roadmap Q6). Roadmap §6.4 says the configuration flag alone is not enough.
+- Decision:
+  1. **Records.** Migration `e1f2a3b4c5d6` adds `suppliers` (with provenance), `products`, `supplier_products`, `catalog_imports`, `supplier_quotes` and `supplier_quote_lines` (with validity date, method and source document hash), `rfq_drafts` (status `draft` only), and `ai_sharing_authorizations`.
+  2. **Catalogs.** A catalog CSV import upserts products and catalog links, stores NSNs in canonical form, and reports invalid rows by line.
+  3. **Quotes.**
+     - A quote's document goes to the attachment store, never into the opportunity's solicitation `files`.
+     - CSV and XLSX quotes are parsed locally.
+     - Totals are computed from lines only when every line has a price; otherwise the total stays unknown.
+     - Any other document is queued as a `quote_extraction` task. It extracts text (OCR included) with no transaction open, then calls the new `supplier_quote_extraction` prompt (PROPRIETARY, transcription only).
+     - The call is made only while an owner's authorization for that provider is current, in addition to `AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY`. Without one, the task waits for input with the next action "authorize on Settings, or enter the lines by hand".
+     - AI-read quotes are noted "verify against the document".
+  4. **RFQ drafts.** They are built from the opportunity's own facts: solicitation number, NSN, quantity, and sourcing-relevant requirements. They are stored as drafts and never sent.
+  5. **Analyses.** Supplier analysis uses current quotes (unexpired or with unknown validity) as its records and still accepts the pursuit's free-text facts. Pricing uses the lowest current quote as the cost when the pursuit has none, and says so. The analysis task's inputs include a hash of the current quotes, so a new quote supersedes a queued run. Supplier and pricing analyses are deliberately exempt from the in-app authorization in item 3: they send quote lines and prices as PROPRIETARY data under `AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY` alone. Only AI reading of quote documents needs the owner's authorization (owner decision, 2026-10-03, audit round 2).
+  6. **Interfaces.**
+     - The Products tab lists quotes and has add-quote and draft-RFQ forms.
+     - `/suppliers` lists suppliers and takes catalog imports.
+     - The Settings page grants and revokes authorizations (owner only, 1–365 days, with a reason; audited).
+     - CLI: `govcon sourcing import-catalog|add-quote|draft-rfq`.
+- Consequences: one new active prompt (`supplier_quote_extraction`) and schema. An AI-read quote is a transcription a person must verify, never a computed price.
+
+### ADR-072 — Daily refresh of our SAM registration and expiry alerts
+- Phase: Automation roadmap Stage 4B (gap 7)
+- Date: 2026-10-03
+- Context: Company facts came only from a static JSON file. The user asked for a daily refresh (roadmap: "4 every day") and a 2-month expiry alert (Q7).
+- Decision:
+  1. `company/registration.refresh_company_registration` runs daily as the soft `company_registration` step of the midday chain. It fetches our UEI (`COMPANY_UEI`, or `uei` in the facts file) through the existing SAM entity client and stores legal name, CAGE, registration status and expiration date with source and time in `company_registration`.
+  2. `load_company_facts(settings, session)` overlays only those registration fields, with a `_provenance` block. A refresh older than `COMPANY_FACTS_MAX_AGE_DAYS` (3) removes them, so they read as unknown instead of stale. All other facts stay human-maintained.
+  3. Within `SAM_EXPIRY_ALERT_DAYS` (60) of expiry, owners and approvers get a `registration_expiring` notification, at most once a week. Settings shows the current registration, and `govcon company refresh` runs it on demand.
+- Consequences: new settings `COMPANY_UEI`, `SAM_EXPIRY_ALERT_DAYS` and `COMPANY_FACTS_MAX_AGE_DAYS`. Without a UEI or `SAM_API_KEY` the step reports `skipped` with the reason.
+
+### ADR-073 — Award-match outcome suggestions; a person confirms
+- Phase: Automation roadmap Stage 5A (gap 9)
+- Date: 2026-10-03
+- Context: Win/loss was recorded only by hand, though SAM award notices and USAspending awards are already ingested.
+- Decision:
+  1. Migration `a3b4c5d6e7f8` adds `outcome_suggestions`. `learning/award_matching.suggest_outcomes` runs daily as the soft `outcome_suggestions` step after the USAspending pull, for every submitted pursuit without a won/lost outcome. This daily check is the post-submission follow-up.
+  2. **Match strength:**
+
+     | Match | Strength |
+     |---|---|
+     | SAM award notice with our solicitation number | strong (gives awardee and PIID) |
+     | USAspending award with that PIID | strong |
+     | USAspending award matching NSN or PSC, awarding agency (normalized across SAM and USAspending naming), and an action date from 30 days before to 365 days after submission | possible |
+
+  3. **Suggested outcome:**
+
+     | Situation | Suggestion |
+     |---|---|
+     | Strong match naming our UEI | `won` |
+     | Strong match naming another UEI | `lost` |
+     | Possible match, or our UEI unknown | none |
+     | No award data | nothing; never a loss |
+
+     Approvers and owners get an `outcome_suggested` notification.
+  4. The Submission tab shows each suggestion with its evidence. An approver can confirm it, which records the outcome through the gated `record_outcome` with the award's vendor, amount and date (its checks apply, for example an award may not predate submission). Or they can dismiss it. Both are audited.
+- Consequences: suggestions never change a pursuit by themselves.
+
+### ADR-074 — The scheduled analytics refresh does real, reported work
+- Phase: Automation roadmap Stage 5B (gap 10)
+- Date: 2026-10-03
+- Context: `step_analytics_refresh` logged "not yet implemented" and reported `succeeded`.
+- Decision: The step stores an `analytics_snapshots` row with the outcome counts and the full `outcome_analytics` result, and reports `inserted=1` with the counts. With no recorded outcomes it reports `skipped` with the reason, never `succeeded`. The Learning page shows when the last scheduled refresh ran; its figures stay live.
+
+## 2026-10-03 — Readiness fixes, round 3
+
+### ADR-075 — Budget waits that clear, recorded preparation passes, quieter award matching, and commercial facts on the web
+- Phase: Readiness review follow-up
+- Date: 2026-10-03
+- Context: A readiness review raised six problems:
+  - a `waiting_for_budget` task was retried hourly forever and audited each time, although per-opportunity budgets are lifetime totals;
+  - preparation held one transaction through its AI calls and took the opportunity lock last, against ADR-061;
+  - "possible" award matches (PSC + agency, unordered `LIMIT 50`) each notified every approver, and a multi-award notice naming another firm suggested `lost`;
+  - drafting and AI review read the company facts file directly, skipping the SAM registration overlay and ignoring malformed JSON;
+  - five `async` routes ran synchronous database and file work on the event loop;
+  - only the CLI or MCP could set a pursuit's quote price, sourcing cost and supplier.
+- Decision:
+  1. **Budget waits** (`tasks/queue.py`, `ai/budget.py`).
+     - A budget block records the configured limits (`budget_fingerprint`) and the number of completed steps in `checkpoint["budget_block"]`.
+     - The first block under given limits and progress gets one automatic retry, because another task's reservation may still be settling. After that the task stays parked: `claim` skips it until the limits differ or a person re-queues it.
+     - An identical repeated block is not audited again.
+     - The next action now says the budget does not refill by waiting.
+  2. **Proposal share.** `AI_PROPOSAL_BUDGET_SHARE` (default 0.25) holds back that share of each opportunity's token and dollar budget for `proposal_drafting`, `proposal_red_team`, `proposal_coverage` and `submission_preflight_ai`. Preparation and research may spend only the rest. The 120,000-token cap itself is unchanged (roadmap Q12).
+  3. **Recorded passes** (`ai/replay.py`, used by `workflow/preparation.py`).
+     - The summary, compliance and decision steps run their services in passes. Each pass takes the opportunity lock and then the task lock before the service writes anything.
+     - `complete_with_budget` and the JEV provider answer calls from the record. A call with no recorded response stops the pass with `CallNeeded`, a `BaseException`, so the services' own `except Exception` handlers cannot swallow it. The pass rolls back and the call runs with no transaction open. Its response or its error is recorded, so errors take the same path they take live.
+     - Passes rebuild identical prompts:
+       - `stable_ids` gives each new row the id it got in the earlier pass. Those sequence values were rolled back, so nothing else holds them.
+       - The compliance step passes one `now` to every pass.
+     - Inputs that change between passes more than three times finish in one pass, as before. A pass that loses a deadlock or serialization conflict is rerun with the record.
+  4. **Award matching** (`learning/award_matching.py`).
+     - Strong PIID matches are queried separately from possible ones.
+     - Possible matches are ranked: same NSN, then awards after submission nearest first. At most `MAX_POSSIBLE_PER_BID` (5) are kept per bid across runs.
+     - Each run sends approvers one `outcome_suggested` notification per bid, with counts, not one per record.
+     - When strong records name more than one awardee, `lost` is not suggested, and pending `lost` suggestions are withdrawn with a note. `won` is still suggested when one of the awardees is us.
+  5. **Company facts.**
+     - Drafting and proposal AI review use `load_company_facts(settings, session)`, the same loader compliance uses, so the SAM overlay and its staleness rule apply.
+     - A malformed or non-object facts file raises `CompanyFactsInvalid`. In a task that is a terminal failure naming the file to fix. The Settings page still opens.
+  6. **Event loop.** Record outcome, watchlist save, user invite, quote upload and catalog import keep only the form and upload reads `async`. Their database, file and password-hashing work runs through `run_in_threadpool`, as FastAPI runs plain `def` routes.
+  7. **Commercial facts on the web.**
+     - `POST /workspace/{id}/pursuit-facts` and a form on the Products & Suppliers and Pricing tabs set quote price, sourcing cost, supplier and notes. A blank field clears it.
+     - `workflow/commercial.update_commercial_facts` applies the MCP rules:
+       - the reviewer permission;
+       - the opportunity lock first;
+       - the version the editor saw;
+       - locked after submission (an approver records a correction instead);
+       - an audited `pursuit_updated` with `via: web`;
+       - revocation of dependent decisions.
+- Alternatives considered:
+  - Splitting the compliance pipeline and decision engine into per-stage tasks (DEV-023 follow-up): still the long-term shape, but too large a change to safety-critical code for this round.
+  - Committing at each AI call: rejected, because it would break invariants that span stages. For example, an amendment's revalidation and its review reopen must commit together.
+  - Resetting the budget periodically: rejected, because the caps are deliberately lifetime totals (roadmap Q3/Q12).
+- Consequences:
+  - Preparation never waits on, or blocks, web edits for longer than one pass's database work.
+  - A budget-blocked task needs a raised cap (and a worker restart) or a person's retry.
+  - The fence tests now inject concurrent changes during an AI call between passes. Inside a pass the locks make such a change wait.

@@ -1,8 +1,14 @@
 """Solicitation analysis orchestrator.
 
 Composes extracted text from downloaded attachments with opportunity metadata,
-sends the combined context to the AI provider for structured analysis, validates
-the response against the output schema, and persists the result to ``ai_analyses``.
+sends it to the AI provider for structured analysis, validates the response
+against the output schema, and persists the result to ``ai_analyses``.
+
+The whole document set is analysed (ADR-066): page-cited chunks are sent in
+as many calls as the per-call limit needs, and the parts are merged
+deterministically. When the per-opportunity budget runs out, the files and
+pages not analysed are recorded as gaps; the summary is never presented as
+complete.
 
 AI errors never alter source data. Results are saved to ``ai_analyses``, not
 directly over opportunity source fields.
@@ -12,13 +18,15 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.config import Settings, get_settings
-from govcon.models import AIAnalysis, Opportunity, StoredFile
+from govcon.documents.chunking import Gap, SourceChunk, batch_chunks, chunks_for_pages, gaps_for, nbytes, render_batch
+from govcon.models import AIAnalysis, FilePage, Opportunity, StoredFile
 from govcon.security.classification import DataClassification, strictest_classification
 from govcon.workflow.source_revision import (
     SOURCE_REVISION_KEY,
@@ -96,55 +104,183 @@ def run_solicitation_analysis(
 
     context_manifest = _build_context_manifest(opportunity, files)
     context_manifest[SOURCE_REVISION_KEY] = source_revision
-    omitted_sources: list[dict] = []
-    source_context = _build_user_prompt(opportunity, files,
-        byte_budget=min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity) // 2,
-        omitted_sources=omitted_sources)
-    context_manifest["omitted_sources"] = omitted_sources
+    chunks = _source_chunks(session, files)
+    header = _metadata_block(opportunity, files)
+    budget = min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity) // 2
+    batches = batch_chunks(chunks, max(budget - nbytes(header) - 200, 2_000))
+    classification = strictest_classification(*(f.classification for f in files))
+    from govcon.ai.structured import (
+        StructuredCallError,
+        execute_prepared_call,
+        prepare_structured_call,
+    )
+
+    calls: list[tuple[Any, Any]] = []
+    gaps: list[Gap] = []
+    for index, batch in enumerate(batches):
+        part = f" (part {index + 1} of {len(batches)}; other parts are analysed separately)" if len(batches) > 1 else ""
+        source = f"{header}\n\n## Extracted Source Content{part}\n{render_batch(batch)}"
+        try:
+            prepared = prepare_structured_call(
+                session,
+                opportunity_id=opportunity.id,
+                prompt_name="solicitation_analysis",
+                analysis_type=AnalysisType.SOLICITATION_SUMMARY,
+                variables={
+                    "OPPORTUNITY_JSON": json.dumps({
+                        "id": opportunity.id, "source": opportunity.source,
+                        "source_id": opportunity.source_id, "title": opportunity.title,
+                        "response_deadline": opportunity.response_deadline,
+                    }, default=str),
+                    "SOURCE_PACKAGE_JSON": source,
+                },
+                context_manifest=context_manifest,
+                settings=settings,
+                classification=classification,
+            )
+            executed = execute_prepared_call(prepared, settings=settings, session=session)
+        except StructuredCallError as exc:
+            if not calls:
+                if exc.reason == "no_provider":
+                    import warnings
+                    warnings.warn("No AI provider configured; solicitation analysis skipped", AnalysisWarning, stacklevel=2)
+                logger.warning("solicitation analysis refused for opportunity %d: %s", opportunity.id, exc.reason)
+                return None
+            reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
+            for rest in batches[index:]:
+                gaps.extend(gaps_for(rest, reason))
+            logger.warning("solicitation analysis for opportunity %d stopped at part %d: %s",
+                           opportunity.id, index + 1, exc.reason)
+            break
+        calls.append((prepared, executed))
+
+    merged = merge_summaries([executed.output.model_dump(mode="json") for _, executed in calls])
+    sent = sum(len(batch) for batch in batches[: len(calls)])
+    context_manifest["coverage"] = {
+        "chunks_total": len(chunks), "chunks_sent": sent, "parts": len(batches),
+        "parts_sent": len(calls), "gaps": [gap.as_dict() for gap in gaps],
+    }
+    # Kept under its earlier name for consumers that read omitted sources.
+    context_manifest["omitted_sources"] = [gap.as_dict() for gap in gaps]
     context_manifest["warnings"] = ([{"code": "context_truncated", "severity": "high",
-        "message": "Source text was omitted from this summary; omitted documents remain unreviewed."}] if omitted_sources else [])
-    from govcon.ai.structured import StructuredCallError, run_structured_prompt
-    try:
-        result = run_structured_prompt(
-            session,
-            opportunity_id=opportunity.id,
-            prompt_name="solicitation_analysis",
-            analysis_type=AnalysisType.SOLICITATION_SUMMARY,
-            variables={
-                "OPPORTUNITY_JSON": json.dumps({
-                    "id": opportunity.id, "source": opportunity.source,
-                    "source_id": opportunity.source_id, "title": opportunity.title,
-                    "response_deadline": opportunity.response_deadline,
-                }, default=str),
-                "SOURCE_PACKAGE_JSON": source_context,
-            },
-            context_manifest=context_manifest,
-            settings=settings,
-            classification=strictest_classification(*(f.classification for f in files)),
-        )
-    except StructuredCallError as exc:
-        if exc.reason == "no_provider":
-            import warnings
-            warnings.warn("No AI provider configured; solicitation analysis skipped", AnalysisWarning, stacklevel=2)
-        logger.warning("solicitation analysis refused for opportunity %d: %s", opportunity.id, exc.reason)
-        return None
-    analysis = result.analysis
-    if omitted_sources:
-        # Keep the omission visible in the user-facing structured result as
-        # well as the provenance manifest; it cannot imply complete review.
-        analysis.output_json = {**analysis.output_json, "missing_information": [
-            *analysis.output_json.get("missing_information", []),
-            {"field": "source_package", "reason": "Configured input limit omitted source text.", "impact": "Incomplete summary; review omitted sources separately."}]}
+        "message": "Part of the source set was not analysed; the listed files and pages remain unreviewed."}] if gaps else [])
+    if gaps:
+        # Keep the gap visible in the user-facing result as well as the
+        # provenance manifest; it cannot imply complete review.
+        merged["missing_information"] = [*merged.get("missing_information", []), {
+            "field": "source_package",
+            "reason": "Not analysed: " + "; ".join(
+                f"{g.filename or g.file_id} pages {', '.join(str(p) for p in g.pages)} ({g.reason})" for g in gaps),
+            "impact": "Incomplete summary; review these pages separately.",
+        }]
+    analysis = _merged_analysis(calls, merged, context_manifest)
+    session.add(analysis)
     analysis.source_refs = analysis.output_json.get("source_refs") or None
     session.flush()
     return analysis
 
 
-def _build_user_prompt(opp: Opportunity, files: list[StoredFile], *, byte_budget: int = 24_000, omitted_sources: list[dict] | None = None) -> str:
-    """Compose the user message from opportunity metadata and extracted text."""
-    parts: list[str] = []
+def _source_chunks(session: Session, files: list[StoredFile]) -> list[SourceChunk]:
+    """Cited chunks for every file: stored pages when present, else the whole text."""
+    pages: dict[int, list[FilePage]] = {}
+    for page in session.scalars(
+        select(FilePage).where(FilePage.file_id.in_([f.id for f in files])).order_by(FilePage.file_id, FilePage.page_no)
+    ):
+        pages.setdefault(page.file_id, []).append(page)
+    chunks: list[SourceChunk] = []
+    for f in files:
+        stored = pages.get(f.id)
+        if stored:
+            is_pdf = (f.mime_type or "") == "application/pdf" or (f.filename or "").lower().endswith(".pdf")
+            triples = [(p.page_no if is_pdf else None, p.label, p.text) for p in stored]
+        else:
+            triples = [(None, "document", f.extracted_text or "")]
+        chunks.extend(chunks_for_pages(f.id, f.filename, triples))
+    return chunks
 
-    parts.append("## Opportunity Metadata")
+
+def merge_summaries(outputs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Combine per-part summaries without inventing anything.
+
+    Lists are concatenated without duplicates. A single-valued section keeps
+    the first part's answer; a different answer from a later part is recorded
+    under ``conflicts`` rather than silently dropped.
+    """
+    if not outputs:
+        return {}
+    if len(outputs) == 1:
+        return outputs[0]
+    from govcon.ai.schemas import SolicitationAnalysisV1
+
+    merged: dict[str, Any] = {}
+    disagreements: list[str] = []
+    for name, info in SolicitationAnalysisV1.model_fields.items():
+        values = [out.get(name) for out in outputs]
+        if info.default_factory is list:
+            seen: set[str] = set()
+            items: list[Any] = []
+            for value in values:
+                for item in value or []:
+                    key = json.dumps(item, sort_keys=True, default=str)
+                    if key not in seen:
+                        seen.add(key)
+                        items.append(item)
+            merged[name] = items
+        elif name == "summary":
+            texts = [v.strip() for v in values if isinstance(v, str) and v.strip()]
+            merged[name] = "\n\n".join(dict.fromkeys(texts)) or None
+        else:
+            present = [(i, v) for i, v in enumerate(values, start=1) if v not in (None, {}, [])]
+            merged[name] = present[0][1] if present else None
+            for part, value in present[1:]:
+                if json.dumps(value, sort_keys=True, default=str) != json.dumps(present[0][1], sort_keys=True, default=str):
+                    disagreements.append(
+                        f"Parts {present[0][0]} and {part} of the source set disagree on {name}; review the cited pages."
+                    )
+    merged["conflicts"] = [*merged.get("conflicts", []), *disagreements]
+    return merged
+
+
+def _merged_analysis(calls: list[tuple[Any, Any]], merged: dict[str, Any], manifest: dict[str, Any]) -> AIAnalysis:
+    """One ``ai_analyses`` row for all parts, with summed usage and cost."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from govcon.ai.schemas import SolicitationAnalysisV1
+    from govcon.ai.structured import ExecutedCall, build_analysis
+
+    first_prepared, first_executed = calls[0]
+    usage: dict[str, int] = {}
+    latency = 0
+    costs = []
+    for _, executed in calls:
+        for key, value in (getattr(executed.result, "usage", None) or {}).items():
+            if isinstance(value, int) and not isinstance(value, bool):
+                usage[key] = usage.get(key, 0) + value
+        latency += getattr(executed.result, "latency_ms", None) or 0
+        if executed.reservation is not None and executed.reservation.cost is not None:
+            costs.append(executed.reservation.cost)
+    result = SimpleNamespace(
+        provider=getattr(first_executed.result, "provider", None),
+        model=getattr(first_executed.result, "model", None),
+        usage=usage or None,
+        latency_ms=latency or None,
+    )
+    prepared = replace(
+        first_prepared,
+        context_manifest=manifest,
+        variables={"parts": [p.variables.get("SOURCE_PACKAGE_JSON") for p, _ in calls]},
+    )
+    executed = ExecutedCall(
+        output=SolicitationAnalysisV1.model_validate(merged),
+        result=result,
+        reservation=SimpleNamespace(cost=sum(costs)) if costs else None,
+    )
+    return build_analysis(prepared, executed)
+
+
+def _metadata_block(opp: Opportunity, files: list[StoredFile]) -> str:
+    """Opportunity metadata and the document inventory, sent with every part."""
     meta = {
         "id": opp.id,
         "source": opp.source,
@@ -158,30 +294,12 @@ def _build_user_prompt(opp: Opportunity, files: list[StoredFile], *, byte_budget
         "response_deadline": str(opp.response_deadline) if opp.response_deadline else None,
         "status": opp.status,
     }
-    parts.append(json.dumps(meta, indent=2, default=str))
-
-    parts.append("\n## Document Inventory")
-    for f in files:
-        parts.append(
-            f"- File ID {f.id}: {f.filename} ({f.mime_type}), "
-            f"SHA-256: {f.sha256}, extraction: {f.extraction_status}"
-        )
-
-    parts.append("\n## Extracted Source Content")
-    remaining = max(0, byte_budget - len("\n".join(parts).encode("utf-8")))
-    for f in files:
-        if f.extracted_text:
-            header = f"\n### [{f.filename}] (file_id={f.id})"
-            encoded = f.extracted_text.encode("utf-8")
-            allowance = max(0, remaining - len(header.encode("utf-8")) - 2)
-            excerpt = encoded[:allowance].decode("utf-8", errors="ignore")
-            if excerpt:
-                parts.extend([header, excerpt])
-                remaining -= len(header.encode("utf-8")) + len(excerpt.encode("utf-8")) + 2
-            if len(excerpt.encode("utf-8")) < len(encoded) and omitted_sources is not None:
-                omitted_sources.append({"file_id": f.id, "filename": f.filename, "original_bytes": len(encoded), "included_bytes": len(excerpt.encode("utf-8"))})
-
-    return "\n".join(parts)
+    lines = ["## Opportunity Metadata", json.dumps(meta, indent=2, default=str), "\n## Document Inventory"]
+    lines.extend(
+        f"- File ID {f.id}: {f.filename} ({f.mime_type}), SHA-256: {f.sha256}, extraction: {f.extraction_status}"
+        for f in files
+    )
+    return "\n".join(lines)
 
 
 def _build_context_manifest(opp: Opportunity, files: list[StoredFile]) -> dict:

@@ -26,3 +26,4 @@ class AnalysisType(StrEnum):
     REVIEWER_COMMENT_VALIDATION = "reviewer_comment_validation"
     CONSOLIDATED_REVIEW = "consolidated_review"
     OUTCOME = "outcome_analysis"
+    QUOTE_EXTRACTION = "quote_extraction"

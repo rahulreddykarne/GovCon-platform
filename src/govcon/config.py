@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from contextvars import ContextVar
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -104,6 +105,36 @@ class Settings(BaseSettings):
     # Operator-supplied upper rate covering input/output, caching, and fallback
     # models. A configured dollar cap fails closed until this rate is supplied.
     ai_budget_usd_per_million_tokens: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    # Share of each opportunity's token and dollar budget that only proposal
+    # drafting and proposal review may spend, so preparation cannot use it all.
+    ai_proposal_budget_share: float = Field(default=0.25, ge=0, lt=1, allow_inf_nan=False)
+    # Email each in-app notification to its user through SMTP_HOST (ADR-070).
+    notify_email_enabled: bool = False
+    # Review reminders and escalations (ADR-070).
+    review_reminder_hours: int = Field(default=48, ge=1)
+    review_overdue_hours: int = Field(default=96, ge=1)
+    review_escalate_days_before_deadline: int = Field(default=3, ge=0)
+    # Our own SAM registration refresh (ADR-072); falls back to ``uei`` in the facts file.
+    company_uei: str | None = None
+    sam_expiry_alert_days: int = Field(default=60, ge=1)
+    company_facts_max_age_days: int = Field(default=3, ge=1)
+    # Durable background tasks (ADR-061).
+    task_lease_seconds: int = Field(default=300, ge=1)
+    task_default_max_attempts: int = Field(default=5, ge=1, le=50)
+    task_retry_base_seconds: int = Field(default=30, ge=0)
+    task_retry_max_seconds: int = Field(default=3600, ge=1)
+    worker_poll_seconds: float = Field(default=2.0, gt=0)
+    # OCR for PDF pages without a text layer (ADR-065). Without the Tesseract
+    # binary those pages stay flagged as unreadable, as before.
+    ocr_enabled: bool = True
+    tesseract_cmd: str | None = None
+    ocr_lang: str = "eng"
+    ocr_dpi: int = Field(default=300, ge=72, le=600)
+    ocr_max_pages_per_file: int = Field(default=300, ge=0)
+    ocr_min_native_chars_per_page: int = Field(default=20, ge=0)
+    # Where attachment bytes live (gap 11). Only "local" exists; every worker
+    # must then run on the machine that holds DATA_DIR.
+    attachment_store: Literal["local"] = "local"
     attachment_max_mb: int = 100
     # Attachment downloads are HTTPS-only unless this is set deliberately.
     attachment_allow_http: bool = False
@@ -130,6 +161,8 @@ class Settings(BaseSettings):
 
     @field_validator(
         "database_url",
+        "tesseract_cmd",
+        "company_uei",
         "sam_api_key",
         "deepseek_api_key",
         "anthropic_api_key",

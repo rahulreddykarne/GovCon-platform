@@ -62,11 +62,11 @@ class Signals:
         self.provenance[name] = entry
 
 
-def load_company_profile(settings: Settings | None = None) -> dict[str, Any]:
+def load_company_profile(settings: Settings | None = None, session: Any = None) -> dict[str, Any]:
     from govcon.compliance.pipeline import load_company_facts
 
     try:
-        return load_company_facts(settings or get_settings())
+        return load_company_facts(settings or get_settings(), session)
     except (OSError, ValueError) as exc:
         logger.warning("company facts could not be read: %s", exc)
         return {}

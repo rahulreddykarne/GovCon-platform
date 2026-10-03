@@ -233,6 +233,34 @@ class SupplierAnalysisV1(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# supplier_quote_extraction.v1 (ADR-071)
+# ---------------------------------------------------------------------------
+
+class QuoteLineV1(BaseModel):
+    description: str | None = None
+    part_number: str | None = None
+    nsn: str | None = None
+    quantity: float | None = None
+    unit: str | None = None
+    unit_price: float | None = None
+    extended_price: float | None = None
+    lead_time_days: int | None = None
+    source_quote: str | None = None
+
+
+class SupplierQuoteExtractionV1(BaseModel):
+    """Schema for supplier_quote_extraction.v1 — lines read from a supplier's quote document."""
+
+    supplier_name: str | None = None
+    quote_number: str | None = None
+    valid_until: str | None = None
+    currency: str | None = None
+    total_price: float | None = None
+    lines: list[QuoteLineV1] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # §39.4 pricing_analysis.v1
 # ---------------------------------------------------------------------------
 
@@ -252,6 +280,7 @@ class PricingAnalysisV1(BaseModel):
 
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "solicitation_analysis.v1": SolicitationAnalysisV1,
+    "supplier_quote_extraction.v1": SupplierQuoteExtractionV1,
     "reviewer_comment_validation.v1": ReviewerCommentValidationV1,
     "consolidated_review.v1": ConsolidatedReviewV1,
     "outcome_analysis.v1": OutcomeAnalysisV1,

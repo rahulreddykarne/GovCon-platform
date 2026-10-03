@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="12.870" timestamp="2026-10-03T05:47:46.364028-05:00" hostname="RahulROG"><testcase classname="tests.test_fv09_quote_repeats" name="test_concurrent_cli_upload_with_new_supplier_keeps_one_supplier_and_quote" time="11.670"><failure message="threading.BrokenBarrierError">tests\test_fv09_quote_repeats.py:145: in test_concurrent_cli_upload_with_new_supplier_keeps_one_supplier_and_quote
+    future.result(timeout=30)
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fv09_quote_repeats.py:139: in upload
+    cli.sourcing_add_quote(opportunity_id=opp.id, supplier=name, file=path,
+src\govcon\cli.py:3355: in sourcing_add_quote
+    actor = _actor(session, actor_email)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fv09_quote_repeats.py:125: in ready_actor
+    barrier.wait(timeout=10)
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\threading.py:725: in wait
+    self._wait(timeout)
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\threading.py:763: in _wait
+    raise BrokenBarrierError
+E   threading.BrokenBarrierError</failure></testcase></testsuite></testsuites>

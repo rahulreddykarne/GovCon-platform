@@ -1,0 +1,5 @@
+{
+  "raw_substring_comparison_passes": false,
+  "decoded_text_comparison_passes": true,
+  "apostrophe_is_html_escaped": true
+}

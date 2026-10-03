@@ -185,7 +185,10 @@ def test_market_tab_runs_and_renders_the_analysis(client, session) -> None:
     token = _token(session, "reviewer")
     with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()):
         resp = client.post(f"/workspace/{opp.id}/analyze/market", cookies={"govcon_session": token})
-    assert resp.status_code == 303 and "notice=" in resp.headers["location"]
+        assert resp.status_code == 303 and "notice=" in resp.headers["location"]
+        # The request queues the analysis (ADR-064); run it as a worker would.
+        from govcon.tasks.testing import drain
+        assert drain(opportunity_id=opp.id)[0][1] == "succeeded"
     page = client.get(f"/workspace/{opp.id}?tab=market", cookies={"govcon_session": token}).text
     assert "DLA buys quarterly" in page and "Glove Supply Co" in page
 

@@ -1,0 +1,903 @@
+src\govcon\_build.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\ai\budget.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\ai\budget.py:120:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\ai\schemas.py:292:59: RUF100 [*] Unused `noqa` directive (non-enabled: `E402`)
+src\govcon\ai\structured.py:22:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:134:34: F401 [*] `sqlalchemy.text` imported but unused
+src\govcon\cli.py:152:35: F401 [*] `govcon.models.IngestionRun` imported but unused
+src\govcon\cli.py:184:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\cli.py:341:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:437:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:511:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:1541:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:1543:86: F401 [*] `govcon.prompting.renderer.required_variables` imported but unused
+src\govcon\cli.py:1588:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:1645:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:1653:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:1994:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2131:26: B008 Do not perform function call `typer.Option` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable
+src\govcon\cli.py:2324:13: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2350:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2431:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2457:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2501:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2535:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2562:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2589:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2645:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2662:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2687:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2708:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2728:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2772:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2798:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:2914:28: F401 [*] `sqlalchemy.func` imported but unused
+src\govcon\cli.py:3062:28: B008 Do not perform function call `typer.Option` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable
+src\govcon\cli.py:3102:28: B008 Do not perform function call `typer.Option` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable
+src\govcon\cli.py:3315:27: B008 Do not perform function call `typer.Option` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable
+src\govcon\cli.py:3319:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\cli.py:3341:27: B008 Do not perform function call `typer.Option` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable
+src\govcon\collaboration\ai_comment_review.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\collaboration\escalation.py:15:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\collaboration\notifications.py:96:66: UP037 [*] Remove quotes from type annotation
+src\govcon\collaboration\notifications.py:96:67: F821 Undefined name `User`
+src\govcon\collaboration\review_sessions.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\collaboration\review_sessions.py:856:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\compliance\amendments.py:18:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\amendments.py:38:169: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:40:84: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:41:83: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:42:41: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:43:118: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:44:40: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:45:59: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:46:106: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:47:85: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:48:65: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:49:69: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:144:89: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:145:79: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:152:104: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\amendments.py:154:68: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\clauses.py:10:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\clauses.py:58:120: DTZ005 `datetime.datetime.now()` called without a `tz` argument
+src\govcon\compliance\conflicts.py:16:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\conflicts.py:38:53: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\deterministic.py:147:27: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\compliance\extractor.py:19:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\extractor.py:47:44: F401 [*] `govcon.security.classification.DataClassification` imported but unused
+src\govcon\compliance\extractor.py:237:50: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:10:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\inventory.py:18:24: F401 [*] `sqlalchemy.desc` imported but unused
+src\govcon\compliance\inventory.py:23:83: F401 [*] `govcon.models.OpportunitySnapshot` imported but unused
+src\govcon\compliance\inventory.py:27:134: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:28:64: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:29:90: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:30:95: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:31:61: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:32:128: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:33:97: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:34:119: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:35:104: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:51:61: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\inventory.py:81:20: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\compliance\inventory.py:113:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\matrix.py:542:5: SIM102 Use a single `if` statement instead of nested `if` statements
+src\govcon\compliance\metrics.py:12:1: UP035 [*] Import from `collections.abc` instead: `Iterable`
+src\govcon\compliance\pipeline.py:15:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\pipeline.py:40:44: F401 [*] `govcon.security.classification.DataClassification` imported but unused
+src\govcon\compliance\proposal_coverage.py:20:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\proposal_coverage.py:47:5: SIM905 [*] Consider using a list literal instead of `str.split`
+src\govcon\compliance\proposal_coverage.py:89:116: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\proposal_coverage.py:99:5: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\proposal_coverage.py:104:5: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\proposal_coverage.py:157:12: C408 Unnecessary `dict()` call (rewrite as a literal)
+src\govcon\compliance\reconciler.py:19:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\reconciler.py:51:5: SIM103 Return the negated condition directly
+src\govcon\compliance\reconciler.py:139:15: FURB192 Prefer `min` over `sorted()` to compute the minimum value in a sequence
+src\govcon\compliance\red_team.py:16:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\regression.py:23:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\regression.py:31:38: F401 [*] `govcon.ai.analysis_types.AnalysisType` imported but unused
+src\govcon\compliance\regression.py:43:44: F401 [*] `govcon.security.classification.DataClassification` imported but unused
+src\govcon\compliance\regression.py:143:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\submission_preflight.py:15:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\submission_preflight.py:101:9: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\submission_preflight.py:105:9: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\submission_preflight.py:108:68: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\submission_preflight.py:168:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\submission_preflight.py:284:16: F402 Import `field` from line 20 shadowed by loop variable
+src\govcon\compliance\submission_preflight.py:500:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\compliance\text.py:15:5: SIM905 [*] Consider using a list literal instead of `str.split`
+src\govcon\compliance\text.py:38:112: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:39:68: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:40:134: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:41:165: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:42:103: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:43:87: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:44:122: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:45:69: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:46:75: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:47:94: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:48:116: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:49:103: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:50:156: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:51:112: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:52:81: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:95:12: PIE810 Call `startswith` once with a `tuple`
+src\govcon\compliance\text.py:144:110: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:156:124: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:157:102: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:158:138: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:161:113: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:162:92: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:162:99: FURB167 [*] Use of regular expression alias `re.M`
+src\govcon\compliance\text.py:165:5: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:167:152: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:171:5: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:173:96: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:174:65: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:178:5: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:180:114: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:203:81: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:212:88: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:223:75: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:236:68: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:245:47: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:247:61: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:248:88: FURB167 [*] Use of regular expression alias `re.I`
+src\govcon\compliance\text.py:278:9: SIM114 [*] Combine `if` branches using logical `or` operator
+src\govcon\config.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\db.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\db.py:110:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\decision\engine.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\decision\engine.py:329:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\decision\engine.py:729:9: PERF402 Use `list` or `list.copy` to create a copy of a list
+src\govcon\decision\providers\jev.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\decision\providers\jev.py:55:82: UP037 [*] Remove quotes from type annotation
+src\govcon\decision\providers\llm_fallback.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\decision\providers\llm_fallback.py:62:21: RUF059 Unpacked variable `reservation` is never used
+src\govcon\decision\providers\llm_fallback.py:76:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\decision\providers\rule_fallback.py:24:37: PYI041 [*] Use `float` instead of `int | float`
+src\govcon\decision\providers\rule_fallback.py:291:9: SIM114 [*] Combine `if` branches using logical `or` operator
+src\govcon\decision\rules.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\decision\schemas.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\decision\signals.py:143:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\decision\signals.py:187:91: PLR0124 Name compared with itself, consider replacing `value != value`
+src\govcon\documents\chunking.py:14:1: UP035 [*] Import from `collections.abc` instead: `Iterable`
+src\govcon\enrich\attachments.py:23:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\enrich\extract.py:66:23: UP037 [*] Remove quotes from type annotation
+src\govcon\enrich\extract.py:66:72: UP037 [*] Remove quotes from type annotation
+src\govcon\enrich\extract.py:93:17: RUF023 [*] `ExtractionResult.__slots__` is not sorted
+src\govcon\enrich\extract.py:119:10: UP037 [*] Remove quotes from type annotation
+src\govcon\enrich\extract.py:143:8: PIE810 Call `endswith` once with a `tuple`
+src\govcon\enrich\extract.py:170:23: UP037 [*] Remove quotes from type annotation
+src\govcon\enrich\extract.py:181:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\enrich\extract.py:219:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\enrich\extract.py:248:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\enrich\extract.py:290:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\enrich\extract.py:304:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\enrich\ocr.py:114:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\enrich\ocr.py:123:20: BLE001 Do not catch blind exception: `Exception`
+src\govcon\enrich\summarize.py:17:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\enrich\summarize.py:30:44: F401 [*] `govcon.security.classification.DataClassification` imported but unused
+src\govcon\http.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\ingest\dibbs.py:47:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\ingest\dibbs.py:185:20: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\dibbs.py:195:12: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\dibbs.py:284:29: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\dibbs.py:291:15: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\runs.py:32:33: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\runs.py:52:36: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\sam_entities.py:21:24: F401 [*] `sqlalchemy.select` imported but unused
+src\govcon\ingest\sam_entities.py:189:48: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\sam_entities.py:208:31: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\sam_opportunities.py:96:20: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\sam_opportunities.py:119:35: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\sam_opportunities.py:153:20: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\sam_opportunities.py:164:58: FURB162 Unnecessary timezone replacement with zero offset
+src\govcon\ingest\sam_opportunities.py:170:26: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\sam_opportunities.py:177:38: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\sam_opportunities.py:350:9: TRY004 Prefer `TypeError` exception for invalid type
+src\govcon\ingest\sam_opportunities.py:527:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\ingest\sam_opportunities.py:608:35: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\usaspending.py:133:20: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\usaspending.py:148:35: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\usaspending.py:186:20: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\ingest\usaspending.py:198:22: PYI041 [*] Use `float` instead of `int | float`
+src\govcon\ingest\usaspending.py:478:35: UP017 [*] Use `datetime.UTC` alias
+src\govcon\ingest\usaspending.py:499:5: PLR1730 [*] Replace `if` statement with `window_start = min(window_start, window_end)`
+src\govcon\intelligence\__init__.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\intelligence\ai_analyses.py:15:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\learning\analytics.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\learning\analytics.py:304:84: UP017 [*] Use `datetime.UTC` alias
+src\govcon\learning\analytics.py:310:54: UP017 [*] Use `datetime.UTC` alias
+src\govcon\learning\analytics.py:313:54: UP017 [*] Use `datetime.UTC` alias
+src\govcon\learning\analytics.py:316:9: S112 `try`-`except`-`continue` detected, consider logging the exception
+src\govcon\learning\analytics.py:316:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\learning\analytics.py:346:13: ISC004 Unparenthesized implicit string concatenation in collection
+src\govcon\learning\award_matching.py:18:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\learning\award_matching.py:21:22: F401 [*] `datetime.UTC` imported but unused
+src\govcon\learning\outcomes.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\learning\outcomes.py:19:27: F401 [*] `govcon.models.AIAnalysis` imported but unused
+src\govcon\logging.py:36:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\logging.py:40:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\matching\auto_pursue.py:94:9: RUF059 Unpacked variable `pursuit` is never used
+src\govcon\matching\engine.py:10:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\matching\recommendations.py:94:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\matching\semantic.py:9:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\matching\semantic.py:17:27: F401 [*] `govcon.models.Award` imported but unused
+src\govcon\matching\semantic.py:17:54: F401 [*] `govcon.models.OutcomeFeedback` imported but unused
+src\govcon\matching\semantic.py:299:31: F811 [*] Redefinition of unused `Award` from line 17: `Award` redefined here
+src\govcon\mcp\context.py:83:5: UP047 Generic function `mcp_tool` should use type parameters
+src\govcon\mcp\operations.py:32:40: F401 [*] `govcon.collaboration.users.PermissionDenied` imported but unused
+src\govcon\mcp\operations.py:44:5: F401 [*] `govcon.models.Award` imported but unused
+src\govcon\mcp\operations.py:440:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\mcp\operations.py:464:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\mcp\operations.py:637:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\mcp\operations.py:816:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\mcp\server.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\prompting\behavioral.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\prompting\evaluation.py:132:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\prompting\registry.py:8:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\prompting\renderer.py:95:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\prompting\renderer.py:103:9: S112 `try`-`except`-`continue` detected, consider logging the exception
+src\govcon\prompting\renderer.py:103:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\proposals\ai_review.py:21:34: F401 [*] `govcon.ai.structured.StructuredCallError` imported but unused
+src\govcon\proposals\ai_review.py:28:5: F401 [*] `govcon.models.AIAnalysis` imported but unused
+src\govcon\proposals\ai_review.py:29:5: F401 [*] `govcon.models.ComplianceFinding` imported but unused
+src\govcon\proposals\ai_review.py:102:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\proposals\ai_review.py:107:13: S110 `try`-`except`-`pass` detected, consider logging the exception
+src\govcon\proposals\ai_review.py:107:20: BLE001 Do not catch blind exception: `Exception`
+src\govcon\proposals\drafting.py:25:5: F401 [*] `govcon.ai.structured.StructuredCallError` imported but unused
+src\govcon\proposals\drafting.py:33:5: F401 [*] `govcon.models.AIAnalysis` imported but unused
+src\govcon\proposals\drafting.py:131:40: PLC0208 [*] Use a sequence type instead of a `set` when iterating over values
+src\govcon\proposals\drafting.py:214:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\proposals\drafting.py:219:13: S110 `try`-`except`-`pass` detected, consider logging the exception
+src\govcon\proposals\drafting.py:219:20: BLE001 Do not catch blind exception: `Exception`
+src\govcon\proposals\export.py:22:5: F401 [*] `govcon.models.ComplianceFinding` imported but unused
+src\govcon\proposals\export.py:55:29: F401 [*] `docx.shared.Pt` imported but unused
+src\govcon\proposals\export.py:79:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\proposals\export.py:145:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\proposals\export.py:146:52: F401 [*] `openpyxl.styles.Alignment` imported but unused
+src\govcon\proposals\export.py:158:5: F841 Local variable `section_map` is assigned to but never used
+src\govcon\proposals\export.py:229:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\proposals\service.py:22:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\proposals\service.py:37:5: F401 [*] `govcon.compliance.submission_preflight.ReadinessBlocked` imported but unused
+src\govcon\proposals\service.py:53:40: F401 [*] `govcon.proposals.ai_review.run_proposal_red_team` imported but unused
+src\govcon\proposals\service.py:59:5: F401 [*] `govcon.proposals.versions.latest_proposal_version` imported but unused
+src\govcon\proposals\service.py:216:5: F841 Local variable `requirements` is assigned to but never used
+src\govcon\proposals\service.py:268:5: F841 Local variable `sol_num` is assigned to but never used
+src\govcon\proposals\service.py:376:5: F841 Local variable `coverage_result` is assigned to but never used
+src\govcon\proposals\service.py:672:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\proposals\versions.py:15:22: F401 [*] `datetime.UTC` imported but unused
+src\govcon\proposals\versions.py:15:27: F401 [*] `datetime.datetime` imported but unused
+src\govcon\scheduler\chain_tasks.py:87:44: UP017 [*] Use `datetime.UTC` alias
+src\govcon\scheduler\chain_tasks.py:91:59: UP017 [*] Use `datetime.UTC` alias
+src\govcon\scheduler\chain_tasks.py:207:44: UP017 [*] Use `datetime.UTC` alias
+src\govcon\scheduler\chains.py:24:1: UP035 [*] Import from `collections.abc` instead: `Callable`
+src\govcon\scheduler\chains.py:108:73: UP037 [*] Remove quotes from type annotation
+src\govcon\scheduler\chains.py:110:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\scheduler\chains.py:131:56: UP017 [*] Use `datetime.UTC` alias
+src\govcon\scheduler\chains.py:144:87: UP037 [*] Remove quotes from type annotation
+src\govcon\scheduler\chains.py:159:31: UP017 [*] Use `datetime.UTC` alias
+src\govcon\scheduler\chains.py:199:16: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\chains.py:246:32: UP017 [*] Use `datetime.UTC` alias
+src\govcon\scheduler\chains.py:270:25: F841 [*] Local variable `exc` is assigned to but never used
+src\govcon\scheduler\jobs.py:13:22: F401 [*] `datetime.datetime` imported but unused
+src\govcon\scheduler\jobs.py:13:32: F401 [*] `datetime.timezone` imported but unused
+src\govcon\scheduler\jobs.py:55:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\scheduler\jobs.py:70:17: DTZ011 `datetime.date.today()` used
+src\govcon\scheduler\jobs.py:93:38: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:123:46: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:157:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:179:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:203:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:219:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:239:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\scheduler\jobs.py:251:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:276:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:288:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:307:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:323:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:337:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:361:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:388:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:399:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\scheduler\jobs.py:408:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:437:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:450:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\jobs.py:472:12: BLE001 Do not catch blind exception: `Exception`
+src\govcon\scheduler\runner.py:29:25: UP017 [*] Use `datetime.UTC` alias
+src\govcon\scheduler\runner.py:42:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\scheduler\runner.py:84:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\scheduler\runner.py:179:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\security\classification.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\sourcing\intake.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\sourcing\records.py:178:9: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\sourcing\records.py:355:9: ISC004 Unparenthesized implicit string concatenation in collection
+src\govcon\submissions\checklist.py:196:5: F841 Local variable `opp` is assigned to but never used
+src\govcon\submissions\service.py:11:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\submissions\service.py:13:8: F401 [*] `json` imported but unused
+src\govcon\submissions\service.py:30:5: F401 [*] `govcon.models.ProposalVersion` imported but unused
+src\govcon\submissions\service.py:67:24: DTZ007 Naive datetime constructed using `datetime.datetime.strptime()` without %z
+src\govcon\submissions\service.py:342:9: SIM102 Use a single `if` statement instead of nested `if` statements
+src\govcon\tasks\handlers\__init__.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\tasks\handlers\analysis.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\tasks\handlers\proposal.py:13:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\tasks\handlers\proposal.py:86:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\tasks\handlers\quote_extraction.py:15:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\tasks\queue.py:55:25: UP017 [*] Use `datetime.UTC` alias
+src\govcon\tasks\registry.py:22:1: UP035 [*] Import from `collections.abc` instead: `Callable`
+src\govcon\tasks\worker.py:46:39: UP017 [*] Use `datetime.UTC` alias
+src\govcon\tasks\worker.py:55:60: UP017 [*] Use `datetime.UTC` alias
+src\govcon\tasks\worker.py:130:20: BLE001 Do not catch blind exception: `Exception`
+src\govcon\tasks\worker.py:163:20: BLE001 Do not catch blind exception: `Exception`
+src\govcon\web\app.py:13:39: F401 [*] `fastapi.Form` imported but unused
+src\govcon\web\app.py:13:45: F401 [*] `fastapi.Request` imported but unused
+src\govcon\web\app.py:14:31: F401 [*] `fastapi.responses.RedirectResponse` imported but unused
+src\govcon\web\app.py:24:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\web\app.py:50:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\web\auth.py:12:39: F401 [*] `sqlalchemy.orm.Session` imported but unused
+src\govcon\web\auth.py:51:25: F401 [*] `fastapi.HTTPException` imported but unused
+src\govcon\web\helpers.py:5:37: F401 [*] `datetime.timedelta` imported but unused
+src\govcon\web\routes\__init__.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\web\routes\__init__.py:10:21: F401 `fastapi.Cookie` imported but unused
+src\govcon\web\routes\__init__.py:10:66: F401 `fastapi.status` imported but unused
+src\govcon\web\routes\__init__.py:13:50: F401 `sqlalchemy.or_` imported but unused
+src\govcon\web\routes\__init__.py:47:5: F401 `govcon.models.ComplianceRun` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+src\govcon\web\routes\__init__.py:60:5: F401 `govcon.models.ReviewComment` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+src\govcon\web\routes\__init__.py:68:5: F401 `govcon.models.UserSession` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+src\govcon\web\routes\__init__.py:72:79: F401 `govcon.learning.analytics.similar_past_outcomes` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+src\govcon\web\routes\__init__.py:691:45: SIM118 Use `key in dict` instead of `key in dict.keys()`
+src\govcon\web\routes\__init__.py:754:17: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\web\routes\__init__.py:767:45: SIM118 Use `key in dict` instead of `key in dict.keys()`
+src\govcon\web\routes\__init__.py:827:37: SIM118 Use `key in dict` instead of `key in dict.keys()`
+src\govcon\web\routes\__init__.py:1311:27: C401 Unnecessary generator (rewrite as a set comprehension)
+src\govcon\web\routes\__init__.py:1954:9: F402 Import `quote` from line 8 shadowed by loop variable
+src\govcon\web\security.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\workflow\commercial.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\workflow\preparation.py:124:5: I001 [*] Import block is un-sorted or un-formatted
+src\govcon\workflow\preparation.py:150:5: RET501 [*] Do not explicitly `return None` in function if it is the only possible return value
+src\govcon\workflow\preparation.py:150:5: PLR1711 [*] Useless `return` statement at end of function
+src\govcon\workflow\preparation.py:284:9: SIM114 [*] Combine `if` branches using logical `or` operator
+src\govcon\workflow\source_revision.py:35:9: PYI034 `__new__` methods in classes like `SourceRevision` usually return `self` at runtime
+src\govcon\workflow\source_revision.py:35:50: UP037 [*] Remove quotes from type annotation
+tests\conftest.py:48:5: I001 [*] Import block is un-sorted or un-formatted
+tests\conftest.py:82:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_ai_providers.py:4:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_alerts.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_alerts.py:84:40: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_alerts.py:85:40: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_alerts.py:112:26: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_alerts.py:131:43: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_alerts.py:131:58: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_analysis_tasks.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_analysis_tasks.py:26:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_analysis_tasks.py:89:107: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_analysis_tasks.py:94:10: RUF059 Unpacked variable `task` is never used
+tests\test_analysis_tasks.py:110:81: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_analysis_tasks.py:110:111: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_analysis_tasks.py:119:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_attachment_download.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_chain_tasks.py:142:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_cli_and_schema.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_cli_and_schema.py:208:14: B017 Do not assert blind exception: `Exception`
+tests\test_cli_and_schema.py:241:80: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_cli_and_schema.py:241:108: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_cli_and_schema.py:286:78: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_collaborative_review.py:548:38: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_compliance.py:313:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_compliance.py:663:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_compliance.py:674:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_compliance.py:741:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_compliance.py:834:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_compliance.py:882:9: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_compliance.py:886:5: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_config_security.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_decision_engine.py:170:79: RUF100 [*] Unused `noqa` directive (non-enabled: `ANN001`)
+tests\test_decision_engine.py:212:74: RUF100 [*] Unused `noqa` directive (non-enabled: `ANN001`)
+tests\test_decision_signals.py:114:112: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_decision_signals.py:147:122: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_decision_signals.py:148:51: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_decision_signals.py:148:86: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_decision_signals.py:148:110: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_decision_signals.py:161:86: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_decision_signals.py:161:116: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_dibbs.py:10:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_dibbs.py:136:38: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_dibbs.py:153:38: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_dibbs.py:257:36: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_f01_f10_regressions.py:8:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f01_f10_regressions.py:121:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f01_f10_regressions.py:256:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f01_f10_regressions.py:409:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f01_f10_regressions.py:423:100: RUF100 [*] Unused `noqa` directive (non-enabled: `E731`)
+tests\test_f01_f10_regressions.py:431:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f01_f10_regressions.py:559:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f01_f10_regressions.py:570:108: DTZ001 `datetime.datetime()` called without a `tzinfo` argument
+tests\test_f01_f10_regressions.py:582:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f01_f10_regressions.py:606:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f11_f20_regressions.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f11_f20_regressions.py:33:16: C408 Unnecessary `dict()` call (rewrite as a literal)
+tests\test_f11_f20_regressions.py:141:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f11_f20_regressions.py:185:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f11_f20_regressions.py:228:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f11_f20_regressions.py:247:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f11_f20_regressions.py:250:51: DTZ001 `datetime.datetime()` called without a `tzinfo` argument
+tests\test_f11_f20_regressions.py:255:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f11_f20_regressions.py:262:34: DTZ001 `datetime.datetime()` called without a `tzinfo` argument
+tests\test_f11_f20_regressions.py:264:49: DTZ001 `datetime.datetime()` called without a `tzinfo` argument
+tests\test_f11_f20_regressions.py:265:32: DTZ001 `datetime.datetime()` called without a `tzinfo` argument
+tests\test_f11_f20_regressions.py:266:79: DTZ001 `datetime.datetime()` called without a `tzinfo` argument
+tests\test_f11_f20_regressions.py:274:79: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_f11_f20_regressions.py:280:43: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_f11_f20_regressions.py:302:79: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_f11_f20_regressions.py:312:77: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_f11_f20_regressions.py:322:85: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_f11_f20_regressions.py:328:14: C408 Unnecessary `dict()` call (rewrite as a literal)
+tests\test_f11_f20_regressions.py:333:43: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_f21_f28_regressions.py:47:14: C408 Unnecessary `dict()` call (rewrite as a literal)
+tests\test_f21_f28_regressions.py:162:13: RUF059 Unpacked variable `gate` is never used
+tests\test_f21_f28_regressions.py:275:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f21_f28_regressions.py:467:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f21_f28_regressions.py:481:5: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_f21_f28_regressions.py:521:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f21_f28_regressions.py:585:24: BLE001 Do not catch blind exception: `Exception`
+tests\test_f21_f28_regressions.py:601:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f29_f33_regressions.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f29_f33_regressions.py:3:24: F401 [*] `contextlib.contextmanager` imported but unused
+tests\test_f29_f33_regressions.py:58:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f29_f33_regressions.py:247:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f29_f33_regressions.py:285:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f29_f33_regressions.py:345:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_f29_f33_regressions.py:423:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:121:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:163:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:245:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:272:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:301:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:317:10: RUF059 Unpacked variable `counts` is never used
+tests\test_feature_audit_fixes.py:383:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_feature_audit_fixes.py:425:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv01_pricing.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv01_pricing.py:11:35: F401 [*] `test_sourcing_company.db` imported but unused
+tests\test_fv01_pricing.py:14:11: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv01_pricing.py:18:90: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_fv01_pricing.py:23:53: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_fv01_pricing.py:23:67: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_fv01_pricing.py:24:67: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv01_pricing.py:35:51: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv01_pricing.py:46:62: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv02_award_attribution.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv02_award_attribution.py:6:38: F401 [*] `test_outcome_suggestions.db` imported but unused
+tests\test_fv02_award_attribution.py:6:42: F401 [*] `test_outcome_suggestions.our_uei` imported but unused
+tests\test_fv02_award_attribution.py:10:66: F811 Redefinition of unused `db` from line 6: `db` redefined here
+tests\test_fv02_award_attribution.py:10:70: F811 Redefinition of unused `our_uei` from line 6: `our_uei` redefined here
+tests\test_fv02_award_attribution.py:25:59: F811 Redefinition of unused `db` from line 6: `db` redefined here
+tests\test_fv02_award_attribution.py:25:63: F811 Redefinition of unused `our_uei` from line 6: `our_uei` redefined here
+tests\test_fv02_award_attribution.py:26:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv03_preparation_commits.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv03_preparation_commits.py:14:30: F401 [*] `test_preparation.db` imported but unused
+tests\test_fv03_preparation_commits.py:14:34: F401 [*] `test_preparation.client` imported but unused
+tests\test_fv03_preparation_commits.py:14:42: F401 [*] `test_preparation.default_settings` imported but unused
+tests\test_fv03_preparation_commits.py:17:12: F811 Redefinition of unused `db` from line 14: `db` redefined here
+tests\test_fv03_preparation_commits.py:25:70: F811 Redefinition of unused `db` from line 14: `db` redefined here
+tests\test_fv03_preparation_commits.py:42:64: F811 Redefinition of unused `db` from line 14: `db` redefined here
+tests\test_fv03_preparation_commits.py:42:68: F811 Redefinition of unused `client` from line 14: `client` redefined here
+tests\test_fv03_preparation_commits.py:43:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv03_preparation_commits.py:87:65: F811 Redefinition of unused `db` from line 14: `db` redefined here
+tests\test_fv04_review_preservation.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv04_review_preservation.py:12:30: F401 [*] `test_preparation.db` imported but unused
+tests\test_fv04_review_preservation.py:12:34: F401 [*] `test_preparation.default_settings` imported but unused
+tests\test_fv04_review_preservation.py:16:21: F811 Redefinition of unused `db` from line 12: `db` redefined here
+tests\test_fv04_review_preservation.py:41:55: F811 Redefinition of unused `db` from line 12: `db` redefined here
+tests\test_fv04_review_preservation.py:48:66: F811 Redefinition of unused `db` from line 12: `db` redefined here
+tests\test_fv05_quote_permissions.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv05_quote_permissions.py:13:35: F401 [*] `test_sourcing_company.client` imported but unused
+tests\test_fv05_quote_permissions.py:13:43: F401 [*] `test_sourcing_company.db` imported but unused
+tests\test_fv05_quote_permissions.py:18:18: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv05_quote_permissions.py:32:49: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv05_quote_permissions.py:39:41: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_fv05_quote_permissions.py:43:43: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv05_quote_permissions.py:49:72: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_fv05_quote_permissions.py:54:49: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv05_quote_permissions.py:64:40: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv05_quote_permissions.py:64:44: F811 Redefinition of unused `client` from line 13: `client` redefined here
+tests\test_fv05_quote_permissions.py:73:65: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv05_quote_permissions.py:84:44: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv05_quote_permissions.py:94:62: F811 Redefinition of unused `db` from line 13: `db` redefined here
+tests\test_fv06_catalog_rows.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv06_catalog_rows.py:12:35: F401 [*] `test_sourcing_company.client` imported but unused
+tests\test_fv06_catalog_rows.py:12:43: F401 [*] `test_sourcing_company.db` imported but unused
+tests\test_fv06_catalog_rows.py:20:27: F811 Redefinition of unused `db` from line 12: `db` redefined here
+tests\test_fv06_catalog_rows.py:20:31: F811 Redefinition of unused `client` from line 12: `client` redefined here
+tests\test_fv06_catalog_rows.py:46:49: F811 Redefinition of unused `db` from line 12: `db` redefined here
+tests\test_fv06_catalog_rows.py:46:53: F811 Redefinition of unused `client` from line 12: `client` redefined here
+tests\test_fv06_catalog_rows.py:56:63: F811 Redefinition of unused `db` from line 12: `db` redefined here
+tests\test_fv06_catalog_rows.py:56:67: F811 Redefinition of unused `client` from line 12: `client` redefined here
+tests\test_fv07_workbook_errors.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv07_workbook_errors.py:15:35: F401 [*] `test_sourcing_company.client` imported but unused
+tests\test_fv07_workbook_errors.py:15:43: F401 [*] `test_sourcing_company.db` imported but unused
+tests\test_fv07_workbook_errors.py:40:51: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv07_workbook_errors.py:40:55: F811 Redefinition of unused `client` from line 15: `client` redefined here
+tests\test_fv07_workbook_errors.py:80:45: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv07_workbook_errors.py:80:49: F811 Redefinition of unused `client` from line 15: `client` redefined here
+tests\test_fv08_finite_numbers.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv08_finite_numbers.py:10:35: F401 [*] `test_sourcing_company.client` imported but unused
+tests\test_fv08_finite_numbers.py:10:43: F401 [*] `test_sourcing_company.db` imported but unused
+tests\test_fv08_finite_numbers.py:26:54: F811 Redefinition of unused `db` from line 10: `db` redefined here
+tests\test_fv08_finite_numbers.py:26:58: F811 Redefinition of unused `client` from line 10: `client` redefined here
+tests\test_fv08_finite_numbers.py:28:5: RUF059 Unpacked variable `actor` is never used
+tests\test_fv08_finite_numbers.py:43:53: F811 Redefinition of unused `db` from line 10: `db` redefined here
+tests\test_fv08_finite_numbers.py:43:57: F811 Redefinition of unused `client` from line 10: `client` redefined here
+tests\test_fv08_finite_numbers.py:60:49: F811 Redefinition of unused `db` from line 10: `db` redefined here
+tests\test_fv09_quote_repeats.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv09_quote_repeats.py:15:35: F401 [*] `test_sourcing_company.client` imported but unused
+tests\test_fv09_quote_repeats.py:15:43: F401 [*] `test_sourcing_company.db` imported but unused
+tests\test_fv09_quote_repeats.py:20:18: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv09_quote_repeats.py:25:12: C408 Unnecessary `dict()` call (rewrite as a literal)
+tests\test_fv09_quote_repeats.py:30:60: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv09_quote_repeats.py:55:76: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv09_quote_repeats.py:70:66: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv09_quote_repeats.py:70:70: F811 Redefinition of unused `client` from line 15: `client` redefined here
+tests\test_fv09_quote_repeats.py:89:54: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv09_quote_repeats.py:107:79: F811 Redefinition of unused `db` from line 15: `db` redefined here
+tests\test_fv09_quote_repeats.py:108:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv10_review_cycles.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fv10_review_cycles.py:11:35: F401 [*] `test_sourcing_company.db` imported but unused
+tests\test_fv10_review_cycles.py:14:20: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv10_review_cycles.py:31:13: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv10_review_cycles.py:37:59: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv10_review_cycles.py:38:27: RUF059 Unpacked variable `assignment` is never used
+tests\test_fv10_review_cycles.py:51:66: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv10_review_cycles.py:52:10: RUF059 Unpacked variable `owner` is never used
+tests\test_fv10_review_cycles.py:52:17: RUF059 Unpacked variable `reviewer` is never used
+tests\test_fv10_review_cycles.py:52:44: RUF059 Unpacked variable `settings` is never used
+tests\test_fv10_review_cycles.py:61:74: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_fv10_review_cycles.py:62:39: RUF059 Unpacked variable `now` is never used
+tests\test_fv10_review_cycles.py:72:67: F811 Redefinition of unused `db` from line 11: `db` redefined here
+tests\test_installed_artifact.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_installed_artifact.py:83:18: PLW1510 `subprocess.run` without explicit `check` argument
+tests\test_intelligence_analyses.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_intelligence_analyses.py:64:26: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:80:30: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:81:38: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:114:112: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:114:140: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:126:112: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:126:140: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:202:86: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_intelligence_analyses.py:202:116: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_m5_m13_regressions.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:19:5: F401 [*] `govcon.models.PackageManifest` imported but unused
+tests\test_m5_m13_regressions.py:69:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:107:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:130:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:146:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:178:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:242:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:277:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:322:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:334:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:346:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:358:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_m5_m13_regressions.py:404:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_matching.py:78:33: B006 Do not use mutable data structures for argument defaults
+tests\test_matching.py:181:48: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_matching.py:191:48: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_matching.py:192:60: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_matching.py:192:102: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_mcp.py:16:64: F401 [*] `govcon.mcp.serialize.success` imported but unused
+tests\test_mcp.py:142:17: RUF012 Mutable default value for class attribute
+tests\test_mcp.py:218:38: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_mcp.py:220:30: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_outcome_learning.py:273:20: RUF059 Unpacked variable `note` is never used
+tests\test_outcome_learning.py:422:9: F841 Local variable `prefix` is assigned to but never used
+tests\test_outcome_suggestions.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_outcome_suggestions.py:132:40: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_outcome_suggestions.py:182:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_outcome_suggestions.py:183:12: PLR0402 [*] Use `from govcon.learning import analytics` in lieu of alias
+tests\test_phase19_testing_gates.py:23:8: F401 [*] `subprocess` imported but unused
+tests\test_phase19_testing_gates.py:24:8: F401 [*] `sys` imported but unused
+tests\test_phase19_testing_gates.py:25:37: F401 [*] `datetime.timedelta` imported but unused
+tests\test_phase19_testing_gates.py:98:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:98:46: RUF100 [*] Unused `noqa` directive (unused: `F401`)
+tests\test_phase19_testing_gates.py:99:45: RUF100 [*] Unused `noqa` directive (unused: `F401`)
+tests\test_phase19_testing_gates.py:119:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:153:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:155:35: F401 [*] `govcon.models.OpportunitySnapshot` imported but unused
+tests\test_phase19_testing_gates.py:176:13: F841 Local variable `result1` is assigned to but never used
+tests\test_phase19_testing_gates.py:191:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:213:13: F841 Local variable `result1` is assigned to but never used
+tests\test_phase19_testing_gates.py:241:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:267:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:391:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:419:14: B017 Do not assert blind exception: `Exception`
+tests\test_phase19_testing_gates.py:435:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:436:16: F401 [*] `pydantic` imported but unused
+tests\test_phase19_testing_gates.py:437:14: B017 Do not assert blind exception: `Exception`
+tests\test_phase19_testing_gates.py:460:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:468:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:613:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:613:16: F401 [*] `re` imported but unused
+tests\test_phase19_testing_gates.py:628:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:676:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:750:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:876:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:909:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:952:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:991:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1073:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1082:18: RUF059 Unpacked variable `pursuit` is never used
+tests\test_phase19_testing_gates.py:1104:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1113:18: RUF059 Unpacked variable `pursuit` is never used
+tests\test_phase19_testing_gates.py:1136:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1140:18: RUF059 Unpacked variable `pursuit` is never used
+tests\test_phase19_testing_gates.py:1140:37: RUF059 Unpacked variable `reviewer` is never used
+tests\test_phase19_testing_gates.py:1154:13: S110 `try`-`except`-`pass` detected, consider logging the exception
+tests\test_phase19_testing_gates.py:1154:47: BLE001 Do not catch blind exception: `Exception`
+tests\test_phase19_testing_gates.py:1179:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1186:18: RUF059 Unpacked variable `pursuit` is never used
+tests\test_phase19_testing_gates.py:1214:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1224:18: RUF059 Unpacked variable `pursuit` is never used
+tests\test_phase19_testing_gates.py:1256:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1331:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1338:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1347:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1356:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1365:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1378:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1380:35: F401 [*] `govcon.models.ComplianceRun` imported but unused
+tests\test_phase19_testing_gates.py:1413:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1420:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1440:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1448:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1470:58: F401 [*] `govcon.models.ProposalVersion` imported but unused
+tests\test_phase19_testing_gates.py:1493:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1497:13: RUF059 Unpacked variable `opp` is never used
+tests\test_phase19_testing_gates.py:1497:18: RUF059 Unpacked variable `pursuit` is never used
+tests\test_phase19_testing_gates.py:1523:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1527:13: RUF059 Unpacked variable `opp` is never used
+tests\test_phase19_testing_gates.py:1527:18: RUF059 Unpacked variable `pursuit` is never used
+tests\test_phase19_testing_gates.py:1547:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1549:26: F401 [*] `govcon.models.Proposal` imported but unused
+tests\test_phase19_testing_gates.py:1549:53: F401 [*] `govcon.models.ProposalVersion` imported but unused
+tests\test_phase19_testing_gates.py:1550:13: F401 [*] `govcon.models.ReviewSession` imported but unused
+tests\test_phase19_testing_gates.py:1609:13: F841 Local variable `proposal_id` is assigned to but never used
+tests\test_phase19_testing_gates.py:1628:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1630:26: F401 [*] `govcon.models.Proposal` imported but unused
+tests\test_phase19_testing_gates.py:1630:53: F401 [*] `govcon.models.ProposalVersion` imported but unused
+tests\test_phase19_testing_gates.py:1631:13: F401 [*] `govcon.models.ReviewSession` imported but unused
+tests\test_phase19_testing_gates.py:1715:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1774:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1810:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:1865:13: F841 Local variable `events` is assigned to but never used
+tests\test_phase19_testing_gates.py:2072:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase19_testing_gates.py:2082:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase20_final_acceptance.py:19:27: F401 [*] `unittest.mock.MagicMock` imported but unused
+tests\test_phase20_final_acceptance.py:209:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_phase20_final_acceptance.py:302:35: F401 [*] `govcon.models.ReviewAssignment` imported but unused
+tests\test_phase20_final_acceptance.py:601:47: F401 [*] `govcon.prompting.registry.sync_prompts` imported but unused
+tests\test_phase20_final_acceptance.py:850:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_preparation.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_preparation.py:90:13: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_generation_task.py:9:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_generation_task.py:189:13: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_generation_task.py:304:7: RUF059 Unpacked variable `task_id` is never used
+tests\test_proposal_generation_task.py:382:12: FURB192 Prefer `min` over `sorted()` to compute the minimum value in a sequence
+tests\test_proposal_generation_task.py:411:9: RUF059 Unpacked variable `task` is never used
+tests\test_proposal_generation_task.py:457:13: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_generation_task.py:500:16: RUF059 Unpacked variable `actor` is never used
+tests\test_proposal_submission.py:24:27: F401 [*] `unittest.mock.MagicMock` imported but unused
+tests\test_proposal_submission.py:33:38: F401 [*] `govcon.compliance.matrix.active_requirements` imported but unused
+tests\test_proposal_submission.py:35:5: F401 [*] `govcon.models.AIAnalysis` imported but unused
+tests\test_proposal_submission.py:192:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:192:77: F401 [*] `govcon.collaboration.review_sessions.finalize_approval` imported but unused
+tests\test_proposal_submission.py:244:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:248:5: F841 Local variable `review` is assigned to but never used
+tests\test_proposal_submission.py:262:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:262:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:282:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:282:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:305:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:305:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:327:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:327:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:328:5: F841 Local variable `req1` is assigned to but never used
+tests\test_proposal_submission.py:329:5: F841 Local variable `req2` is assigned to but never used
+tests\test_proposal_submission.py:350:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:350:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:374:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:374:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:404:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:408:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:408:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:429:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:429:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:460:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:463:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:463:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:476:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:479:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:479:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:494:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:494:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:511:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:511:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:525:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:525:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:537:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:551:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:551:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:575:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:579:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:579:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:598:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:602:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:643:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:646:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:646:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:664:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:667:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:667:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:686:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:689:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:689:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:728:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:741:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:816:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:820:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:820:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:861:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:865:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:865:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:901:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:901:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:925:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:929:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:929:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:930:5: F841 Local variable `req` is assigned to but never used
+tests\test_proposal_submission.py:950:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_proposal_submission.py:950:12: F401 [*] `os` imported but unused
+tests\test_proposal_submission.py:955:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:955:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_proposal_submission.py:978:5: RUF059 Unpacked variable `review` is never used
+tests\test_proposal_submission.py:978:13: RUF059 Unpacked variable `pursuit` is never used
+tests\test_ranking_notifications.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_ranking_notifications.py:58:47: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_ranking_notifications.py:90:50: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_ranking_notifications.py:288:5: RUF059 Unpacked variable `other` is never used
+tests\test_ranking_notifications.py:344:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_release_lifecycle.py:18:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_release_lifecycle.py:100:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_release_lifecycle.py:127:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_sam_ingestion.py:39:5: F401 [*] `govcon.models.ComplianceFinding` imported but unused
+tests\test_sam_ingestion.py:40:5: F401 [*] `govcon.models.ComplianceRun` imported but unused
+tests\test_sam_ingestion.py:43:5: F401 [*] `govcon.models.Match` imported but unused
+tests\test_sam_ingestion.py:47:5: F401 [*] `govcon.models.Requirement` imported but unused
+tests\test_sam_ingestion.py:48:5: F401 [*] `govcon.models.RequirementEvidence` imported but unused
+tests\test_sam_ingestion.py:165:59: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_sam_ingestion.py:167:44: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_sam_ingestion.py:167:61: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_sam_ingestion.py:357:48: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_sam_ingestion.py:359:59: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_sam_ingestion.py:360:59: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_scheduler.py:16:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_scheduler.py:18:8: F401 [*] `json` imported but unused
+tests\test_scheduler.py:19:22: F401 [*] `datetime.datetime` imported but unused
+tests\test_scheduler.py:19:32: F401 [*] `datetime.timezone` imported but unused
+tests\test_scheduler.py:20:1: UP035 [*] Import from `collections.abc` instead: `Generator`
+tests\test_scheduler.py:20:20: F401 [*] `typing.Generator` imported but unused
+tests\test_scheduler.py:21:27: F401 [*] `unittest.mock.MagicMock` imported but unused
+tests\test_scheduler.py:230:9: F841 Local variable `settings` is assigned to but never used
+tests\test_scheduler.py:277:9: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_scheduler.py:325:9: SIM117 [*] Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_scheduler.py:376:9: F841 Local variable `result` is assigned to but never used
+tests\test_scheduler.py:639:9: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_security_hardening.py:19:8: F401 [*] `os` imported but unused
+tests\test_security_hardening.py:32:26: F401 [*] `govcon.audit.record_audit` imported but unused
+tests\test_security_hardening.py:291:9: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_security_hardening.py:424:22: PLW1510 `subprocess.run` without explicit `check` argument
+tests\test_security_hardening.py:432:16: BLE001 Do not catch blind exception: `Exception`
+tests\test_security_hardening.py:461:24: PIE810 Call `startswith` once with a `tuple`
+tests\test_semantic_search.py:18:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_semantic_search.py:22:20: F401 [*] `typing.Any` imported but unused
+tests\test_semantic_search.py:49:34: F401 [*] `govcon.mcp.serialize.success` imported but unused
+tests\test_semantic_search.py:50:64: F401 [*] `govcon.models.Pursuit` imported but unused
+tests\test_semantic_search.py:221:5: F841 Local variable `similar_text` is assigned to but never used
+tests\test_semantic_search.py:313:5: F841 Local variable `open_emb` is assigned to but never used
+tests\test_sourcing_company.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_sourcing_company.py:26:5: F401 [*] `govcon.models.Supplier` imported but unused
+tests\test_sourcing_company.py:61:110: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_sourcing_company.py:106:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_sourcing_company.py:134:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_sourcing_company.py:143:54: DTZ011 `datetime.date.today()` used
+tests\test_sourcing_company.py:209:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_sourcing_company.py:257:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_sourcing_company.py:261:15: DTZ011 `datetime.date.today()` used
+tests\test_usaspending.py:94:37: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:130:32: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:133:37: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:135:45: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:139:47: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:140:53: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:211:74: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:212:100: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:215:83: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:238:36: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:240:44: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:352:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:353:26: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:361:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:362:26: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:373:37: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:376:39: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:378:41: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:409:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:418:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:438:44: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:445:13: DTZ011 `datetime.date.today()` used
+tests\test_usaspending.py:503:27: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:513:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:521:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_usaspending.py:522:26: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_vendors.py:9:21: F401 [*] `pathlib.Path` imported but unused
+tests\test_vendors.py:14:32: F401 [*] `sqlalchemy.select` imported but unused
+tests\test_vendors.py:23:5: F401 [*] `govcon.ingest.sam_entities.SamEntityError` imported but unused
+tests\test_vendors.py:30:41: F401 [*] `govcon.intelligence.vendors.award_stats_for_uei` imported but unused
+tests\test_vendors.py:92:50: DTZ001 `datetime.datetime()` called without a `tzinfo` argument
+tests\test_vendors.py:148:46: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:153:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:161:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:171:60: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:230:92: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:235:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:243:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_vendors.py:254:34: FURB157 [*] Verbose expression in `Decimal` constructor
+tests\test_web_ui.py:18:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_web_ui.py:20:8: F401 [*] `hashlib` imported but unused
+tests\test_web_ui.py:32:5: F401 [*] `govcon.models.ReviewAssignment` imported but unused
+tests\test_web_ui.py:67:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_web_ui.py:213:9: RUF059 Unpacked variable `user` is never used
+tests\test_web_ui.py:352:9: RUF059 Unpacked variable `user1` is never used
+tests\test_web_ui.py:353:9: RUF059 Unpacked variable `user2` is never used
+tests\test_web_ui.py:385:9: RUF059 Unpacked variable `reviewer` is never used
+tests\test_web_ui.py:403:9: F841 Local variable `resp` is assigned to but never used
+tests\test_web_ui.py:443:44: F401 [*] `govcon.models.ReviewSession` imported but unused
+tests\test_web_ui.py:467:14: RUF059 Unpacked variable `pursuit` is never used
+tests\test_web_ui.py:467:27: RUF059 Unpacked variable `approver` is never used
+tests\test_web_ui.py:487:14: RUF059 Unpacked variable `pursuit` is never used
+tests\test_web_ui.py:487:27: RUF059 Unpacked variable `approver` is never used
+tests\test_web_ui.py:503:14: RUF059 Unpacked variable `pursuit` is never used
+tests\test_web_ui.py:503:27: RUF059 Unpacked variable `approver` is never used
+tests\test_web_ui.py:522:14: RUF059 Unpacked variable `pursuit` is never used
+tests\test_web_ui.py:522:27: RUF059 Unpacked variable `approver` is never used
+tests\test_web_ui.py:541:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_web_ui.py:541:57: F401 [*] `govcon.models.Pursuit` imported but unused
+tests\test_web_ui.py:627:9: RUF059 Unpacked variable `viewer` is never used
+tests\test_web_ui.py:644:9: RUF059 Unpacked variable `reviewer` is never used
+tests\test_web_ui.py:682:9: RUF059 Unpacked variable `approver` is never used
+tests\test_web_ui.py:699:9: RUF059 Unpacked variable `approver` is never used
+tests\test_web_ui.py:735:9: RUF059 Unpacked variable `approver` is never used
+tests\test_web_ui.py:762:9: RUF059 Unpacked variable `viewer` is never used
+tests\test_web_ui.py:842:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_web_ui.py:848:9: RUF059 Unpacked variable `user` is never used
+tests\test_web_ui.py:855:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_web_ui.py:857:14: B017 Do not assert blind exception: `Exception`
+tests\test_web_ui.py:888:9: RUF059 Unpacked variable `user` is never used
+tests\test_web_ui.py:899:9: RUF059 Unpacked variable `user` is never used
+tests\test_web_ui.py:933:5: RUF059 Unpacked variable `user` is never used
+tests\test_workflow_gates.py:13:8: F401 [*] `json` imported but unused
+tests\test_workflow_gates.py:140:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_workflow_gates.py:267:5: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_workflow_gates.py:287:5: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_workflow_gates.py:320:5: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_workflow_gates.py:327:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_workflow_gates.py:339:5: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_workflow_gates.py:401:5: SIM117 [*] Use a single `with` statement with multiple contexts instead of nested `with` statements
+tests\test_workflow_gates.py:866:175: RUF100 [*] Unused `noqa` directive (non-enabled: `E731`)
+Found 901 errors.
+[*] 598 fixable with the `--fix` option (140 hidden fixes can be enabled with the `--unsafe-fixes` option).

@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FV11-local-model-pytest.log",
+    "tests": "1",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "10.112"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

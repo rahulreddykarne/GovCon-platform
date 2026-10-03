@@ -606,24 +606,19 @@ def op_add_pursuit(
 ) -> dict[str, Any]:
     if stage not in MCP_SETTABLE_PURSUIT_STAGES:
         raise ValueError(f"stage must be one of {sorted(MCP_SETTABLE_PURSUIT_STAGES)}")
+    """Start a pursuit, or return the existing one unchanged (``created`` says which).
+
+    Same service as the web and CLI (ADR-067), so preparation is queued the
+    same way; a repeat call is not an error.
+    """
+    from govcon.workflow.pursuits import create_or_get_pursuit
+
     actor = current_actor(session, "review")
     _require_row(session, Opportunity, opportunity_id, "opportunity")
-    existing = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
-    if existing is not None:
-        raise ValueError(f"pursuit already exists for opportunity {opportunity_id}")
-    pursuit = Pursuit(opportunity_id=opportunity_id, stage=stage, notes=notes)
-    session.add(pursuit)
-    session.flush()
-    record_audit(
-        session,
-        action_type="pursuit_created",
-        user_id=actor.id,
-        opportunity_id=opportunity_id,
-        entity_type="pursuits",
-        entity_id=pursuit.id,
-        new_value={"stage": stage, "via": "mcp"},
+    pursuit, created = create_or_get_pursuit(
+        session, opportunity_id=opportunity_id, actor=actor, origin="mcp", stage=stage, notes=notes
     )
-    return success(_pursuit_record(pursuit))
+    return success({**_pursuit_record(pursuit), "created": created})
 
 
 def op_update_pursuit(

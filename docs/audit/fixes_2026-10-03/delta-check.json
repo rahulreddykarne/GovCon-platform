@@ -1,0 +1,19 @@
+{
+  "production_files_changed": [
+    "src/govcon/cli.py",
+    "src/govcon/collaboration/escalation.py",
+    "src/govcon/enrich/embeddings.py",
+    "src/govcon/learning/award_matching.py",
+    "src/govcon/sourcing/intake.py",
+    "src/govcon/sourcing/records.py",
+    "src/govcon/workflow/invalidation.py",
+    "src/govcon/workflow/preparation.py"
+  ],
+  "existing_signatures_and_decorators": "unchanged",
+  "new_helpers": {
+    "src/govcon/workflow/preparation.py": [
+      "_checkpoint_service"
+    ]
+  },
+  "existing_test_files_unchanged": 49
+}

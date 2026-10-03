@@ -1,0 +1,366 @@
+{
+  "FV01": [
+    {
+      "file": "src/govcon/intelligence/ai_analyses.py",
+      "line": 250,
+      "caller": "<module/registry>",
+      "references": "_pricing_request"
+    },
+    {
+      "file": "src/govcon/intelligence/ai_analyses.py",
+      "line": 208,
+      "caller": "_pricing_request",
+      "references": "lowest_current_total"
+    }
+  ],
+  "FV02": [
+    {
+      "file": "src/govcon/learning/award_matching.py",
+      "line": 157,
+      "caller": "suggest_outcomes",
+      "references": "_candidates"
+    }
+  ],
+  "FV03": [
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 235,
+      "caller": "<module/registry>",
+      "references": "_nothing"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 235,
+      "caller": "<module/registry>",
+      "references": "_summary_execute"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 235,
+      "caller": "<module/registry>",
+      "references": "_record"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 236,
+      "caller": "<module/registry>",
+      "references": "_nothing"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 236,
+      "caller": "<module/registry>",
+      "references": "_compliance_execute"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 236,
+      "caller": "<module/registry>",
+      "references": "_record"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 237,
+      "caller": "<module/registry>",
+      "references": "_nothing"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 238,
+      "caller": "<module/registry>",
+      "references": "_nothing"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 238,
+      "caller": "<module/registry>",
+      "references": "_decision_execute"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 238,
+      "caller": "<module/registry>",
+      "references": "_record"
+    },
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 239,
+      "caller": "<module/registry>",
+      "references": "_nothing"
+    }
+  ],
+  "FV04": [
+    {
+      "file": "src/govcon/workflow/preparation.py",
+      "line": 239,
+      "caller": "<module/registry>",
+      "references": "_review_publish"
+    }
+  ],
+  "FV05": [
+    {
+      "file": "tests/test_sourcing_company.py",
+      "line": 142,
+      "caller": "test_expired_quotes_are_not_used",
+      "references": "record_quote"
+    },
+    {
+      "file": "src/govcon/cli.py",
+      "line": 3356,
+      "caller": "sourcing_add_quote",
+      "references": "receive_quote_file"
+    },
+    {
+      "file": "src/govcon/sourcing/intake.py",
+      "line": 43,
+      "caller": "receive_quote_file",
+      "references": "record_quote"
+    },
+    {
+      "file": "src/govcon/tasks/handlers/quote_extraction.py",
+      "line": 104,
+      "caller": "_extract_publish",
+      "references": "record_quote"
+    },
+    {
+      "file": "src/govcon/web/routes/__init__.py",
+      "line": 1999,
+      "caller": "workspace_add_quote",
+      "references": "receive_quote_file"
+    },
+    {
+      "file": "src/govcon/web/routes/__init__.py",
+      "line": 2007,
+      "caller": "workspace_add_quote",
+      "references": "record_quote"
+    }
+  ],
+  "FV06": [
+    {
+      "file": "tests/test_sourcing_company.py",
+      "line": 87,
+      "caller": "test_catalog_import_validates_rows_and_upserts",
+      "references": "import_catalog_csv"
+    },
+    {
+      "file": "tests/test_sourcing_company.py",
+      "line": 96,
+      "caller": "test_catalog_import_validates_rows_and_upserts",
+      "references": "import_catalog_csv"
+    },
+    {
+      "file": "src/govcon/cli.py",
+      "line": 3328,
+      "caller": "sourcing_import_catalog",
+      "references": "import_catalog_csv"
+    },
+    {
+      "file": "src/govcon/web/routes/__init__.py",
+      "line": 2074,
+      "caller": "suppliers_save",
+      "references": "import_catalog_csv"
+    }
+  ],
+  "FV07": [
+    {
+      "file": "src/govcon/sourcing/intake.py",
+      "line": 41,
+      "caller": "receive_quote_file",
+      "references": "parse_quote_table"
+    }
+  ],
+  "FV08": [
+    {
+      "file": "src/govcon/sourcing/records.py",
+      "line": 213,
+      "caller": "record_quote",
+      "references": "_decimal"
+    },
+    {
+      "file": "src/govcon/sourcing/records.py",
+      "line": 132,
+      "caller": "import_catalog_csv",
+      "references": "_decimal"
+    },
+    {
+      "file": "src/govcon/sourcing/records.py",
+      "line": 195,
+      "caller": "parse_quote_table",
+      "references": "_decimal"
+    },
+    {
+      "file": "src/govcon/sourcing/records.py",
+      "line": 197,
+      "caller": "parse_quote_table",
+      "references": "_decimal"
+    },
+    {
+      "file": "src/govcon/sourcing/records.py",
+      "line": 198,
+      "caller": "parse_quote_table",
+      "references": "_decimal"
+    }
+  ],
+  "FV09": [
+    {
+      "file": "tests/test_sourcing_company.py",
+      "line": 142,
+      "caller": "test_expired_quotes_are_not_used",
+      "references": "record_quote"
+    },
+    {
+      "file": "src/govcon/sourcing/intake.py",
+      "line": 43,
+      "caller": "receive_quote_file",
+      "references": "record_quote"
+    },
+    {
+      "file": "src/govcon/tasks/handlers/quote_extraction.py",
+      "line": 104,
+      "caller": "_extract_publish",
+      "references": "record_quote"
+    },
+    {
+      "file": "src/govcon/web/routes/__init__.py",
+      "line": 2007,
+      "caller": "workspace_add_quote",
+      "references": "record_quote"
+    }
+  ],
+  "FV10": [
+    {
+      "file": "tests/test_f21_f28_regressions.py",
+      "line": 536,
+      "caller": "test_f28_workflows_lock_the_opportunity_first",
+      "references": "reopen_review"
+    },
+    {
+      "file": "tests/test_ranking_notifications.py",
+      "line": 315,
+      "caller": "test_reminders_and_escalations_fire_once",
+      "references": "run_review_escalations"
+    },
+    {
+      "file": "tests/test_ranking_notifications.py",
+      "line": 319,
+      "caller": "test_reminders_and_escalations_fire_once",
+      "references": "run_review_escalations"
+    },
+    {
+      "file": "src/govcon/scheduler/jobs.py",
+      "line": 333,
+      "caller": "step_review_escalations",
+      "references": "run_review_escalations"
+    },
+    {
+      "file": "src/govcon/workflow/invalidation.py",
+      "line": 269,
+      "caller": "apply_source_change",
+      "references": "reopen_review"
+    }
+  ],
+  "FV11": [
+    {
+      "file": "tests/test_m5_m13_regressions.py",
+      "line": 255,
+      "caller": "test_embedding_rebuilds_changed_source_and_model_and_uses_active_matches",
+      "references": "model_version"
+    },
+    {
+      "file": "tests/test_m5_m13_regressions.py",
+      "line": 273,
+      "caller": "test_embedding_model_identity_tracks_resolved_commit",
+      "references": "model_version"
+    },
+    {
+      "file": "tests/test_m5_m13_regressions.py",
+      "line": 273,
+      "caller": "test_embedding_model_identity_tracks_resolved_commit",
+      "references": "model_version"
+    },
+    {
+      "file": "tests/test_m5_m13_regressions.py",
+      "line": 270,
+      "caller": "provider",
+      "references": "SentenceTransformerProvider"
+    },
+    {
+      "file": "src/govcon/cli.py",
+      "line": 2842,
+      "caller": "embed_run",
+      "references": "get_default_provider"
+    },
+    {
+      "file": "src/govcon/cli.py",
+      "line": 2861,
+      "caller": "embed_watchlists",
+      "references": "get_default_provider"
+    },
+    {
+      "file": "src/govcon/cli.py",
+      "line": 2898,
+      "caller": "semantic_recommendations",
+      "references": "get_default_provider"
+    },
+    {
+      "file": "src/govcon/enrich/embeddings.py",
+      "line": 83,
+      "caller": "get_default_provider",
+      "references": "SentenceTransformerProvider"
+    },
+    {
+      "file": "src/govcon/enrich/embeddings.py",
+      "line": 89,
+      "caller": "get_default_provider",
+      "references": "SentenceTransformerProvider"
+    },
+    {
+      "file": "src/govcon/enrich/embeddings.py",
+      "line": 140,
+      "caller": "_model_id",
+      "references": "model_version"
+    },
+    {
+      "file": "src/govcon/matching/recommendations.py",
+      "line": 68,
+      "caller": "_upsert",
+      "references": "model_version"
+    },
+    {
+      "file": "src/govcon/matching/recommendations.py",
+      "line": 93,
+      "caller": "refresh_recommendations",
+      "references": "model_version"
+    },
+    {
+      "file": "src/govcon/matching/recommendations.py",
+      "line": 101,
+      "caller": "refresh_recommendations",
+      "references": "model_version"
+    },
+    {
+      "file": "src/govcon/matching/recommendations.py",
+      "line": 110,
+      "caller": "refresh_recommendations",
+      "references": "model_version"
+    },
+    {
+      "file": "src/govcon/scheduler/jobs.py",
+      "line": 241,
+      "caller": "step_embeddings",
+      "references": "get_default_provider"
+    },
+    {
+      "file": "src/govcon/scheduler/jobs.py",
+      "line": 266,
+      "caller": "step_semantic_match",
+      "references": "get_default_provider"
+    },
+    {
+      "file": "src/govcon/scheduler/jobs.py",
+      "line": 401,
+      "caller": "step_cache_refresh",
+      "references": "get_default_provider"
+    }
+  ]
+}

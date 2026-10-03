@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FV09-cli-race-green-pytest.log",
+    "tests": "46",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "13.262"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

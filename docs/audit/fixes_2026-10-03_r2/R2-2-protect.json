@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "R2-2-protect-pytest.log",
+    "tests": "4",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.709"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

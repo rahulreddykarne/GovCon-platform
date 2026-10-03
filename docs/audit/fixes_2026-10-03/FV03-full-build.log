@@ -1,0 +1,9 @@
+Processing .\.
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: govcon
+  Building wheel for govcon (pyproject.toml): started
+  Building wheel for govcon (pyproject.toml): finished with status 'done'
+  Created wheel for govcon: filename=govcon-0.1.0-py3-none-any.whl size=615053 sha256=b76bc1d6002f15ce9d4e19815edabb524e749d5518ba6fbfe1618f8051b27d7f
+  Stored in directory: C:\Users\karne\AppData\Local\Temp\pip-ephem-wheel-cache-s8u_8vsb\wheels\8d\f9\44\5ef6056e5e4837e065387ed8d9b52751debe8141eace32b76c
+Successfully built govcon

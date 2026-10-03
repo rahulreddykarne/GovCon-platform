@@ -1,0 +1,706 @@
+{
+  "src/govcon/audit.py": {
+    "sha256": "29a7bd74e8410317ab6d6f64b0b4440c8453b0c11653cc30a28eb5163e675d2b",
+    "lines": 71
+  },
+  "src/govcon/cli.py": {
+    "sha256": "f3b676a66656e23e644d865fbe183f3270b8e6b0b0ee7f762fa5d7ffb99a0184",
+    "lines": 3413
+  },
+  "src/govcon/concurrency.py": {
+    "sha256": "06704f23674ba12b38d549d728c7f5f532d51425456b0cf51c9db6498749c4d3",
+    "lines": 48
+  },
+  "src/govcon/config.py": {
+    "sha256": "b0efc6244da11cf94075a9c679a538e5b36c5eb0ca5b55410b094b8eae4d7b0c",
+    "lines": 286
+  },
+  "src/govcon/db.py": {
+    "sha256": "882d80ac6868e14e90bb61b38bb733847cbf18cc0e0173e7b9df4478b709b0db",
+    "lines": 111
+  },
+  "src/govcon/http.py": {
+    "sha256": "4c92138dc78d2b80ecf9d7bebeca01c1bcc475655efbcbf9ac30ffe62787b519",
+    "lines": 65
+  },
+  "src/govcon/logging.py": {
+    "sha256": "74f985af9664702df74d2f727347df3ba9f243b07da5072b23691bae9e85933d",
+    "lines": 72
+  },
+  "src/govcon/models.py": {
+    "sha256": "f94abca3425fda98946f8b9dcb09a1361465bbba89041100f8cb324a78bbbc11",
+    "lines": 1310
+  },
+  "src/govcon/paths.py": {
+    "sha256": "0c934058022948438a414136e300267f64f51862ef5cef7a340bf52629a7c7ae",
+    "lines": 22
+  },
+  "src/govcon/seed.py": {
+    "sha256": "9c9e95bcc66d96a83fb823fd9a83ae598dd4cd2044e7fcc73faed84d38477f9d",
+    "lines": 50
+  },
+  "src/govcon/_build.py": {
+    "sha256": "f393c7e7aa5a5080ac41eba68c872fcaa500c397bb60b11184ee8bdf5b943b36",
+    "lines": 31
+  },
+  "src/govcon/__init__.py": {
+    "sha256": "a75f82e37537a04e08ea0a53c78ff6b7d0665365f7662d300f1d87f89644200e",
+    "lines": 3
+  },
+  "src/govcon/ai/analysis_types.py": {
+    "sha256": "856ebe508048afb741136d47cb2490ee2e2408bacc0f55eb56daaebcdd6ac9d4",
+    "lines": 29
+  },
+  "src/govcon/ai/base.py": {
+    "sha256": "18ce0785348984477db34ca5dabc26cee05f432d8a350d4ecb3ca9c6fe99c8c2",
+    "lines": 12
+  },
+  "src/govcon/ai/budget.py": {
+    "sha256": "84662f68645ac3e664727b419b1dc726d2edc35c539dc46e8dd13d13555604ae",
+    "lines": 199
+  },
+  "src/govcon/ai/context_builder.py": {
+    "sha256": "bfdd19a62324c9a9a1d49681123f547b5e9e0e89238cbcc412d7a87fb82ed94a",
+    "lines": 5
+  },
+  "src/govcon/ai/gateway.py": {
+    "sha256": "2680c7113f80461fc4161df5040a573bc3f8c0bd3904cb7edcecd2044edcd792",
+    "lines": 65
+  },
+  "src/govcon/ai/replay.py": {
+    "sha256": "2170d13beb1f7225f63e12a515320035a446067d21cffc7497f99bed790b3bf6",
+    "lines": 247
+  },
+  "src/govcon/ai/schemas.py": {
+    "sha256": "45291d8ff12155864c49160f2ed6c64448d1084aed8fede1e769dd40424d67f9",
+    "lines": 306
+  },
+  "src/govcon/ai/structured.py": {
+    "sha256": "08a65697d19a4fab88105035cb33161b00ca8383ffe67aa4814056f413486c2d",
+    "lines": 346
+  },
+  "src/govcon/ai/__init__.py": {
+    "sha256": "979ffd4748721da24f6b3d4e079706f2610e9a69697f123d7c794384a1794992",
+    "lines": 1
+  },
+  "src/govcon/alerts/digest.py": {
+    "sha256": "8d361ffc93d5b1f8cca2566794ab6212e2977b5cea1fd61a3f87c91b8b0b57cc",
+    "lines": 632
+  },
+  "src/govcon/alerts/__init__.py": {
+    "sha256": "64763ea59409fe75a1a3b5eb3e99a1eff726b378be40e33b6a4e8242aae82957",
+    "lines": 5
+  },
+  "src/govcon/collaboration/ai_comment_review.py": {
+    "sha256": "bef0acc25e3829584e49f1988a7e949f3a0338ab608c0a594efbab1990f9ef66",
+    "lines": 179
+  },
+  "src/govcon/collaboration/assignments.py": {
+    "sha256": "5e5fa3c41a6139a1fff093dc7abb941a44c81c4c4343de27729358465699ed56",
+    "lines": 155
+  },
+  "src/govcon/collaboration/comments.py": {
+    "sha256": "bf59d7036b5aa213556aa058ef838b3aab67099ce741e6c085d56946d03cdbc8",
+    "lines": 199
+  },
+  "src/govcon/collaboration/escalation.py": {
+    "sha256": "b273486a93b0de0a0e198c6d689f63a1e7f8afc5a74a1f2101d6885a1ecb6139",
+    "lines": 96
+  },
+  "src/govcon/collaboration/notifications.py": {
+    "sha256": "a53fe0b599cf72dedd55d3142b4332a8f58e0ee39cd77c7a21f652a9fa60023a",
+    "lines": 107
+  },
+  "src/govcon/collaboration/review_sessions.py": {
+    "sha256": "02bd16c443cc60f935d7278aa1abe91fe8f8235b55aa107c8345b47877642ceb",
+    "lines": 1061
+  },
+  "src/govcon/collaboration/users.py": {
+    "sha256": "8d97a798a75e8ab5bec98510af900c27a7413dafabbaa35727ac699efeb9db58",
+    "lines": 207
+  },
+  "src/govcon/collaboration/__init__.py": {
+    "sha256": "30cde1992200704449d5395f089ec84082fe06a05bcfd2a2a50b19f6b720e7b7",
+    "lines": 1
+  },
+  "src/govcon/company/registration.py": {
+    "sha256": "fa305769731c8bd6ef49eb4ff988459b7784a29c6071030615780b29c37f565e",
+    "lines": 132
+  },
+  "src/govcon/company/__init__.py": {
+    "sha256": "29f434c01202feaf215fc2526ee3ab36fd657c92c723c03973cb45625518c0f9",
+    "lines": 1
+  },
+  "src/govcon/compliance/amendments.py": {
+    "sha256": "a277976823d2302d3d23918e0e5fab7209b88239b16307a8f51a2e50ebfcda91",
+    "lines": 330
+  },
+  "src/govcon/compliance/clauses.py": {
+    "sha256": "11891339bf443d2cb268f22da85401f83b3650b9c45dcb67a5da243357507bb2",
+    "lines": 261
+  },
+  "src/govcon/compliance/conflicts.py": {
+    "sha256": "37eb5fe11bf02295f3b6adc637cc461d8aeb94f60d0e4b76bba73b7637e9ae52",
+    "lines": 317
+  },
+  "src/govcon/compliance/deterministic.py": {
+    "sha256": "5605ac0713761bc839cbf886847a7402578ece506ed284346b0a5e0b2ccb053f",
+    "lines": 545
+  },
+  "src/govcon/compliance/extractor.py": {
+    "sha256": "0a3e9fac1da73d34e2fdb67b3f308fa8eb7fbc30e7e41cf3cc78c9524884c441",
+    "lines": 486
+  },
+  "src/govcon/compliance/inventory.py": {
+    "sha256": "0c2801b4acffa697affca627aa024760c9b97c128bc88235d938d1314b97e45c",
+    "lines": 393
+  },
+  "src/govcon/compliance/matrix.py": {
+    "sha256": "39538bdcdcb11b2f869ddaba9c301ccb1cc472319d304df9572cd41bd8b58672",
+    "lines": 779
+  },
+  "src/govcon/compliance/metrics.py": {
+    "sha256": "b581fe9db3b287e895e8603d99b7eefa967a7a0f39500462be59366cb4067836",
+    "lines": 156
+  },
+  "src/govcon/compliance/pipeline.py": {
+    "sha256": "b8020cdc24a2f35bfc6b1eae238b1cd8d094cc5721b1b1f41a8d5962e7fadce0",
+    "lines": 248
+  },
+  "src/govcon/compliance/proposal_coverage.py": {
+    "sha256": "cfdc1d40060dfe762b1a2d02f335d259953763da0f57262cb24574324fd70f3a",
+    "lines": 324
+  },
+  "src/govcon/compliance/reconciler.py": {
+    "sha256": "817f38427ce4e151e728661c98532806acf25bd3ace5426acef210348f9038d1",
+    "lines": 405
+  },
+  "src/govcon/compliance/records.py": {
+    "sha256": "5d61c53a27e285cf694c4bed87a09b2fced255e7b026f96ad7c4f02057c2ef2c",
+    "lines": 236
+  },
+  "src/govcon/compliance/red_team.py": {
+    "sha256": "fbe73b5fe75026b43d475dec9692b7dcbf6c0424e2fb248beadce87a24d146c7",
+    "lines": 159
+  },
+  "src/govcon/compliance/regression.py": {
+    "sha256": "4fd72715dbb1e96a4d447f87e1e9fae0b6bedc9ec45f9c6a31773c1a4b25f976",
+    "lines": 397
+  },
+  "src/govcon/compliance/schemas.py": {
+    "sha256": "894891471c81429968b93497885034e3b2e6f7968309c54252bc6f02fd294268",
+    "lines": 226
+  },
+  "src/govcon/compliance/submission_preflight.py": {
+    "sha256": "cd07417928ec930cc910e958aa66213c2d6ed7e3e136502f6e6bf5a85f118e4e",
+    "lines": 576
+  },
+  "src/govcon/compliance/text.py": {
+    "sha256": "bd7e6b671de59d22dea3194e36c58cc4e2c1afa2f0ee534af3355a0bdbd087e0",
+    "lines": 304
+  },
+  "src/govcon/compliance/validator.py": {
+    "sha256": "46d164c6f9ee0e26a214fe0c699a714aa570c6a467af4ce71dee20b5b6a0d74f",
+    "lines": 300
+  },
+  "src/govcon/compliance/__init__.py": {
+    "sha256": "84df45c0cf6025f093e489c82627e15bf3ad690a1dcdb7ddb6fcb468f9395c0a",
+    "lines": 1
+  },
+  "src/govcon/decision/bundles.py": {
+    "sha256": "8785645a4aacbd5d62828c244dd2106ea71451025335c9b482d46df094de815e",
+    "lines": 384
+  },
+  "src/govcon/decision/engine.py": {
+    "sha256": "a84adac0903973c96f8e410cf2143e4cfb0b6521f0fed053a2556471f70d2ee6",
+    "lines": 843
+  },
+  "src/govcon/decision/provider.py": {
+    "sha256": "7a7dd060150b50a211090ad14e6d1431d7ec08a63f01e9bf4a76af8c8b4702ce",
+    "lines": 51
+  },
+  "src/govcon/decision/rules.py": {
+    "sha256": "093819eab782b3a6efae12836a1b9e8767e0d553ccf84950f0d7cd4d83c20cd3",
+    "lines": 190
+  },
+  "src/govcon/decision/schemas.py": {
+    "sha256": "6cb5efa331163b2220534fa66cb12f80da49be3ed23a5bab02cdf703385901f6",
+    "lines": 236
+  },
+  "src/govcon/decision/signals.py": {
+    "sha256": "a7d52144946ec98c4f3a8d15c50bfe639115d381e2ae56c9832245ca8da7581e",
+    "lines": 330
+  },
+  "src/govcon/decision/__init__.py": {
+    "sha256": "e1d7892d03609eeac1b484329f281ede7a4f1e45d14a29b7d4751f3426cb9a37",
+    "lines": 15
+  },
+  "src/govcon/documents/chunking.py": {
+    "sha256": "4ba83ed83bd71a999e4f18e8ae01e6349c05c0b495fb77ff29ffc30c0310bff4",
+    "lines": 120
+  },
+  "src/govcon/documents/__init__.py": {
+    "sha256": "5d8f421e32d7feedb74c03cfda38c037d5720f9a1562c4a2c86993298aabbad9",
+    "lines": 1
+  },
+  "src/govcon/enrich/attachments.py": {
+    "sha256": "1a4ee08f6eae9a2b5cb6675d179df806f9caf0814cb7a90a8845c74bc021d189",
+    "lines": 458
+  },
+  "src/govcon/enrich/attachment_refs.py": {
+    "sha256": "4fc9caf583dfbe572f1d48a981d892a84622b737ccbf941c774d690e629814bf",
+    "lines": 88
+  },
+  "src/govcon/enrich/embeddings.py": {
+    "sha256": "697720d1ed5807e195d819aeab21e1fe688aa8abface81ef7381d848466ed745",
+    "lines": 342
+  },
+  "src/govcon/enrich/extract.py": {
+    "sha256": "4cad39e88f03d1f435798a4f33e7468be45286eed9acd81841de5c57b32bc006",
+    "lines": 321
+  },
+  "src/govcon/enrich/ocr.py": {
+    "sha256": "7112c77bceda4d24e0bce2326fc191f073f699ab73d8616a40da0c1336bbe786",
+    "lines": 133
+  },
+  "src/govcon/enrich/safe_fetch.py": {
+    "sha256": "a6ef02faa8b0360210b8c2bc55e554125625290c48ba73b8f9a224ea6142c81a",
+    "lines": 190
+  },
+  "src/govcon/enrich/storage.py": {
+    "sha256": "612f01cd4d38c869ad4b4709cd0bc73012fcae2856f5a68dd9b7574ef60ec8fd",
+    "lines": 76
+  },
+  "src/govcon/enrich/summarize.py": {
+    "sha256": "714583b3f3a8e7e143214d671e3bf1327d22c38d6b696332e4c2c7341eb865ff",
+    "lines": 322
+  },
+  "src/govcon/enrich/__init__.py": {
+    "sha256": "2b65951f73aaad7c2df059d743522107d7a405b4c7cedab960b9f084a652a206",
+    "lines": 1
+  },
+  "src/govcon/ingest/dibbs.py": {
+    "sha256": "fccedec62dc2ff85366327f76055aa276e117f02c375a41164a72167a184a16e",
+    "lines": 647
+  },
+  "src/govcon/ingest/lifecycle.py": {
+    "sha256": "b20ff408a86150495fb73c056073fb6463676db66f9b63b06f2ac2cd164d1a4e",
+    "lines": 50
+  },
+  "src/govcon/ingest/runs.py": {
+    "sha256": "2e3376b66a00c405c255b614e0d6572fc5b98d75d0651dd1652b6b43233c14f2",
+    "lines": 61
+  },
+  "src/govcon/ingest/sam_entities.py": {
+    "sha256": "311dd651d7f3a890fd3070bfd3bf3cc315104517886c840e5330d09c3661b570",
+    "lines": 244
+  },
+  "src/govcon/ingest/sam_opportunities.py": {
+    "sha256": "ad42ec0ef420eb558e03824db991d64594df6e56ac6a32e5563d2af8f8193ef6",
+    "lines": 632
+  },
+  "src/govcon/ingest/snapshots.py": {
+    "sha256": "ef77de8ff025f954a1549f2221142be6be1b30d784a894e37686550792513a7d",
+    "lines": 414
+  },
+  "src/govcon/ingest/usaspending.py": {
+    "sha256": "f396ac9cc9d4d519af0e60e3e31493586ea495e9b82c0790fccf572b1938d5cf",
+    "lines": 792
+  },
+  "src/govcon/ingest/__init__.py": {
+    "sha256": "45c8a7d44af5db506f99c80f26f68d8b559566e57d2631cdde53a81d261abc42",
+    "lines": 7
+  },
+  "src/govcon/intelligence/ai_analyses.py": {
+    "sha256": "59237d58a668b3661bb8cb27cdbe09054d8c7d373a4c012d0dc51b8b29449c55",
+    "lines": 288
+  },
+  "src/govcon/intelligence/analysis_tasks.py": {
+    "sha256": "d363652733972319afeaa7c5a5da12ab58e365d1fe84ec26310ac2d0f55115f9",
+    "lines": 80
+  },
+  "src/govcon/intelligence/awards.py": {
+    "sha256": "add75227dca6cdabb36f614314a879515db88b0b399ead7eedade6cef06162bd",
+    "lines": 180
+  },
+  "src/govcon/intelligence/competitors.py": {
+    "sha256": "dcd866ee82c25a06fd460d0afeb9c682f41be4ff267d11b191496adbcb9ba941",
+    "lines": 197
+  },
+  "src/govcon/intelligence/contacts.py": {
+    "sha256": "35e6ccebfc4290186ee2a45e888359c8fc2cd017704fd6cf8fc2054cab981931",
+    "lines": 75
+  },
+  "src/govcon/intelligence/sourcing.py": {
+    "sha256": "cc83db4095a2f4fc8d2b2e00789a6bb1617f73489041c159401a48dbb6386e25",
+    "lines": 5
+  },
+  "src/govcon/intelligence/vendors.py": {
+    "sha256": "2432398c19c25f8e0ab3444ba78ae293be923346c410202d1508f319c9411d2f",
+    "lines": 155
+  },
+  "src/govcon/intelligence/__init__.py": {
+    "sha256": "0c4672b149073477515fde504c2d7710074aff7cbf10619573536146c8d072cd",
+    "lines": 32
+  },
+  "src/govcon/learning/analytics.py": {
+    "sha256": "0d589268f0a12eeb499b3650526240e22d9ce58d0f1b70b0a9f28c475d1e26a0",
+    "lines": 480
+  },
+  "src/govcon/learning/award_matching.py": {
+    "sha256": "3f80df8452ea42b1a59aadcda00d34679b8317fa5764fbbcf98c466eb4541951",
+    "lines": 278
+  },
+  "src/govcon/learning/outcomes.py": {
+    "sha256": "2d7f3604e939eaaa7cdc6c7683197a7e657cd4a320bd1937aa7e6bde43b55edf",
+    "lines": 237
+  },
+  "src/govcon/learning/schemas.py": {
+    "sha256": "56cdd03c63858fb3056a072ee075c89ebdccb5bd68d758642e221375098d4cb4",
+    "lines": 51
+  },
+  "src/govcon/learning/__init__.py": {
+    "sha256": "59dc3c295e9302b1c023eab75b8ef601739ac3e597bcd68e215e9d521fc3a9e3",
+    "lines": 1
+  },
+  "src/govcon/matching/auto_pursue.py": {
+    "sha256": "0274ad0cbb67e84d98f0b148720b1fe54b349e37f59b46d900fecc3387bd9372",
+    "lines": 135
+  },
+  "src/govcon/matching/dedup.py": {
+    "sha256": "840371e0566d716e213e78058edfda950581ce13155e58a737fd11e7d353fcc3",
+    "lines": 5
+  },
+  "src/govcon/matching/eligibility.py": {
+    "sha256": "60d4e09e5013d0ba36c598516f878d9dd2a377f5d9366ae35652943a66709e49",
+    "lines": 23
+  },
+  "src/govcon/matching/engine.py": {
+    "sha256": "2a62c3042eeec732a4651e38ea5fad4152abdd5b17fcbe6dd500e4332a0538ef",
+    "lines": 438
+  },
+  "src/govcon/matching/pricing.py": {
+    "sha256": "060ec878cd21ccf1538fc731b92b98230a2b61a4ee5232296ac1e3e90c7ee2c0",
+    "lines": 130
+  },
+  "src/govcon/matching/ranking.py": {
+    "sha256": "06ebc42eb4b8b2da7a085e94f5afcfc32edad8a91ff024a82861bdccb7ff8807",
+    "lines": 134
+  },
+  "src/govcon/matching/recommendations.py": {
+    "sha256": "4959bb0b87f8819807f9ab2faaff0e05615ff9e86dddab2dcb9a0db280fdb6eb",
+    "lines": 131
+  },
+  "src/govcon/matching/semantic.py": {
+    "sha256": "80468e3a0008e17595980b392fa45d8ef82a154766faa2805964d0c0659d98c8",
+    "lines": 355
+  },
+  "src/govcon/matching/watchlists.py": {
+    "sha256": "30b2c5017c588f0df6984296eec8dd6fca68ccf886d5af8a75f0adddf16f7fa5",
+    "lines": 93
+  },
+  "src/govcon/matching/__init__.py": {
+    "sha256": "b8fbe4a61073437ebe3fbce059f8a3a53074fd37d6ffa7b8ff375f074d39f2ab",
+    "lines": 21
+  },
+  "src/govcon/mcp/context.py": {
+    "sha256": "ebfd56ae5187481ac3454686be4c432bab55f11322a3a625027c6d6a22cc3ab1",
+    "lines": 101
+  },
+  "src/govcon/mcp/operations.py": {
+    "sha256": "80d35091a95dad6d5c5e2ab65fd9b76c2274e597707964f8611a0528a5fce362",
+    "lines": 903
+  },
+  "src/govcon/mcp/serialize.py": {
+    "sha256": "a6eedf0738d41eb81a00645ad482c4f02031d0f2cb17da79414d0010778692f9",
+    "lines": 85
+  },
+  "src/govcon/mcp/server.py": {
+    "sha256": "45c490172e1729be487d96fdb649ceeea50a7271a3207a72dd8ff004785eaa32",
+    "lines": 146
+  },
+  "src/govcon/mcp/__init__.py": {
+    "sha256": "14b5d3e79262a32e4aeebe5e04e81aece20a52a17e6dab011978071709d00b68",
+    "lines": 5
+  },
+  "src/govcon/prompting/behavioral.py": {
+    "sha256": "7742a42d6af95ae8b0f4748cb56f8002bda6db3dcf1a56d0d110835e52252f1f",
+    "lines": 177
+  },
+  "src/govcon/prompting/cli.py": {
+    "sha256": "9590349027d47b8522d54a632ac163630941f124726de9f6500fd7dd4a31e9f5",
+    "lines": 5
+  },
+  "src/govcon/prompting/evaluation.py": {
+    "sha256": "d07ca8af23f52e667d26e1265debb0217c9aa04292faf68df2d3bdc6ff2a07e3",
+    "lines": 144
+  },
+  "src/govcon/prompting/hashing.py": {
+    "sha256": "4037fd5a870a4160e7292fe75ba7573d584ec7e026178c8923379368cca23030",
+    "lines": 9
+  },
+  "src/govcon/prompting/loader.py": {
+    "sha256": "8cdbcbb66c3f6fa80aeb22b0325d519a12ae1a066311d924eb25b981895ee6af",
+    "lines": 64
+  },
+  "src/govcon/prompting/registry.py": {
+    "sha256": "299731dcf555b575d35ae97da097a1ee7338362d86d0cb44e8b8dfe39beabf57",
+    "lines": 392
+  },
+  "src/govcon/prompting/renderer.py": {
+    "sha256": "362f7a77cdc87c4692ca2d04e05cace2c299f09fe0c6b16ea5df962e857717a7",
+    "lines": 106
+  },
+  "src/govcon/prompting/schemas.py": {
+    "sha256": "108e83971528a6b6a4d1ca189981620d4f34cf7e81644bb76f3986359b872565",
+    "lines": 5
+  },
+  "src/govcon/prompting/__init__.py": {
+    "sha256": "d49c281202a45519f1e837a567602109c3cddf3d87914f7e803638a4eca1b4bd",
+    "lines": 1
+  },
+  "src/govcon/proposals/ai_review.py": {
+    "sha256": "1f8d44ceedb7a6d75f7f15c71059d72fb40928b501ac32508cbc4f37a0edcc98",
+    "lines": 175
+  },
+  "src/govcon/proposals/drafting.py": {
+    "sha256": "e1a11346af9dc192c88723f25dbc6868afb04a88410b6bcf7d5f4d2c49339269",
+    "lines": 247
+  },
+  "src/govcon/proposals/export.py": {
+    "sha256": "537ebdd1657d7aee483bf1878ded35e4a94f9dc7bae782a335311e9f0fcce2cd",
+    "lines": 331
+  },
+  "src/govcon/proposals/service.py": {
+    "sha256": "0d5842ccacd6d4a7894e035a3479827c315816fd657fc13699870217bd327910",
+    "lines": 770
+  },
+  "src/govcon/proposals/versions.py": {
+    "sha256": "fe458f5c9c4c13cefe21f6388f0ee96145dd822f4f648edff1bb539e0fa39703",
+    "lines": 201
+  },
+  "src/govcon/proposals/__init__.py": {
+    "sha256": "f14165a1036d7dcd8f1c5f902d459246e5f0956477ae73d39e3374590d9079f2",
+    "lines": 1
+  },
+  "src/govcon/scheduler/chains.py": {
+    "sha256": "e21af6710c9c9dca5353e41762536f4f09650e23996b7a78be0118390064d93c",
+    "lines": 349
+  },
+  "src/govcon/scheduler/chain_tasks.py": {
+    "sha256": "14f8418c366217429226e6e81cf6c5d6417289242b58bf87ca437236ae76ca67",
+    "lines": 229
+  },
+  "src/govcon/scheduler/jobs.py": {
+    "sha256": "9cf6aa2e061a8dc2e0da7fc45798e42b759eae25c1b4eecb92401274e043d4bd",
+    "lines": 474
+  },
+  "src/govcon/scheduler/runner.py": {
+    "sha256": "d7ea19d6d134e7c00f48df2337467b439d29ff5046f990266da0be49fe994311",
+    "lines": 210
+  },
+  "src/govcon/scheduler/__init__.py": {
+    "sha256": "978bd676ec1c7a6e5d01141fe5bae5cad312e268fa3e0f7d1e048dfce7a2396b",
+    "lines": 5
+  },
+  "src/govcon/security/classification.py": {
+    "sha256": "947e2a9c23e51cbb28319d13691d53cb23d79a5c2c238664f5bafd6d65860895",
+    "lines": 63
+  },
+  "src/govcon/security/secrets.py": {
+    "sha256": "1ee0ffa6a6b9123620aa62396a4128c6d6f0b8a8e93f52af99d77dfdaf464794",
+    "lines": 26
+  },
+  "src/govcon/security/__init__.py": {
+    "sha256": "9fa57d46bfb2a31d2ded2417ec815157234aa29fb256d4fa80d2a39c0e3e142d",
+    "lines": 1
+  },
+  "src/govcon/sourcing/intake.py": {
+    "sha256": "21071ce65821999da64cb28688a011d652d55a47e37127d359e138e827e400c1",
+    "lines": 54
+  },
+  "src/govcon/sourcing/records.py": {
+    "sha256": "23713b6912dd56f94d16fc91d4b6a154e16966f2b480907b747714cd334d0a73",
+    "lines": 426
+  },
+  "src/govcon/sourcing/__init__.py": {
+    "sha256": "bc1b9f23553ef9c9d802927e49c0f424ec764411a2b96ab4eaa8838356d73bdc",
+    "lines": 1
+  },
+  "src/govcon/submissions/checklist.py": {
+    "sha256": "98ecfe5f6b7b39431dc1bd8b6d36dc3d9882906278f56f85221372b7f92cd674",
+    "lines": 278
+  },
+  "src/govcon/submissions/email_adapter.py": {
+    "sha256": "4af5f2dfeb89aa122c715db4daf96894daf7a61a1d23c362b219df16ec624bde",
+    "lines": 113
+  },
+  "src/govcon/submissions/manifest.py": {
+    "sha256": "7dba812af43ff576f18197df144d6195c90fdfc672e334ca684ecb0d63d2f268",
+    "lines": 190
+  },
+  "src/govcon/submissions/service.py": {
+    "sha256": "01cb7ec05aa0a1b20d948d34f85c3f2a8e81569f75f19041e31aaa32db90f71e",
+    "lines": 391
+  },
+  "src/govcon/submissions/__init__.py": {
+    "sha256": "1b935eacde4b9b960da03551761fd0dbceddc8a85e805a18b6ae84375581aa04",
+    "lines": 1
+  },
+  "src/govcon/tasks/errors.py": {
+    "sha256": "0cb3e5796dbdb1c6eee6663b5dc3970aa4f43b03d67b2c1ee577f7a5a63e0167",
+    "lines": 114
+  },
+  "src/govcon/tasks/queue.py": {
+    "sha256": "927324e3e1658e9bffe43282632eacc45e3ec611ddc76edfa9ce1424eec1d98a",
+    "lines": 426
+  },
+  "src/govcon/tasks/registry.py": {
+    "sha256": "535b62b751b787970d69c5095018f1c54e9b3a1c02072fb161c6e22b7790bc63",
+    "lines": 96
+  },
+  "src/govcon/tasks/testing.py": {
+    "sha256": "01070bc1a52653d3e10c076728260f5bae29e8c29c1b2060b655b4f73b221841",
+    "lines": 28
+  },
+  "src/govcon/tasks/worker.py": {
+    "sha256": "8e2c19bf11b7dd4caabf9eb14244342af55c6a594f5ad82c0a0c520c491e3167",
+    "lines": 261
+  },
+  "src/govcon/tasks/__init__.py": {
+    "sha256": "8c2a9f567b99b0fd3f735234b8f42c5023292f7bd812f1bb70b97cc8bdc3ee4e",
+    "lines": 1
+  },
+  "src/govcon/web/app.py": {
+    "sha256": "0593c59cb87df4c23958f04b745d61e98d4fa433d7885c09b63e391167c4b80e",
+    "lines": 173
+  },
+  "src/govcon/web/auth.py": {
+    "sha256": "ba16c8529c73abd015a17f0b3fa576dc6e6eb48786cc4e9e1391937fd37fd44f",
+    "lines": 60
+  },
+  "src/govcon/web/helpers.py": {
+    "sha256": "f08317b0b011dae7b017d17d449146c1d776dee20aa23842312cc348fb9269d2",
+    "lines": 111
+  },
+  "src/govcon/web/security.py": {
+    "sha256": "0312af44fc211785850d12df383cfb987783755c9357233d77848db778903bd5",
+    "lines": 102
+  },
+  "src/govcon/web/__init__.py": {
+    "sha256": "61a721331ce1686ebc6cf4785570fb9b0f6f57956890d8b4167142787104f693",
+    "lines": 1
+  },
+  "src/govcon/workflow/app_settings.py": {
+    "sha256": "224b8bce8d7c82d4ebaa4f12934ce3739a0ca7fadf10fb57be823bbd08fddfad",
+    "lines": 96
+  },
+  "src/govcon/workflow/commercial.py": {
+    "sha256": "33712303e5409774e12f703534c8cca55d0929dbb76a267ad8de2e021f3dbe50",
+    "lines": 125
+  },
+  "src/govcon/workflow/invalidation.py": {
+    "sha256": "54a613633c503bf455512816daaddfca4bc77365ea8244fd4725d30628dfe46c",
+    "lines": 611
+  },
+  "src/govcon/workflow/preparation.py": {
+    "sha256": "211194135af301ab5bdfeae0c34cb20429a00ebfdc9f64597ed965dc4c086b2c",
+    "lines": 322
+  },
+  "src/govcon/workflow/proposal_generation.py": {
+    "sha256": "dceb5ac85b3d3025b058cba006db9e1ea645104951d3cd941ae5124de070b419",
+    "lines": 115
+  },
+  "src/govcon/workflow/pursuits.py": {
+    "sha256": "6f52b06e63343c0f6f7c8e206ee3c5b38b258c91df9411f743d01236a026f9c2",
+    "lines": 61
+  },
+  "src/govcon/workflow/source_events.py": {
+    "sha256": "1996ede0f87a9d852a61e0ec8d1771a753e5318876c560b3ed32b5f6182ee77f",
+    "lines": 38
+  },
+  "src/govcon/workflow/source_revision.py": {
+    "sha256": "c87df570e0d197bc7f066772445fcf3ede14ff94c191c606998f7d9cd5c0bdc9",
+    "lines": 94
+  },
+  "src/govcon/workflow/transitions.py": {
+    "sha256": "e3cfd9ba50fb84eace3f86b5c9ceeb8b130f855ce17f63d25db465ca3a08b843",
+    "lines": 106
+  },
+  "src/govcon/workflow/__init__.py": {
+    "sha256": "ea644873278a63a9b5377dae6d79bc6ac9b8a193f92247757a3d20023a761983",
+    "lines": 1
+  },
+  "src/govcon/ai/providers/anthropic.py": {
+    "sha256": "388f9796856857b293019068ca819c0a11790869f4c52a8ac8b4504d3de35dc8",
+    "lines": 143
+  },
+  "src/govcon/ai/providers/base.py": {
+    "sha256": "d873584d232da389bb99d18da2711e381b629cb7abdf675fa473656eeb0542c6",
+    "lines": 42
+  },
+  "src/govcon/ai/providers/deepseek.py": {
+    "sha256": "b19dc8f88c59a690ed1597719b73e5a08368437d6aa4e8156a85574d886ddca2",
+    "lines": 155
+  },
+  "src/govcon/ai/providers/local.py": {
+    "sha256": "4ce07a5211f20c91dfc9aaf651e62f7541e25f04c8331a9d3e6e8cb3f01f181a",
+    "lines": 5
+  },
+  "src/govcon/ai/providers/openai.py": {
+    "sha256": "361621c2179aeefdaee0e1970e9403708ff62386bac9740b5cfc7f7715e99c68",
+    "lines": 137
+  },
+  "src/govcon/ai/providers/__init__.py": {
+    "sha256": "cbe87e14327d6bda4fae1e103d70a7e8e1bfd9c162a334e10d8622138644ede7",
+    "lines": 107
+  },
+  "src/govcon/decision/providers/jev.py": {
+    "sha256": "5521790a8db71347c6c57119d51a69910e9f95953722c09635883d4d89cfc1ea",
+    "lines": 239
+  },
+  "src/govcon/decision/providers/llm_fallback.py": {
+    "sha256": "79b02884bfaf0703c5ce9e381cc94fab449528f8c5969bbb3be4b4580faa4d88",
+    "lines": 103
+  },
+  "src/govcon/decision/providers/rule_fallback.py": {
+    "sha256": "3339e34ace73068959d0736d8e35f02f98d864181a06490410c8fac71f7514b6",
+    "lines": 515
+  },
+  "src/govcon/decision/providers/__init__.py": {
+    "sha256": "135311a24039e61a8128f3dd76b341aa5757c63c3986edb4882e08928e33875f",
+    "lines": 11
+  },
+  "src/govcon/submissions/adapters/__init__.py": {
+    "sha256": "5035995a3ebfef7f94827ed3796a10bca9b398186056fef2364011789e8c593d",
+    "lines": 1
+  },
+  "src/govcon/tasks/handlers/analysis.py": {
+    "sha256": "9c54e736f3596c937b88079aa453641740ab918c7b8be566ed5bd6eec8779b83",
+    "lines": 74
+  },
+  "src/govcon/tasks/handlers/chain.py": {
+    "sha256": "80f46fde937045ab50cd6a0fe93577387fe20f334eaad7df9d7f632445a23982",
+    "lines": 8
+  },
+  "src/govcon/tasks/handlers/notification_email.py": {
+    "sha256": "d7c6ce0a3ff535d552d06fa07992bf8de60c2cd792087270e15e6c3ff98758ab",
+    "lines": 88
+  },
+  "src/govcon/tasks/handlers/proposal.py": {
+    "sha256": "516601bd31b8f70da58d6818a3758d39f776fafa9f512898258a6f3151bffa2a",
+    "lines": 114
+  },
+  "src/govcon/tasks/handlers/quote_extraction.py": {
+    "sha256": "5d6d4ac06779570b128ad05f2acb096724958457535a05b762a236c862b9cccc",
+    "lines": 129
+  },
+  "src/govcon/tasks/handlers/__init__.py": {
+    "sha256": "b7c6192f1608e7aaccad5544180da9d4d1c5ef7d8a5c763c73257d1273d5ec2e",
+    "lines": 4
+  },
+  "src/govcon/web/routes/__init__.py": {
+    "sha256": "e18ed44d06bdf294278263d890d246f0620e91aab0719b27c1910f6da8f7edf1",
+    "lines": 2230
+  }
+}

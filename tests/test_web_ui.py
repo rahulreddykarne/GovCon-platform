@@ -36,6 +36,7 @@ from govcon.models import (
     UserSession,
     Watchlist,
 )
+from govcon.tasks.testing import drain
 from govcon.web.app import create_app
 
 
@@ -431,9 +432,9 @@ class TestApprovalPermissions:
 class TestApproveToGenerates:
     """AC: Approve to Bid auto-generates proposal and submission package.
 
-    §20 requires the full workflow to complete in the UI.  The Phase 11 services
-    (generate_proposal + generate_submission_package) must be called when an
-    approver clicks 'Approve to Bid' so that tabs show real draft/package state.
+    §20 requires the full workflow to complete in the UI. Approving to bid
+    queues a durable generation task (ADR-062) that a worker runs; these
+    tests run it in-process with ``drain`` before checking the tabs.
     """
 
     def _make_opp_for_generate(self, db_session, suffix: str):
@@ -470,6 +471,7 @@ class TestApproveToGenerates:
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
+        drain(opportunity_id=opp.id)
         assert resp.status_code in (200, 303)
 
         proposal = db_session.scalar(
@@ -489,6 +491,7 @@ class TestApproveToGenerates:
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
+        drain(opportunity_id=opp.id)
 
         sub = db_session.scalar(
             select(Submission).where(Submission.opportunity_id == opp.id)
@@ -504,6 +507,7 @@ class TestApproveToGenerates:
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
+        drain(opportunity_id=opp.id)
 
         resp = client.get(
             f"/workspace/{opp.id}?tab=proposal",
@@ -522,6 +526,7 @@ class TestApproveToGenerates:
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
+        drain(opportunity_id=opp.id)
 
         resp = client.get(
             f"/workspace/{opp.id}?tab=submission",
@@ -542,6 +547,7 @@ class TestApproveToGenerates:
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
+        drain(opportunity_id=opp.id)
 
         proposal = db_session.scalar(select(Proposal).where(Proposal.opportunity_id == opp.id))
         assert proposal is not None
@@ -737,6 +743,7 @@ class TestWorkflowGates:
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
+        drain(opportunity_id=opp.id)
         sub = db_session.scalar(select(Submission).where(Submission.opportunity_id == opp.id))
         assert sub is not None
         db_session.refresh(sub)

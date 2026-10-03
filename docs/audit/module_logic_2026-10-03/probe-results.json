@@ -1,0 +1,51 @@
+{
+  "stale_registration": {
+    "overlay_removed_status": true,
+    "decision_sam_active": true,
+    "decision_provenance": {
+      "source": "sam_entity_api (own UEI)",
+      "confidence": "high"
+    }
+  },
+  "unknown_fresh_registration": {
+    "retained_status": "Active",
+    "retained_expiration": "2099-12-31",
+    "validator_status": "pass"
+  },
+  "missing_shared_prompt": {
+    "load_succeeded": true,
+    "render_succeeded": true,
+    "system_prompt_shortened": true,
+    "removed_characters": 845
+  },
+  "invalid_money": {
+    "http_status": 303,
+    "stored": true,
+    "min_value": null,
+    "max_value": null
+  },
+  "inverted_range": {
+    "http_status": 303,
+    "stored": true,
+    "min_value": "100",
+    "max_value": "10"
+  },
+  "invalid_deadline": {
+    "http_status": 500,
+    "stored": false,
+    "min_value": null,
+    "max_value": null
+  },
+  "concurrent_auto_cap": {
+    "max_per_day": 1,
+    "runs_created": [
+      [
+        2
+      ],
+      [
+        1
+      ]
+    ],
+    "actual_pursuits": 2
+  }
+}

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from govcon.compliance.matrix import close_undetected_findings, record_run, upsert_open_finding
 from govcon.compliance.records import Inventory, InventoryWarning, SourceDocument
-from govcon.models import ComplianceRun, Opportunity, OpportunityEvent, OpportunitySnapshot, StoredFile
+from govcon.models import ComplianceRun, FilePage, Opportunity, OpportunityEvent, OpportunitySnapshot, StoredFile
 
 INVENTORY_VERSION = "document_inventory.v1"
 
@@ -98,41 +98,53 @@ def _table_status(doc_mime: str | None, filename: str | None, text: str | None) 
     return "not_applicable"
 
 
-def document_from_file(row: StoredFile, *, latest_snapshot_id: int | None = None) -> SourceDocument:
+def document_from_file(
+    row: StoredFile, *, latest_snapshot_id: int | None = None, stored_pages: list[FilePage] | None = None
+) -> SourceDocument:
     """Build one inventory entry, re-reading the retained original when it is intact.
 
     The file keeps its own ``snapshot_id`` (the source version it was
     downloaded for); it is never re-dated to the latest snapshot. Retained
-    bytes are used only when their SHA-256 matches the stored hash.
+    bytes are used only when their SHA-256 matches the stored hash. A PDF's
+    ``stored_pages`` (ADR-065) supply page text, including OCR'd pages;
+    files extracted before pages were stored are re-read from their bytes.
     ``latest_snapshot_id`` is accepted for backward compatibility and unused.
     """
     from govcon.enrich.extract import extract_pdf_pages, extract_text
+    from govcon.enrich.storage import get_store
+    from govcon.config import get_settings
 
     text = row.extracted_text
     page_texts: list[str] | None = None
     page_count: int | None = None
     integrity_error: str | None = None
-    local = Path(row.local_path) if row.local_path else None
-    if local is not None and local.is_file():
-        data = local.read_bytes()
+    data = get_store(get_settings()).read(row.local_path) if row.local_path else None
+    name = (row.filename or Path(row.local_path or "").name).lower()
+    is_pdf = name.endswith(".pdf") or (row.mime_type or "") == "application/pdf"
+    if data is not None:
         actual = hashlib.sha256(data).hexdigest()
         if row.sha256 and actual != row.sha256:
             integrity_error = (
                 f"retained file for {row.filename or row.id} no longer matches its stored SHA-256 "
                 f"({row.sha256[:12]}… expected, {actual[:12]}… found)"
             )
-        else:
-            name = (row.filename or local.name).lower()
-            if name.endswith(".pdf") or (row.mime_type or "") == "application/pdf":
-                page_texts = extract_pdf_pages(data)
-                page_count = len(page_texts) if page_texts is not None else None
-            elif name.endswith(".docx"):
-                fresh = extract_text(data, row.mime_type or "", row.filename)
-                if fresh.text:
-                    text = fresh.text
+        elif is_pdf and stored_pages:
+            page_texts = [page.text for page in stored_pages]
+            page_count = row.page_count or len(page_texts)
+        elif is_pdf:
+            page_texts = extract_pdf_pages(data)
+            page_count = len(page_texts) if page_texts is not None else None
+        elif name.endswith(".docx"):
+            fresh = extract_text(data, row.mime_type or "", row.filename)
+            if fresh.text:
+                text = fresh.text
+    elif is_pdf and stored_pages:
+        page_texts = [page.text for page in stored_pages]
+        page_count = row.page_count or len(page_texts)
     status = row.extraction_status
     unreadable = [i + 1 for i, page in enumerate(page_texts or []) if not page.strip()]
     ocr_needed = bool(unreadable) or (status == "partial" and "ocr" in (row.extraction_error or "").lower())
+    ocr_reasons = sorted({f["reason"] for f in (row.ocr_failed_pages or []) if f.get("page") in unreadable})
     doc_type, amendment_number = classify_document(row.filename, text, row.mime_type)
     rank = 10 + (amendment_number or 0) if doc_type == "amendment" else _PRECEDENCE.get(doc_type, 0)
     return SourceDocument(
@@ -155,7 +167,9 @@ def document_from_file(row: StoredFile, *, latest_snapshot_id: int | None = None
         amendment_number=amendment_number,
         document_date=_document_date(text),
         precedence_rank=rank,
-        extraction_error=row.extraction_error if not unreadable else f"unreadable pages: {unreadable}",
+        extraction_error=row.extraction_error if not unreadable else (
+            f"unreadable pages: {unreadable}" + (f" (OCR: {'; '.join(ocr_reasons)})" if ocr_reasons else "")
+        ),
         integrity_error=integrity_error,
     )
 
@@ -309,7 +323,12 @@ def load_inventory(session: Session, opportunity: Opportunity) -> Inventory:
         .where(StoredFile.opportunity_id == opportunity.id, StoredFile.active.is_(True))
         .order_by(StoredFile.id)
     ).all()
-    documents = [document_from_file(row) for row in rows]
+    pages: dict[int, list[FilePage]] = {}
+    for page in session.scalars(
+        select(FilePage).where(FilePage.file_id.in_([row.id for row in rows])).order_by(FilePage.file_id, FilePage.page_no)
+    ):
+        pages.setdefault(page.file_id, []).append(page)
+    documents = [document_from_file(row, stored_pages=pages.get(row.id)) for row in rows]
     latest_download = max((r.downloaded_at for r in rows if r.downloaded_at), default=None)
     changed_after = False
     if latest_download is not None:

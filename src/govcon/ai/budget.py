@@ -22,6 +22,26 @@ class AIBudgetExceeded(RuntimeError):
     pass
 
 
+# Proposal-stage prompts. They may spend the share of an opportunity's budget
+# (``AI_PROPOSAL_BUDGET_SHARE``) that preparation and research may not.
+PROPOSAL_PURPOSES = frozenset({"proposal_drafting", "proposal_red_team", "proposal_coverage",
+                               "submission_preflight_ai"})
+
+
+def budget_fingerprint(settings: Settings) -> str:
+    """Identifies the configured limits; a budget-blocked task resumes when it changes."""
+    limits = (settings.ai_max_input_tokens_per_opportunity, settings.ai_max_input_tokens_per_call,
+              settings.ai_max_output_tokens_per_call, settings.ai_max_cost_usd_per_opportunity,
+              settings.ai_budget_usd_per_million_tokens, settings.ai_proposal_budget_share)
+    return hashlib.sha256(repr(limits).encode()).hexdigest()[:16]
+
+
+def _spendable_share(settings: Settings, purpose: str) -> Decimal:
+    if purpose in PROPOSAL_PURPOSES:
+        return Decimal(1)
+    return Decimal(1) - Decimal(str(settings.ai_proposal_budget_share))
+
+
 def input_bound(system_prompt: str, user_prompt: str) -> int:
     # Covers message framing and the providers' extra JSON instructions.
     return len(system_prompt.encode("utf-8")) + len(user_prompt.encode("utf-8")) + 256
@@ -69,19 +89,25 @@ class Reservation:
 
 def reserve(session: Session | None, *, opportunity_id: int | None, settings: Settings,
             system_prompt: str, user_prompt: str, purpose: str, provider: str,
-            model: str | None = None) -> Reservation | None:
+            model: str | None = None, engine=None) -> Reservation | None:
+    """Reserve one attempt. ``engine`` serves callers that hold no session.
+
+    Workers pass ``engine`` so provider calls run with no business transaction
+    open (ADR-061); accounting commits on its own connection either way.
+    """
     tokens = input_bound(system_prompt, user_prompt)
     if tokens > min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity):
         raise AIBudgetExceeded("Combined context exceeds the input limit; no source text was sent. Reduce the source set or explicitly chunk it; omitted sources remain unreviewed.")
     rate = Decimal(str(settings.ai_budget_usd_per_million_tokens)) if settings.ai_budget_usd_per_million_tokens is not None else None
     if settings.ai_max_cost_usd_per_opportunity is not None and rate is None:
         raise AIBudgetExceeded("A dollar budget requires AI_BUDGET_USD_PER_MILLION_TOKENS covering all enabled models.")
-    if session is None:
+    if session is None and engine is None:
         if opportunity_id is not None or settings.ai_max_cost_usd_per_opportunity is not None:
             raise AIBudgetExceeded("Persistent budget accounting requires a database session.")
         return None  # Explicit offline evaluations still obey per-call limits.
-    bind = session.get_bind()
-    engine = getattr(bind, "engine", bind)
+    if engine is None:
+        bind = session.get_bind()
+        engine = getattr(bind, "engine", bind)
     cost = Decimal(tokens + settings.ai_max_output_tokens_per_call) * rate / 1_000_000 if rate is not None else None
     with Session(engine) as db, db.begin():
         if opportunity_id is not None:
@@ -95,12 +121,15 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
                 func.coalesce(func.sum(AICallUsage.cost_usd), 0),
                 func.coalesce(func.sum(AICallUsage.input_tokens + AICallUsage.output_tokens).filter(AICallUsage.cost_usd.is_(None)), 0),
             ).where(AICallUsage.opportunity_id == opportunity_id)).one()
-            if totals[0] + tokens > settings.ai_max_input_tokens_per_opportunity:
-                raise AIBudgetExceeded("Opportunity input budget exhausted, including previous calls and retries.")
+            share = _spendable_share(settings, purpose)
+            kept = (f" The last {settings.ai_proposal_budget_share:.0%} is kept for proposal drafting and review "
+                    "(AI_PROPOSAL_BUDGET_SHARE).") if share < 1 else ""
+            if totals[0] + tokens > settings.ai_max_input_tokens_per_opportunity * share:
+                raise AIBudgetExceeded("Opportunity input budget exhausted, including previous calls and retries." + kept)
             if settings.ai_max_cost_usd_per_opportunity is not None:
                 previous_cost = Decimal(totals[2]) + Decimal(totals[3]) * rate / 1_000_000
-                if previous_cost + cost > Decimal(str(settings.ai_max_cost_usd_per_opportunity)):
-                    raise AIBudgetExceeded("Opportunity dollar budget exhausted, including pending reservations.")
+                if previous_cost + cost > Decimal(str(settings.ai_max_cost_usd_per_opportunity)) * share:
+                    raise AIBudgetExceeded("Opportunity dollar budget exhausted, including pending reservations." + kept)
         row = AICallUsage(opportunity_id=opportunity_id, purpose=purpose, provider=provider,
                          model=model, status="reserved", input_tokens=tokens,
                          output_tokens=settings.ai_max_output_tokens_per_call, cost_usd=cost)
@@ -122,7 +151,7 @@ def _retryable(exc: Exception) -> bool:
 
 
 def complete_with_budget(provider, session: Session | None, *, opportunity_id: int | None,
-                         settings: Settings, **kwargs):
+                         settings: Settings, engine=None, **kwargs):
     from govcon.ai.gateway import authorize_external_call
     from govcon.security.classification import opportunity_classification
     if session is not None and opportunity_id is not None:
@@ -130,11 +159,31 @@ def complete_with_budget(provider, session: Session | None, *, opportunity_id: i
     authorize_external_call(classification=kwargs["classification"], provider=provider.name,
                             model=kwargs.get("model") or "default", purpose=kwargs["purpose"], settings=settings)
     from govcon.ai.providers import resolve_provider_model
+    from govcon.ai.replay import active_recorder
     requested_model = resolve_provider_model(settings, provider_name=provider.name, model=kwargs.get("model"))[1]
+    recorder = active_recorder()
+    if recorder is not None:
+        # A recorded run (ADR-061, DEV-023): the provider is called later with
+        # no transaction open, then the run is replayed with its response.
+        if engine is None and session is not None:
+            bind = session.get_bind()
+            engine = getattr(bind, "engine", bind)
+        return recorder.call(
+            ("provider", str(provider.name), requested_model, kwargs),
+            lambda: _call_provider(provider, None, opportunity_id=opportunity_id, settings=settings,
+                                   engine=engine, requested_model=requested_model, kwargs=kwargs),
+        )
+    return _call_provider(provider, session, opportunity_id=opportunity_id, settings=settings, engine=engine,
+                          requested_model=requested_model, kwargs=kwargs)
+
+
+def _call_provider(provider, session: Session | None, *, opportunity_id: int | None, settings: Settings,
+                   engine, requested_model: str | None, kwargs: dict):
     for attempt in range(1 + settings.ai_max_provider_retries):
         reservation = reserve(session, opportunity_id=opportunity_id, settings=settings,
                               system_prompt=kwargs["system_prompt"], user_prompt=kwargs["user_prompt"],
-                              purpose=kwargs["purpose"], provider=str(provider.name), model=requested_model)
+                              purpose=kwargs["purpose"], provider=str(provider.name), model=requested_model,
+                              engine=engine)
         try:
             result = provider.complete(**kwargs, max_tokens=settings.ai_max_output_tokens_per_call)
         except Exception as exc:

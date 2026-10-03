@@ -1,5 +1,8 @@
 <!-- Proposal tab -->
 {% if review_session and review_session.status in ('approved_to_bid',) %}
+  {% with opp_id=opp.id, task=generation_task, active=generation_active %}
+    {% include "workspace/_generation_status.html" %}
+  {% endwith %}
   {% if proposal and proposal.status in ('draft', 'ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix') %}
   <div class="card">
     <div class="card-header">
@@ -52,7 +55,19 @@
   </div>
   {% else %}
   <div class="card">
-    <p class="text-muted text-center" style="padding:2rem 0;">Proposal generation in progress or not yet triggered.</p>
+    <p class="text-muted text-center" style="padding:2rem 0 1rem;">
+      {% if proposal %}This proposal was cancelled.{% elif generation_active %}The proposal is being generated.{% else %}No proposal has been generated for this approval.{% endif %}
+    </p>
+    {% if can_retry_generation %}
+    <form method="post" action="/workspace/{{ opp.id }}/proposal/retry" class="text-center" style="padding-bottom:1.5rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="expected_version" value="{{ review_session.version }}">
+      <button type="submit" class="btn btn-primary">Retry proposal generation</button>
+      <button type="submit" name="without_ai" value="1" class="btn btn-secondary">Generate a draft without AI</button>
+    </form>
+    {% elif not proposal and not can_approve %}
+    <p class="text-sm text-muted text-center" style="padding-bottom:1.5rem;">An approver or owner can retry generation.</p>
+    {% endif %}
   </div>
   {% endif %}
 {% else %}

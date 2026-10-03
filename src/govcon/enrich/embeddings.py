@@ -63,6 +63,15 @@ class SentenceTransformerProvider:
             if revision is None:
                 from pathlib import Path
                 root = Path(self._model_name)
+                if not root.is_dir():
+                    from huggingface_hub import try_to_load_from_cache
+
+                    repo_id = getattr(config, "_name_or_path", None) or self._model_name
+                    if "/" not in repo_id:
+                        repo_id = f"sentence-transformers/{repo_id}"
+                    cached = try_to_load_from_cache(repo_id, "config.json", revision=self._revision)
+                    if isinstance(cached, str) and Path(cached).parent.parent.name == "snapshots":
+                        revision = Path(cached).parent.name
                 files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in {".json", ".bin", ".safetensors"}) if root.is_dir() else []
                 digest = hashlib.sha256()
                 for path in files:
@@ -70,7 +79,7 @@ class SentenceTransformerProvider:
                     with path.open("rb") as stream:
                         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                             digest.update(chunk)
-                revision = digest.hexdigest() if files else "unversioned"
+                revision = revision or (digest.hexdigest() if files else "unversioned")
             self._model_version = f"{self._model_name}@{revision}"
         return self._model_version
 

@@ -254,26 +254,89 @@ def step_embeddings(session: Session, settings) -> StepResult:
 
 
 def step_semantic_match(session: Session, settings) -> StepResult:
-    """Compute semantic recommendations for all enabled watchlists."""
+    """Compute and persist semantic recommendations for all enabled watchlists (ADR-069).
+
+    Records how much work was done and how long it took, so local embedding
+    compute is measured rather than assumed free (roadmap §6.2).
+    """
     try:
         from govcon.enrich.embeddings import get_default_provider
-        from govcon.matching.semantic import all_recommendations
-        from govcon.matching.watchlists import list_watchlists
+        from govcon.matching.recommendations import refresh_recommendations
 
         provider = get_default_provider(settings.embedding_model)
-        watchlists = list_watchlists(session, include_disabled=False)
-        count = 0
-        for wl in watchlists:
-            all_recommendations(session, watchlist_id=wl.id, provider=provider, limit=20)
-            count += 1
+        stats = refresh_recommendations(session, provider, limit=20)
         return StepResult(
             step="semantic_match",
             status="succeeded",
-            extra={"watchlists_processed": count},
+            inserted=stats.inserted,
+            updated=stats.updated,
+            extra={"watchlists_processed": stats.watchlists, "deactivated": stats.deactivated,
+                   "seconds": stats.seconds},
         )
     except Exception as exc:
         logger.error("semantic_match failed: %s", exc)
         return StepResult(step="semantic_match", status="failed", error=str(exc))
+
+
+def step_rank(session: Session) -> StepResult:
+    """Rank every active match with explainable factors (ADR-069)."""
+    try:
+        from govcon.matching.ranking import rank_active_matches
+
+        ranked = rank_active_matches(session)
+        return StepResult(step="rank", status="succeeded", updated=ranked)
+    except Exception as exc:
+        logger.error("rank failed: %s", exc)
+        return StepResult(step="rank", status="failed", error=str(exc))
+
+
+def step_auto_pursue(session: Session) -> StepResult:
+    """Pursue top-ranked eligible rule matches under the owner's policy (ADR-069)."""
+    try:
+        from govcon.matching.auto_pursue import run_auto_pursue
+
+        result = run_auto_pursue(session)
+        if not result.enabled:
+            return StepResult(step="auto_pursue", status="skipped", extra={"reason": "auto-pursue is off in Settings"})
+        return StepResult(
+            step="auto_pursue", status="succeeded", inserted=len(result.pursued),
+            extra={"pursued_opportunity_ids": result.pursued,
+                   "needs_eligibility_decision": len(result.needs_eligibility_decision),
+                   "skipped_daily_cap": result.skipped_daily_cap},
+        )
+    except Exception as exc:
+        logger.error("auto_pursue failed: %s", exc)
+        return StepResult(step="auto_pursue", status="failed", error=str(exc))
+
+
+def step_company_registration(session: Session, settings) -> StepResult:
+    """Refresh our own SAM registration daily and alert ahead of expiry (ADR-072)."""
+    try:
+        from govcon.company.registration import refresh_company_registration
+
+        result = refresh_company_registration(session, settings=settings)
+        if result.status == "skipped":
+            return StepResult(step="company_registration", status="skipped", extra={"reason": result.reason})
+        return StepResult(step="company_registration", status="succeeded", updated=1,
+                          extra={"expiration_date": result.expiration_date.isoformat() if result.expiration_date else None,
+                                 "expiry_alert_sent": result.alerted})
+    except Exception as exc:
+        logger.error("company_registration failed: %s", exc)
+        return StepResult(step="company_registration", status="failed", error=str(exc))
+
+
+def step_review_escalations(session: Session, settings) -> StepResult:
+    """Review reminders, overdue and deadline escalations (ADR-070)."""
+    try:
+        from govcon.collaboration.escalation import run_review_escalations
+
+        counts = run_review_escalations(session, settings=settings)
+        return StepResult(step="review_escalations", status="succeeded",
+                          inserted=counts.reminders + counts.overdue + counts.deadline,
+                          extra={"reminders": counts.reminders, "overdue": counts.overdue, "deadline": counts.deadline})
+    except Exception as exc:
+        logger.error("review_escalations failed: %s", exc)
+        return StepResult(step="review_escalations", status="failed", error=str(exc))
 
 
 def step_midday_deadline_check(session: Session, settings) -> StepResult:
@@ -348,13 +411,45 @@ def step_cache_refresh(session: Session, settings) -> StepResult:
 
 
 def step_analytics_refresh(session: Session) -> StepResult:
-    """Analytics refresh — deferred to Phase 15."""
-    logger.info("analytics_refresh: Phase 15 analytics not yet implemented; step is a no-op")
-    return StepResult(
-        step="analytics_refresh",
-        status="succeeded",
-        extra={"note": "Phase 15 analytics engine not yet implemented; no-op"},
-    )
+    """Snapshot the outcome analytics (ADR-074).
+
+    Reports what it counted. With no recorded outcomes there is nothing to
+    refresh, and the step says skipped rather than claiming success.
+    """
+    try:
+        import dataclasses
+        import json
+
+        from govcon.learning.analytics import outcome_analytics
+        from govcon.models import AnalyticsSnapshot
+
+        analytics = outcome_analytics(session)
+        total = analytics.total_won + analytics.total_lost + analytics.total_no_bid
+        if total == 0:
+            return StepResult(step="analytics_refresh", status="skipped", extra={"reason": "no recorded outcomes"})
+        payload = json.loads(json.dumps(dataclasses.asdict(analytics), default=str))
+        session.add(AnalyticsSnapshot(outcome_count=total, won=analytics.total_won, lost=analytics.total_lost,
+                                      no_bid=analytics.total_no_bid, payload=payload))
+        session.flush()
+        return StepResult(step="analytics_refresh", status="succeeded", inserted=1,
+                          extra={"outcomes": total, "won": analytics.total_won, "lost": analytics.total_lost,
+                                 "no_bid": analytics.total_no_bid})
+    except Exception as exc:
+        logger.error("analytics_refresh failed: %s", exc)
+        return StepResult(step="analytics_refresh", status="failed", error=str(exc))
+
+
+def step_outcome_suggestions(session: Session, settings) -> StepResult:
+    """Suggest outcomes for submitted bids from award records (ADR-073)."""
+    try:
+        from govcon.learning.award_matching import suggest_outcomes
+
+        counts = suggest_outcomes(session, settings=settings)
+        return StepResult(step="outcome_suggestions", status="succeeded", inserted=counts.created,
+                          extra={"pursuits_checked": counts.pursuits_checked, "strong": counts.strong})
+    except Exception as exc:
+        logger.error("outcome_suggestions failed: %s", exc)
+        return StepResult(step="outcome_suggestions", status="failed", error=str(exc))
 
 
 def step_vacuum_analyze(session: Session, settings) -> StepResult:

@@ -31,6 +31,8 @@
       <div class="title truncate">
         <a href="/opp/{{ m.opp_id }}">{{ m.title or "(no title)" }}</a>
         {% if m.alerted %}<span class="badge badge-secondary" title="Included in an alert digest">Alerted</span>{% endif %}
+        {% if m.rank_score is not none %}<span class="badge badge-primary" title="Explainable rank, 0-100">Rank {{ '%.0f' % m.rank_score }}</span>{% endif %}
+        {% if m.needs_eligibility_decision %}<span class="badge badge-warning" title="Ranked highly, but eligibility or ranking data is too uncertain to pursue automatically">Needs eligibility decision</span>{% endif %}
       </div>
       <div class="match-meta">
         {% if m.deadline_label %}
@@ -40,6 +42,13 @@
         {% if m.agency %} · {{ m.agency[:60] }}{% endif %}
         {% if m.estimated_value %} · ~{{ m.estimated_value }}{% endif %}
       </div>
+      {% if m.rank_factors %}
+      <details class="text-sm"><summary>Why this rank</summary>
+        <ul>{% for f in m.rank_factors %}
+          <li>{{ f.label }}: {% if f.available %}{{ f.points }} pts (weight {{ f.weight }}) — {{ f.evidence }}{% else %}no data ({{ f.evidence }}){% endif %}</li>
+        {% endfor %}</ul>
+      </details>
+      {% endif %}
       {% if m.matched_on %}
       <div class="text-sm text-muted">Matched: {{ m.matched_on }}</div>
       {% endif %}

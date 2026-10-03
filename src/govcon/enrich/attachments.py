@@ -25,10 +25,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import mimetypes
-import os
 import re
-import tempfile
-import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.message import Message
 from pathlib import Path
@@ -36,17 +34,17 @@ from govcon.security.classification import DataClassification, strictest_classif
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
 from govcon.enrich.attachment_refs import AttachmentRef, attachment_refs_for
-from govcon.enrich.extract import extract_text, guess_mime_type
+from govcon.enrich.extract import ExtractionResult, extract_text, guess_mime_type
 from govcon.enrich.safe_fetch import FetchError, Resolver, safe_fetch
 from govcon.http import build_client
 from govcon.logging import redact
 from govcon.ingest.snapshots import current_snapshot_id
-from govcon.models import Opportunity, StoredFile
+from govcon.models import FilePage, Opportunity, StoredFile
 
 logger = logging.getLogger("govcon.enrich.attachments")
 
@@ -216,37 +214,27 @@ def store_bytes(data: bytes, sha: str, opportunity_id: int, filename: str, setti
     """Write ``data`` atomically inside the opportunity folder, content-addressed.
 
     Never overwrites: an existing file with the same name must already hold
-    these bytes, otherwise a unique name is used.
+    these bytes, otherwise a unique name is used. Goes through the configured
+    ``AttachmentStore`` (ADR-065).
     """
-    base = (Path(settings.data_dir) / "attachments" / str(int(opportunity_id))).resolve()
-    base.mkdir(parents=True, exist_ok=True)
-    safe = sanitize_filename(filename)
-    target = (base / f"{sha[:16]}_{safe}").resolve()
-    if target.parent != base:
-        raise ValueError("attachment path escapes the opportunity folder")
-    if target.exists():
-        if hashlib.sha256(target.read_bytes()).hexdigest() == sha:
-            return target
-        target = (base / f"{sha[:16]}_{uuid.uuid4().hex[:8]}_{safe}").resolve()
-    fd, tmp_name = tempfile.mkstemp(dir=base, prefix=".part-")
-    tmp = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        try:
-            os.link(tmp, target)  # fails instead of replacing an existing file
-        except FileExistsError:
-            if hashlib.sha256(target.read_bytes()).hexdigest() != sha:
-                raise
-        except OSError:
-            if target.exists():
-                raise
-            os.replace(tmp, target)
-    finally:
-        tmp.unlink(missing_ok=True)
-    return target
+    from govcon.enrich.storage import get_store
+
+    return Path(get_store(settings).put(data, sha, opportunity_id, filename))
+
+
+def write_pages(session: Session, row: StoredFile, extraction: ExtractionResult) -> None:
+    """Replace the file's stored pages with ``extraction``'s, and record OCR coverage."""
+    session.execute(delete(FilePage).where(FilePage.file_id == row.id))
+    row.page_count = extraction.page_count if extraction.page_count is not None else (
+        len(extraction.pages) if extraction.pages else None)
+    row.ocr_pages = extraction.ocr_pages or None
+    row.ocr_failed_pages = extraction.ocr_failed_pages or None
+    for page in extraction.pages or []:
+        session.add(FilePage(
+            file_id=row.id, page_no=page.page_no, label=page.label, text=page.text,
+            text_source=page.source, ocr_confidence=page.confidence, char_count=len(page.text),
+        ))
+    session.flush()
 
 
 def _existing(session: Session, opportunity_id: int, url: str, sha: str | None) -> StoredFile | None:
@@ -279,17 +267,44 @@ def _record_failure(
     return row
 
 
-def _download_one(
-    session: Session,
-    opportunity: Opportunity,
+@dataclass
+class FetchedAttachment:
+    """One ref's fetch, storage and extraction, done without a database session."""
+
+    ref: AttachmentRef
+    error: str | None = None
+    sha: str | None = None
+    known: bool = False  # these bytes are already stored for this URL
+    filename: str | None = None
+    mime: str | None = None
+    local_path: str | None = None
+    extraction: ExtractionResult | None = None
+
+
+def known_versions(session: Session, opportunity_id: int, refs: list[AttachmentRef]) -> dict[str, set[str]]:
+    """SHA-256 of every stored version of each listed URL."""
+    urls = [ref.url for ref in refs]
+    known: dict[str, set[str]] = {url: set() for url in urls}
+    for url, sha in session.execute(
+        select(StoredFile.url, StoredFile.sha256)
+        .where(StoredFile.opportunity_id == opportunity_id, StoredFile.url.in_(urls), StoredFile.sha256.is_not(None))
+    ):
+        known[url].add(sha)
+    return known
+
+
+def fetch_attachment(
     ref: AttachmentRef,
     *,
+    opportunity_id: int,
+    known_shas: set[str],
     settings: Settings,
     client: httpx.Client,
     resolver: Resolver | None,
-    snapshot_id: int | None,
-) -> StoredFile:
-    """Download one ref and persist it as an attachment version (or a failure row)."""
+) -> FetchedAttachment:
+    """Fetch, store and extract one ref (OCR included). Opens no database session."""
+    from govcon.enrich.ocr import ocr_config
+
     try:
         fetched = safe_fetch(
             client,
@@ -301,12 +316,34 @@ def _download_one(
         )
     except FetchError as exc:
         message = redact(f"download failed: {exc}", settings.secret_values())
-        logger.warning("attachment download failed for opportunity %s: %s", opportunity.id, message)
-        return _record_failure(session, opportunity, ref, snapshot_id=snapshot_id, message=message)
+        logger.warning("attachment download failed for opportunity %s: %s", opportunity_id, message)
+        return FetchedAttachment(ref, error=message)
 
     data = fetched.content
     sha = hashlib.sha256(data).hexdigest()
-    existing = _existing(session, opportunity.id, ref.url, sha)
+    if sha in known_shas:
+        return FetchedAttachment(ref, sha=sha, known=True)
+
+    guessed = filename_from_headers(fetched.content_disposition) or ref.filename or _url_basename(ref.url)
+    mime = _mime_type(fetched.content_type, sanitize_filename(guessed))
+    filename = choose_filename(ref, fetched.content_disposition, mime)
+    try:
+        local_path: str | None = str(store_bytes(data, sha, opportunity_id, filename, settings))
+    except (OSError, ValueError) as exc:
+        logger.warning("failed to save attachment locally: %s", exc)
+        local_path = None
+    extraction = extract_text(data, mime, filename, ocr=ocr_config(settings))
+    return FetchedAttachment(ref, sha=sha, filename=filename, mime=mime, local_path=local_path, extraction=extraction)
+
+
+def record_fetched(
+    session: Session, opportunity: Opportunity, fetched: FetchedAttachment, *, snapshot_id: int | None
+) -> StoredFile:
+    """Persist one fetch as an attachment version, a refreshed version, or a failure row."""
+    ref = fetched.ref
+    if fetched.error is not None:
+        return _record_failure(session, opportunity, ref, snapshot_id=snapshot_id, message=fetched.error)
+    existing = _existing(session, opportunity.id, ref.url, fetched.sha)
     if existing is not None:
         logger.debug("deduplicated attachment for opportunity %s (sha256 match)", opportunity.id)
         # These bytes were just retrieved again: the inventory's freshness check
@@ -314,25 +351,18 @@ def _download_one(
         existing.downloaded_at = datetime.now(UTC)
         session.flush()
         return existing
+    if fetched.known or fetched.extraction is None:
+        raise RuntimeError(f"stored version of {ref.url} disappeared while it was being fetched")
 
-    guessed = filename_from_headers(fetched.content_disposition) or ref.filename or _url_basename(ref.url)
-    mime = _mime_type(fetched.content_type, sanitize_filename(guessed))
-    filename = choose_filename(ref, fetched.content_disposition, mime)
-    try:
-        local_path: Path | None = store_bytes(data, sha, opportunity.id, filename, settings)
-    except (OSError, ValueError) as exc:
-        logger.warning("failed to save attachment locally: %s", exc)
-        local_path = None
-    extraction = extract_text(data, mime, filename)
-
+    extraction = fetched.extraction
     row = _existing(session, opportunity.id, ref.url, None)  # reuse an earlier failure row
     if row is None:
         row = StoredFile(opportunity_id=opportunity.id, url=ref.url, classification="PUBLIC", source_origin="government_feed")
         session.add(row)
-    row.filename = filename
-    row.local_path = str(local_path) if local_path else None
-    row.mime_type = mime
-    row.sha256 = sha
+    row.filename = fetched.filename
+    row.local_path = fetched.local_path
+    row.mime_type = fetched.mime
+    row.sha256 = fetched.sha
     row.extracted_text = extraction.text
     row.extraction_status = extraction.status
     row.extraction_error = extraction.error
@@ -341,7 +371,25 @@ def _download_one(
     row.active = True
     row.removed_at = None
     session.flush()
+    write_pages(session, row, extraction)
     return row
+
+
+def _download_one(
+    session: Session,
+    opportunity: Opportunity,
+    ref: AttachmentRef,
+    *,
+    settings: Settings,
+    client: httpx.Client,
+    resolver: Resolver | None,
+    snapshot_id: int | None,
+) -> StoredFile:
+    """Download one ref and persist it as an attachment version (or a failure row)."""
+    known = known_versions(session, opportunity.id, [ref])[ref.url]
+    fetched = fetch_attachment(ref, opportunity_id=opportunity.id, known_shas=known, settings=settings,
+                               client=client, resolver=resolver)
+    return record_fetched(session, opportunity, fetched, snapshot_id=snapshot_id)
 
 
 def process_local_file(
@@ -363,11 +411,13 @@ def process_local_file(
         raise ValueError("Local ingest requires a known classification")
     if not source_origin.strip() or len(source_origin) > 200:
         raise ValueError("source_origin must identify the document's source (1–200 characters)")
+    from govcon.enrich.ocr import ocr_config
+
     data = file_path.read_bytes()
     sha = hashlib.sha256(data).hexdigest()
     filename = file_path.name
     mime = guess_mime_type(filename)
-    extraction = extract_text(data, mime, filename)
+    extraction = extract_text(data, mime, filename, ocr=ocr_config(get_settings()))
 
     existing = session.execute(
         select(StoredFile).where(
@@ -404,4 +454,5 @@ def process_local_file(
     )
     session.add(sf)
     session.flush()
+    write_pages(session, sf, extraction)
     return sf

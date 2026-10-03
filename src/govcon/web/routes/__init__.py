@@ -8,8 +8,9 @@ from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import Cookie, Form, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import desc, func, select, text, or_
 from sqlalchemy.orm import Session as OrmSession
 
@@ -21,6 +22,7 @@ from govcon.collaboration.review_sessions import (
     ReviewWorkflowError,
     approval_context,
     complete_assignment,
+    decision_package_is_stale,
     ensure_review_session,
     finalize_approval,
     recalculate_quorum,
@@ -59,6 +61,8 @@ from govcon.models import (
     ReviewComment,
     ReviewSession,
     SchedulerJobRun,
+    Task,
+    CompanyRegistration,
     StoredFile,
     Submission,
     User,
@@ -75,7 +79,19 @@ from govcon.proposals.service import (
 )
 from govcon.web.helpers import deadline_info, format_value, primary_source_url, source_links
 from govcon.web.security import secure_cookies
-from govcon.workflow.transitions import APPROVABLE_PROPOSAL_STATUSES
+from govcon.collaboration.notifications import ACTION_REQUIRED_TYPES
+from govcon.intelligence.analysis_tasks import latest_analysis_tasks
+from govcon.workflow.preparation import PREPARATION_TASK, preparation_view
+from govcon.tasks.queue import active_task, latest_task, requeue
+from govcon.tasks.queue import cancel as cancel_task
+from govcon.workflow.invalidation import lock_one, lock_opportunity
+from govcon.workflow.proposal_generation import (
+    PROPOSAL_TASK,
+    GenerationNotAllowed,
+    artifacts_exist,
+    queue_proposal_generation,
+)
+from govcon.workflow.transitions import APPROVABLE_PROPOSAL_STATUSES, TERMINAL_PURSUIT_STAGES
 
 # Errors a workflow service raises to refuse an action. They become a message
 # for the user; the request's transaction is rolled back.
@@ -245,7 +261,9 @@ def notifications(request: Request, before: Annotated[int | None, Query(ge=1)] =
         items = [{"id": row.id, "title": row.notification_type.replace("_", " ").capitalize(),
                   "opportunity_id": row.opportunity_id, "created_at": row.created_at,
                   "payload": json.dumps(row.payload or {}, ensure_ascii=False, default=str),
-                  "unread": row.read_at is None} for row in rows[:50]]
+                  "unread": row.read_at is None,
+                  "needs_ack": row.notification_type in ACTION_REQUIRED_TYPES and row.acknowledged_at is None,
+                  "acknowledged_at": row.acknowledged_at} for row in rows[:50]]
     return _render(request, "notifications.html", {"notifications": items, "next_before": next_before, "active_page": "notifications"}, user)
 
 
@@ -264,6 +282,22 @@ def notification_read(request: Request, notification_id: int) -> RedirectRespons
     return _redirect("/notifications")
 
 
+def notification_acknowledge(request: Request, notification_id: int) -> RedirectResponse:
+    """Acknowledge an action-required notification (ADR-070)."""
+    from govcon.collaboration.notifications import acknowledge
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        with session_scope() as db:
+            acknowledge(db, notification_id=notification_id, user=db.get(User, user.id))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return _redirect("/notifications", notice="Acknowledged.")
+
+
 # ── Inbox ─────────────────────────────────────────────────────────────────────
 
 
@@ -273,17 +307,23 @@ def inbox(request: Request) -> HTMLResponse:
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
+    from govcon.matching.auto_pursue import needs_eligibility_decision
+    from govcon.workflow.app_settings import AUTO_PURSUE, get_setting
+
     groups: list[dict] = []
     total = 0
+    now = datetime.now(UTC)
 
     with session_scope() as db:
+        policy = get_setting(db, AUTO_PURSUE)
         wls = db.scalars(select(Watchlist).where(Watchlist.enabled == True)).all()
         for wl in wls:
+            # Highest explainable rank first (ADR-069); unranked matches by deadline.
             rows = db.execute(
                 select(Match, Opportunity)
                 .join(Opportunity, Match.opportunity_id == Opportunity.id)
                 .where(Match.watchlist_id == wl.id, Match.status == "new", Match.active.is_(True))
-                .order_by(Opportunity.response_deadline.asc().nullslast())
+                .order_by(Match.rank_score.desc().nullslast(), Opportunity.response_deadline.asc().nullslast())
                 .limit(50)
             ).all()
             if not rows:
@@ -304,6 +344,9 @@ def inbox(request: Request) -> HTMLResponse:
                         "estimated_value": format_value(opp.estimated_value_min, opp.estimated_value_max),
                         "matched_on": _fmt_matched_on(m.matched_on),
                         "alerted": m.alerted_at is not None,
+                        "rank_score": float(m.rank_score) if m.rank_score is not None else None,
+                        "rank_factors": m.rank_factors or [],
+                        "needs_eligibility_decision": needs_eligibility_decision(m, opp, policy, now),
                     }
                 )
             total += len(matches)
@@ -343,23 +386,9 @@ def inbox_action(
             if m is None:
                 return HTMLResponse("", status_code=404)
             if action == "pursuing":
-                from govcon.workflow.invalidation import lock_opportunity
+                from govcon.workflow.pursuits import create_or_get_pursuit
 
-                lock_opportunity(db, m.opportunity_id)
-                pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == m.opportunity_id))
-                if pursuit is None:
-                    pursuit = Pursuit(opportunity_id=m.opportunity_id, stage="evaluating")
-                    db.add(pursuit)
-                    db.flush()
-                    record_audit(
-                        db,
-                        action_type="pursuit_created",
-                        user_id=actor.id,
-                        opportunity_id=m.opportunity_id,
-                        entity_type="pursuits",
-                        entity_id=pursuit.id,
-                        new_value={"stage": "evaluating"},
-                    )
+                create_or_get_pursuit(db, opportunity_id=m.opportunity_id, actor=actor, origin="web_inbox")
             old = m.status
             m.status = action
             record_audit(
@@ -568,20 +597,9 @@ def opp_start_workspace(request: Request, opp_id: int) -> HTMLResponse:
             opp = db.get(Opportunity, opp_id)
             if opp is None:
                 return HTMLResponse("Not found", status_code=404)
-            existing = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
-            if not existing:
-                pursuit = Pursuit(opportunity_id=opp_id, stage="evaluating")
-                db.add(pursuit)
-                db.flush()
-                record_audit(
-                    db,
-                    action_type="pursuit_created",
-                    user_id=actor.id,
-                    opportunity_id=opp_id,
-                    entity_type="pursuits",
-                    entity_id=pursuit.id,
-                    new_value={"stage": "evaluating"},
-                )
+            from govcon.workflow.pursuits import create_or_get_pursuit
+
+            create_or_get_pursuit(db, opportunity_id=opp_id, actor=actor, origin="web_workspace")
     except PermissionDenied as exc:
         return _redirect(f"/opp/{opp_id}", error=_error_text(exc))
     return RedirectResponse(f"/workspace/{opp_id}", status_code=303)
@@ -644,6 +662,7 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             )
 
         if active_tab == "products":
+            tab_ctx.update(_sourcing_context(db, opp_id))
             tab_ctx["ai_sourcing"] = db.scalar(
                 select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.SOURCING)
                 .order_by(desc(AIAnalysis.created_at))
@@ -702,8 +721,24 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             tab_ctx["approvable_statuses"] = sorted(APPROVABLE_PROPOSAL_STATUSES)
             if proposal is not None:
                 tab_ctx["proposal_workspace"] = get_proposal_workspace(db, opportunity_id=opp_id)
+            approved = review_session is not None and review_session.status == "approved_to_bid"
+            generation = _generation_status(db, opp_id) if approved else {"task": None, "active": False}
+            tab_ctx["generation_task"] = generation["task"]
+            tab_ctx["generation_active"] = generation["active"]
+            tab_ctx["can_retry_generation"] = (
+                approved
+                and tab_ctx["can_approve"]
+                and not generation["active"]
+                and not artifacts_exist(db, opp_id)
+            )
 
         if active_tab == "submission":
+            from govcon.models import OutcomeSuggestion
+
+            tab_ctx["outcome_suggestions"] = list(db.scalars(
+                select(OutcomeSuggestion).where(OutcomeSuggestion.opportunity_id == opp_id)
+                .order_by(OutcomeSuggestion.strength.desc(), OutcomeSuggestion.id.desc())
+            ).all())
             proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
             tab_ctx["proposal"] = proposal
             # Load submission by opportunity_id (Phase 11 generates it that way)
@@ -740,6 +775,8 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             "opp": opp,
             "primary_source_url": primary_source_url(opp.links),
             "can_run_analysis": user.role in ("owner", "approver", "reviewer"),
+            "analysis_tasks": latest_analysis_tasks(db, opp_id),
+            "preparation": preparation_view(latest_task(db, task_type=PREPARATION_TASK, opportunity_id=opp_id)),
             "deadline_label": deadline_label,
             "deadline_class": deadline_cls,
             "pursuit": pursuit,
@@ -834,36 +871,45 @@ _ANALYSIS_TABS = {"market": "market", "supplier": "products", "pricing": "pricin
 
 
 def workspace_run_analysis(request: Request, opp_id: int, kind: str) -> HTMLResponse:
-    """Run the market / supplier / pricing AI analysis from its workspace tab."""
+    """Queue the market / supplier / pricing AI analysis from its workspace tab (ADR-064).
+
+    Inputs and data-classification policy are checked in the request, so a
+    missing supplier or a blocked call is reported at once; a worker then
+    makes the AI call outside any transaction.
+    """
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
     from govcon.ai.structured import StructuredCallError
-    from govcon.intelligence.ai_analyses import PRODUCERS
+    from govcon.intelligence.analysis_tasks import queue_analysis
 
     tab = _ANALYSIS_TABS.get(kind)
-    if tab is None or kind not in PRODUCERS:
+    if tab is None:
         return HTMLResponse("Unknown analysis", status_code=404)
     target = f"/workspace/{opp_id}?tab={tab}"
     try:
         with session_scope() as db:
             actor = _actor(db, user, "review")
-            analysis = PRODUCERS[kind](db, opp_id)
+            if lock_opportunity(db, opp_id) is None:
+                raise ValueError("opportunity not found")
+            task, created = queue_analysis(db, opportunity_id=opp_id, kind=kind, actor_user_id=actor.id)
             record_audit(
                 db,
                 action_type="ai_analysis_requested",
                 user_id=actor.id,
                 opportunity_id=opp_id,
-                entity_type="ai_analyses",
-                entity_id=analysis.id,
-                new_value={"kind": kind},
+                entity_type="tasks",
+                entity_id=task.id,
+                new_value={"kind": kind, "task_id": task.id, "queued": created},
             )
     except StructuredCallError as exc:
         return _redirect(target, error=f"Analysis not run ({exc.reason}): {exc.detail}")
     except _WORKFLOW_ERRORS as exc:
         return _redirect(target, error=_error_text(exc))
-    return _redirect(target, notice=f"{kind.title()} analysis complete.")
+    if not created:
+        return _redirect(target, notice=f"{kind.title()} analysis is already queued for these inputs.")
+    return _redirect(target, notice=f"{kind.title()} analysis queued; this tab shows the result when it finishes.")
 
 
 def workspace_assign_reviewer(
@@ -940,7 +986,11 @@ def workspace_approve(
     expected_version: Annotated[str | None, Form()] = None,
     override_reason: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
-    """Final bid decision through ``finalize_approval`` (quorum, override, version, audit)."""
+    """Final bid decision through ``finalize_approval`` (quorum, override, version, audit).
+
+    Approving to bid also queues proposal generation in the same transaction
+    (ADR-062); the response does not wait for it.
+    """
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -960,35 +1010,115 @@ def workspace_approve(
                 expected_version=version,
                 override_reason=(override_reason or "").strip() or None,
             )
-            if decision == "approve_to_bid":
-                _trigger_proposal_generation(db, opp_id=opp_id, actor=actor)
     except _WORKFLOW_ERRORS as exc:
         return _redirect(target, error=_error_text(exc))
-    return _redirect(target, notice=f"Decision recorded: {decision.replace('_', ' ')}.")
+    notice = f"Decision recorded: {decision.replace('_', ' ')}."
+    if decision == "approve_to_bid":
+        notice += " Proposal generation is queued; follow it on the Proposal tab."
+    return _redirect(target, notice=notice)
 
 
-def _trigger_proposal_generation(db: Any, *, opp_id: int, actor: Any) -> None:
-    """Call Phase 11 generate_proposal + generate_submission_package.
+def _generation_status(db: OrmSession, opp_id: int) -> dict[str, Any]:
+    """The Proposal tab's view of the latest generation task for this opportunity."""
+    task = latest_task(db, task_type=PROPOSAL_TASK, opportunity_id=opp_id)
+    if task is None:
+        return {"task": None, "active": False}
+    return {"task": task, "active": task.status in ("queued", "running", "retrying")}
 
-    Runs in a savepoint: a generation failure is logged and rolled back without
-    undoing the approval itself. ``skip_ai`` is used when no AI provider key is
-    configured, so the UI shows a real draft with [[BLOCKER:...]] markers.
-    """
-    import logging
-    _log = logging.getLogger("govcon.web.routes")
-    from govcon.db import current_settings as get_settings
-    from govcon.proposals.service import generate_proposal
-    from govcon.submissions.service import generate_submission_package
 
-    settings = get_settings()
-    from govcon.ai.providers import provider_available
-    skip = not provider_available(settings)
+def workspace_proposal_status(request: Request, opp_id: int) -> HTMLResponse:
+    """HTMX fragment: generation progress, polled while a task is active."""
     try:
-        with db.begin_nested():
-            generate_proposal(db, opportunity_id=opp_id, actor=actor, skip_ai=skip)
-            generate_submission_package(db, opportunity_id=opp_id, actor=actor)
-    except Exception as exc:  # generation must not undo a recorded human decision
-        _log.warning("auto-generate on approve_to_bid failed for opp %s: %s", opp_id, exc)
+        user = _require_login(request)
+    except _NeedsLogin:
+        return HTMLResponse("", status_code=401)
+    with session_scope() as db:
+        try:
+            _actor(db, user, "read")
+        except AuthError:
+            return HTMLResponse("", status_code=403)
+        status = _generation_status(db, opp_id)
+        return _templates.TemplateResponse(
+            request, "workspace/_generation_status.html", {"opp_id": opp_id, **status}
+        )
+
+
+def workspace_proposal_retry(
+    request: Request,
+    opp_id: int,
+    expected_version: Annotated[str | None, Form()] = None,
+    without_ai: Annotated[str | None, Form()] = None,
+) -> HTMLResponse:
+    """Queue proposal and submission-package generation again for a current bid approval.
+
+    Under the opportunity lock it requires ``approve``, the review version the
+    form was rendered with, an ``approved_to_bid`` review, a decision package
+    built from the current source, and no existing proposal or submission, so
+    a retry only creates missing artifacts and never replaces edited ones. A
+    task already queued or running is not duplicated; a task waiting for a
+    person is put back in the queue.
+    """
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=proposal"
+    version = _form_int(expected_version)
+    if version is None:
+        return _redirect(target, error="The review changed or the form is out of date; reload and try again.")
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            if lock_opportunity(db, opp_id) is None:
+                raise ValueError("opportunity not found")
+            review = lock_one(db, select(ReviewSession).where(ReviewSession.opportunity_id == opp_id))
+            if review is None or review.status != "approved_to_bid" or review.final_approval_status != "approved_to_bid":
+                raise ReviewWorkflowError("the bid is not currently approved to bid; there is nothing to generate")
+            if review.version != version:
+                raise ReviewWorkflowError("the review changed since this page loaded; reload and try again")
+            if decision_package_is_stale(db, review):
+                raise ReviewWorkflowError(
+                    "the AI decision package was built from a superseded source revision; "
+                    "regenerate it and re-approve before generating a proposal"
+                )
+            pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
+            if pursuit is None or pursuit.stage in TERMINAL_PURSUIT_STAGES:
+                raise ReviewWorkflowError("the pursuit is closed; there is nothing to generate")
+            if artifacts_exist(db, opp_id):
+                raise ReviewWorkflowError(
+                    "a proposal or submission package already exists; retry only creates missing artifacts"
+                )
+            active = active_task(db, task_type=PROPOSAL_TASK, opportunity_id=opp_id)
+            if active is not None and active.status not in ("waiting_for_input", "waiting_for_budget"):
+                raise ReviewWorkflowError("proposal generation is already queued or running")
+            for_placeholder = (without_ai or "").strip() == "1"
+            if active is not None and bool((active.payload or {}).get("without_ai")) == for_placeholder:
+                task = requeue(db, active, actor_user_id=actor.id, reason="retried from the Proposal tab")
+                outcome = "requeued"
+            else:
+                if active is not None:
+                    cancel_task(db, active, reason="replaced by a retry with different options",
+                                actor_user_id=actor.id)
+                queued = queue_proposal_generation(
+                    db, opportunity_id=opp_id, actor_user_id=actor.id, without_ai=for_placeholder
+                )
+                if queued is None:  # pragma: no cover - artifacts were checked under the lock
+                    raise ReviewWorkflowError("a proposal or submission package already exists")
+                task, _ = queued
+                outcome = "queued"
+            record_audit(
+                db,
+                action_type="proposal_generation_retried",
+                user_id=actor.id,
+                opportunity_id=opp_id,
+                entity_type="review_sessions",
+                entity_id=review.id,
+                new_value={"outcome": outcome, "task_id": task.id, "without_ai": for_placeholder,
+                           "review_version": review.version},
+            )
+    except (_WORKFLOW_ERRORS + (GenerationNotAllowed,)) as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="Proposal generation queued.")
 
 
 def workspace_proposal_approve(
@@ -1089,8 +1219,9 @@ async def workspace_record_outcome(
     debrief_notes: Annotated[str | None, Form()] = None,
     lessons_learned: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
+    # Async only to read the raw form; database work runs in the thread pool.
     try:
-        user = _require_login(request)
+        user = await run_in_threadpool(_require_login, request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
     target = f"/workspace/{opp_id}?tab=submission"
@@ -1119,29 +1250,33 @@ async def workspace_record_outcome(
         amount = _float(award_amount, "award_amount")
         winning_price = _float(known_winning_price, "known_winning_price")
         margin = _float(win_margin_pct, "win_margin_pct")
-        with session_scope() as db:
-            actor = _actor(db, user, "approve")
-            record_outcome(
-                db,
-                opportunity_id=opp_id,
-                outcome=outcome,
-                actor=actor,
-                no_bid_reason=no_bid_reason or None,
-                no_bid_category=no_bid_category or None,
-                loss_reason=loss_reason or None,
-                known_winning_price=winning_price,
-                win_reason=win_reason or None,
-                win_margin_pct=margin,
-                win_supplier=win_supplier or None,
-                win_delivery_terms=win_delivery_terms or None,
-                win_proposal_version=win_proposal_version or None,
-                awarded_vendor_name=awarded_vendor_name or None,
-                awarded_vendor_uei=awarded_vendor_uei or None,
-                award_amount=amount,
-                government_feedback=government_feedback or None,
-                debrief_notes=debrief_notes or None,
-                lessons_learned=lessons_learned or None,
-            )
+
+        def _record() -> None:
+            with session_scope() as db:
+                actor = _actor(db, user, "approve")
+                record_outcome(
+                    db,
+                    opportunity_id=opp_id,
+                    outcome=outcome,
+                    actor=actor,
+                    no_bid_reason=no_bid_reason or None,
+                    no_bid_category=no_bid_category or None,
+                    loss_reason=loss_reason or None,
+                    known_winning_price=winning_price,
+                    win_reason=win_reason or None,
+                    win_margin_pct=margin,
+                    win_supplier=win_supplier or None,
+                    win_delivery_terms=win_delivery_terms or None,
+                    win_proposal_version=win_proposal_version or None,
+                    awarded_vendor_name=awarded_vendor_name or None,
+                    awarded_vendor_uei=awarded_vendor_uei or None,
+                    award_amount=amount,
+                    government_feedback=government_feedback or None,
+                    debrief_notes=debrief_notes or None,
+                    lessons_learned=lessons_learned or None,
+                )
+
+        await run_in_threadpool(_record)
     except _WORKFLOW_ERRORS as exc:
         return _redirect(target, error=_error_text(exc))
     return _redirect(target, notice=f"Outcome recorded: {outcome}.")
@@ -1261,9 +1396,9 @@ def watchlist_new_get(request: Request) -> HTMLResponse:
     return _render(request, "watchlist_edit.html", {"editing": False, "wl": None, "active_page": "watchlists"}, user)
 
 
-async def watchlist_new_post(request: Request) -> HTMLResponse:
+async def watchlist_new_post(request: Request) -> Response:
     try:
-        user = _require_login(request)
+        user = await run_in_threadpool(_require_login, request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
     try:
@@ -1286,9 +1421,9 @@ def watchlist_edit_get(request: Request, wl_id: int) -> HTMLResponse:
         return _render(request, "watchlist_edit.html", {"editing": True, "wl": wl, "active_page": "watchlists"}, user)
 
 
-async def watchlist_edit_post(request: Request, wl_id: int) -> HTMLResponse:
+async def watchlist_edit_post(request: Request, wl_id: int) -> Response:
     try:
-        user = _require_login(request)
+        user = await run_in_threadpool(_require_login, request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
     try:
@@ -1298,8 +1433,12 @@ async def watchlist_edit_post(request: Request, wl_id: int) -> HTMLResponse:
     return await _watchlist_save(request, user, wl_id=wl_id)
 
 
-async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> HTMLResponse:
+async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> Response:
     form = await request.form()
+    return await run_in_threadpool(_watchlist_save_sync, request, user, wl_id, form)
+
+
+def _watchlist_save_sync(request: Request, user: User, wl_id: int | None, form: Any) -> Response:
     name = (form.get("name") or "").strip()
     if not name:
         ctx = {"editing": wl_id is not None, "wl": None, "error": "Name is required.", "active_page": "watchlists"}
@@ -1527,6 +1666,34 @@ def ops(request: Request) -> HTMLResponse:
 
         users = db.scalars(select(User).order_by(User.email)).all() if user.role == "owner" else []
 
+        # Durable tasks (ADR-061): counts, terminal failures and blocked work.
+        task_counts = dict(db.execute(select(Task.status, func.count()).group_by(Task.status)).all())
+        failed_tasks = db.scalars(
+            select(Task).where(Task.status == "failed").order_by(desc(Task.finished_at), desc(Task.id)).limit(50)
+        ).all()
+        waiting_tasks = db.scalars(
+            select(Task).where(Task.status.in_(("waiting_for_input", "waiting_for_budget")))
+            .order_by(Task.id).limit(50)
+        ).all()
+        oldest_queued = db.scalar(select(func.min(Task.created_at)).where(Task.status == "queued"))
+
+        # Measured AI usage (roadmap §6.2): settled tokens and recorded cost, last 30 days.
+        from govcon.models import AICallUsage
+
+        day = func.date_trunc("day", AICallUsage.created_at)
+        ai_usage = db.execute(
+            select(day.label("day"), AICallUsage.purpose, AICallUsage.model,
+                   func.count().label("calls"),
+                   func.sum(AICallUsage.input_tokens).label("input_tokens"),
+                   func.sum(AICallUsage.output_tokens).label("output_tokens"),
+                   func.sum(AICallUsage.cost_usd).label("cost_usd"),
+                   func.count().filter(AICallUsage.status == "failed").label("failed"))
+            .where(AICallUsage.created_at >= func.now() - text("interval '30 days'"))
+            .group_by(day, AICallUsage.purpose, AICallUsage.model)
+            .order_by(day.desc(), AICallUsage.purpose)
+            .limit(200)
+        ).all()
+
     stats = type("S", (), {
         "opp_count": opp_count,
         "opp_open": opp_open,
@@ -1542,8 +1709,41 @@ def ops(request: Request) -> HTMLResponse:
         "job_runs": list(job_runs),
         "chain_summary": chain_summary,
         "users": list(users),
+        "task_counts": task_counts,
+        "failed_tasks": list(failed_tasks),
+        "waiting_tasks": list(waiting_tasks),
+        "oldest_queued": oldest_queued,
+        "ai_usage": list(ai_usage),
+        "can_manage_tasks": user.role in ("owner", "approver"),
         "active_page": "ops",
     }, user)
+
+
+def ops_task_action(request: Request, task_id: int, action: str) -> HTMLResponse:
+    """Re-queue a failed or waiting task, or cancel an active one (owner/approver)."""
+    from govcon.tasks.queue import ACTIVE_STATUSES
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    if action not in ("retry", "cancel"):
+        return HTMLResponse("Unknown action", status_code=404)
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            task = lock_one(db, select(Task).where(Task.id == task_id))
+            if task is None:
+                raise ValueError(f"task {task_id} not found")
+            if action == "retry":
+                requeue(db, task, actor_user_id=actor.id, reason="retried from /ops")
+            else:
+                if task.status not in ACTIVE_STATUSES:
+                    raise ValueError(f"task {task_id} is {task.status}; only active tasks can be cancelled")
+                cancel_task(db, task, reason=f"cancelled from /ops by {actor.email}", actor_user_id=actor.id)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect("/ops", error=_error_text(exc))
+    return _redirect("/ops", notice=f"Task {task_id} {'queued' if action == 'retry' else 'cancelled'}.")
 
 
 # ── Learning ──────────────────────────────────────────────────────────────────
@@ -1556,7 +1756,10 @@ def learning(request: Request) -> HTMLResponse:
         return RedirectResponse("/login", status_code=303)
 
     with session_scope() as db:
+        from govcon.models import AnalyticsSnapshot
+
         analytics = outcome_analytics(db)
+        last_refresh = db.scalar(select(AnalyticsSnapshot).order_by(AnalyticsSnapshot.id.desc()).limit(1))
 
     stats = type("S", (), {
         "submitted": analytics.total_submitted,
@@ -1573,6 +1776,7 @@ def learning(request: Request) -> HTMLResponse:
 
     return _render(request, "learning.html", {
         "stats": stats,
+        "last_refresh": last_refresh,
         "by_psc": analytics.by_psc,
         "by_agency": analytics.by_agency,
         "by_size": analytics.by_size_bucket,
@@ -1604,7 +1808,7 @@ def admin_invite_get(request: Request) -> HTMLResponse:
 
 async def admin_invite_post(request: Request) -> HTMLResponse:
     try:
-        user = _require_login(request)
+        user = await run_in_threadpool(_require_login, request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
     try:
@@ -1618,9 +1822,411 @@ async def admin_invite_post(request: Request) -> HTMLResponse:
     password = (form.get("password") or "")
     role = (form.get("role") or "reviewer").strip()
 
+    def _invite() -> HTMLResponse:  # password hashing and database work stay off the event loop
+        try:
+            with session_scope() as db:
+                invite_user(db, email=email, display_name=display_name, password=password, role=role,
+                            actor_user_id=user.id)
+            return _render(request, "invite_user.html", {"success": f"User {email} invited.", "active_page": "ops"}, user)
+        except (ValueError, AuthError) as exc:
+            return _render(request, "invite_user.html", {"error": str(exc), "active_page": "ops"}, user)
+
+    return await run_in_threadpool(_invite)
+
+
+# ── Settings (ADR-067) ────────────────────────────────────────────────────────
+
+
+def settings_page(request: Request) -> HTMLResponse:
+    """Owner-editable workflow settings; other roles see them read-only."""
+    from govcon.db import current_settings as get_settings
+    from govcon.workflow.app_settings import (
+        AUTO_PREPARE,
+        AUTO_PURSUE,
+        DEADLINE_EXCEPTION,
+        REVIEWER_ASSIGNMENT,
+        get_setting,
+    )
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    with session_scope() as db:
+        reviewers = db.scalars(
+            select(User).where(User.is_active.is_(True), User.role.in_(("owner", "approver", "reviewer")))
+            .order_by(User.display_name, User.email)
+        ).all()
+        ctx = {
+            "reviewer_assignment": get_setting(db, REVIEWER_ASSIGNMENT),
+            "auto_prepare": get_setting(db, AUTO_PREPARE),
+            "auto_pursue": get_setting(db, AUTO_PURSUE),
+            "deadline_exception": get_setting(db, DEADLINE_EXCEPTION),
+            "short_deadline_days": get_settings().review_short_deadline_days,
+            "authorizations": _authorizations(db),
+            "registration": _our_registration(db),
+            "ai_providers": ("anthropic", "openai", "deepseek"),
+            "reviewers": list(reviewers),
+            "can_edit": user.role == "owner",
+            "active_page": "settings",
+        }
+    return _render(request, "settings.html", ctx, user)
+
+
+def _our_registration(db: OrmSession) -> CompanyRegistration | None:
+    """The configured company's registration (COMPANY_UEI or the facts file's uei)."""
+    from govcon.company.registration import company_uei
+    from govcon.compliance.pipeline import CompanyFactsInvalid, read_company_facts_file
+    from govcon.db import current_settings
+
+    settings = current_settings()
+    try:
+        facts = read_company_facts_file(settings)
+    except CompanyFactsInvalid:
+        facts = {}  # the page still opens; compliance and drafting report the broken file
+    uei = company_uei(settings, facts)
+    return db.get(CompanyRegistration, uei) if uei else None
+
+
+def _authorizations(db: OrmSession) -> list[Any]:
+    from govcon.models import AISharingAuthorization
+
+    return list(db.scalars(select(AISharingAuthorization).order_by(AISharingAuthorization.id.desc()).limit(20)).all())
+
+
+def settings_save(
+    request: Request,
+    reviewer_mode: Annotated[str, Form()],
+    reviewer_ids: Annotated[list[str] | None, Form()] = None,
+    auto_prepare: Annotated[str | None, Form()] = None,
+    auto_pursue: Annotated[str | None, Form()] = None,
+    auto_pursue_min_score: Annotated[str | None, Form()] = None,
+    auto_pursue_min_days: Annotated[str | None, Form()] = None,
+    auto_pursue_max_per_day: Annotated[str | None, Form()] = None,
+    deadline_exception: Annotated[str | None, Form()] = None,
+) -> HTMLResponse:
+    from govcon.workflow.app_settings import (
+        AUTO_PREPARE,
+        AUTO_PURSUE,
+        DEADLINE_EXCEPTION,
+        REVIEWER_ASSIGNMENT,
+        get_setting,
+        set_setting,
+    )
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
     try:
         with session_scope() as db:
-            invite_user(db, email=email, display_name=display_name, password=password, role=role, actor_user_id=user.id)
-        return _render(request, "invite_user.html", {"success": f"User {email} invited.", "active_page": "ops"}, user)
-    except (ValueError, AuthError) as exc:
-        return _render(request, "invite_user.html", {"error": str(exc), "active_page": "ops"}, user)
+            actor = _actor(db, user, "manage_users")
+            ids = [int(v) for v in (reviewer_ids or []) if str(v).strip().isdigit()]
+            set_setting(db, REVIEWER_ASSIGNMENT, {"mode": reviewer_mode, "user_ids": ids}, actor=actor)
+            set_setting(db, AUTO_PREPARE, {"enabled": auto_prepare == "on"}, actor=actor)
+            current = get_setting(db, AUTO_PURSUE)
+            set_setting(db, AUTO_PURSUE, {
+                "enabled": auto_pursue == "on",
+                "min_score": auto_pursue_min_score if auto_pursue_min_score not in (None, "") else current["min_score"],
+                "min_days": auto_pursue_min_days if auto_pursue_min_days not in (None, "") else current["min_days"],
+                "max_per_day": auto_pursue_max_per_day if auto_pursue_max_per_day not in (None, "") else current["max_per_day"],
+            }, actor=actor)
+            set_setting(db, DEADLINE_EXCEPTION, {"enabled": deadline_exception == "on"}, actor=actor)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect("/settings", error=_error_text(exc))
+    return _redirect("/settings", notice="Settings saved.")
+
+
+def workspace_prepare(request: Request, opp_id: int) -> HTMLResponse:
+    """Queue (or re-run) automatic preparation for a pursued opportunity."""
+    from govcon.workflow.preparation import queue_preparation
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=overview"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            if lock_opportunity(db, opp_id) is None:
+                raise ValueError("opportunity not found")
+            if db.scalar(select(Pursuit.id).where(Pursuit.opportunity_id == opp_id)) is None:
+                raise ValueError("start a pursuit before preparing the opportunity")
+            task, created = queue_preparation(db, opportunity_id=opp_id, actor_user_id=actor.id)
+            record_audit(db, action_type="preparation_requested", user_id=actor.id, opportunity_id=opp_id,
+                         entity_type="tasks", entity_id=task.id, new_value={"queued": created})
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="Preparation queued." if created else "Preparation is already queued or running.")
+
+
+# ── Sourcing (ADR-071) ────────────────────────────────────────────────────────
+
+
+def _sourcing_context(db: OrmSession, opp_id: int) -> dict[str, Any]:
+    from govcon.models import RfqDraft, Supplier, SupplierQuote, SupplierQuoteLine
+    from govcon.sourcing.records import is_current
+
+    quotes = []
+    for quote, supplier in db.execute(
+        select(SupplierQuote, Supplier).join(Supplier, Supplier.id == SupplierQuote.supplier_id)
+        .where(SupplierQuote.opportunity_id == opp_id).order_by(SupplierQuote.id.desc())
+    ):
+        quotes.append({
+            "supplier": supplier.name, "total_price": quote.total_price, "valid_until": quote.valid_until,
+            "lines": db.scalar(select(func.count()).select_from(SupplierQuoteLine).where(SupplierQuoteLine.quote_id == quote.id)),
+            "method": quote.extraction_method, "filename": quote.source_filename, "current": is_current(quote),
+            "notes": quote.notes,
+        })
+    quote_tasks = db.scalars(
+        select(Task).where(Task.opportunity_id == opp_id, Task.task_type == "quote_extraction",
+                           Task.status != "succeeded").order_by(Task.id.desc()).limit(10)
+    ).all()
+    return {
+        "quotes": quotes,
+        "quote_tasks": list(quote_tasks),
+        "suppliers": list(db.scalars(select(Supplier).order_by(Supplier.name)).all()),
+        "rfq_drafts": list(db.scalars(select(RfqDraft).where(RfqDraft.opportunity_id == opp_id)
+                                      .order_by(RfqDraft.id.desc()).limit(10)).all()),
+    }
+
+
+async def workspace_add_quote(request: Request, opp_id: int) -> Response:
+    """Record a supplier quote: a CSV/XLSX table, a document for authorized AI reading, or a total."""
+    try:
+        user = await run_in_threadpool(_require_login, request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=products"
+    form = await request.form()
+    upload = form.get("quote_file")
+    data = await upload.read() if upload is not None and getattr(upload, "filename", "") else b""
+    # File storage (fsync), spreadsheet parsing and database work run in the thread pool.
+    return await run_in_threadpool(_add_quote_sync, user, opp_id, target, form, upload, data)
+
+
+def _add_quote_sync(
+    user: User, opp_id: int, target: str, form: Any, upload: Any, data: bytes
+) -> Response:
+    from govcon.sourcing.intake import receive_quote_file
+    from govcon.sourcing.records import get_or_create_supplier, record_quote
+
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            if lock_opportunity(db, opp_id) is None:
+                raise ValueError("opportunity not found")
+            supplier, _ = get_or_create_supplier(db, name=str(form.get("supplier_name") or ""), actor=actor,
+                                                 provenance=f"entered by {actor.email} with a quote")
+            valid_until = str(form.get("valid_until") or "").strip() or None
+            if data:
+                intake = receive_quote_file(db, opportunity_id=opp_id, supplier_id=supplier.id, data=data,
+                                            filename=upload.filename, valid_until=valid_until, actor=actor)
+                notice = ("Quote recorded." if intake.quote is not None
+                          else "Quote document stored; it will be read by AI if an owner has authorized it.")
+            else:
+                total = str(form.get("total_price") or "").strip()
+                if not total:
+                    raise ValueError("upload a quote file or enter the quote's total price")
+                record_quote(db, opportunity_id=opp_id, supplier_id=supplier.id, actor=actor, method="manual",
+                             total_price=total, valid_until=valid_until, notes=str(form.get("notes") or "") or None)
+                notice = "Quote recorded."
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice=notice)
+
+
+def workspace_pursuit_facts(
+    request: Request,
+    opp_id: int,
+    expected_version: Annotated[str, Form()],
+    quote_price: Annotated[str | None, Form()] = None,
+    sourcing_cost: Annotated[str | None, Form()] = None,
+    supplier: Annotated[str | None, Form()] = None,
+    notes: Annotated[str | None, Form()] = None,
+    return_tab: Annotated[str | None, Form()] = None,
+) -> Response:
+    """Record the pursuit's quote price, sourcing cost, supplier and notes; a blank field clears it."""
+    from govcon.workflow.commercial import update_commercial_facts
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    tab = return_tab if return_tab in ("products", "pricing", "overview") else "products"
+    target = f"/workspace/{opp_id}?tab={tab}"
+
+    def clean_text(value: str | None) -> str | None:
+        return (value.strip() or None) if value is not None else None
+
+    def clean_money(value: str | None) -> str | None:
+        return (clean_text(value) or "").replace("$", "").replace(",", "") or None
+
+    try:
+        version = _form_int(expected_version)
+        if version is None:
+            raise ValueError("reload the page and enter the values again")
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            _, changed = update_commercial_facts(
+                db, opp_id, actor=actor, expected_version=version, via="web",
+                changes={"quote_price": clean_money(quote_price), "sourcing_cost": clean_money(sourcing_cost),
+                         "supplier": clean_text(supplier), "notes": clean_text(notes)},
+            )
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    if not changed:
+        return _redirect(target, notice="Nothing changed.")
+    return _redirect(target, notice="Pursuit commercial facts saved. Earlier review, proposal and submission "
+                                    "decisions that relied on them were reopened.")
+
+
+def workspace_draft_rfq(
+    request: Request, opp_id: int, supplier_id: Annotated[str | None, Form()] = None
+) -> HTMLResponse:
+    from govcon.sourcing.records import draft_rfq
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=products"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            draft_rfq(db, opportunity_id=opp_id, supplier_id=_form_int(supplier_id), actor=actor)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="RFQ drafted below; copy it to send it yourself.")
+
+
+def suppliers_page(request: Request) -> HTMLResponse:
+    from govcon.models import CatalogImport, Supplier, SupplierProduct
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    with session_scope() as db:
+        rows = []
+        for supplier in db.scalars(select(Supplier).order_by(Supplier.name)):
+            rows.append({
+                "supplier": supplier,
+                "products": db.scalar(select(func.count()).select_from(SupplierProduct)
+                                      .where(SupplierProduct.supplier_id == supplier.id)),
+                "last_import": db.scalar(select(CatalogImport).where(CatalogImport.supplier_id == supplier.id)
+                                         .order_by(CatalogImport.id.desc()).limit(1)),
+            })
+        return _render(request, "suppliers.html", {
+            "rows": rows, "can_edit": user.role in ("owner", "approver", "reviewer"), "active_page": "suppliers",
+        }, user)
+
+
+async def suppliers_save(request: Request) -> Response:
+    """Add a supplier, or import a supplier's catalog CSV."""
+    try:
+        user = await run_in_threadpool(_require_login, request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    form = await request.form()
+    upload = form.get("catalog_file")
+    data = await upload.read() if upload is not None and getattr(upload, "filename", "") else b""
+    # Catalog parsing and database work run in the thread pool.
+    return await run_in_threadpool(_suppliers_save_sync, user, form, upload, data)
+
+
+def _suppliers_save_sync(user: User, form: Any, upload: Any, data: bytes) -> Response:
+    from govcon.sourcing.records import get_or_create_supplier, import_catalog_csv
+
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            fields = {k: str(form.get(k) or "") for k in ("uei", "cage_code", "contact_name", "contact_email", "phone")}
+            supplier, created = get_or_create_supplier(db, name=str(form.get("name") or ""), actor=actor,
+                                                       provenance=f"entered by {actor.email}", **fields)
+            if data:
+                result = import_catalog_csv(db, supplier_id=supplier.id, data=data, filename=upload.filename, actor=actor)
+                notice = f"Imported {result.rows_imported} of {result.rows_total} catalog rows for {supplier.name}."
+                if result.errors:
+                    notice += " Skipped: " + "; ".join(f"line {e['line']}: {e['error']}" for e in result.errors[:5])
+            else:
+                notice = f"Supplier {supplier.name} {'added' if created else 'already exists'}."
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect("/suppliers", error=_error_text(exc))
+    return _redirect("/suppliers", notice=notice)
+
+
+def ai_sharing_save(
+    request: Request,
+    action: Annotated[str, Form()],
+    provider: Annotated[str | None, Form()] = None,
+    days: Annotated[str | None, Form()] = None,
+    reason: Annotated[str | None, Form()] = None,
+    authorization_id: Annotated[str | None, Form()] = None,
+) -> HTMLResponse:
+    """Owner: grant or revoke AI reading of supplier quotes for one provider (roadmap §6.4)."""
+    from govcon.sourcing.records import grant_authorization, revoke_authorization
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "manage_users")
+            if action == "grant":
+                grant_authorization(db, provider=provider or "", days=_form_int(days) or 0, reason=reason or "",
+                                    actor=actor)
+                notice = "AI reading of supplier quotes authorized."
+            elif action == "revoke":
+                revoke_authorization(db, authorization_id=_form_int(authorization_id) or 0, actor=actor)
+                notice = "Authorization revoked."
+            else:
+                raise ValueError("unknown action")
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect("/settings", error=_error_text(exc))
+    return _redirect("/settings", notice=notice)
+
+
+def workspace_outcome_suggestion(request: Request, opp_id: int, suggestion_id: int, action: str) -> HTMLResponse:
+    """Confirm a suggested outcome through ``record_outcome``, or dismiss it (ADR-073)."""
+    from govcon.learning.outcomes import record_outcome
+    from govcon.models import OutcomeSuggestion
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=submission"
+    if action not in ("confirm", "dismiss"):
+        return HTMLResponse("Unknown action", status_code=404)
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            suggestion = lock_one(db, select(OutcomeSuggestion).where(
+                OutcomeSuggestion.id == suggestion_id, OutcomeSuggestion.opportunity_id == opp_id))
+            if suggestion is None:
+                raise ValueError("suggestion not found")
+            if suggestion.status != "suggested":
+                raise ValueError(f"this suggestion was already {suggestion.status}")
+            if action == "confirm":
+                if suggestion.suggested_outcome is None:
+                    raise ValueError("this record does not establish an outcome; record it with the form instead")
+                record_outcome(
+                    db, opportunity_id=opp_id, outcome=suggestion.suggested_outcome, actor=actor,
+                    awarded_vendor_uei=suggestion.awardee_uei, awarded_vendor_name=suggestion.awardee_name,
+                    award_amount=float(suggestion.award_amount) if suggestion.award_amount is not None else None,
+                    award_date=suggestion.award_date,
+                    government_feedback=f"Confirmed from {suggestion.source} record {suggestion.source_ref}",
+                )
+            suggestion.status = "confirmed" if action == "confirm" else "dismissed"
+            suggestion.decided_by_user_id = actor.id
+            suggestion.decided_at = datetime.now(UTC)
+            record_audit(db, action_type=f"outcome_suggestion_{suggestion.status}", user_id=actor.id,
+                         opportunity_id=opp_id, entity_type="outcome_suggestions", entity_id=suggestion.id,
+                         new_value={"source": suggestion.source, "source_ref": suggestion.source_ref,
+                                    "suggested_outcome": suggestion.suggested_outcome})
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="Outcome recorded." if action == "confirm" else "Suggestion dismissed.")

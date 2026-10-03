@@ -1,0 +1,44 @@
+<!-- Proposal generation status (ADR-062); polls while the task is active. -->
+<div id="generation-status"
+     {% if active %}hx-get="/workspace/{{ opp_id }}/proposal/status" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+{% if task %}
+  {% set labels = {
+    'queued': 'Queued',
+    'running': 'Generating',
+    'retrying': 'Retrying',
+    'waiting_for_input': 'Waiting for input',
+    'waiting_for_budget': 'Waiting for AI budget',
+    'succeeded': 'Generated',
+    'failed': 'Failed',
+    'cancelled': 'Cancelled',
+  } %}
+  {% if task.status in ('queued', 'running', 'retrying') %}
+  <div class="alert alert-info" role="status">
+    <strong>Proposal generation: {{ labels[task.status] }}.</strong>
+    {% if task.status == 'running' and task.current_step %}Step: {{ task.current_step }}.{% endif %}
+    {% if task.status == 'retrying' %}
+      Attempt {{ task.attempts }} of {{ task.max_attempts }} failed{% if task.last_error %}: {{ task.last_error }}{% endif %}.
+      {% if task.next_attempt_at %}Next attempt after {{ task.next_attempt_at.strftime('%Y-%m-%d %H:%M') }} UTC.{% endif %}
+    {% endif %}
+    <div class="text-sm text-muted mt-1">The bid approval is recorded. This page updates automatically.</div>
+  </div>
+  {% elif task.status in ('waiting_for_input', 'waiting_for_budget', 'failed') %}
+  <div class="alert alert-error" role="alert">
+    <strong>{% if task.status == 'failed' %}Proposal generation failed.{% else %}Proposal generation: {{ labels[task.status] }}.{% endif %}</strong>
+    The bid approval is kept.
+    {% if task.last_error %}<div class="mt-1">{{ task.last_error }}</div>{% endif %}
+    {% if task.blocker_next_action %}
+      <div class="mt-1"><strong>Next action{% if task.blocker_owner_role %} ({{ task.blocker_owner_role }}){% endif %}:</strong> {{ task.blocker_next_action }}</div>
+    {% endif %}
+    {% if task.finished_at or task.updated_at %}
+      <div class="text-sm text-muted mt-1">Last update: {{ (task.finished_at or task.updated_at).strftime('%Y-%m-%d %H:%M') }} UTC</div>
+    {% endif %}
+  </div>
+  {% elif task.status == 'cancelled' %}
+  <div class="alert alert-warning" role="status">
+    <strong>Proposal generation was cancelled.</strong>
+    {% if task.last_error %}{{ task.last_error }}{% endif %}
+  </div>
+  {% endif %}
+{% endif %}
+</div>

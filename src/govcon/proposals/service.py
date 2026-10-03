@@ -112,8 +112,37 @@ def generate_proposal(
     requirement that is not yet satisfied.
     """
     settings = settings or get_settings()
+    _generation_target(session, opportunity_id)
 
-    # Verify the opportunity is approved to bid
+    if skip_ai:
+        draft_result = _build_placeholder_draft(session, opportunity_id)
+        provider = "placeholder"
+        model = None
+    else:
+        from govcon.ai.structured import StructuredCallError
+        try:
+            draft_result = draft_proposal(
+                session,
+                opportunity_id=opportunity_id,
+                company_facts=company_facts,
+                settings=settings,
+            )
+            provider = draft_result.get("provider")
+            model = draft_result.get("model")
+        except StructuredCallError as exc:
+            logger.warning("AI drafting failed (%s); using placeholder draft: %s", exc.reason, exc.detail)
+            draft_result = _build_placeholder_draft(session, opportunity_id)
+            provider = "placeholder"
+            model = None
+
+    return publish_generated_proposal(
+        session, opportunity_id=opportunity_id, actor=actor, draft_result=draft_result,
+        provider=provider, model=model, settings=settings,
+    )
+
+
+def _generation_target(session: Session, opportunity_id: int) -> Proposal:
+    """The proposal to draft into, after checking the bid is approved and open."""
     review = session.scalars(
         select(ReviewSession).where(ReviewSession.opportunity_id == opportunity_id)
     ).first()
@@ -138,28 +167,26 @@ def generate_proposal(
     )
     if proposal.status == "cancelled":
         raise ProposalWorkflowError(f"proposal for opportunity {opportunity_id} was cancelled")
+    return proposal
 
-    if skip_ai:
-        draft_result = _build_placeholder_draft(session, opportunity_id)
-        provider = "placeholder"
-        model = None
-    else:
-        from govcon.ai.structured import StructuredCallError
-        try:
-            draft_result = draft_proposal(
-                session,
-                opportunity_id=opportunity_id,
-                company_facts=company_facts,
-                settings=settings,
-            )
-            provider = draft_result.get("provider")
-            model = draft_result.get("model")
-        except StructuredCallError as exc:
-            logger.warning("AI drafting failed (%s); using placeholder draft: %s", exc.reason, exc.detail)
-            draft_result = _build_placeholder_draft(session, opportunity_id)
-            provider = "placeholder"
-            model = None
 
+def publish_generated_proposal(
+    session: Session,
+    *,
+    opportunity_id: int,
+    actor: User | None,
+    draft_result: dict[str, Any],
+    provider: str | None,
+    model: str | None,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Store a finished draft as a new version, check coverage, notify and audit.
+
+    Shared by synchronous generation and the durable proposal task, which
+    drafts with no transaction open and publishes here under the opportunity lock.
+    """
+    settings = settings or get_settings()
+    proposal = _generation_target(session, opportunity_id)
     sections = _draft_result_to_sections(draft_result)
     global_blockers = draft_result.get("global_blockers", [])
 

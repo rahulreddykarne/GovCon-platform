@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="2.546" timestamp="2026-10-03T12:36:56.923659-05:00" hostname="RahulROG"><testcase classname="tests.test_r2_task_attempts" name="test_task_whose_worker_died_on_its_last_attempt_fails_instead_of_running_again" time="1.820"><failure message="AssertionError: assert (1, 'succeeded') == (1, 'failed')&#10;  &#10;  At index 1 diff: 'succeeded' != 'failed'&#10;  Use -v to get more diff">tests\test_r2_task_attempts.py:148: in test_task_whose_worker_died_on_its_last_attempt_fails_instead_of_running_again
+    assert run_once(task_id=task_id) == (task_id, "failed")
+E   AssertionError: assert (1, 'succeeded') == (1, 'failed')
+E     
+E     At index 1 diff: 'succeeded' != 'failed'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_r2_task_attempts" name="test_failed_after_crashes_can_still_be_requeued_by_a_person" time="0.189"><failure message="test_r2_task_attempts._Crash">tests\test_r2_task_attempts.py:164: in test_failed_after_crashes_can_still_be_requeued_by_a_person
+    assert run_once(task_id=task_id) == (task_id, "failed")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\tasks\worker.py:194: in run_once
+    status = run_claimed(settings, claim)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\tasks\worker.py:146: in run_claimed
+    output = step.execute(inputs, ctx) if step.execute is not None else inputs
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_r2_task_attempts.py:40: in execute
+    raise _Crash()
+E   test_r2_task_attempts._Crash</failure></testcase></testsuite></testsuites>

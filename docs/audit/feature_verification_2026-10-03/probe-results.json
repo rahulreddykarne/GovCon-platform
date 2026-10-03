@@ -1,0 +1,79 @@
+[
+  {
+    "probe": "catalog_surplus_fields",
+    "http_status": 303
+  },
+  {
+    "probe": "corrupt_xlsx",
+    "http_status": 303
+  },
+  {
+    "probe": "nan_quote_total",
+    "http_status": 303
+  },
+  {
+    "probe": "preparation_late_commit_after_cancel",
+    "worker_result": [
+      1,
+      "lease_lost"
+    ],
+    "task_status": "cancelled",
+    "cancel_http_status": [
+      303
+    ],
+    "committed_compliance_runs": 0,
+    "checkpoint": {
+      "data": {
+        "summary": {
+          "note": "No summary: no AI provider configured, the policy blocked the call, or no document text is available.",
+          "analysis_id": null
+        },
+        "documents": {
+          "files": 0,
+          "failed": [],
+          "ocr_pages": 0,
+          "backfilled": 0
+        }
+      },
+      "completed_steps": [
+        "documents",
+        "summary"
+      ]
+    }
+  },
+  {
+    "probe": "preparation_review_reset",
+    "worker_result": [
+      2,
+      "succeeded"
+    ],
+    "review_status": "under_review",
+    "assignment_status": "complete",
+    "completed_at": "2026-10-03 18:07:57.069589+00:00"
+  },
+  {
+    "probe": "reopened_escalation",
+    "first_overdue": 1,
+    "later_overdue": 1,
+    "assignment_status": "reopened",
+    "escalated_at": "2026-10-08 18:07:57.338305+00:00",
+    "reopened_at": "2026-10-03 18:07:57.401765+00:00"
+  },
+  {
+    "probe": "reopened_escalation_actual_notifications",
+    "count": 2,
+    "originally_escalated_at": "2026-10-08 18:07:57.338305+00:00"
+  },
+  {
+    "probe": "read_only_cli_quote_write",
+    "actor_role": "read_only",
+    "exit_code": 2,
+    "quote_count": 0,
+    "entered_by_matches_reader": false
+  },
+  {
+    "probe": "all_cli_help",
+    "commands_checked": 96,
+    "failures": []
+  }
+]

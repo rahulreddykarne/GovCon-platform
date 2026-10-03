@@ -6,6 +6,7 @@
   <div>
     <h1 class="page-title">Learning &amp; Analytics</h1>
     <div class="page-subtitle">Descriptive outcome history — all figures are from recorded data, not causal inference.</div>
+    <div class="text-sm text-muted">{% if last_refresh %}Last scheduled refresh: {{ last_refresh.created_at.strftime('%Y-%m-%d %H:%M') }} UTC ({{ last_refresh.outcome_count }} outcomes). Figures below are live.{% else %}No scheduled refresh has run yet; figures below are live.{% endif %}</div>
   </div>
 </div>
 

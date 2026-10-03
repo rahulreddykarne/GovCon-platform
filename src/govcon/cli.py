@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import pathlib as _pathlib
@@ -42,6 +43,11 @@ semantic_app = typer.Typer(help="Semantic recommendations (Phase 13).")
 web_app = typer.Typer(help="Web UI server (Phase 14).")
 jobs_app = typer.Typer(help="Scheduler job chains (Phase 17).")
 scheduler_app = typer.Typer(help="APScheduler daemon (Phase 17).")
+worker_app = typer.Typer(help="Durable background task worker (ADR-061).")
+tasks_app = typer.Typer(help="Inspect, retry and cancel durable tasks.")
+pursuit_app = typer.Typer(help="Start pursuits and run automatic preparation (ADR-067).")
+company_app = typer.Typer(help="Our own company data: SAM registration refresh (ADR-072).")
+sourcing_app = typer.Typer(help="Suppliers, catalogs, quotes and RFQ drafts (ADR-071).")
 app.add_typer(db_app, name="db")
 app.add_typer(users_app, name="users")
 app.add_typer(ingest_app, name="ingest")
@@ -64,6 +70,11 @@ app.add_typer(semantic_app, name="semantic")
 app.add_typer(web_app, name="web")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(scheduler_app, name="scheduler")
+app.add_typer(worker_app, name="worker")
+app.add_typer(tasks_app, name="tasks")
+app.add_typer(pursuit_app, name="pursuit")
+app.add_typer(company_app, name="company")
+app.add_typer(sourcing_app, name="sourcing")
 
 
 def main() -> None:
@@ -1257,28 +1268,41 @@ def enrich_intelligence(
 ) -> None:
     """Run the market, supplier, or pricing AI analysis for one opportunity.
 
-    Supplier and pricing analysis send PROPRIETARY pursuit data and need
-    AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=true.
+    The analysis is queued as a durable task (ADR-064) and run in this
+    process. Supplier and pricing analysis send PROPRIETARY pursuit data and
+    need AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=true.
     """
     from govcon.ai.structured import StructuredCallError
-    from govcon.intelligence.ai_analyses import PRODUCERS
+    from govcon.intelligence.ai_analyses import ANALYSIS_KINDS
+    from govcon.intelligence.analysis_tasks import queue_analysis
+    from govcon.models import Task
+    from govcon.tasks.worker import run_once, wait_for
 
-    producer = PRODUCERS.get(kind)
-    if producer is None:
-        typer.echo(f"kind must be one of {', '.join(sorted(PRODUCERS))}", err=True)
+    if kind not in ANALYSIS_KINDS:
+        typer.echo(f"kind must be one of {', '.join(sorted(ANALYSIS_KINDS))}", err=True)
         raise typer.Exit(code=2)
     settings = _settings()
     try:
         with session_scope(settings) as session:
-            analysis = producer(session, opportunity_id, settings=settings)
-            analysis_id = analysis.id
+            task, _ = queue_analysis(session, opportunity_id=opportunity_id, kind=kind,
+                                     actor_user_id=None, settings=settings)
+            task_id = task.id
     except StructuredCallError as exc:
         typer.echo(f"analysis not run: {exc.reason}: {exc.detail}", err=True)
         raise typer.Exit(code=1) from exc
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
-    typer.echo(f"analysis_id: {analysis_id}")
+    if run_once(settings, task_id=task_id) is None:
+        wait_for(settings, task_id, timeout=1800)
+    with session_scope(settings) as session:
+        task = session.get(Task, task_id)
+        if task.status != "succeeded":
+            typer.echo(f"analysis task {task_id} is {task.status}: {task.last_error or ''}", err=True)
+            if task.blocker_next_action:
+                typer.echo(f"next action: {task.blocker_next_action}", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"analysis_id: {task.result['analysis_id']}")
 
 
 @enrich_app.command("process")
@@ -2935,8 +2959,15 @@ def jobs_list() -> None:
 @jobs_app.command("run")
 def jobs_run(
     job: str = typer.Argument(..., help="Chain name to run (e.g. morning_ingest, usaspending)."),
+    inline: bool = typer.Option(
+        False, "--inline", help="Run outside the task queue (no crash resume); for emergencies."
+    ),
 ) -> None:
-    """Manually run a named job chain synchronously and print the result."""
+    """Run a named job chain now and print the result.
+
+    The chain is queued as a durable task and run in this process; if this
+    process dies, a worker resumes it at the next unfinished step.
+    """
     from govcon.scheduler.chains import ALL_CHAIN_NAMES, run_chain
 
     try:
@@ -2951,7 +2982,9 @@ def jobs_run(
         raise typer.Exit(code=2)
 
     typer.echo(f"running chain: {job}")
-    result = run_chain(job, settings, trigger="manual")
+    result = run_chain(job, settings, trigger="manual") if inline else _run_chain_task(job, settings)
+    if result is None:
+        raise typer.Exit(code=1)
 
     typer.echo(f"status: {result.status}")
     typer.echo(f"run_id: {result.run_id}")
@@ -2970,11 +3003,36 @@ def jobs_run(
         raise typer.Exit(code=1)
 
 
+def _run_chain_task(job: str, settings: Settings):
+    """Queue the chain, run that task here, and return its ChainResult (None if it did not finish)."""
+    from govcon.models import Task
+    from govcon.scheduler.chain_tasks import chain_result_from_task, queue_chain
+    from govcon.tasks.worker import run_once, wait_for
+
+    with session_scope(settings) as session:
+        task, created = queue_chain(session, job, trigger="manual", slot="manual")
+        task_id = task.id
+    if not created:
+        typer.echo(f"chain {job} is already queued or running as task {task_id}; waiting for it")
+    if run_once(settings, task_id=task_id) is None:
+        wait_for(settings, task_id, timeout=4 * 3600)
+    with session_scope(settings) as session:
+        task = session.get(Task, task_id)
+        result = chain_result_from_task(task)
+        if result is None:
+            typer.echo(f"task {task_id} ended {task.status}: {task.last_error or 'no result'}", err=True)
+        return result
+
+
 # ── scheduler commands (Phase 17) ────────────────────────────────────────────
 
 
 @scheduler_app.command("start")
-def scheduler_start() -> None:
+def scheduler_start(
+    no_worker: bool = typer.Option(
+        False, "--no-worker", help="Only queue chains; separate `govcon worker start` processes run them."
+    ),
+) -> None:
     """Start the APScheduler daemon (blocking). Press Ctrl-C to stop."""
     from govcon.scheduler.runner import start_blocking_scheduler
 
@@ -2986,7 +3044,352 @@ def scheduler_start() -> None:
         return
 
     typer.echo("Starting GovCon scheduler daemon (Ctrl-C to stop)...")
-    start_blocking_scheduler(settings)
+    start_blocking_scheduler(settings, embedded_worker=not no_worker)
+
+
+def _task_settings() -> Settings | None:
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return None
+    return settings
+
+
+@worker_app.command("start")
+def worker_start(
+    task_type: list[str] = typer.Option(None, "--type", help="Only run these task types (repeatable)."),
+) -> None:
+    """Run a durable-task worker until Ctrl-C (ADR-061)."""
+    import signal
+    import threading
+
+    from govcon.tasks.worker import run_worker
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    import socket
+
+    from govcon.tasks.queue import live_worker_hosts
+
+    with session_scope(settings) as session:
+        others = live_worker_hosts(session) - {socket.gethostname()}
+    if others and settings.attachment_store == "local":
+        typer.echo(
+            f"workers are running on {', '.join(sorted(others))}; attachments are stored on local disk "
+            "(ATTACHMENT_STORE=local), so all workers must run on one machine",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    stop = threading.Event()
+
+    def _stop(*_args) -> None:
+        typer.echo("Stopping after the current task...")
+        stop.set()
+
+    signal.signal(signal.SIGINT, _stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _stop)
+    typer.echo("GovCon worker started (Ctrl-C to stop).")
+    processed = run_worker(settings, task_types=task_type or None, stop_event=stop)
+    typer.echo(f"worker stopped; tasks_processed: {processed}")
+
+
+@worker_app.command("run")
+def worker_run(
+    task_type: list[str] = typer.Option(None, "--type", help="Only run these task types (repeatable)."),
+    max_tasks: int = typer.Option(50, help="Stop after this many tasks."),
+) -> None:
+    """Run due tasks until none are left, then exit."""
+    from govcon.tasks.worker import run_worker
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    processed = run_worker(settings, task_types=task_type or None, until_idle=True, max_tasks=max_tasks)
+    typer.echo(f"tasks_processed: {processed}")
+
+
+def _task_line(task) -> str:
+    owner = f" owner={task.blocker_owner_role}" if task.blocker_owner_role else ""
+    error = f" error={task.last_error}" if task.last_error and task.status != "succeeded" else ""
+    return (
+        f"{task.id}\t{task.task_type}\topp={task.opportunity_id}\t{task.status}"
+        f"\tattempts={task.attempts}/{task.max_attempts}{owner}{error}"
+    )
+
+
+@tasks_app.command("list")
+def tasks_list(
+    status: str | None = typer.Option(None, help="Filter by status (e.g. failed, waiting_for_input)."),
+    opportunity_id: int | None = typer.Option(None, help="Filter by opportunity id."),
+    limit: int = typer.Option(50, help="Most recent tasks to show."),
+) -> None:
+    """List durable tasks, newest first."""
+    from govcon.models import Task
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        query = select(Task).order_by(Task.id.desc()).limit(limit)
+        if status:
+            query = query.where(Task.status == status)
+        if opportunity_id is not None:
+            query = query.where(Task.opportunity_id == opportunity_id)
+        rows = session.scalars(query).all()
+        if not rows:
+            typer.echo("no tasks")
+        for task in rows:
+            typer.echo(_task_line(task))
+
+
+@tasks_app.command("show")
+def tasks_show(task_id: int = typer.Argument(..., help="Task id.")) -> None:
+    """Show one task, including its blocker and checkpoint."""
+    from govcon.models import Task
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        task = session.get(Task, task_id)
+        if task is None:
+            typer.echo(f"task {task_id} not found", err=True)
+            raise typer.Exit(code=2)
+        typer.echo(_task_line(task))
+        typer.echo(f"current_step: {task.current_step}")
+        typer.echo(f"next_attempt_at: {task.next_attempt_at}")
+        typer.echo(f"next_action: {task.blocker_next_action}")
+        typer.echo(f"checkpoint: {json.dumps(task.checkpoint, default=str)}")
+        typer.echo(f"result: {json.dumps(task.result, default=str)}")
+
+
+@tasks_app.command("retry")
+def tasks_retry(
+    task_id: int = typer.Argument(..., help="Failed or waiting task id."),
+    actor_email: str = typer.Option(..., help="Owner/approver email."),
+) -> None:
+    """Put a failed or waiting task back in the queue."""
+    from govcon.collaboration.users import PermissionDenied, require_permission
+    from govcon.models import Task
+    from govcon.tasks.queue import requeue
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            require_permission(actor, "approve")
+            task = session.get(Task, task_id, with_for_update=True)
+            if task is None:
+                raise ValueError(f"task {task_id} not found")
+            requeue(session, task, actor_user_id=actor.id, reason="retried from the CLI")
+    except (ValueError, PermissionDenied) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"task {task_id} queued")
+
+
+@tasks_app.command("cancel")
+def tasks_cancel(
+    task_id: int = typer.Argument(..., help="Active task id."),
+    actor_email: str = typer.Option(..., help="Owner/approver email."),
+    reason: str = typer.Option(..., help="Why the task is cancelled."),
+) -> None:
+    """Cancel an active task. A worker running it discards its result."""
+    from govcon.collaboration.users import PermissionDenied, require_permission
+    from govcon.models import Task
+    from govcon.tasks.queue import ACTIVE_STATUSES, cancel
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            require_permission(actor, "approve")
+            task = session.get(Task, task_id, with_for_update=True)
+            if task is None or task.status not in ACTIVE_STATUSES:
+                raise ValueError(f"task {task_id} is not active")
+            cancel(session, task, reason=reason, actor_user_id=actor.id)
+    except (ValueError, PermissionDenied) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"task {task_id} cancelled")
+
+
+@pursuit_app.command("start")
+def pursuit_start(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    actor_email: str = typer.Option(..., help="Reviewer, approver or owner email."),
+    notes: str | None = typer.Option(None, help="Optional notes for the new pursuit."),
+) -> None:
+    """Start a pursuit (same service as the web Pursue button) and queue preparation."""
+    from govcon.collaboration.users import PermissionDenied, require_permission
+    from govcon.tasks.queue import latest_task
+    from govcon.workflow.preparation import PREPARATION_TASK
+    from govcon.workflow.pursuits import create_or_get_pursuit
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            require_permission(actor, "review")
+            pursuit, created = create_or_get_pursuit(session, opportunity_id=opportunity_id, actor=actor,
+                                                     origin="cli", notes=notes)
+            task = latest_task(session, task_type=PREPARATION_TASK, opportunity_id=opportunity_id)
+            line = f"pursuit_id: {pursuit.id} stage={pursuit.stage} created={str(created).lower()}"
+            prep = f"preparation_task: {task.id} ({task.status})" if task is not None else "preparation_task: none"
+    except (ValueError, PermissionDenied) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(line)
+    typer.echo(prep)
+
+
+@pursuit_app.command("prepare")
+def pursuit_prepare(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id with a pursuit."),
+    actor_email: str = typer.Option(..., help="Reviewer, approver or owner email."),
+    wait: bool = typer.Option(False, "--wait", help="Run the preparation here and print each step."),
+) -> None:
+    """Queue (or re-run) automatic preparation for a pursued opportunity."""
+    from govcon.collaboration.users import PermissionDenied, require_permission
+    from govcon.models import Pursuit, Task
+    from govcon.tasks.worker import run_once, wait_for
+    from govcon.workflow.preparation import preparation_view, queue_preparation
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            require_permission(actor, "review")
+            if session.scalar(select(Pursuit.id).where(Pursuit.opportunity_id == opportunity_id)) is None:
+                raise ValueError("start a pursuit before preparing the opportunity")
+            task, _ = queue_preparation(session, opportunity_id=opportunity_id, actor_user_id=actor.id)
+            task_id = task.id
+    except (ValueError, PermissionDenied) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"preparation_task: {task_id}")
+    if not wait:
+        return
+    if run_once(settings, task_id=task_id) is None:
+        wait_for(settings, task_id, timeout=4 * 3600)
+    with session_scope(settings) as session:
+        view = preparation_view(session.get(Task, task_id))
+        typer.echo(f"status: {view['task'].status}")
+        for step in view["steps"]:
+            typer.echo(f"  {step['name']}: {step['state']} {step['data'] or ''}".rstrip())
+        if view["task"].status != "succeeded":
+            raise typer.Exit(code=1)
+
+
+@company_app.command("refresh")
+def company_refresh() -> None:
+    """Refresh our SAM registration now and alert if it expires soon (ADR-072)."""
+    from govcon.company.registration import refresh_company_registration
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    with session_scope(settings) as session:
+        result = refresh_company_registration(session, settings=settings)
+    if result.status == "skipped":
+        typer.echo(f"skipped: {result.reason}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"refreshed; expiration_date: {result.expiration_date}; expiry_alert_sent: {result.alerted}")
+
+
+@sourcing_app.command("import-catalog")
+def sourcing_import_catalog(
+    supplier: str = typer.Option(..., help="Supplier name (created if new)."),
+    file: _pathlib.Path = typer.Option(..., exists=True, dir_okay=False, help="Catalog CSV."),
+    actor_email: str = typer.Option(..., help="Reviewer, approver or owner email."),
+) -> None:
+    """Import a supplier catalog CSV (ADR-071)."""
+    from govcon.sourcing.records import SourcingError, get_or_create_supplier, import_catalog_csv
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            row, _ = get_or_create_supplier(session, name=supplier, actor=actor, provenance=f"CLI import by {actor.email}")
+            result = import_catalog_csv(session, supplier_id=row.id, data=file.read_bytes(), filename=file.name, actor=actor)
+    except (SourcingError, PermissionError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"imported {result.rows_imported} of {result.rows_total} rows")
+    for error in result.errors:
+        typer.echo(f"  line {error['line']}: {error['error']}")
+
+
+@sourcing_app.command("add-quote")
+def sourcing_add_quote(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    supplier: str = typer.Option(..., help="Supplier name (created if new)."),
+    file: _pathlib.Path = typer.Option(..., exists=True, dir_okay=False, help="Quote CSV, XLSX or PDF."),
+    actor_email: str = typer.Option(..., help="Reviewer, approver or owner email."),
+    valid_until: str | None = typer.Option(None, help="Quote validity date (YYYY-MM-DD)."),
+) -> None:
+    """Record a supplier quote; PDFs are read by AI only with an owner's authorization (ADR-071)."""
+    from govcon.collaboration.users import PermissionDenied, require_permission
+    from govcon.sourcing.intake import receive_quote_file
+    from govcon.sourcing.records import SourcingError, get_or_create_supplier
+    from govcon.workflow.invalidation import lock_opportunity
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            actor = _actor(session, actor_email)
+            require_permission(actor, "review")
+            if lock_opportunity(session, opportunity_id) is None:
+                raise SourcingError("opportunity or supplier not found")
+            row, _ = get_or_create_supplier(session, name=supplier, actor=actor, provenance=f"CLI quote by {actor.email}")
+            intake = receive_quote_file(session, opportunity_id=opportunity_id, supplier_id=row.id,
+                                        data=file.read_bytes(), filename=file.name, valid_until=valid_until,
+                                        actor=actor, settings=settings)
+            message = (f"quote_id: {intake.quote.id}" if intake.quote is not None
+                       else f"queued for AI reading as task {intake.task.id}")
+    except (SourcingError, ValueError, PermissionDenied) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(message)
+
+
+@sourcing_app.command("draft-rfq")
+def sourcing_draft_rfq(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    actor_email: str = typer.Option(..., help="Reviewer, approver or owner email."),
+    supplier_id: int | None = typer.Option(None, help="Supplier id, if addressed to one supplier."),
+) -> None:
+    """Draft a request for quote. GovCon never sends it."""
+    from govcon.sourcing.records import SourcingError, draft_rfq
+
+    settings = _task_settings()
+    if settings is None:
+        return
+    try:
+        with session_scope(settings) as session:
+            draft = draft_rfq(session, opportunity_id=opportunity_id, supplier_id=supplier_id,
+                              actor=_actor(session, actor_email))
+            text = f"{draft.subject}\n\n{draft.body}"
+    except (SourcingError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(text)
 
 
 @web_app.command("serve")

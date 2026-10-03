@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 1,
+    "log": "FV11-red-pytest.log",
+    "tests": "3",
+    "failures": "3",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.869"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

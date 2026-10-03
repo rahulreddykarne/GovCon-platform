@@ -202,7 +202,7 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
         amendment_count = int(summary_json["amendment_status"].get("amendment_count") or 0)
 
     # Evidence-backed, three-state signals with provenance (see decision.signals).
-    profile = load_company_profile()
+    profile = load_company_profile(session=session)
     signals = Signals()
     eligibility_signals(
         session, opportunity, profile, summary_json, has_summary=latest_summary is not None, signals=signals

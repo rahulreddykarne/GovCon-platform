@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "R2-2-green-pytest.log",
+    "tests": "61",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "7.068"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

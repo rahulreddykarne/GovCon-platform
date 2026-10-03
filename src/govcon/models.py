@@ -240,6 +240,10 @@ class Match(TimestampMixin, Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"), default=True)
     deactivated_at: Mapped[datetime | None] = mapped_column(_ts())
     inactive_reason: Mapped[str | None] = mapped_column(Text)
+    # Explainable 0-100 rank (ADR-069); ``score`` stays the rule-hit count.
+    rank_score: Mapped[Decimal | None] = mapped_column(Numeric)
+    rank_factors: Mapped[list | None] = mapped_column(JSONB)
+    ranked_at: Mapped[datetime | None] = mapped_column(_ts())
 
 
 class User(TimestampMixin, Base):
@@ -299,7 +303,9 @@ class Notification(TimestampMixin, Base):
             "'ai_flagged_comment_needs_evidence', 'review_quorum_satisfied', "
             "'second_review_required', 'second_review_requested', 'review_reassigned', "
             "'approval_pending', 'material_amendment_after_review', "
-            "'proposal_package_generated', 'submission_ready'"
+            "'proposal_package_generated', 'submission_ready', "
+            "'review_reminder', 'review_overdue_escalation', 'deadline_escalation', 'auto_pursued', "
+            "'registration_expiring', 'outcome_suggested'"
             ")",
             name="ck_notifications_type",
         ),
@@ -311,6 +317,8 @@ class Notification(TimestampMixin, Base):
     notification_type: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict | None] = mapped_column(JSONB)
     read_at: Mapped[datetime | None] = mapped_column(_ts())
+    # Explicit acknowledgement of an action-required notification (ADR-070).
+    acknowledged_at: Mapped[datetime | None] = mapped_column(_ts())
 
 
 class ReviewAssignment(TimestampMixin, Base):
@@ -338,6 +346,8 @@ class ReviewAssignment(TimestampMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(_ts())
     completed_at: Mapped[datetime | None] = mapped_column(_ts())
     reopened_at: Mapped[datetime | None] = mapped_column(_ts())
+    last_reminded_at: Mapped[datetime | None] = mapped_column(_ts())
+    escalated_at: Mapped[datetime | None] = mapped_column(_ts())
 
 
 class ReviewComment(TimestampMixin, Base):
@@ -487,6 +497,36 @@ class StoredFile(TimestampMixin, Base):
     # (while a refresh fails: the failure row plus the last good version).
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     removed_at: Mapped[datetime | None] = mapped_column(_ts())
+    # Page-level extraction (ADR-065): pages read by OCR, and pages that stayed
+    # unreadable (no text layer and OCR unavailable or empty).
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    ocr_pages: Mapped[list | None] = mapped_column(JSONB)
+    ocr_failed_pages: Mapped[list | None] = mapped_column(JSONB)
+
+
+class FilePage(CreatedAtMixin, Base):
+    """Text of one page (PDF) or one part (sheet, document) of a stored file (ADR-065).
+
+    ``text_source`` is ``native`` for the file's own text layer and ``ocr``
+    when Tesseract read a page image; ``ocr_confidence`` is its mean word
+    confidence (0–100).
+    """
+
+    __tablename__ = "file_pages"
+    __table_args__ = (
+        UniqueConstraint("file_id", "page_no", name="uq_file_pages_file_page"),
+        CheckConstraint("text_source IN ('native','ocr','none')", name="ck_file_pages_text_source"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    file_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="CASCADE"), nullable=False)
+    page_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[str | None] = mapped_column(Text)
+    # ``text`` shadows sqlalchemy.text in this class body, so defaults are plain strings.
+    text: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    text_source: Mapped[str] = mapped_column(Text, nullable=False)
+    ocr_confidence: Mapped[Decimal | None] = mapped_column(Numeric)
+    char_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
 
 class AICallUsage(CreatedAtMixin, Base):
@@ -961,6 +1001,308 @@ class SchedulerJobRun(Base):
     failed_step: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     row_counts: Mapped[dict | None] = mapped_column(JSONB)
+
+
+TASK_TYPES = (
+    "proposal_generation", "ai_analysis", "solicitation_summary", "scheduler_chain", "opportunity_preparation",
+    "notification_email", "quote_extraction",
+)
+TASK_STATUSES = (
+    "queued", "running", "waiting_for_input", "waiting_for_budget", "retrying",
+    "succeeded", "failed", "cancelled",
+)
+TERMINAL_TASK_STATUSES = ("succeeded", "failed", "cancelled")
+
+
+class Task(TimestampMixin, Base):
+    """Durable unit of background work claimed by workers (ADR-061).
+
+    ``dedup_key`` is unique among non-terminal tasks, so the same work for the
+    same inputs is queued once. ``claim_token`` is the lease fencing token: a
+    worker may publish only while it still holds the lease it claimed.
+    """
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(f"task_type IN {TASK_TYPES!r}", name="ck_tasks_task_type"),
+        CheckConstraint(f"status IN {TASK_STATUSES!r}", name="ck_tasks_status"),
+        CheckConstraint("attempts >= 0 AND max_attempts >= 1", name="ck_tasks_attempts"),
+        Index(
+            "uq_tasks_dedup_key_active", "dedup_key", unique=True,
+            postgresql_where=text(f"status NOT IN {TERMINAL_TASK_STATUSES!r}"),
+        ),
+        Index("ix_tasks_status_next_attempt_at", "status", "next_attempt_at"),
+        Index("ix_tasks_opportunity_type_created", "opportunity_id", "task_type", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    task_type: Mapped[str] = mapped_column(Text, nullable=False)
+    opportunity_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("opportunities.id", ondelete="CASCADE")
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'queued'"))
+    dedup_key: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    input_revision: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    checkpoint: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    current_step: Mapped[str | None] = mapped_column(Text)
+    blocker_owner_role: Mapped[str | None] = mapped_column(Text)
+    blocker_owner_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+    blocker_next_action: Mapped[str | None] = mapped_column(Text)
+    lease_owner: Mapped[str | None] = mapped_column(Text)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(_ts())
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    # Monotonic fencing token: incremented by every claim, never decremented.
+    claim_token: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("5"))
+    next_attempt_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    last_error_type: Mapped[str | None] = mapped_column(Text)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    superseded_by_task_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("tasks.id"))
+    scheduler_job_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("scheduler_job_runs.id", ondelete="SET NULL")
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+    started_at: Mapped[datetime | None] = mapped_column(_ts())
+    finished_at: Mapped[datetime | None] = mapped_column(_ts())
+
+
+class Recommendation(TimestampMixin, Base):
+    """A persisted semantic recommendation with the input revisions it came from (ADR-069)."""
+
+    __tablename__ = "recommendations"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False)
+    watchlist_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("watchlists.id", ondelete="CASCADE"))
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    similarity: Mapped[Decimal | None] = mapped_column(Numeric)
+    evidence: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    embedding_model_version: Mapped[str | None] = mapped_column(Text)
+    watchlist_profile_hash: Mapped[str | None] = mapped_column(Text)
+    opportunity_source_hash: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    last_seen_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+
+
+class NotificationDelivery(TimestampMixin, Base):
+    """One attempt series to deliver a notification by email (ADR-070)."""
+
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        CheckConstraint("status IN ('queued','sent','failed')", name="ck_notification_deliveries_status"),
+        CheckConstraint("channel IN ('email')", name="ck_notification_deliveries_channel"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    notification_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'email'"))
+    recipient: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'queued'"))
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    sent_at: Mapped[datetime | None] = mapped_column(_ts())
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class Supplier(TimestampMixin, Base):
+    """A supplier we buy from (ADR-071); ``provenance`` says who or what recorded it."""
+
+    __tablename__ = "suppliers"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    uei: Mapped[str | None] = mapped_column(Text)
+    cage_code: Mapped[str | None] = mapped_column(Text)
+    contact_name: Mapped[str | None] = mapped_column(Text)
+    contact_email: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    provenance: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class Product(TimestampMixin, Base):
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    part_number: Mapped[str] = mapped_column(Text, nullable=False)
+    manufacturer: Mapped[str | None] = mapped_column(Text)
+    nsn: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    unit: Mapped[str | None] = mapped_column(Text)
+
+
+class CatalogImport(CreatedAtMixin, Base):
+    __tablename__ = "catalog_imports"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    supplier_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False)
+    filename: Mapped[str | None] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    rows_total: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    rows_imported: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    errors: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    imported_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class SupplierProduct(TimestampMixin, Base):
+    __tablename__ = "supplier_products"
+    __table_args__ = (UniqueConstraint("supplier_id", "product_id", name="uq_supplier_products_supplier_product"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    supplier_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False)
+    product_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    list_price: Mapped[Decimal | None] = mapped_column(Numeric)
+    currency: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'USD'"))
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    catalog_import_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("catalog_imports.id", ondelete="SET NULL"))
+
+
+class SupplierQuote(TimestampMixin, Base):
+    """A supplier's quote for one opportunity; PROPRIETARY (ADR-071).
+
+    The quote document's bytes live in the attachment store (``source_key``)
+    and never become a solicitation file of the opportunity.
+    """
+
+    __tablename__ = "supplier_quotes"
+    __table_args__ = (
+        CheckConstraint("status IN ('active','withdrawn')", name="ck_supplier_quotes_status"),
+        CheckConstraint("extraction_method IN ('manual','csv','xlsx','ai')", name="ck_supplier_quotes_extraction_method"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False)
+    supplier_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'active'"))
+    received_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    total_price: Mapped[Decimal | None] = mapped_column(Numeric)
+    currency: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'USD'"))
+    extraction_method: Mapped[str] = mapped_column(Text, nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(Text)
+    source_sha256: Mapped[str | None] = mapped_column(Text)
+    source_key: Mapped[str | None] = mapped_column(Text)
+    entered_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
+class SupplierQuoteLine(Base):
+    __tablename__ = "supplier_quote_lines"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    quote_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("supplier_quotes.id", ondelete="CASCADE"), nullable=False)
+    product_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("products.id", ondelete="SET NULL"))
+    description: Mapped[str | None] = mapped_column(Text)
+    part_number: Mapped[str | None] = mapped_column(Text)
+    nsn: Mapped[str | None] = mapped_column(Text)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric)
+    unit: Mapped[str | None] = mapped_column(Text)
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric)
+    extended_price: Mapped[Decimal | None] = mapped_column(Numeric)
+    lead_time_days: Mapped[int | None] = mapped_column(Integer)
+
+
+class RfqDraft(TimestampMixin, Base):
+    """A request for quote drafted for a person to send; never sent by GovCon."""
+
+    __tablename__ = "rfq_drafts"
+    __table_args__ = (CheckConstraint("status IN ('draft')", name="ck_rfq_drafts_status"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False)
+    supplier_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("suppliers.id", ondelete="SET NULL"))
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'draft'"))
+    created_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class AISharingAuthorization(Base):
+    """An owner's explicit, expiring permission to send a data scope to one AI provider (ADR-071)."""
+
+    __tablename__ = "ai_sharing_authorizations"
+    __table_args__ = (CheckConstraint("scope IN ('supplier_quotes')", name="ck_ai_sharing_authorizations_scope"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    granted_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+    granted_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    expires_at: Mapped[datetime] = mapped_column(_ts(), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(_ts())
+    revoked_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class CompanyRegistration(TimestampMixin, Base):
+    """Our own SAM registration, refreshed daily from the SAM entity API (ADR-072)."""
+
+    __tablename__ = "company_registration"
+
+    uei: Mapped[str] = mapped_column(Text, primary_key=True)
+    legal_name: Mapped[str | None] = mapped_column(Text)
+    cage_code: Mapped[str | None] = mapped_column(Text)
+    registration_status: Mapped[str | None] = mapped_column(Text)
+    expiration_date: Mapped[date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'sam_entity_api'"))
+    refreshed_at: Mapped[datetime] = mapped_column(_ts(), nullable=False)
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+    last_expiry_alert_at: Mapped[datetime | None] = mapped_column(_ts())
+
+
+class OutcomeSuggestion(TimestampMixin, Base):
+    """An award record that may settle a submitted bid; a person confirms it (ADR-073)."""
+
+    __tablename__ = "outcome_suggestions"
+    __table_args__ = (
+        UniqueConstraint("opportunity_id", "source", "source_ref", name="uq_outcome_suggestions_source"),
+        CheckConstraint("source IN ('sam_award_notice','usaspending')", name="ck_outcome_suggestions_source"),
+        CheckConstraint("strength IN ('strong','possible')", name="ck_outcome_suggestions_strength"),
+        CheckConstraint("suggested_outcome IS NULL OR suggested_outcome IN ('won','lost')",
+                        name="ck_outcome_suggestions_outcome"),
+        CheckConstraint("status IN ('suggested','confirmed','dismissed')", name="ck_outcome_suggestions_status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    source_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    strength: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_outcome: Mapped[str | None] = mapped_column(Text)
+    matched_identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    awardee_name: Mapped[str | None] = mapped_column(Text)
+    awardee_uei: Mapped[str | None] = mapped_column(Text)
+    award_amount: Mapped[Decimal | None] = mapped_column(Numeric)
+    award_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'suggested'"))
+    decided_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime | None] = mapped_column(_ts())
+
+
+class AnalyticsSnapshot(CreatedAtMixin, Base):
+    """A scheduled refresh of outcome analytics, with what it counted (ADR-074)."""
+
+    __tablename__ = "analytics_snapshots"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    outcome_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    won: Mapped[int] = mapped_column(Integer, nullable=False)
+    lost: Mapped[int] = mapped_column(Integer, nullable=False)
+    no_bid: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class AppSetting(TimestampMixin, Base):
+    """An owner-editable workflow setting, changed on the web Settings page (ADR-067)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
 
 
 UPDATED_AT_TABLES: tuple[str, ...] = tuple(

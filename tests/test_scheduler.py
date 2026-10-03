@@ -76,7 +76,8 @@ class TestChainDefinitions:
 
     def test_morning_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["morning_ingest"]
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"]
+        # ADR-069: ranking and controlled auto-pursue run between matching and alerts.
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"]
 
     def test_usaspending_steps(self):
         chain = CHAIN_DEFINITIONS["usaspending"]
@@ -93,7 +94,7 @@ class TestChainDefinitions:
 
     def test_evening_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["evening_ingest"]
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"]
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"]
 
     def test_sunday_sweep_steps(self):
         chain = CHAIN_DEFINITIONS["sunday_sweep"]
@@ -591,7 +592,7 @@ class TestSoftIngestSteps:
             return step
 
         patched = dict(_STEP_FUNCTIONS)
-        for name in ("sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"):
+        for name in ("sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"):
             patched[name] = overrides.get(name) or make(name)
         return patched, make
 
@@ -601,7 +602,7 @@ class TestSoftIngestSteps:
         patched["sam_ingest"] = make("sam_ingest", "failed", "SAM HTTP 503")
         with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
             result = run_chain("morning_ingest", _settings(), trigger="test_soft")
-        assert calls == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"]
+        assert calls == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"]
         assert result.status == "completed_with_errors"
         assert not result.failed
         assert "match" in result.steps_completed and "alerts" in result.steps_completed

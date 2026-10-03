@@ -86,6 +86,8 @@ def reopen_review(
             assignment.status = "reopened"
             assignment.reopened_at = now
             assignment.completed_at = None
+            assignment.last_reminded_at = None
+            assignment.escalated_at = None
             reopened_ids.append(assignment.id)
             notify(
                 session,
@@ -260,6 +262,12 @@ def apply_source_change(
     """
     result = {"review_reopened": False, "proposal_invalidated": False, "readiness_invalidated": False, "pursuit_rolled_back": False}
     if level == "material":
+        # In-flight generation served the approval being reopened; its late
+        # result would be refused anyway, so stop it now (audited per task).
+        from govcon.tasks.queue import cancel_active
+
+        cancel_active(session, opportunity_id=opportunity_id, task_types=("proposal_generation",),
+                      reason=f"source changed: {reason}")
         result["review_reopened"] = reopen_review(session, opportunity_id, reason=reason, actor_id=actor_id)
         result["proposal_invalidated"] = invalidate_proposal_approval(session, opportunity_id, reason=reason, actor_id=actor_id)
         result["readiness_invalidated"] = invalidate_submission_readiness(session, opportunity_id, reason=reason, actor_id=actor_id)

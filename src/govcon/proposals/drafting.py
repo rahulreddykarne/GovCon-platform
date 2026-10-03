@@ -20,7 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
+from govcon.ai.structured import (
+    PreparedCall,
+    StructuredCallError,
+    StructuredCallResult,
+    prepare_structured_call,
+    run_structured_prompt,
+)
 from govcon.compliance.matrix import active_requirements
 from govcon.config import Settings, get_settings
 from govcon.models import (
@@ -154,6 +160,38 @@ def draft_proposal(
     Returns the validated ``ProposalDraftV1`` dict. Raises ``StructuredCallError``
     when the AI is unavailable or returns malformed output (fails closed).
     """
+    request = _draft_request(
+        session, opportunity_id=opportunity_id, sections_requested=sections_requested,
+        company_facts=company_facts, settings=settings,
+    )
+    return draft_output(run_structured_prompt(session, **request))
+
+
+def prepare_draft_call(
+    session: Session,
+    *,
+    opportunity_id: int,
+    sections_requested: list[str] | None = None,
+    company_facts: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> PreparedCall:
+    """Resolve the drafting call in a transaction; workers execute it later without one."""
+    request = _draft_request(
+        session, opportunity_id=opportunity_id, sections_requested=sections_requested,
+        company_facts=company_facts, settings=settings,
+    )
+    return prepare_structured_call(session, **request)
+
+
+def _draft_request(
+    session: Session,
+    *,
+    opportunity_id: int,
+    sections_requested: list[str] | None,
+    company_facts: dict[str, Any] | None,
+    settings: Settings | None,
+) -> dict[str, Any]:
+    """Keyword arguments for the drafting structured call."""
     settings = settings or get_settings()
 
     opp = session.get(Opportunity, opportunity_id)
@@ -172,14 +210,11 @@ def draft_proposal(
     sections_label = ", ".join(sections)
 
     company_facts_data = company_facts
-    if company_facts_data is None and settings.company_facts_path:
-        import pathlib, json as _json
-        p = pathlib.Path(settings.company_facts_path)
-        if p.exists():
-            try:
-                company_facts_data = _json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+    if company_facts_data is None:
+        from govcon.compliance.pipeline import load_company_facts
+
+        # The same facts compliance uses: SAM registration overlaid, stale values unknown.
+        company_facts_data = load_company_facts(settings, session) or None
 
     variables = {
         "REQUIREMENTS_JSON": _build_requirements_json(requirements),
@@ -193,17 +228,19 @@ def draft_proposal(
         "requirement_count": len(requirements),
     }
 
-    result = run_structured_prompt(
-        session,
-        classification=DataClassification.PROPRIETARY,
-        opportunity_id=opportunity_id,
-        prompt_name=DRAFTING_PROMPT,
-        analysis_type=AnalysisType.PROPOSAL_DRAFTING,
-        variables=variables,
-        context_manifest=context_manifest,
-        settings=settings,
-    )
+    return {
+        "classification": DataClassification.PROPRIETARY,
+        "opportunity_id": opportunity_id,
+        "prompt_name": DRAFTING_PROMPT,
+        "analysis_type": AnalysisType.PROPOSAL_DRAFTING,
+        "variables": variables,
+        "context_manifest": context_manifest,
+        "settings": settings,
+    }
 
+
+def draft_output(result: StructuredCallResult) -> dict[str, Any]:
+    """The draft dict ``generate_proposal`` consumes, from a persisted drafting call."""
     output = result.output.model_dump()
     output["provider"] = result.analysis.provider
     output["model"] = result.analysis.model

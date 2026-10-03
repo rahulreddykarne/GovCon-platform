@@ -1,0 +1,25 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FINAL-full-pytest.log",
+    "tests": "1272",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "1",
+    "time": "285.471"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": [],
+  "typecheck": {
+    "exit_code": 1,
+    "log": "FINAL-full-typecheck.log"
+  },
+  "lint": {
+    "exit_code": 1,
+    "log": "FINAL-full-lint.log"
+  },
+  "build": {
+    "exit_code": 0,
+    "log": "FINAL-full-build.log"
+  }
+}

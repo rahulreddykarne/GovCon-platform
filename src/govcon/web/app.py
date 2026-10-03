@@ -57,10 +57,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         login_post,
         logout_post,
         notifications,
+        notification_acknowledge,
         notification_read,
         opp_detail,
         opp_start_workspace,
         ops,
+        workspace_outcome_suggestion,
+        ai_sharing_save,
+        suppliers_page,
+        suppliers_save,
+        workspace_add_quote,
+        workspace_pursuit_facts,
+        workspace_draft_rfq,
+        settings_page,
+        settings_save,
+        workspace_prepare,
+        ops_task_action,
         pipeline,
         search,
         vendors,
@@ -77,6 +89,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         workspace_comment,
         workspace_complete_review,
         workspace_proposal_approve,
+        workspace_proposal_retry,
+        workspace_proposal_status,
         workspace_record_outcome,
         workspace_run_analysis,
         workspace_submission_approve,
@@ -92,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/inbox/action", inbox_action, methods=["POST"])
     app.add_api_route("/notifications", notifications, methods=["GET"])
     app.add_api_route("/notifications/{notification_id}/read", notification_read, methods=["POST"])
+    app.add_api_route("/notifications/{notification_id}/acknowledge", notification_acknowledge, methods=["POST"])
 
     # Search
     app.add_api_route("/search", search, methods=["GET"])
@@ -107,6 +122,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/workspace/{opp_id}/complete-review",    workspace_complete_review,  methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/approve",            workspace_approve,          methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/proposal/approve",   workspace_proposal_approve, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/proposal/retry",     workspace_proposal_retry,   methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/proposal/status",    workspace_proposal_status,  methods=["GET"])
     app.add_api_route("/workspace/{opp_id}/submission/approve", workspace_submission_approve,methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/record-outcome",     workspace_record_outcome,   methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/analyze/{kind}",     workspace_run_analysis,     methods=["POST"])
@@ -128,6 +145,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Ops
     app.add_api_route("/ops", ops, methods=["GET"])
+    app.add_api_route("/settings", settings_page, methods=["GET"])
+    app.add_api_route("/workspace/{opp_id}/outcome-suggestions/{suggestion_id}/{action}",
+                      workspace_outcome_suggestion, methods=["POST"])
+    app.add_api_route("/settings", settings_save, methods=["POST"])
+    app.add_api_route("/settings/ai-sharing", ai_sharing_save, methods=["POST"])
+    app.add_api_route("/suppliers", suppliers_page, methods=["GET"])
+    app.add_api_route("/suppliers", suppliers_save, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/quotes", workspace_add_quote, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/pursuit-facts", workspace_pursuit_facts, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/rfq", workspace_draft_rfq, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/prepare", workspace_prepare, methods=["POST"])
+    app.add_api_route("/ops/tasks/{task_id}/{action}", ops_task_action, methods=["POST"])
 
     # Learning
     app.add_api_route("/learning", learning, methods=["GET"])

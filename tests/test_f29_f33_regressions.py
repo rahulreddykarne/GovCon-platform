@@ -31,6 +31,8 @@ def opportunity(db):
 
 
 def settings(**kwargs):
+    # These tests exercise the whole per-opportunity cap; the proposal share has its own tests.
+    kwargs.setdefault("ai_proposal_budget_share", 0)
     return Settings(_env_file=None, **kwargs)
 
 
@@ -199,22 +201,47 @@ def test_f30_cost_cap_requires_verified_rate_before_call(db, monkeypatch):
     assert not calls
 
 
+def _two_large_files(db, opp):
+    for index in range(2):
+        db.add(StoredFile(opportunity_id=opp.id, filename=f"{index}.txt", extracted_text=f"source{index} " * 5000,
+            extraction_status="success", classification="PUBLIC", source_origin="synthetic", active=True))
+    db.flush()
+
+
 def test_f30_multifile_summary_never_sends_oversize_combined_context(db, monkeypatch):
+    """Gap 3 (ADR-066): the whole set is analysed in parts, each within the per-call limit."""
+    from govcon.ai.budget import input_bound
     from govcon.enrich.summarize import run_solicitation_analysis
     configured = settings()
     setup_prompt(db, configured)
     opp = opportunity(db)
-    for index in range(2):
-        db.add(StoredFile(opportunity_id=opp.id, filename=f"{index}.txt", extracted_text="source " * 5000,
-            extraction_status="success", classification="PUBLIC", source_origin="synthetic", active=True))
-    db.flush()
+    _two_large_files(db, opp)
     calls = provider(monkeypatch)
     analysis = run_solicitation_analysis(db, opp, settings=configured)
-    assert analysis.context_manifest["omitted_sources"] and analysis.context_manifest["warnings"]
-    assert analysis.output_json["missing_information"]
-    assert len(calls) == 1
+    coverage = analysis.context_manifest["coverage"]
+    assert len(calls) == coverage["parts"] == coverage["parts_sent"] > 1
+    assert coverage["chunks_sent"] == coverage["chunks_total"] and coverage["gaps"] == []
+    assert not analysis.context_manifest["omitted_sources"] and not analysis.context_manifest["warnings"]
+    assert all(input_bound(c["system_prompt"], c["user_prompt"]) <= configured.ai_max_input_tokens_per_call for c in calls)
+    sent = "".join(c["user_prompt"] for c in calls)
+    assert "source0 " in sent and "source1 " in sent, "every file reaches the model"
+
+
+def test_f30_exhausted_opportunity_budget_lists_the_unread_pages(db, monkeypatch):
     from govcon.ai.budget import input_bound
-    assert input_bound(calls[0]["system_prompt"], calls[0]["user_prompt"]) <= configured.ai_max_input_tokens_per_call
+    from govcon.enrich.summarize import run_solicitation_analysis
+    configured = settings(ai_max_input_tokens_per_opportunity=30_000)
+    setup_prompt(db, configured)
+    opp = opportunity(db)
+    _two_large_files(db, opp)
+    calls = provider(monkeypatch, usage={})  # unreported usage keeps the full reservation
+    analysis = run_solicitation_analysis(db, opp, settings=configured)
+    coverage = analysis.context_manifest["coverage"]
+    assert 0 < coverage["parts_sent"] < coverage["parts"] and coverage["chunks_sent"] < coverage["chunks_total"]
+    assert coverage["gaps"] and all(g["reason"] == "budget_exhausted" for g in coverage["gaps"])
+    assert analysis.context_manifest["warnings"][0]["code"] == "context_truncated"
+    assert any("Not analysed" in m["reason"] for m in analysis.output_json["missing_information"])
+    assert all(input_bound(c["system_prompt"], c["user_prompt"]) <= configured.ai_max_input_tokens_per_call for c in calls)
 
 
 @pytest.mark.parametrize("classification", [DataClassification.PROPRIETARY, DataClassification.FCI, DataClassification.CUI])

@@ -1,0 +1,450 @@
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+_______ test_surplus_fields_are_skipped_without_losing_valid_rows[web] ________
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_utils.py", line 107, in create_collapsing_task_group
+  |     async with anyio.create_task_group() as tg:
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 847, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    |     result: TResult | None = func()
+    |                              ^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    |     lambda: runtest_hook(item=item, **kwds),
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    |     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    |     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 167, in _multicall
+    |     raise exception
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 139, in _multicall
+    |     teardown.throw(exception)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\logging.py", line 865, in pytest_runtest_call
+    |     yield
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 139, in _multicall
+    |     teardown.throw(exception)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\capture.py", line 900, in pytest_runtest_call
+    |     return (yield)
+    |             ^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 139, in _multicall
+    |     teardown.throw(exception)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\skipping.py", line 268, in pytest_runtest_call
+    |     return (yield)
+    |             ^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    |     res = hook_impl.function(*args)
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    |     item.runtest()
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    |     self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    |     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    |     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 167, in _multicall
+    |     raise exception
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    |     res = hook_impl.function(*args)
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    |     result = testfunction(**testargs)
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_fv06_catalog_rows.py", line 58, in test_surplus_fields_are_skipped_without_losing_valid_rows
+    |     run, output = import_through(entry, db, client, tmp_path, data + b"BAD,3,unexpected\n")
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_fv06_catalog_rows.py", line 25, in import_through
+    |     response = client.post("/suppliers", data={"name": name}, files={"catalog_file": ("catalog.csv", data, "text/csv")})
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\web_client.py", line 19, in post
+    |     return super().post(url, **kwargs)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1204, in post
+    |     return self.request(
+    |            ^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py", line 463, in request
+    |     return super().request(
+    |            ^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 797, in request
+    |     return self.send(request, auth=auth, follow_redirects=follow_redirects)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 980, in send
+    |     response = self._send_handling_auth(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1008, in _send_handling_auth
+    |     response = self._send_handling_redirects(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1043, in _send_handling_redirects
+    |     response = self._send_single_request(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1076, in _send_single_request
+    |     response = transport.handle_request(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py", line 360, in handle_request
+    |     raise exc
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py", line 357, in handle_request
+    |     portal.call(self.app, scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\anyio\from_thread.py", line 340, in call
+    |     return cast(T_Retval, self.start_task_soon(func, *args).result())
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 456, in result
+    |     return self.__get_result()
+    |            ^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    |     raise self._exception
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\anyio\from_thread.py", line 265, in _call_func
+    |     retval = await retval_or_awaitable
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\applications.py", line 1215, in __call__
+    |     await super().__call__(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\applications.py", line 96, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    |     raise exc
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\telemetry\_asgi.py", line 151, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 197, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\web\app.py", line 44, in bind_settings
+    |     return await call_next(request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 173, in call_next
+    |     raise app_exc from app_exc.__cause__ or app_exc.__context__
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 149, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 197, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\web\security.py", line 98, in csrf_cookie_middleware
+    |     response = await call_next(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 173, in call_next
+    |     raise app_exc from app_exc.__cause__ or app_exc.__context__
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 149, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\routing.py", line 676, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 2786, in app
+    |     await route.handle(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 1310, in handle
+    |     await super().handle(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\routing.py", line 282, in handle
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 165, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 151, in app
+    |     response = await f(request)
+    |                ^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 727, in app
+    |     raw_response = await run_endpoint_function(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 360, in run_endpoint_function
+    |     return await dependant.call(**values)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\web\routes\__init__.py", line 2074, in suppliers_save
+    |     result = import_catalog_csv(db, supplier_id=supplier.id, data=data, filename=upload.filename, actor=actor)
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\sourcing\records.py", line 127, in import_catalog_csv
+    |     row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+    |                                       ^^^^^^^^^^^^^^^
+    | AttributeError: 'list' object has no attribute 'strip'
+    +------------------------------------
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_fv06_catalog_rows.py", line 58, in test_surplus_fields_are_skipped_without_losing_valid_rows
+    run, output = import_through(entry, db, client, tmp_path, data + b"BAD,3,unexpected\n")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\test_fv06_catalog_rows.py", line 25, in import_through
+    response = client.post("/suppliers", data={"name": name}, files={"catalog_file": ("catalog.csv", data, "text/csv")})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\tests\web_client.py", line 19, in post
+    return super().post(url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1204, in post
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py", line 463, in request
+    return super().request(
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 797, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 980, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1008, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1043, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\httpx2\_client.py", line 1076, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py", line 360, in handle_request
+    raise exc
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py", line 357, in handle_request
+    portal.call(self.app, scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\anyio\from_thread.py", line 340, in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\anyio\from_thread.py", line 265, in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\applications.py", line 1215, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\telemetry\_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 197, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\web\app.py", line 44, in bind_settings
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 173, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 149, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 197, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\web\security.py", line 98, in csrf_cookie_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 173, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\base.py", line 149, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 2786, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 1310, in handle
+    await super().handle(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\routing.py", line 282, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 165, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 151, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 727, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\fastapi\routing.py", line 360, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\web\routes\__init__.py", line 2074, in suppliers_save
+    result = import_catalog_csv(db, supplier_id=supplier.id, data=data, filename=upload.filename, actor=actor)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\src\govcon\sourcing\records.py", line 127, in import_catalog_csv
+    row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+                                      ^^^^^^^^^^^^^^^
+AttributeError: 'list' object has no attribute 'strip'
+
+The above exception was the direct cause of the following exception:
+tests\test_fv06_catalog_rows.py:58: in test_surplus_fields_are_skipped_without_losing_valid_rows
+    run, output = import_through(entry, db, client, tmp_path, data + b"BAD,3,unexpected\n")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fv06_catalog_rows.py:25: in import_through
+    response = client.post("/suppliers", data={"name": name}, files={"catalog_file": ("catalog.csv", data, "text/csv")})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\web_client.py:19: in post
+    return super().post(url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx2\_client.py:1204: in post
+    return self.request(
+.venv\Lib\site-packages\starlette\testclient.py:463: in request
+    return super().request(
+.venv\Lib\site-packages\httpx2\_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx2\_client.py:980: in send
+    response = self._send_handling_auth(
+.venv\Lib\site-packages\httpx2\_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv\Lib\site-packages\httpx2\_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx2\_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\starlette\testclient.py:360: in handle_request
+    raise exc
+.venv\Lib\site-packages\starlette\testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv\Lib\site-packages\anyio\from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv\Lib\site-packages\anyio\from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\applications.py:1215: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\fastapi\telemetry\_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\base.py:197: in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\web\app.py:44: in bind_settings
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\starlette\middleware\base.py:173: in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+.venv\Lib\site-packages\starlette\middleware\base.py:149: in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+.venv\Lib\site-packages\starlette\middleware\base.py:197: in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\web\security.py:98: in csrf_cookie_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\starlette\middleware\base.py:173: in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+.venv\Lib\site-packages\starlette\middleware\base.py:149: in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2786: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1310: in handle
+    await super().handle(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:282: in handle
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:727: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:360: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\web\routes\__init__.py:2074: in suppliers_save
+    result = import_catalog_csv(db, supplier_id=supplier.id, data=data, filename=upload.filename, actor=actor)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\sourcing\records.py:127: in import_catalog_csv
+    row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+                                      ^^^^^^^^^^^^^^^
+E   AttributeError: 'list' object has no attribute 'strip'
+---------------------------- Captured stderr setup ----------------------------
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 97cb081e9a8e, foundation schema
+INFO  [alembic.runtime.migration] Running upgrade 97cb081e9a8e -> c3e8a1b74f20, award recompete view
+INFO  [alembic.runtime.migration] Running upgrade c3e8a1b74f20 -> d9a4c1e7b209, phase9 compliance subsystem
+INFO  [alembic.runtime.migration] Running upgrade d9a4c1e7b209 -> a1b2c3d4e5f6, phase11 proposal submission
+INFO  [alembic.runtime.migration] Running upgrade a1b2c3d4e5f6 -> f2a3b4c5d6e7, Phase 13 — semantic search: watchlist embeddings + HNSW vector index
+INFO  [alembic.runtime.migration] Running upgrade f2a3b4c5d6e7 -> b5c6d7e8f9a0, phase15 outcome learning — structured outcome fields
+INFO  [alembic.runtime.migration] Running upgrade b5c6d7e8f9a0 -> b1c2d3e4f5a6, Phase 17 — Scheduler job runs tracking table.
+INFO  [alembic.runtime.migration] Running upgrade b1c2d3e4f5a6 -> c7d8e9f0a1b2, Workflow gate hardening — pin the approved proposal version.
+INFO  [alembic.runtime.migration] Running upgrade c7d8e9f0a1b2 -> d8e9f0a1b2c3, Attachment versions — current-snapshot membership for stored files.
+INFO  [alembic.runtime.migration] Running upgrade d8e9f0a1b2c3 -> e9f0a1b2c3d4, Match reconciliation and stored NSN candidates.
+INFO  [alembic.runtime.migration] Running upgrade e9f0a1b2c3d4 -> f0a1b2c3d4e5, DIBBS response deadlines: 3:00 PM Eastern on the business-day return date.
+INFO  [alembic.runtime.migration] Running upgrade f0a1b2c3d4e5 -> 01a2b3c4d5e6, Unique current outcomes/submissions, immutable history and embedding provenance.
+INFO  [alembic.runtime.migration] Running upgrade 01a2b3c4d5e6 -> 7f4d81a9c630, Durable AI budgets and explicit source-document classification.
+INFO  [alembic.runtime.migration] Running upgrade 7f4d81a9c630 -> a7b8c9d0e1f2, Durable background tasks (ADR-061).
+INFO  [alembic.runtime.migration] Running upgrade a7b8c9d0e1f2 -> b8c9d0e1f2a3, Page-level text and OCR tracking for stored files (ADR-065).
+INFO  [alembic.runtime.migration] Running upgrade b8c9d0e1f2a3 -> c9d0e1f2a3b4, Opportunity preparation tasks and owner-editable workflow settings (ADR-067).
+INFO  [alembic.runtime.migration] Running upgrade c9d0e1f2a3b4 -> d0e1f2a3b4c5, Recommendations, explainable ranking, email delivery and review escalation (ADR-068..070).
+INFO  [alembic.runtime.migration] Running upgrade d0e1f2a3b4c5 -> e1f2a3b4c5d6, Sourcing records and company registration refresh (ADR-071, ADR-072).
+INFO  [alembic.runtime.migration] Running upgrade e1f2a3b4c5d6 -> a3b4c5d6e7f8, Award-match outcome suggestions and analytics snapshots (ADR-073, ADR-074).
+_______ test_surplus_fields_are_skipped_without_losing_valid_rows[cli] ________
+tests\test_fv06_catalog_rows.py:58: in test_surplus_fields_are_skipped_without_losing_valid_rows
+    run, output = import_through(entry, db, client, tmp_path, data + b"BAD,3,unexpected\n")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fv06_catalog_rows.py:33: in import_through
+    assert result.exit_code == 0, result.output
+E   AssertionError: 
+E   assert 1 == 0
+E    +  where 1 = <Result AttributeError("'list' object has no attribute 'strip'")>.exit_code
+_____ test_surplus_fields_are_skipped_without_losing_valid_rows[service] ______
+tests\test_fv06_catalog_rows.py:58: in test_surplus_fields_are_skipped_without_losing_valid_rows
+    run, output = import_through(entry, db, client, tmp_path, data + b"BAD,3,unexpected\n")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fv06_catalog_rows.py:37: in import_through
+    result = import_catalog_csv(db, supplier_id=supplier.id, data=data, filename="catalog.csv", actor=actor)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\sourcing\records.py:127: in import_catalog_csv
+    row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+                                      ^^^^^^^^^^^^^^^
+E   AttributeError: 'list' object has no attribute 'strip'
+============================== warnings summary ===============================
+tests/test_fv06_catalog_rows.py::test_surplus_fields_are_skipped_without_losing_valid_rows[web]
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

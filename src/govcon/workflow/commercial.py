@@ -10,18 +10,19 @@ from govcon.audit import record_audit
 from govcon.collaboration.users import require_permission
 from govcon.concurrency import apply_versioned_update
 from govcon.models import Opportunity, Proposal, Pursuit, ReviewSession, Submission, User
-from govcon.workflow.invalidation import apply_source_change, lock_one
+from govcon.workflow.invalidation import apply_source_change, lock_one, lock_opportunity
 
 COMMERCIAL_FIELDS = frozenset({"quote_price", "sourcing_cost", "supplier", "notes"})
 LOCKED_STAGES = frozenset({"submitted", "won", "lost", "cancelled", "no_bid"})
 
 
-def validated_commercial_changes(changes: dict[str, Any]) -> dict[str, Any]:
+def validated_commercial_changes(changes: dict[str, Any], *, allow_clear: bool = False) -> dict[str, Any]:
+    """Checked values; with ``allow_clear`` a ``None`` value clears that field."""
     if not changes or set(changes) - COMMERCIAL_FIELDS:
         raise ValueError("provide only quote_price, sourcing_cost, supplier, or notes")
     result = dict(changes)
     for field in ("quote_price", "sourcing_cost"):
-        if field in result:
+        if field in result and not (allow_clear and result[field] is None):
             try:
                 value = Decimal(str(result[field]))
             except (InvalidOperation, ValueError) as exc:
@@ -30,9 +31,46 @@ def validated_commercial_changes(changes: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"{field} must be finite and nonnegative")
             result[field] = value
     for field in ("supplier", "notes"):
-        if field in result and not isinstance(result[field], str):
+        if field in result and not (allow_clear and result[field] is None) and not isinstance(result[field], str):
             raise ValueError(f"{field} must be text")
     return result
+
+
+def update_commercial_facts(
+    session: Session, opportunity_id: int, *, actor: User, expected_version: int,
+    changes: dict[str, Any], via: str,
+) -> tuple[Pursuit, bool]:
+    """Edit a pursuit's pre-submission commercial facts; returns ``(pursuit, changed)``.
+
+    Same rules as MCP ``update_pursuit``: the opportunity lock first, the
+    version the editor saw, no edits after submission (an approver records an
+    append-only correction instead), an audit row, and dependent review,
+    proposal and submission decisions revoked. ``None`` clears a field.
+    """
+    require_permission(actor, "review")
+    changes = validated_commercial_changes(changes, allow_clear=True)
+    if lock_opportunity(session, opportunity_id) is None:
+        raise ValueError("opportunity not found")
+    pursuit = lock_one(session, select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
+    if pursuit is None:
+        raise ValueError("start a pursuit for this opportunity before recording its commercial facts")
+    if pursuit.version != expected_version:
+        raise ValueError("the pursuit changed since this page was loaded; reload it and enter the values again")
+    if pursuit.stage in LOCKED_STAGES:
+        raise ValueError("commercial facts are locked once the bid is submitted or closed; an approver must "
+                         "record an append-only correction instead")
+    changes = {key: value for key, value in changes.items() if getattr(pursuit, key) != value}
+    if not changes:
+        return pursuit, False
+    previous = apply_versioned_update(session, pursuit, expected_version, changes)
+    record_audit(
+        session, action_type="pursuit_updated", user_id=actor.id, opportunity_id=opportunity_id,
+        entity_type="pursuits", entity_id=pursuit.id,
+        old_value={k: (str(v) if isinstance(v, Decimal) else v) for k, v in previous.items()},
+        new_value={**{k: (str(v) if isinstance(v, Decimal) else v) for k, v in changes.items()}, "via": via},
+    )
+    invalidate_commercial_decisions(session, opportunity_id, actor=actor)
+    return pursuit, True
 
 
 def invalidate_commercial_decisions(session: Session, opportunity_id: int, *, actor: User) -> None:

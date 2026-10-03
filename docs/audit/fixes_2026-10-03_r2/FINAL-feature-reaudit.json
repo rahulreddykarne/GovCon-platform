@@ -1,0 +1,30 @@
+{
+  "pytest": {
+    "exit_code": 1,
+    "log": "FINAL-feature-reaudit-pytest.log",
+    "tests": "842",
+    "failures": "14",
+    "errors": "0",
+    "skipped": "0",
+    "time": "241.563"
+  },
+  "baseline_regressions": [
+    [
+      "tests.test_f29_f33_regressions",
+      "test_f30_dollar_reservation_and_unknown_usage"
+    ],
+    [
+      "tests.test_f29_f33_regressions",
+      "test_f30_invalid_json_retry_is_charged"
+    ],
+    [
+      "tests.test_f29_f33_regressions",
+      "test_f30_repeated_calls_and_rollback_cannot_reset_budget"
+    ],
+    [
+      "tests.test_f29_f33_regressions",
+      "test_f30_simultaneous_reservations_are_atomic"
+    ]
+  ],
+  "missing_baseline_tests": []
+}

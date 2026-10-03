@@ -1,0 +1,36 @@
+<!-- Award-match outcome suggestions (ADR-073) -->
+{% if outcome_suggestions %}
+<div class="card" id="outcome-suggestions" style="margin-top:1rem;">
+  <div class="card-header">
+    <span class="card-title">Possible award records</span>
+    <span class="text-muted" style="font-size:12px;">Suggestions only — a person confirms the outcome. Missing award data never means a loss.</span>
+  </div>
+  {% for s in outcome_suggestions %}
+  <div style="border-top:1px solid var(--color-border); padding:0.5rem 0;">
+    <strong>{{ 'Strong match' if s.strength == 'strong' else 'Possible match' }}</strong>
+    from {{ 'a SAM award notice' if s.source == 'sam_award_notice' else 'USAspending' }}
+    ({{ s.source_ref }}){% if s.suggested_outcome %} — suggests <strong>{{ s.suggested_outcome }}</strong>{% endif %}.
+    <div class="text-sm">Awardee: {{ s.awardee_name or 'not stated' }}{% if s.awardee_uei %} (UEI {{ s.awardee_uei }}){% endif %};
+      amount {% if s.award_amount is not none %}${{ '{:,.2f}'.format(s.award_amount) }}{% else %}not stated{% endif %};
+      date {{ s.award_date or 'not stated' }}.</div>
+    <div class="text-sm text-muted">Matched on: {% for k, v in s.matched_identifiers.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    {% if can_approve and s.status == 'suggested' %}
+    <div class="d-flex gap-1">
+      {% if s.suggested_outcome %}
+      <form method="post" action="/workspace/{{ opp.id }}/outcome-suggestions/{{ s.id }}/confirm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button type="submit" class="btn btn-sm btn-primary">Confirm: record {{ s.suggested_outcome }}</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/workspace/{{ opp.id }}/outcome-suggestions/{{ s.id }}/dismiss">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button type="submit" class="btn btn-sm btn-secondary">Not this award</button>
+      </form>
+    </div>
+    {% elif s.status != 'suggested' %}
+    <div class="text-sm text-muted">{{ s.status|capitalize }}.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

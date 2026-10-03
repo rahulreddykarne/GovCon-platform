@@ -1,0 +1,13 @@
+{
+  "xlsx_http_status": 303,
+  "manual_http_status": 303,
+  "methods": [
+    "xlsx",
+    "manual"
+  ],
+  "totals": [
+    "1000",
+    "1200.50"
+  ],
+  "xlsx_lines": 1
+}

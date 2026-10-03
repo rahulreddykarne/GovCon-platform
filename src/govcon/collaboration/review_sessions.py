@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import desc, func, select
@@ -399,7 +399,7 @@ def approval_context(session: Session, *, opportunity_id: int) -> dict[str, Any]
         "override_reason": review.override_reason,
         "ai_jev_disagreements": list(ai_cons.get("disagreements_with_ai_package") or []),
         "open_risks": open_risks,
-        "decision_package_stale": _package_is_stale(session, review),
+        "decision_package_stale": decision_package_is_stale(session, review),
         "version": review.version,
     }
 
@@ -469,7 +469,39 @@ def finalize_approval(
                 "the AI decision package was built from a superseded source revision; "
                 "regenerate it before approving"
             )
-        if not quorum.quorum_satisfied:
+        exception = (
+            not quorum.quorum_satisfied
+            and _deadline_exception_applies(session, opportunity_id, quorum, settings, now)
+        )
+        if exception:
+            # Roadmap Q5 / ADR-070: one completed review may approve near the
+            # deadline, under the owner's explicit setting, with a reason.
+            if not override_reason or len(override_reason.strip()) < 10:
+                raise ReviewWorkflowError(
+                    "the deadline exception allows approval with one completed review, "
+                    "but the approver must give a reason of at least 10 characters"
+                )
+            override_fields = {
+                "override_used": True,
+                "override_by_user_id": actor.id,
+                "override_reason": f"Deadline exception (one review): {override_reason.strip()}",
+                "override_at": now,
+            }
+            record_audit(
+                session,
+                action_type="review_deadline_exception",
+                user_id=actor.id,
+                opportunity_id=opportunity_id,
+                entity_type="review_sessions",
+                entity_id=review.id,
+                new_value={
+                    "reason": override_reason.strip(),
+                    "completed_review_count": quorum.completed_review_count,
+                    "required_review_count": quorum.required_review_count,
+                    "short_deadline_days": settings.review_short_deadline_days,
+                },
+            )
+        elif not quorum.quorum_satisfied:
             if not settings.review_override_allowed:
                 raise ReviewWorkflowError(
                     "review override is disabled by policy; quorum must be satisfied"
@@ -536,6 +568,11 @@ def finalize_approval(
         },
     )
     session.flush()
+    if action == "approve_to_bid":
+        # The approval and the generation it implies commit together (ADR-062).
+        from govcon.workflow.proposal_generation import queue_proposal_generation
+
+        queue_proposal_generation(session, opportunity_id=opportunity_id, actor_user_id=actor.id)
     return review
 
 
@@ -597,7 +634,27 @@ def review_workspace(
     }
 
 
-def _package_is_stale(session: Session, review: ReviewSession) -> bool:
+def _deadline_exception_applies(
+    session: Session, opportunity_id: int, quorum: QuorumState, settings: Any, now: datetime
+) -> bool:
+    """Whether the owner-enabled single-reviewer deadline exception covers this approval.
+
+    It needs at least one completed review and a response deadline that has
+    not passed and falls within ``REVIEW_SHORT_DEADLINE_DAYS``.
+    """
+    from govcon.workflow.app_settings import DEADLINE_EXCEPTION, get_setting
+
+    if quorum.completed_review_count < 1 or not get_setting(session, DEADLINE_EXCEPTION)["enabled"]:
+        return False
+    opportunity = session.get(Opportunity, opportunity_id)
+    deadline = opportunity.response_deadline if opportunity is not None else None
+    if deadline is None:
+        return False
+    return now < deadline <= now + timedelta(days=settings.review_short_deadline_days)
+
+
+def decision_package_is_stale(session: Session, review: ReviewSession) -> bool:
+    """Whether the review's AI decision package was built from a superseded source revision."""
     package = _decision_package(session, review=review)
     if package is None:
         return False
@@ -925,9 +982,11 @@ def _sync_pursuit_stage(
     lock_opportunity(session, opportunity_id)
     pursuit = lock_one(session, select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
     if pursuit is None:
-        pursuit = Pursuit(opportunity_id=opportunity_id, stage="evaluating")
-        session.add(pursuit)
-        session.flush()
+        from govcon.workflow.pursuits import create_or_get_pursuit
+
+        actor = session.get(User, actor_id) if actor_id else None
+        pursuit, _ = create_or_get_pursuit(session, opportunity_id=opportunity_id, actor=actor, origin="approval")
+        pursuit = lock_one(session, select(Pursuit).where(Pursuit.id == pursuit.id))
     old_stage = pursuit.stage
     if old_stage != target:
         try:

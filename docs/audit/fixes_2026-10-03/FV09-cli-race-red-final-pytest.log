@@ -1,0 +1,103 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+__ test_concurrent_cli_upload_with_new_supplier_keeps_one_supplier_and_quote __
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1943: in _exec_single_context
+    self.dialect.do_execute(
+.venv\Lib\site-packages\sqlalchemy\engine\default.py:1192: in do_execute
+    cursor.execute(statement, parameters)
+.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.UniqueViolation: duplicate key value violates unique constraint "uq_suppliers_name"
+E   DETAIL:  Key (lower(name))=(new-concurrent-supplier-7ea264b29813422794106dcf1f887f39) already exists.
+
+The above exception was the direct cause of the following exception:
+tests\test_fv09_quote_repeats.py:146: in test_concurrent_cli_upload_with_new_supplier_keeps_one_supplier_and_quote
+    future.result(timeout=30)
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fv09_quote_repeats.py:140: in upload
+    cli.sourcing_add_quote(opportunity_id=opportunity_id, supplier=name, file=path,
+src\govcon\cli.py:3357: in sourcing_add_quote
+    row, _ = get_or_create_supplier(session, name=supplier, actor=actor, provenance=f"CLI quote by {actor.email}")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_fv09_quote_repeats.py:130: in slow_new_supplier
+    result = original_supplier(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\sourcing\records.py:87: in get_or_create_supplier
+    session.flush()
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4536: in flush
+    self._flush(objects)
+<sqlalchemy generated warned() wrapper for sqlalchemy.orm.session.Session._flush>:2: in _flush
+    return target(fn, self, objects=objects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\util\deprecations.py:281: in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4679: in _flush
+    with util.safe_reraise():
+         ^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:166: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4640: in _flush
+    flush_context.execute()
+.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:467: in execute
+    rec.execute(self)
+.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:643: in execute
+    util.preloaded.orm_persistence._save_obj(
+.venv\Lib\site-packages\sqlalchemy\orm\persistence.py:92: in _save_obj
+    _emit_insert_statements(
+.venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1237: in _emit_insert_statements
+    result = connection.execute(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1448: in execute
+    return meth(
+.venv\Lib\site-packages\sqlalchemy\sql\elements.py:533: in _execute_on_connection
+    return connection._execute_clauseelement(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1668: in _execute_clauseelement
+    ret = self._execute_context(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1822: in _execute_context
+    return self._exec_single_context(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1962: in _exec_single_context
+    self._handle_dbapi_exception(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:2332: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1943: in _exec_single_context
+    self.dialect.do_execute(
+.venv\Lib\site-packages\sqlalchemy\engine\default.py:1192: in do_execute
+    cursor.execute(statement, parameters)
+.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.IntegrityError: (psycopg.errors.UniqueViolation) duplicate key value violates unique constraint "uq_suppliers_name"
+E   DETAIL:  Key (lower(name))=(new-concurrent-supplier-7ea264b29813422794106dcf1f887f39) already exists.
+E   [SQL: INSERT INTO suppliers (name, uei, cage_code, contact_name, contact_email, phone, notes, provenance, created_by_user_id) VALUES (%(name)s::VARCHAR, %(uei)s::VARCHAR, %(cage_code)s::VARCHAR, %(contact_name)s::VARCHAR, %(contact_email)s::VARCHAR, %(phone)s::VARCHAR, %(notes)s::VARCHAR, %(provenance)s::VARCHAR, %(created_by_user_id)s::BIGINT) RETURNING suppliers.id, suppliers.created_at, suppliers.updated_at]
+E   [parameters: {'name': 'new-concurrent-supplier-7ea264b29813422794106dcf1f887f39', 'uei': None, 'cage_code': None, 'contact_name': None, 'contact_email': None, 'phone': None, 'notes': None, 'provenance': 'CLI quote by src-reviewer-e06993993ccf4ce38b28c409f54e1afb@example.test', 'created_by_user_id': 1}]
+E   (Background on this error at: https://sqlalche.me/e/21/gkpj)
+---------------------------- Captured stderr setup ----------------------------
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 97cb081e9a8e, foundation schema
+INFO  [alembic.runtime.migration] Running upgrade 97cb081e9a8e -> c3e8a1b74f20, award recompete view
+INFO  [alembic.runtime.migration] Running upgrade c3e8a1b74f20 -> d9a4c1e7b209, phase9 compliance subsystem
+INFO  [alembic.runtime.migration] Running upgrade d9a4c1e7b209 -> a1b2c3d4e5f6, phase11 proposal submission
+INFO  [alembic.runtime.migration] Running upgrade a1b2c3d4e5f6 -> f2a3b4c5d6e7, Phase 13 — semantic search: watchlist embeddings + HNSW vector index
+INFO  [alembic.runtime.migration] Running upgrade f2a3b4c5d6e7 -> b5c6d7e8f9a0, phase15 outcome learning — structured outcome fields
+INFO  [alembic.runtime.migration] Running upgrade b5c6d7e8f9a0 -> b1c2d3e4f5a6, Phase 17 — Scheduler job runs tracking table.
+INFO  [alembic.runtime.migration] Running upgrade b1c2d3e4f5a6 -> c7d8e9f0a1b2, Workflow gate hardening — pin the approved proposal version.
+INFO  [alembic.runtime.migration] Running upgrade c7d8e9f0a1b2 -> d8e9f0a1b2c3, Attachment versions — current-snapshot membership for stored files.
+INFO  [alembic.runtime.migration] Running upgrade d8e9f0a1b2c3 -> e9f0a1b2c3d4, Match reconciliation and stored NSN candidates.
+INFO  [alembic.runtime.migration] Running upgrade e9f0a1b2c3d4 -> f0a1b2c3d4e5, DIBBS response deadlines: 3:00 PM Eastern on the business-day return date.
+INFO  [alembic.runtime.migration] Running upgrade f0a1b2c3d4e5 -> 01a2b3c4d5e6, Unique current outcomes/submissions, immutable history and embedding provenance.
+INFO  [alembic.runtime.migration] Running upgrade 01a2b3c4d5e6 -> 7f4d81a9c630, Durable AI budgets and explicit source-document classification.
+INFO  [alembic.runtime.migration] Running upgrade 7f4d81a9c630 -> a7b8c9d0e1f2, Durable background tasks (ADR-061).
+INFO  [alembic.runtime.migration] Running upgrade a7b8c9d0e1f2 -> b8c9d0e1f2a3, Page-level text and OCR tracking for stored files (ADR-065).
+INFO  [alembic.runtime.migration] Running upgrade b8c9d0e1f2a3 -> c9d0e1f2a3b4, Opportunity preparation tasks and owner-editable workflow settings (ADR-067).
+INFO  [alembic.runtime.migration] Running upgrade c9d0e1f2a3b4 -> d0e1f2a3b4c5, Recommendations, explainable ranking, email delivery and review escalation (ADR-068..070).
+INFO  [alembic.runtime.migration] Running upgrade d0e1f2a3b4c5 -> e1f2a3b4c5d6, Sourcing records and company registration refresh (ADR-071, ADR-072).
+INFO  [alembic.runtime.migration] Running upgrade e1f2a3b4c5d6 -> a3b4c5d6e7f8, Award-match outcome suggestions and analytics snapshots (ADR-073, ADR-074).
+---------------------------- Captured stdout call -----------------------------
+quote_id: 1

@@ -1,5 +1,7 @@
 {% import "workspace/_ai_macros.html" as ai with context %}
 <!-- Products & Suppliers tab -->
+{% include "workspace/_pursuit_facts.html" %}
+{% include "workspace/_quotes.html" %}
 {% if ai_sourcing %}
 <div class="card">
   <div class="card-header">
@@ -22,7 +24,7 @@
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No product/supplier analysis yet. Record a supplier on the pursuit, then
+  <p class="text-muted text-center" style="padding:2rem 0;">No product/supplier analysis yet. Add a supplier quote above (or record a supplier on the pursuit), then
   {{ ai.run_button(opp.id, "supplier", "Run supplier analysis", can_run_analysis) }}</p>
 </div>
 {% endif %}

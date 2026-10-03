@@ -65,7 +65,11 @@ conservative UTF-8 byte bound, and every generative call has an output cap. Tran
 provider retries use the same accounting (`AI_MAX_PROVIDER_RETRIES`, default 2). Set
 `AI_BUDGET_USD_PER_MILLION_TOKENS` to a verified upper rate for all enabled models
 when enabling `AI_MAX_COST_USD_PER_OPPORTUNITY`; a dollar cap without that rate
-refuses calls. Truncated summaries record omitted sources and an incomplete-review
+refuses calls. `AI_PROPOSAL_BUDGET_SHARE` (default 0.25) keeps that share of each
+opportunity's budget for proposal drafting and review; preparation may spend only the
+rest. Budgets are lifetime totals: a task waiting for budget is retried once, then
+waits until the limits are raised (restart the worker) or a person retries it on
+`/ops`. Truncated summaries record omitted sources and an incomplete-review
 warning. Database pools are reused per URL/process and disposed on shutdown.
 
 The authenticated `/notifications` inbox shows only the recipient's records and
@@ -84,7 +88,9 @@ token. Login throttling is bounded per process and client address; deployments
 with multiple workers can also enforce an aggregate limit at their proxy.
 
 Commercial facts on submitted or terminal pursuits are locked. Before submission,
-changes reopen dependent reviews and drafts. Approvers can append corrections to
+reviewers set the quote price, sourcing cost and supplier on the workspace's Products
+& Suppliers or Pricing tab (or with MCP `update_pursuit`); changes reopen dependent
+reviews and drafts. Approvers can append corrections to
 submitted facts with `govcon submission correct-commercial --opportunity-id ID
 --actor-email EMAIL --expected-version VERSION --reason REASON --quote-price VALUE`.
 Corrections retain the original facts and reference the submitted package in the
@@ -150,6 +156,41 @@ USAspending search does not use an API key. The client calls `https://api.usaspe
 | `govcon contacts search --name --agency --email` | Search buyer contacts harvested from opportunities. |
 
 Vendor lookup calls `https://api.sam.gov/entity-information/v3/entities` and requires `SAM_API_KEY`. Cached rows are reused for `SAM_VENDOR_CACHE_HOURS` (default 24). Competitor intelligence reads stored awards only; it does not predict future winners.
+
+## Background worker
+
+Approving a bid queues proposal and submission-package generation as a durable
+task instead of running it inside the web request (ADR-061, ADR-062). Run at
+least one worker beside `govcon web serve`:
+
+| Command | Purpose |
+|---|---|
+| `govcon worker start` | Process queued tasks until Ctrl-C. Several workers can share one database. |
+| `govcon worker run` | Process due tasks, then exit. |
+| `govcon tasks list [--status failed]` | Show tasks with status, attempts, owner and error. |
+| `govcon tasks show ID` | One task with its next action, checkpoint and result. |
+| `govcon tasks retry ID --actor-email` | Re-queue a failed or waiting task (owner/approver). |
+| `govcon tasks cancel ID --actor-email --reason` | Cancel an active task; a worker running it discards its result. |
+
+The Proposal tab shows generation progress, and `/ops` lists failed and waiting
+tasks with an owner and next action. A worker that dies mid-task loses its
+lease after `TASK_LEASE_SECONDS`; another worker resumes the task and the dead
+worker's late result is refused. Attachments are still stored locally, so run
+all workers on the machine that holds `DATA_DIR` for now.
+
+## Automation (roadmap stages 1–5)
+
+| Where | What |
+|---|---|
+| Inbox | Matches are sorted by an explainable 0–100 rank ("Why this rank"). Highly ranked matches whose eligibility or data is uncertain say "Needs eligibility decision". |
+| Workspace → Overview | Automatic preparation: documents (with OCR), summary, compliance, research, decision package and review setup, step by step. "Re-run preparation" queues it again. |
+| Workspace → Products | Supplier quotes (CSV/XLSX read locally; PDFs read by AI only with an owner's authorization) and RFQ drafts, which GovCon never sends. |
+| Workspace → Submission | Award records that may match the submitted bid. An approver confirms or dismisses; missing award data never means a loss. |
+| `/suppliers` | Suppliers and catalog CSV imports. |
+| `/settings` (owner) | Automatic preparation, reviewer assignment, auto-pursue guardrails, the single-reviewer deadline exception, AI reading of supplier quotes, and our SAM registration. |
+| `/ops` | Background tasks, failures with owner and next action, and measured AI usage. |
+
+OCR needs the Tesseract binary (`winget install UB-Mannheim.TesseractOCR` or `apt install tesseract-ocr`); without it, image-only pages stay flagged as unreadable. CLI: `govcon pursuit start|prepare`, `govcon sourcing import-catalog|add-quote|draft-rfq`, `govcon company refresh`. Decisions are in `DECISIONS.md` (ADR-061 to ADR-074) and progress in `docs/AUTOMATION_PROGRESS.md`.
 
 ## Not in this phase
 

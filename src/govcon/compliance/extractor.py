@@ -18,6 +18,7 @@ Every candidate's supporting quote is checked against the cited source text.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -320,6 +321,35 @@ def independence_warnings(
     }]
 
 
+def _batches(chunks: list[dict[str, Any]], byte_budget: int) -> list[list[dict[str, Any]]]:
+    """Order-preserving groups of chunks whose text fits ``byte_budget`` UTF-8 bytes."""
+    batches: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    used = 0
+    for chunk in chunks:
+        size = len(chunk["text"].encode("utf-8")) + 2
+        if current and used + size > byte_budget:
+            batches.append(current)
+            current, used = [], 0
+        current.append(chunk)
+        used += size
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _gaps(chunks: list[dict[str, Any]], inventory: Inventory, reason: str) -> list[dict[str, Any]]:
+    names = {d.file_id: d.filename for d in inventory.documents}
+    gaps: dict[Any, dict[str, Any]] = {}
+    for chunk in chunks:
+        gap = gaps.setdefault(chunk["file_id"], {"file_id": chunk["file_id"], "filename": names.get(chunk["file_id"]),
+                                                 "pages": [], "reason": reason})
+        page = chunk["page"] if chunk["page"] is not None else "document"
+        if page not in gap["pages"]:
+            gap["pages"].append(page)
+    return list(gaps.values())
+
+
 def run_ai_pass(
     session: Session,
     opportunity: Opportunity,
@@ -328,18 +358,25 @@ def run_ai_pass(
     *,
     settings: Settings | None = None,
 ) -> PassOutcome:
+    """Run one extraction pass over the whole document set (ADR-066).
+
+    Chunks are sent in as many calls as the per-call limit needs. If the
+    per-opportunity budget (or the provider) stops the pass part-way, the
+    chunks not sent are recorded as coverage gaps and the pass is
+    ``incomplete``; it is never reported complete.
+    """
     settings = settings or get_settings()
     prompt_name = PASS_PROMPTS[pass_label]
     budget = min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity) // 2
-    chunks = build_context(inventory, pass_label, char_budget=budget)
+    chunks = build_context(inventory, pass_label, char_budget=10**12)
+    batches = _batches(chunks, budget)
     provider_name, model, warnings = _pass_provider(pass_label, opportunity, settings)
-    variables: dict[str, Any] = {
+    base_variables: dict[str, Any] = {
         "DOCUMENT_INVENTORY_JSON": _inventory_json(inventory),
-        "SOURCE_CHUNKS": "\n\n".join(c["text"] for c in chunks),
         "AMENDMENT_JSON": _amendment_json(inventory),
     }
     if pass_label == "A":
-        variables["OPPORTUNITY_JSON"] = {
+        base_variables["OPPORTUNITY_JSON"] = {
             "id": opportunity.id,
             "source": opportunity.source,
             "solicitation_number": opportunity.solicitation_number,
@@ -350,65 +387,89 @@ def run_ai_pass(
             "set_aside_code": opportunity.set_aside_code,
             "response_deadline": opportunity.response_deadline.isoformat() if opportunity.response_deadline else None,
         }
-    manifest = {
+    base_manifest = {
         "opportunity_id": opportunity.id,
         "strategy": pass_label,
         "source_snapshots": sorted({d.snapshot_id for d in inventory.documents if d.snapshot_id}),
         "files": [{"file_id": d.file_id, "sha256": d.sha256, "pages": d.page_count, "classification": d.classification, "source_origin": d.source_origin} for d in inventory.documents],
-        "chunks": [{"chunk_id": c["chunk_id"], "file_id": c["file_id"], "page": c["page"]} for c in chunks],
-        "truncated": len(chunks) < len(build_context(inventory, pass_label, char_budget=10**12)),
     }
-    if manifest["truncated"]:
-        warnings.append({"code": "context_truncated", "severity": "high", "message": f"Pass {pass_label} context exceeded the configured token budget; some source text was not sent."})
     run_type = f"extraction_pass_{pass_label.lower()}"
-    try:
-        from govcon.security.classification import strictest_classification
-        result = run_structured_prompt(
-            session,
-            classification=strictest_classification(*(d.classification for d in inventory.documents)),
-            opportunity_id=opportunity.id,
-            prompt_name=prompt_name,
-            analysis_type=AnalysisType.COMPLIANCE_REVIEW,
-            variables=variables,
-            context_manifest=manifest,
-            settings=settings,
-            provider_name=provider_name,
-            model=model,
-        )
-    except StructuredCallError as exc:
-        warnings.append({"code": f"pass_{pass_label.lower()}_{exc.reason}", "severity": "high", "message": f"Extraction pass {pass_label} produced no usable output: {exc.detail}"})
-        run = record_run(
-            session,
-            opportunity_id=opportunity.id,
-            run_type=run_type,
-            run_version=EXTRACTOR_VERSION,
-            output={"error": exc.reason, "detail": exc.detail, "manifest": manifest},
-            status="failed",
-            warnings=warnings,
-            source_snapshot_ids=manifest["source_snapshots"],
-        )
-        return PassOutcome(pass_label, [], "failed", run.id, warnings=warnings)
+    from govcon.security.classification import strictest_classification
 
-    candidates = candidates_from_output(pass_label, result.output.requirements, inventory)
+    classification = strictest_classification(*(d.classification for d in inventory.documents))
+    results = []
+    gaps: list[dict[str, Any]] = []
+    for index, batch in enumerate(batches):
+        manifest = {
+            **base_manifest,
+            "part": index + 1,
+            "parts": len(batches),
+            "chunks": [{"chunk_id": c["chunk_id"], "file_id": c["file_id"], "page": c["page"]} for c in batch],
+        }
+        try:
+            results.append(run_structured_prompt(
+                session,
+                classification=classification,
+                opportunity_id=opportunity.id,
+                prompt_name=prompt_name,
+                analysis_type=AnalysisType.COMPLIANCE_REVIEW,
+                variables={**base_variables, "SOURCE_CHUNKS": "\n\n".join(c["text"] for c in batch)},
+                context_manifest=manifest,
+                settings=settings,
+                provider_name=provider_name,
+                model=model,
+            ))
+        except StructuredCallError as exc:
+            if not results:
+                warnings.append({"code": f"pass_{pass_label.lower()}_{exc.reason}", "severity": "high", "message": f"Extraction pass {pass_label} produced no usable output: {exc.detail}"})
+                run = record_run(
+                    session,
+                    opportunity_id=opportunity.id,
+                    run_type=run_type,
+                    run_version=EXTRACTOR_VERSION,
+                    output={"error": exc.reason, "detail": exc.detail, "manifest": manifest,
+                            "coverage": {"chunks_total": len(chunks), "chunks_sent": 0,
+                                         "gaps": _gaps(chunks, inventory, exc.reason)}},
+                    status="failed",
+                    warnings=warnings,
+                    source_snapshot_ids=base_manifest["source_snapshots"],
+                )
+                return PassOutcome(pass_label, [], "failed", run.id, warnings=warnings)
+            reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
+            gaps = _gaps([c for rest in batches[index:] for c in rest], inventory, reason)
+            break
+
+    if gaps:
+        warnings.append({"code": "context_truncated", "severity": "high", "message": (
+            f"Pass {pass_label} could not read part of the source set ({gaps[0]['reason']}): "
+            + "; ".join(f"{g['filename'] or g['file_id']} pages {', '.join(str(p) for p in g['pages'])}" for g in gaps)
+            + ". Requirements there are not extracted.")})
+    candidates = [c for result in results for c in candidates_from_output(pass_label, result.output.requirements, inventory)]
+    first = results[0]
+    sent = sum(len(batch) for batch in batches[: len(results)])
     run = record_run(
         session,
         opportunity_id=opportunity.id,
         run_type=run_type,
         run_version=EXTRACTOR_VERSION,
         output={
-            "ai_analysis_id": result.analysis.id,
-            "prompt": {"name": result.prompt.name, "version": result.prompt.version, "hash": result.prompt.content_hash},
+            "ai_analysis_id": first.analysis.id,
+            "ai_analysis_ids": [r.analysis.id for r in results],
+            "prompt": {"name": first.prompt.name, "version": first.prompt.version, "hash": first.prompt.content_hash},
             "candidates": [c.__dict__ for c in candidates],
-            "extraction_notes": result.output.extraction_notes,
+            "extraction_notes": [note for r in results for note in r.output.extraction_notes],
+            "coverage": {"chunks_total": len(chunks), "chunks_sent": sent, "parts": len(batches),
+                         "parts_sent": len(results), "gaps": gaps},
         },
-        status="incomplete" if manifest["truncated"] else "complete",
+        status="incomplete" if gaps else "complete",
         warnings=warnings or None,
-        source_snapshot_ids=manifest["source_snapshots"],
-        input_hash=result.analysis.input_snapshot_hash,
+        source_snapshot_ids=base_manifest["source_snapshots"],
+        input_hash=first.analysis.input_snapshot_hash if len(results) == 1 else hashlib.sha256(
+            "".join(r.analysis.input_snapshot_hash or "" for r in results).encode()).hexdigest(),
     )
     return PassOutcome(
-        pass_label, candidates, "complete", run.id, result.analysis.id,
-        result.analysis.provider, result.analysis.model, warnings,
+        pass_label, candidates, "incomplete" if gaps else "complete", run.id, first.analysis.id,
+        first.analysis.provider, first.analysis.model, warnings,
     )
 
 

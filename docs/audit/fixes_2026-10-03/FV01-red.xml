@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="2.965" timestamp="2026-10-03T04:08:16.575496-05:00" hostname="RahulROG"><testcase classname="tests.test_fv01_pricing" name="test_incompatible_quote_does_not_replace_full_order_cost[5-PR-None]" time="1.594"><failure message="assert 10.0 == 1000">tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000</failure></testcase><testcase classname="tests.test_fv01_pricing" name="test_incompatible_quote_does_not_replace_full_order_cost[500-BX-None]" time="0.140"><failure message="assert 10.0 == 1000">tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000</failure></testcase><testcase classname="tests.test_fv01_pricing" name="test_incompatible_quote_does_not_replace_full_order_cost[500-PR-6515-01-000-0001]" time="0.139"><failure message="assert 10.0 == 1000">tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000</failure></testcase><testcase classname="tests.test_fv01_pricing" name="test_incompatible_quote_does_not_replace_full_order_cost[500-None-None]" time="0.173"><failure message="assert 10.0 == 1000">tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000</failure></testcase></testsuite></testsuites>

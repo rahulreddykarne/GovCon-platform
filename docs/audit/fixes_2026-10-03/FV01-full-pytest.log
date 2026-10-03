@@ -1,0 +1,32 @@
+........................................................................ [  6%]
+........................................................................ [ 12%]
+........................................................................ [ 18%]
+........................................................................ [ 24%]
+........................................................................ [ 30%]
+........................................................................ [ 36%]
+........................................................................ [ 43%]
+........................................................................ [ 49%]
+........................................................................ [ 55%]
+........................................................................ [ 61%]
+........................................................................ [ 67%]
+........................................................................ [ 73%]
+...........................s............................................ [ 80%]
+........................................................................ [ 86%]
+........................................................................ [ 92%]
+........................................................................ [ 98%]
+.................                                                        [100%]
+============================== warnings summary ===============================
+tests/test_analysis_tasks.py: 12 warnings
+tests/test_feature_audit_fixes.py: 12 warnings
+tests/test_intelligence_analyses.py: 21 warnings
+tests/test_outcome_suggestions.py: 1 warning
+tests/test_preparation.py: 6 warnings
+tests/test_proposal_generation_task.py: 33 warnings
+tests/test_sourcing_company.py: 4 warnings
+tests/test_web_ui.py: 66 warnings
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_sam_ingestion.py:608: SAM_API_KEY is not set

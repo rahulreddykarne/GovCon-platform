@@ -1,0 +1,18 @@
+{
+  "pytest": {
+    "exit_code": 1,
+    "log": "FV04-protect-pytest.log",
+    "tests": "91",
+    "failures": "1",
+    "errors": "0",
+    "skipped": "0",
+    "time": "21.697"
+  },
+  "baseline_regressions": [
+    [
+      "tests.test_collaborative_review",
+      "test_ai_validation_populates_side_opinion_without_changing_human_comment"
+    ]
+  ],
+  "missing_baseline_tests": []
+}

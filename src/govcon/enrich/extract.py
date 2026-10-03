@@ -1,8 +1,10 @@
 """Document text extraction for PDF, DOCX, XLSX, and plain text.
 
-OCR is an optional fallback, not the default path. Extraction status
-and errors are tracked per file so downstream consumers know what
-succeeded and what needs manual review.
+Text comes from each file's own text layer. PDF pages without one are read
+by OCR when an ``OcrConfig`` is passed (ADR-065); every result also carries
+its pages, so citations can name a page. Extraction status and errors are
+tracked per file so downstream consumers know what succeeded and what needs
+manual review.
 """
 
 from __future__ import annotations
@@ -12,6 +14,10 @@ import logging
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from govcon.enrich.ocr import OcrConfig
 
 logger = logging.getLogger("govcon.enrich.extract")
 
@@ -65,12 +71,26 @@ def _cap_text(result: "ExtractionResult", limits: ExtractionLimits) -> "Extracti
             "partial",
             f"{result.error}; {note}" if result.error else note,
             page_count=result.page_count,
+            pages=result.pages,
+            ocr_pages=result.ocr_pages,
+            ocr_failed_pages=result.ocr_failed_pages,
         )
     return result
 
 
+@dataclass(frozen=True)
+class PageText:
+    """One page (PDF) or part (sheet, whole document) of a file's text."""
+
+    page_no: int
+    text: str
+    source: str = "native"  # native | ocr | none
+    confidence: float | None = None
+    label: str | None = None
+
+
 class ExtractionResult:
-    __slots__ = ("text", "status", "error", "page_count")
+    __slots__ = ("text", "status", "error", "page_count", "pages", "ocr_pages", "ocr_failed_pages")
 
     def __init__(
         self,
@@ -78,11 +98,17 @@ class ExtractionResult:
         status: str,
         error: str | None = None,
         page_count: int | None = None,
+        pages: list[PageText] | None = None,
+        ocr_pages: list[int] | None = None,
+        ocr_failed_pages: list[dict] | None = None,
     ):
         self.text = text
         self.status = status
         self.error = error
         self.page_count = page_count
+        self.pages = pages
+        self.ocr_pages = ocr_pages or []
+        self.ocr_failed_pages = ocr_failed_pages or []
 
 
 def extract_text(
@@ -90,66 +116,97 @@ def extract_text(
     mime_type: str,
     filename: str | None = None,
     limits: ExtractionLimits = DEFAULT_LIMITS,
+    ocr: "OcrConfig | None" = None,
 ) -> ExtractionResult:
     """Extract text from file bytes based on MIME type.
 
     Returns an ``ExtractionResult`` with status ``success``, ``partial``,
-    ``unsupported``, or ``error``. ``limits`` bound pages, archive expansion,
-    workbook size, and returned text; truncation yields ``partial``.
+    ``unsupported``, or ``error``, and the file's pages. ``limits`` bound
+    pages, archive expansion, workbook size, and returned text; truncation
+    yields ``partial``. With ``ocr``, PDF pages lacking a text layer are OCR'd.
     """
     mime = (mime_type or "").lower().split(";", 1)[0].strip()
     fname = (filename or "").lower()
 
     if mime == "application/pdf" or fname.endswith(".pdf"):
-        return _cap_text(_extract_pdf(data, limits), limits)
+        return _cap_text(_extract_pdf(data, limits, ocr), limits)
     if mime in (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/msword",
     ) or fname.endswith(".docx"):
-        return _cap_text(_extract_docx(data, limits), limits)
+        return _cap_text(_whole_document(_extract_docx(data, limits)), limits)
     if mime in (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "application/vnd.ms-excel",
     ) or fname.endswith(".xlsx"):
-        return _cap_text(_extract_xlsx(data, limits), limits)
+        return _cap_text(_sheet_pages(_extract_xlsx(data, limits)), limits)
     if mime.startswith("text/") or fname.endswith(".txt") or fname.endswith(".csv"):
-        return _cap_text(_extract_plain(data), limits)
+        return _cap_text(_whole_document(_extract_plain(data)), limits)
 
     return ExtractionResult(None, "unsupported", f"unsupported mime type: {mime}")
 
 
-def _extract_pdf(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS) -> ExtractionResult:
+def _whole_document(result: ExtractionResult) -> ExtractionResult:
+    """A file without pages is one part, labelled ``document``."""
+    if result.text is not None:
+        result.pages = [PageText(1, result.text, "native", label="document")]
+    return result
+
+
+def _sheet_pages(result: ExtractionResult) -> ExtractionResult:
+    """One part per worksheet, labelled with the sheet name."""
+    if result.text is None:
+        return result
+    pages: list[PageText] = []
+    for number, block in enumerate(result.text.split("\n\n[Sheet: "), start=1):
+        body = block if number == 1 else "[Sheet: " + block
+        name = body.removeprefix("[Sheet: ").split("]", 1)[0]
+        pages.append(PageText(number, body, "native", label=f"sheet {name}"))
+    result.pages = pages
+    return result
+
+
+def _extract_pdf(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS,
+                 ocr: "OcrConfig | None" = None) -> ExtractionResult:
     try:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(data))
         total_pages = len(reader.pages)
-        pages: list[str] = []
+        native: list[str] = []
         for index, page in enumerate(reader.pages):
             if index >= limits.max_pdf_pages:
                 break
-            text = page.extract_text() or ""
-            pages.append(text)
-        full_text = "\n\n".join(pages)
-        truncated = total_pages > limits.max_pdf_pages
-        if not full_text.strip():
-            return ExtractionResult(
-                None,
-                "partial",
-                "PDF contained no extractable text (may need OCR)",
-                page_count=total_pages,
-            )
-        if truncated:
-            return ExtractionResult(
-                full_text,
-                "partial",
-                f"PDF truncated at {limits.max_pdf_pages} of {total_pages} pages",
-                page_count=total_pages,
-            )
-        return ExtractionResult(full_text, "success", page_count=total_pages)
+            native.append(page.extract_text() or "")
     except Exception as exc:
         logger.warning("PDF extraction failed: %s", exc)
         return ExtractionResult(None, "error", str(exc))
+
+    pages = [PageText(n, text, "native" if text.strip() else "none") for n, text in enumerate(native, start=1)]
+    ocr_pages: list[int] = []
+    ocr_failed: list[dict] = []
+    if ocr is not None and ocr.enabled:
+        from govcon.enrich.ocr import ocr_pdf_pages
+
+        candidates = [p.page_no for p in pages if len(p.text.strip()) < ocr.min_native_chars]
+        read, failed = ocr_pdf_pages(data, candidates, ocr)
+        for page_no, page in read.items():
+            pages[page_no - 1] = PageText(page_no, page.text, "ocr", page.confidence)
+            ocr_pages.append(page_no)
+        # A page that keeps some native text is readable; only blank pages count as failed.
+        ocr_failed = [{"page": page_no, "reason": reason} for page_no, reason in sorted(failed.items())
+                      if not pages[page_no - 1].text.strip()]
+
+    full_text = "\n\n".join(p.text for p in pages)
+    extras = {"page_count": total_pages, "pages": pages, "ocr_pages": sorted(ocr_pages), "ocr_failed_pages": ocr_failed}
+    if not full_text.strip():
+        reason = f"; OCR: {ocr_failed[0]['reason']}" if ocr_failed else ""
+        return ExtractionResult(None, "partial", f"PDF contained no extractable text (may need OCR){reason}", **extras)
+    if total_pages > limits.max_pdf_pages:
+        return ExtractionResult(
+            full_text, "partial", f"PDF truncated at {limits.max_pdf_pages} of {total_pages} pages", **extras
+        )
+    return ExtractionResult(full_text, "success", **extras)
 
 
 def extract_pdf_pages(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS) -> list[str] | None:

@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="2.458" timestamp="2026-10-03T04:46:12.772996-05:00" hostname="RahulROG"><testcase classname="tests.test_fv05_quote_permissions" name="test_current_web_permission_denial" time="1.727" /></testsuite></testsuites>

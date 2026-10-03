@@ -222,13 +222,15 @@ def write_outbox(directory: Path, html: str, now: datetime) -> Path:
     return path
 
 
-def send_smtp(settings: Settings, *, subject: str, html: str, plain: str) -> None:
-    if not settings.smtp_host or not settings.alert_email_to:
-        raise DigestDeliveryError("SMTP delivery requires SMTP_HOST and ALERT_EMAIL_TO")
+def send_smtp(settings: Settings, *, subject: str, html: str, plain: str, to: str | None = None) -> None:
+    """Send one message; ``to`` defaults to ``ALERT_EMAIL_TO`` (the digest recipient)."""
+    recipient = to or settings.alert_email_to
+    if not settings.smtp_host or not recipient:
+        raise DigestDeliveryError("SMTP delivery requires SMTP_HOST and a recipient (ALERT_EMAIL_TO for digests)")
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = _from_address(settings)
-    message["To"] = settings.alert_email_to
+    message["To"] = recipient
     message.set_content(plain)
     message.add_alternative(html, subtype="html")
     plaintext_allowed = settings.smtp_allow_plaintext_local_relay and is_loopback_host(settings.smtp_host)

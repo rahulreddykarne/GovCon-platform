@@ -1,0 +1,35 @@
+{
+  "pytest": {
+    "exit_code": 1,
+    "log": "R2-1-full-pytest.log",
+    "tests": "1297",
+    "failures": "7",
+    "errors": "0",
+    "skipped": "1",
+    "time": "266.842"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": [],
+  "typecheck": {
+    "exit_code": 1,
+    "log": "R2-1-full-typecheck.log",
+    "count": 268,
+    "total": 419,
+    "baseline_count": 268,
+    "new_vs_baseline": [],
+    "baseline_total": 419
+  },
+  "lint": {
+    "exit_code": 1,
+    "log": "R2-1-full-lint.log",
+    "count": 425,
+    "total": 901,
+    "baseline_count": 425,
+    "new_vs_baseline": [],
+    "baseline_total": 901
+  },
+  "build": {
+    "exit_code": 0,
+    "log": "R2-1-full-build.log"
+  }
+}

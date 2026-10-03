@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="2.352" timestamp="2026-10-03T05:11:17.289380-05:00" hostname="RahulROG"><testcase classname="tests.test_fv09_quote_repeats" name="test_concurrent_document_records_share_one_quote" time="1.483"><failure message="AssertionError: concurrent retries inserted separate quotes&#10;assert 2 == 1">tests\test_fv09_quote_repeats.py:103: in test_concurrent_document_records_share_one_quote
+    assert ids[0] == ids[1], "concurrent retries inserted separate quotes"
+E   AssertionError: concurrent retries inserted separate quotes
+E   assert 2 == 1</failure></testcase></testsuite></testsuites>

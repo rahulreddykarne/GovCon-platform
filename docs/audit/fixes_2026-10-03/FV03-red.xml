@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="10" time="5.952" timestamp="2026-10-03T04:22:34.944400-05:00" hostname="RahulROG"><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[cancel-summary]" time="1.827"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[cancel-compliance]" time="0.454"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[cancel-decision]" time="0.336"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[lease-summary]" time="0.218"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[lease-compliance]" time="0.351"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[lease-decision]" time="0.355"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[source-summary]" time="0.313"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[source-compliance]" time="0.398"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[source-decision]" time="0.368"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:77: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_crash_after_service_commit_does_not_repeat_the_service" time="0.423"><failure message="AssertionError: already committed compliance work ran again after retry&#10;assert 2 == 1&#10; +  where 2 = len([{'status': 'incomplete', 'matrix_run_id': 40}, {'status': 'incomplete', 'matrix_run_id': 48}])">tests\test_fv03_preparation_commits.py:104: in test_crash_after_service_commit_does_not_repeat_the_service
+    assert len(calls) == 1, "already committed compliance work ran again after retry"
+E   AssertionError: already committed compliance work ran again after retry
+E   assert 2 == 1
+E    +  where 2 = len([{'status': 'incomplete', 'matrix_run_id': 40}, {'status': 'incomplete', 'matrix_run_id': 48}])</failure></testcase></testsuite></testsuites>

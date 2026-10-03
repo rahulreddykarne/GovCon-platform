@@ -95,25 +95,24 @@ class JevDecisionProvider:
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
-        try:
-            reservation = reserve(self._session, opportunity_id=state.get("budget_opportunity_id"),
-                settings=self._settings, system_prompt="", user_prompt=json.dumps(body, default=str),
-                purpose=f"decision_bundle:{bundle_name}", provider=self.name, model=self._model)
-        except AIBudgetExceeded as exc:
-            raise DecisionProviderUnavailable(str(exc)) from exc
-        started = time.monotonic()
-        try:
-            with httpx.Client(timeout=self._timeout_seconds) as client:
-                response = client.post(endpoint, json=body, headers=headers)
-        except httpx.HTTPError as exc:  # pragma: no cover - network-dependent
-            if reservation is not None:
-                reservation.finish()
-            raise DecisionProviderUnavailable(f"JEV request failed: {exc}") from exc
-        latency_ms = int((time.monotonic() - started) * 1000)
-        # JEV has no guaranteed token/output contract: retain the conservative
-        # reservation even on a successful response rather than crediting it.
-        if reservation is not None:
-            reservation.finish()
+        from govcon.ai.replay import active_recorder
+
+        budget_opportunity_id = state.get("budget_opportunity_id")
+        recorder = active_recorder()
+        if recorder is not None:
+            # A recorded run: the request is sent later with no transaction open.
+            engine = None
+            if self._session is not None:
+                bind = self._session.get_bind()
+                engine = getattr(bind, "engine", bind)
+            response, latency_ms = recorder.call(
+                ("jev", endpoint, self._model, body),
+                lambda: self._post(endpoint, body, headers, bundle_name, budget_opportunity_id,
+                                   session=None, engine=engine),
+            )
+        else:
+            response, latency_ms = self._post(endpoint, body, headers, bundle_name, budget_opportunity_id,
+                                              session=self._session)
         if response.status_code >= 400:
             # The body can echo the submitted state; keep only the status.
             raise DecisionProviderUnavailable(f"JEV responded with HTTP {response.status_code}")
@@ -145,6 +144,30 @@ class JevDecisionProvider:
             latency_ms=latency_ms,
             raw_response={"usage": usage},
         )
+
+    def _post(self, endpoint: str, body: dict[str, Any], headers: dict[str, str], bundle_name: str,
+              budget_opportunity_id: int | None, *, session=None, engine=None) -> tuple[httpx.Response, int]:
+        """Reserve budget and send the request; returns the response and its latency."""
+        try:
+            reservation = reserve(session, opportunity_id=budget_opportunity_id,
+                settings=self._settings, system_prompt="", user_prompt=json.dumps(body, default=str),
+                purpose=f"decision_bundle:{bundle_name}", provider=self.name, model=self._model, engine=engine)
+        except AIBudgetExceeded as exc:
+            raise DecisionProviderUnavailable(str(exc)) from exc
+        started = time.monotonic()
+        try:
+            with httpx.Client(timeout=self._timeout_seconds) as client:
+                response = client.post(endpoint, json=body, headers=headers)
+        except httpx.HTTPError as exc:  # pragma: no cover - network-dependent
+            if reservation is not None:
+                reservation.finish()
+            raise DecisionProviderUnavailable(f"JEV request failed: {exc}") from exc
+        latency_ms = int((time.monotonic() - started) * 1000)
+        # JEV has no guaranteed token/output contract: retain the conservative
+        # reservation even on a successful response rather than crediting it.
+        if reservation is not None:
+            reservation.finish()
+        return response, latency_ms
 
     def _resolve_endpoint(self) -> str:
         if self._base_url.endswith("/v1/systemone") or self._base_url.endswith("/api/v1/decisions"):

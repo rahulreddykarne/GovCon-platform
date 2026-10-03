@@ -64,7 +64,8 @@ def assign_reviewer(
             "assignment_role": existing.assignment_role,
         }
         existing.assignment_role = assignment_role
-        if existing.status not in {"assigned", "in_progress"}:
+        # Only a reopened review restarts; a completed one keeps its result and quorum count.
+        if existing.status == "reopened":
             existing.status = "assigned"
             existing.started_at = None
             existing.completed_at = None

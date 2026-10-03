@@ -299,3 +299,33 @@ Shared prompt fragments (§38.1–38.4) were activated in Phase 7 (ADR-024) as p
 - Decision: Phase 16 remains DEFERRED per standing user waiver (DEV-015). The v1 DoD is considered met for Phases 0–15, 17–19. Phase 20 explicitly documents this waiver in IMPLEMENTATION_STATUS.md, SPEC_DEVIATIONS.md, DECISIONS.md, and AI_HANDOFF.md.
 - Impact: No state/local adapter tests are included. No Phase 16 functionality is tested or exercised.
 - Follow-up: None. Phase 16 remains DEFERRED unless explicitly re-enabled.
+
+## Automation roadmap
+
+### DEV-021 — Ingest steps keep network calls inside their step transaction
+- Phase: Automation roadmap Stage 1D
+- Date: 2026-10-03
+- Spec requirement: `docs/AUTOMATION_ROADMAP.md` §4.2 item 2: perform external calls outside long database transactions.
+- Verified repository reality: SAM, DIBBS and USAspending ingest steps fetch and upsert in one session. Splitting them means restructuring each ingest module.
+- Decision: Chain tasks (ADR-063) run these steps unchanged inside the step's session. Proposal generation and every new AI step use the prepare/execute/publish split.
+- Reason: ingest holds no opportunity workflow locks during fetches, and it is idempotent, so a long transaction there does not block reviewers or approvals.
+- Impact: an ingest step holds a database connection during its network calls, as before.
+- Follow-up: split ingest when an ingest module is next reworked.
+
+### DEV-022 — No shared daily AI budget
+- Phase: Automation roadmap Stage 3
+- Date: 2026-10-03
+- Spec requirement: `docs/AUTOMATION_ROADMAP.md` §4.2 item 7: enforce shared daily budgets safely across concurrent workers, including retries.
+- Decision: the user decided against a daily budget (roadmap Q3 = no). The per-call and per-opportunity caps in `ai/budget.py` remain, and they already hold under concurrent workers and retries.
+- Impact: total daily AI spend is bounded only by the per-opportunity caps times the number of opportunities processed.
+- Follow-up: none unless the user asks for one.
+
+### DEV-023 — Summary, compliance and decision steps are not split into per-stage tasks
+- Phase: Automation roadmap Stage 2D (revised 2026-10-03, ADR-075)
+- Date: 2026-10-03
+- Spec requirement: `docs/AUTOMATION_ROADMAP.md` §4.2 item 2: perform external calls outside long database transactions.
+- Verified repository reality: the compliance pipeline runs about ten AI stages, and the decision engine runs eight bundles. Each stage reads and writes through one session between calls.
+- Decision: the services are still not split. Since ADR-075 the preparation task runs them as recorded passes (`ai/replay.py`). Each pass takes the opportunity lock, then the task lock, before the service writes anything. Recorded AI responses answer the service's calls, and a call with no recorded response stops the pass, rolls it back and runs with no transaction open. The last pass commits the service's writes with the step's checkpoint.
+- Reason: splitting each AI stage of the pipeline and engine is a large refactor of safety-critical code that the compliance benchmark guards. Recording keeps that code unchanged while meeting §4.2 item 2 and the ADR-061 lock order.
+- Impact: no transaction is open during these AI calls. The service's database work repeats once per AI call (N calls make N+1 passes), each pass holding the opportunity lock briefly. If the inputs keep changing between passes (more than three times), the remaining calls run inside one pass, as before ADR-075. A worker crash loses the in-memory record, so the step's AI calls repeat on retry.
+- Follow-up: split the services into per-stage tasks when they are next reworked; persist the record if crash retries prove costly.

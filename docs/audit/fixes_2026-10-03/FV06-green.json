@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 0,
+    "log": "FV06-green-pytest.log",
+    "tests": "37",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "9.928"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

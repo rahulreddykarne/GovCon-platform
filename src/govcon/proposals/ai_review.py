@@ -98,14 +98,11 @@ def run_proposal_red_team(
     sections = get_sections_for_version(session, proposal_version_id)
 
     company_facts_data = company_facts
-    if company_facts_data is None and settings.company_facts_path:
-        import pathlib, json as _json
-        p = pathlib.Path(settings.company_facts_path)
-        if p.exists():
-            try:
-                company_facts_data = _json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+    if company_facts_data is None:
+        from govcon.compliance.pipeline import load_company_facts
+
+        # The same facts compliance uses: SAM registration overlaid, stale values unknown.
+        company_facts_data = load_company_facts(settings, session) or None
 
     variables = {
         "REQUIREMENTS_JSON": _build_requirements_json(requirements),

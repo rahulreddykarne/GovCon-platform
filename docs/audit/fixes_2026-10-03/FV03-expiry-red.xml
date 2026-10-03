@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="3.555" timestamp="2026-10-03T04:25:14.555091-05:00" hostname="RahulROG"><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[expired-summary]" time="1.862"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:80: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[expired-compliance]" time="0.465"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:80: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase><testcase classname="tests.test_fv03_preparation_commits" name="test_service_writes_are_discarded_when_work_is_invalidated[expired-decision]" time="0.411"><failure message="AssertionError: invalidated service transaction committed business writes&#10;assert 1 == 0">tests\test_fv03_preparation_commits.py:80: in test_service_writes_are_discarded_when_work_is_invalidated
+    assert count == 0, "invalidated service transaction committed business writes"
+E   AssertionError: invalidated service transaction committed business writes
+E   assert 1 == 0</failure></testcase></testsuite></testsuites>

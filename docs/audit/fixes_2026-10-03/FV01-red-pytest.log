@@ -1,0 +1,40 @@
+FFFF                                                                     [100%]
+================================== FAILURES ===================================
+_____ test_incompatible_quote_does_not_replace_full_order_cost[5-PR-None] _____
+tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000
+---------------------------- Captured stderr setup ----------------------------
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 97cb081e9a8e, foundation schema
+INFO  [alembic.runtime.migration] Running upgrade 97cb081e9a8e -> c3e8a1b74f20, award recompete view
+INFO  [alembic.runtime.migration] Running upgrade c3e8a1b74f20 -> d9a4c1e7b209, phase9 compliance subsystem
+INFO  [alembic.runtime.migration] Running upgrade d9a4c1e7b209 -> a1b2c3d4e5f6, phase11 proposal submission
+INFO  [alembic.runtime.migration] Running upgrade a1b2c3d4e5f6 -> f2a3b4c5d6e7, Phase 13 — semantic search: watchlist embeddings + HNSW vector index
+INFO  [alembic.runtime.migration] Running upgrade f2a3b4c5d6e7 -> b5c6d7e8f9a0, phase15 outcome learning — structured outcome fields
+INFO  [alembic.runtime.migration] Running upgrade b5c6d7e8f9a0 -> b1c2d3e4f5a6, Phase 17 — Scheduler job runs tracking table.
+INFO  [alembic.runtime.migration] Running upgrade b1c2d3e4f5a6 -> c7d8e9f0a1b2, Workflow gate hardening — pin the approved proposal version.
+INFO  [alembic.runtime.migration] Running upgrade c7d8e9f0a1b2 -> d8e9f0a1b2c3, Attachment versions — current-snapshot membership for stored files.
+INFO  [alembic.runtime.migration] Running upgrade d8e9f0a1b2c3 -> e9f0a1b2c3d4, Match reconciliation and stored NSN candidates.
+INFO  [alembic.runtime.migration] Running upgrade e9f0a1b2c3d4 -> f0a1b2c3d4e5, DIBBS response deadlines: 3:00 PM Eastern on the business-day return date.
+INFO  [alembic.runtime.migration] Running upgrade f0a1b2c3d4e5 -> 01a2b3c4d5e6, Unique current outcomes/submissions, immutable history and embedding provenance.
+INFO  [alembic.runtime.migration] Running upgrade 01a2b3c4d5e6 -> 7f4d81a9c630, Durable AI budgets and explicit source-document classification.
+INFO  [alembic.runtime.migration] Running upgrade 7f4d81a9c630 -> a7b8c9d0e1f2, Durable background tasks (ADR-061).
+INFO  [alembic.runtime.migration] Running upgrade a7b8c9d0e1f2 -> b8c9d0e1f2a3, Page-level text and OCR tracking for stored files (ADR-065).
+INFO  [alembic.runtime.migration] Running upgrade b8c9d0e1f2a3 -> c9d0e1f2a3b4, Opportunity preparation tasks and owner-editable workflow settings (ADR-067).
+INFO  [alembic.runtime.migration] Running upgrade c9d0e1f2a3b4 -> d0e1f2a3b4c5, Recommendations, explainable ranking, email delivery and review escalation (ADR-068..070).
+INFO  [alembic.runtime.migration] Running upgrade d0e1f2a3b4c5 -> e1f2a3b4c5d6, Sourcing records and company registration refresh (ADR-071, ADR-072).
+INFO  [alembic.runtime.migration] Running upgrade e1f2a3b4c5d6 -> a3b4c5d6e7f8, Award-match outcome suggestions and analytics snapshots (ADR-073, ADR-074).
+____ test_incompatible_quote_does_not_replace_full_order_cost[500-BX-None] ____
+tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000
+_ test_incompatible_quote_does_not_replace_full_order_cost[500-PR-6515-01-000-0001] _
+tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000
+___ test_incompatible_quote_does_not_replace_full_order_cost[500-None-None] ___
+tests\test_fv01_pricing.py:51: in test_incompatible_quote_does_not_replace_full_order_cost
+    assert inputs["sourcing_cost_total"] == 1000
+E   assert 10.0 == 1000

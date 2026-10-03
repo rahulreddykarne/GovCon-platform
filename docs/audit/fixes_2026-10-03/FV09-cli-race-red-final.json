@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 1,
+    "log": "FV09-cli-race-red-final-pytest.log",
+    "tests": "1",
+    "failures": "1",
+    "errors": "0",
+    "skipped": "0",
+    "time": "3.429"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}

@@ -1,0 +1,13 @@
+{
+  "pytest": {
+    "exit_code": 1,
+    "log": "FV03-expiry-red-pytest.log",
+    "tests": "3",
+    "failures": "3",
+    "errors": "0",
+    "skipped": "0",
+    "time": "3.555"
+  },
+  "baseline_regressions": [],
+  "missing_baseline_tests": []
+}
