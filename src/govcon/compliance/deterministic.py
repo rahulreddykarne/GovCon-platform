@@ -383,11 +383,13 @@ def sam_registration_known(facts: dict[str, Any], deadline: datetime | None) -> 
     if status != "active":
         return _result("sam_registration_known", "fail", f"SAM registration status is {status}", status=status)
     expires = facts.get("sam_expiration_date")
-    if expires and deadline is not None:
-        expiry = datetime.fromisoformat(str(expires))
+    if expires:
+        expiry = datetime.fromisoformat(str(expires)[:10])
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=UTC)
-        if expiry < deadline:
+        if expiry.date() < datetime.now(UTC).date():
+            return _result("sam_registration_known", "fail", "SAM registration is expired", expires=expiry.date())
+        if deadline is not None and expiry < deadline:
             return _result("sam_registration_known", "fail", "SAM registration expires before the response deadline", expires=expiry, deadline=deadline)
     return _result("sam_registration_known", "pass", "SAM registration active", status=status, expires=expires)
 

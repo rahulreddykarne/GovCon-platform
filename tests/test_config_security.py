@@ -35,7 +35,7 @@ def test_default_bind_is_loopback() -> None:
 def test_public_bind_requires_explicit_override() -> None:
     with pytest.raises(ValidationError):
         Settings(web_bind_host="0.0.0.0")
-    allowed = Settings(web_bind_host="0.0.0.0", web_bind_allow_public=True)
+    allowed = Settings(web_bind_host="0.0.0.0", web_bind_allow_public=True, web_csrf_secret="x" * 32)
     assert allowed.web_bind_host == "0.0.0.0"
 
 

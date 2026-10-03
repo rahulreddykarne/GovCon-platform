@@ -30,8 +30,12 @@ def render_system_prompt(asset: PromptAsset, prompt_root: Path) -> str:
     parts: list[str] = []
     for name in include_names:
         fragment = _resolve_include(name, prompt_root)
-        if fragment:
-            parts.append(fragment.body.strip())
+        if fragment is None:
+            raise PromptRenderError(
+                f"prompt {asset.name}@{asset.version} requires shared include {name!r}, "
+                "which is missing or unreadable"
+            )
+        parts.append(fragment.body.strip())
     parts.append(asset.body.strip())
     return "\n\n".join(parts)
 

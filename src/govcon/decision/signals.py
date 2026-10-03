@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from statistics import median
 from typing import Any
 
@@ -93,20 +94,37 @@ def eligibility_signals(
     )
 
     # SAM registration: company facts first, then our own cached SAM entity.
+    # The vendor cache is used only when it is itself fresh or a known expiry.
+    # A stale, failed, or older registration must not become a positive signal.
     sam = det.sam_registration_known(profile, opportunity.response_deadline)
     sam_value = _TRISTATE[sam.status]
     sam_source = "company_facts.sam_registration_status"
+    sam_detail = sam.reason
     if sam_value is None and profile.get("uei"):
         vendor = _own_vendor(session, str(profile["uei"]), settings)
-        if vendor is not None and vendor.registration_status:
+        settings = settings or get_settings()
+        now = datetime.now(UTC)
+        from govcon.ingest.freshness import evidence_status
+
+        status = evidence_status(
+            vendor, now=now, max_age=timedelta(days=settings.company_facts_max_age_days),
+        ) if vendor is not None else "unknown"
+        sam_source = "sam_entity_api (own UEI)"
+        if status == "fresh" and vendor is not None and vendor.registration_status:
             sam_value = vendor.registration_status.strip().lower() == "active"
-            sam_source = "sam_entity_api (own UEI)"
+            sam_detail = f"vendor cache {status}; fetched_at={vendor.fetched_at.isoformat() if vendor.fetched_at else 'unknown'}"
+        elif status == "expired":
+            sam_value = False
+            sam_detail = "SAM registration is expired"
+        else:
+            sam_value = None
+            sam_detail = f"SAM entity cache is {status}; not used as current registration evidence"
     signals.set(
         "sam_active",
         sam_value,
         source=sam_source,
         confidence="high" if sam_value is not None else "unknown",
-        detail=sam.reason if sam_source.startswith("company_facts") else None,
+        detail=sam_detail,
     )
 
     # Certifications: listed by the solicitation analysis ≠ held by the company.
@@ -133,17 +151,28 @@ def eligibility_signals(
 
 
 def _own_vendor(session: Session, uei: str, settings: Settings | None) -> Vendor | None:
-    vendor = session.get(Vendor, uei.strip().upper())
-    settings = settings or get_settings()
-    if vendor is None and settings.sam_api_key:
-        try:
-            from govcon.ingest.sam_entities import ensure_vendor
+    from govcon.ingest.freshness import evidence_status
+    from govcon.ingest.sam_entities import SamEntityError, ensure_vendor
 
-            vendor, _ = ensure_vendor(session, uei, settings=settings)
-        except Exception as exc:  # a lookup failure leaves registration unknown
-            logger.warning("own SAM registration lookup failed: %s", type(exc).__name__)
-            return None
-    return vendor
+    normalized = uei.strip().upper()
+    vendor = session.get(Vendor, normalized)
+    if vendor is not None:
+        session.refresh(vendor)
+    settings = settings or get_settings()
+    now = datetime.now(UTC)
+    max_age = timedelta(days=settings.company_facts_max_age_days)
+    if vendor is not None and evidence_status(vendor, now=now, max_age=max_age) in {"fresh", "expired"}:
+        return vendor
+    if not settings.sam_api_key:
+        return None
+    try:
+        vendor, _ = ensure_vendor(session, normalized, refresh=True, settings=settings, now=now)
+    except SamEntityError:
+        logger.warning("own SAM registration lookup failed")
+        return None
+    if vendor is not None and evidence_status(vendor, now=now, max_age=max_age) in {"fresh", "expired"}:
+        return vendor
+    return None
 
 
 def sourcing_signals(pursuit: Pursuit | None, signals: Signals) -> None:

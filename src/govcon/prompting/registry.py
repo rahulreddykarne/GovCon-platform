@@ -366,7 +366,10 @@ def _verify_includes(session: Session, asset: PromptAsset, prompt_root: Path) ->
     for name in _parse_includes(asset.metadata.get("includes", "")):
         fragment = _resolve_include(name, prompt_root)
         if fragment is None:
-            continue  # the renderer skips a missing include as well
+            raise PromptRegistryDenied(
+                f"shared include {name!r} used by {asset.name!r} is missing or unreadable; "
+                "refusing to run an approved prompt without its required text"
+            )
         recorded = session.scalar(
             select(PromptRegistryEntry.prompt_hash).where(
                 PromptRegistryEntry.prompt_name == fragment.name,

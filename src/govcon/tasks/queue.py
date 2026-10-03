@@ -25,9 +25,10 @@ import json
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select, text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -217,7 +218,7 @@ def renew_lease(session: Session, claim_: Claim, lease_seconds: int) -> bool:
         ),
         {"id": claim_.task_id, "lease": lease_seconds, "worker": claim_.worker_id, "token": claim_.token},
     )
-    return result.rowcount == 1
+    return cast(CursorResult[Any], result).rowcount == 1
 
 
 def guard_publish(session: Session, claim_: Claim) -> Task:

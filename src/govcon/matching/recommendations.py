@@ -13,9 +13,10 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from govcon.matching.semantic import (
@@ -114,7 +115,7 @@ def refresh_recommendations(session: Session, provider, *, limit: int = 20, now:
         .where(Recommendation.active.is_(True), Recommendation.id.not_in(seen or {-1}))
         .values(active=False)
     )
-    stats.deactivated = stale.rowcount or 0
+    stats.deactivated = cast(CursorResult[Any], stale).rowcount or 0
     session.flush()
     stats.seconds = round(time.monotonic() - started, 3)
     return stats

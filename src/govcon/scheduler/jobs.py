@@ -315,11 +315,19 @@ def step_company_registration(session: Session, settings) -> StepResult:
         from govcon.company.registration import refresh_company_registration
 
         result = refresh_company_registration(session, settings=settings)
+        extra = {
+            "reason": result.reason,
+            "expiration_date": result.expiration_date.isoformat() if result.expiration_date else None,
+            "expiry_alert_sent": result.alerted,
+            "attempt_id": result.attempt_id,
+        }
         if result.status == "skipped":
-            return StepResult(step="company_registration", status="skipped", extra={"reason": result.reason})
-        return StepResult(step="company_registration", status="succeeded", updated=1,
-                          extra={"expiration_date": result.expiration_date.isoformat() if result.expiration_date else None,
-                                 "expiry_alert_sent": result.alerted})
+            return StepResult(step="company_registration", status="skipped", extra=extra)
+        if result.status == "failed":
+            return StepResult(step="company_registration", status="failed", error=result.reason, extra=extra)
+        if result.status == "discarded":
+            return StepResult(step="company_registration", status="skipped", extra=extra)
+        return StepResult(step="company_registration", status="succeeded", updated=1, extra=extra)
     except Exception as exc:
         logger.error("company_registration failed: %s", exc)
         return StepResult(step="company_registration", status="failed", error=str(exc))

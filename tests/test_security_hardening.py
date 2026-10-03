@@ -374,7 +374,7 @@ class TestLocalhostDefault:
             Settings(web_bind_host="::")
 
     def test_public_bind_allowed_with_explicit_flag(self) -> None:
-        settings = Settings(web_bind_host="0.0.0.0", web_bind_allow_public=True)
+        settings = Settings(web_bind_host="0.0.0.0", web_bind_allow_public=True, web_csrf_secret="x" * 32)
         assert settings.web_bind_host == "0.0.0.0"
 
     def test_loopback_ipv4_variants_accepted(self) -> None:

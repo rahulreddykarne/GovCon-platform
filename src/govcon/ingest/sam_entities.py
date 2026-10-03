@@ -15,16 +15,28 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 from tenacity import wait_exponential
 from tenacity.wait import wait_base
 
 from govcon.config import Settings, get_settings
 from govcon.http import build_client, request_with_retry
+from govcon.ingest.freshness import (
+    accept_payload,
+    cancel_attempt,
+    claim_attempt,
+    commit_freshness,
+    expiration_date,
+    mark_failed,
+    registration_key,
+    replace_registration,
+    safe_error,
+    source_updated_at,
+    vendor_cache_usable,
+)
 from govcon.models import Vendor
 
 logger = logging.getLogger("govcon.ingest.sam_entities")
@@ -182,12 +194,11 @@ def fetch_entity_payload(
     return first
 
 
-def _cache_fresh(fetched_at: datetime | None, *, cache_hours: int, now: datetime) -> bool:
-    if fetched_at is None:
-        return False
-    if fetched_at.tzinfo is None:
-        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
-    return fetched_at >= now - timedelta(hours=max(cache_hours, 1))
+def _load_vendor(session: Session, uei: str) -> Vendor | None:
+    row = session.get(Vendor, uei)
+    if row is not None:
+        session.refresh(row)
+    return row
 
 
 def ensure_vendor(
@@ -199,46 +210,96 @@ def ensure_vendor(
     settings: Settings | None = None,
     now: datetime | None = None,
 ) -> tuple[Vendor, bool]:
-    """Return a vendor row, fetching from SAM when the cache is stale.
+    """Return a vendor row, fetching from SAM when the cache is not fresh.
 
-    The second value is ``True`` when a live SAM request was made.
+    The second value is ``True`` when a newer payload was stored. A failed
+    refresh clears that registration's assertions and raises
+    :class:`SamEntityError`. A response older than the stored source time,
+    or one whose attempt was cancelled or restarted, is not applied.
     """
     settings = settings or get_settings()
     normalized = normalize_uei(uei)
     now = now or datetime.now(timezone.utc)
-    existing = session.get(Vendor, normalized)
-    if (
-        existing is not None
-        and existing.fetched_at is not None
-        and not refresh
-        and _cache_fresh(existing.fetched_at, cache_hours=settings.sam_vendor_cache_hours, now=now)
+    existing = _load_vendor(session, normalized)
+    if existing is not None and not refresh and vendor_cache_usable(
+        existing, now=now, cache_hours=settings.sam_vendor_cache_hours
     ):
         return existing, False
+
+    row = existing or Vendor(uei=normalized)
+    if existing is None:
+        session.add(row)
+    attempt_id = claim_attempt(row, now)
+    session.flush()
 
     owns_client = client is None
     client = client or build_client(settings)
     try:
-        record = fetch_entity_payload(client, settings, normalized)
+        try:
+            record = fetch_entity_payload(client, settings, normalized)
+        except Exception as exc:
+            current = _load_vendor(session, normalized) or row
+            mark_failed(current, attempt_id, safe_error(exc, settings), now, kind="vendor")
+            session.flush()
+            session.expire(current)
+            raise SamEntityError(safe_error(exc, settings)) from exc
     finally:
         if owns_client:
             client.close()
 
-    parsed = parse_entity_record(record)
-    if parsed is None:
-        raise SamEntityError(f"SAM entity payload could not be parsed for UEI {normalized}")
+    return _store_vendor_record(session, normalized, attempt_id, record, now)
 
-    row = existing or Vendor(uei=normalized)
-    row.cage_code = parsed.cage_code
-    row.legal_name = parsed.legal_name
-    row.dba_name = parsed.dba_name
-    row.registration_status = parsed.registration_status
-    row.physical_address = parsed.physical_address
-    row.business_types = parsed.business_types
-    row.naics_codes = parsed.naics_codes
-    row.psc_codes = parsed.psc_codes
-    row.points_of_contact = parsed.points_of_contact
-    row.raw = parsed.raw
-    row.fetched_at = now
-    session.add(row)
+
+def _store_vendor_record(
+    session: Session,
+    uei: str,
+    attempt_id: str,
+    record: dict,
+    now: datetime,
+) -> tuple[Vendor, bool]:
+    """Publish ``record`` for ``attempt_id``, or leave the row unchanged."""
+    parsed = parse_entity_record(record)
+    current = _load_vendor(session, uei)
+    if current is None:
+        raise SamEntityError(f"SAM vendor row disappeared before publish for UEI {uei}")
+    if parsed is None:
+        mark_failed(current, attempt_id, f"SAM entity payload could not be parsed for UEI {uei}", now, kind="vendor")
+        session.flush()
+        session.expire(current)
+        raise SamEntityError(f"SAM entity payload could not be parsed for UEI {uei}")
+    updated = source_updated_at(parsed.raw)
+    if not accept_payload(current, attempt_id, now=now, source_updated=updated):
+        session.flush()
+        session.expire(current)
+        reloaded = _load_vendor(session, uei)
+        return (reloaded or current), False
+    replace_registration(current, key=registration_key(uei, parsed.raw), kind="vendor")
+    # Every SAM field is assigned, including nulls, so a missing value cannot
+    # keep the previous registration's assertion.
+    current.cage_code = parsed.cage_code
+    current.legal_name = parsed.legal_name
+    current.dba_name = parsed.dba_name
+    current.registration_status = parsed.registration_status
+    current.physical_address = parsed.physical_address
+    current.business_types = parsed.business_types
+    current.naics_codes = parsed.naics_codes
+    current.psc_codes = parsed.psc_codes
+    current.points_of_contact = parsed.points_of_contact
+    current.raw = parsed.raw
+    commit_freshness(current, now=now, source_updated=updated, expires=expiration_date(parsed.raw), kind="vendor")
     session.flush()
-    return row, True
+    session.expire(current)
+    stored = _load_vendor(session, uei)
+    return (stored or current), True
+
+
+def cancel_vendor_refresh(session: Session, uei: str, attempt_id: str) -> bool:
+    """Cancel an in-flight vendor refresh so a late response cannot apply."""
+    row = _load_vendor(session, normalize_uei(uei))
+    if row is None:
+        return False
+    cancelled = cancel_attempt(row, attempt_id)
+    if cancelled:
+        session.flush()
+        session.expire(row)
+    return cancelled
