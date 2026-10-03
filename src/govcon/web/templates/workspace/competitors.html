@@ -20,7 +20,7 @@
           <td><a href="/vendors?q={{ c.recipient_uei }}">{{ c.recipient_name or "—" }}</a></td>
           <td><code>{{ c.recipient_uei or "—" }}</code></td>
           <td>{{ c.award_count }}</td>
-          <td>{{ "$%,.0f"|format(c.total_value|float) if c.total_value else "—" }}</td>
+          <td>{{ c.total_value|money(0) if c.total_value else "—" }}</td>
         </tr>
         {% endfor %}
       </tbody>

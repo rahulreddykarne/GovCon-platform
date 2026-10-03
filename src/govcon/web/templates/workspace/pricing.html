@@ -1,19 +1,25 @@
+{% import "workspace/_ai_macros.html" as ai with context %}
 <!-- Pricing tab -->
 {% if ai_pricing %}
 <div class="card">
   <div class="card-header">
     <span class="card-title">Pricing Analysis <span class="label-ai">AI</span></span>
+    {{ ai.run_button(opp.id, "pricing", "Re-run", can_run_analysis) }}
   </div>
   {% set out = ai_pricing.output_json %}
-  {% if out.get('pricing_summary') %}<p>{{ out['pricing_summary'] }}</p>{% endif %}
-  {% if out.get('supplier_cost') %}<p class="mt-1"><strong>Supplier cost:</strong> {{ out['supplier_cost'] }}</p>{% endif %}
-  {% if out.get('historical_comps') %}<p class="mt-1"><strong>Historical comparisons:</strong> {{ out['historical_comps'] }}</p>{% endif %}
-  {% if out.get('margin') %}<p class="mt-1"><strong>Margin estimate:</strong> {{ out['margin'] }}</p>{% endif %}
-  {% if out.get('price_risk') %}<p class="mt-1"><strong>Price risk:</strong> {{ out['price_risk'] }}</p>{% endif %}
+  {% if out.get('historical_comparability') %}<p><strong>Historical comparability:</strong> {{ out['historical_comparability'] }}</p>{% endif %}
+  {% if out.get('proposed_price_position') %}<p class="mt-1"><strong>Proposed price position:</strong> {{ out['proposed_price_position'] }}</p>{% endif %}
+  {% if out.get('expected_margin_quality') %}<p class="mt-1"><strong>Expected margin quality:</strong> {{ out['expected_margin_quality'] }}</p>{% endif %}
+  <p class="mt-1"><strong>Confidence:</strong> {{ out.get('confidence') or 'low' }}{% if out.get('more_research_warranted') %} · more research warranted{% endif %}</p>
+  {{ ai.bullet_list("Cost-risk signals", out.get('cost_risk_signals')) }}
+  {{ ai.bullet_list("Missing cost inputs", out.get('missing_cost_inputs')) }}
+  {{ ai.bullet_list("Pricing evidence gaps", out.get('pricing_evidence_gaps')) }}
+  <p class="text-sm text-muted mt-1">The AI does not set the bid price; the approver does.</p>
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No pricing analysis yet.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No pricing analysis yet. Record a quote price or sourcing cost, then
+  {{ ai.run_button(opp.id, "pricing", "Run pricing analysis", can_run_analysis) }}</p>
 </div>
 {% endif %}
 

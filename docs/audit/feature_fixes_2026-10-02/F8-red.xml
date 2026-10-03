@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="4.880" timestamp="2026-10-02T23:04:02.843920-05:00" hostname="RahulROG"><testcase classname="tests.test_feature_audit_fixes" name="test_f8_protocol_reads_real_decision_history" time="3.803"><failure message="AssertionError: {'code': 'operation_failed', 'message': &quot;AttributeError: 'DecisionRun' object has no attribute 'status'&quot;}&#10;assert False">tests\test_feature_audit_fixes.py:316: in test_f8_protocol_reads_real_decision_history
+    assert result["ok"], result["error"]
+E   AssertionError: {'code': 'operation_failed', 'message': "AttributeError: 'DecisionRun' object has no attribute 'status'"}
+E   assert False</failure></testcase></testsuite></testsuites>

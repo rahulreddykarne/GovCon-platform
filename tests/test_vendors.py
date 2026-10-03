@@ -59,11 +59,11 @@ def _settings(tmp_path) -> Settings:
 
 
 def _entity_payload() -> dict:
-    return json.loads(FIXTURE.read_text())["entityData"][0]
+    return json.loads(FIXTURE.read_text(encoding="utf-8"))["entityData"][0]
 
 
 def _mock_entity_client() -> httpx.Client:
-    payload = json.loads(FIXTURE.read_text())
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "api.sam.gov"
@@ -183,7 +183,7 @@ def test_cache_prevents_unnecessary_sam_calls(session: Session, tmp_path) -> Non
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["count"] += 1
-        return httpx.Response(200, json=json.loads(FIXTURE.read_text()))
+        return httpx.Response(200, json=json.loads(FIXTURE.read_text(encoding="utf-8")))
 
     transport = httpx.MockTransport(handler)
     second_client = httpx.Client(transport=transport)
@@ -209,7 +209,7 @@ def test_refresh_bypasses_cache(session: Session, tmp_path) -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["count"] += 1
-        return httpx.Response(200, json=json.loads(FIXTURE.read_text()))
+        return httpx.Response(200, json=json.loads(FIXTURE.read_text(encoding="utf-8")))
 
     transport = httpx.MockTransport(handler)
     second_client = httpx.Client(transport=transport)
@@ -321,19 +321,20 @@ def test_cli_vendors_show_and_competitors(session: Session, tmp_path, monkeypatc
 
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url).startswith(SAM_ENTITY_URL):
-            return httpx.Response(200, json=json.loads(FIXTURE.read_text()))
+            return httpx.Response(200, json=json.loads(FIXTURE.read_text(encoding="utf-8")))
         return httpx.Response(404)
 
     transport = httpx.MockTransport(handler)
 
+    cache_now = datetime.now(UTC)
     with httpx.Client(transport=transport) as client:
-        first = vendor_profile(session, UEI, client=client, settings=_settings(tmp_path), now=NOW)
+        first = vendor_profile(session, UEI, client=client, settings=_settings(tmp_path), now=cache_now)
         second = vendor_profile(
             session,
             UEI,
             client=client,
             settings=_settings(tmp_path),
-            now=NOW + timedelta(hours=1),
+            now=cache_now + timedelta(hours=1),
         )
     assert first.from_cache is False
     assert second.from_cache is True

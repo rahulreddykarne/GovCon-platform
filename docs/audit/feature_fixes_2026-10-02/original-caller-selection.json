@@ -1,0 +1,11 @@
+{
+  "exit": 1,
+  "isolated_original_source": "C:\\Users\\karne\\AppData\\Local\\Temp\\govcon-original-caller-check-wyygjekh",
+  "existing_test_failures": {
+    "tests.test_proposal_submission.test_generate_proposal_with_ai_mock": "assert 3 == 2",
+    "tests.test_proposal_submission.test_red_team_runs_and_persists_findings": "govcon.ai.structured.StructuredCallError: registry_absent: no active version for prompt 'proposal_red_team'",
+    "tests.test_proposal_submission.test_red_team_major_only_does_not_block": "govcon.ai.structured.StructuredCallError: registry_absent: no active version for prompt 'proposal_red_team'",
+    "tests.test_collaborative_review.test_ai_validation_populates_side_opinion_without_changing_human_comment": "AssertionError: assert None == 'disagree'\n +  where None = <govcon.models.ReviewComment object at 0x000002CF037D0230>.ai_position"
+  },
+  "new_regressions_expected_to_fail_on_original": 12
+}

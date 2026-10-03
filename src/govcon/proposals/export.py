@@ -1,14 +1,14 @@
 """Proposal and submission package export (Phase 11).
 
-Exports proposal versions to DOCX, and the full submission package to a ZIP
-archive. PDF export is delegated to a future phase; for now a plain-text
-fallback is written. XLSX export of requirement coverage is also included.
+Exports proposal versions to DOCX/PDF and assembled supporting files to a ZIP
+archive, with an XLSX coverage matrix and SHA-256 file manifest.
 
 All export functions are intentionally pure I/O — they do not mutate DB rows.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import zipfile
@@ -37,8 +37,9 @@ def export_proposal_docx(
 ) -> bytes:
     """Export a proposal version to DOCX bytes.
 
-    Uses python-docx. Falls back to a plain-text representation if python-docx
-    is unavailable (should not happen; it is a declared dependency).
+    Uses python-docx; failure to produce the requested format is an error.
+    The exported bytes' hash is recorded as an artifact of this version, so a
+    package may carry this file as the proposal.
     """
     pv = session.get(ProposalVersion, proposal_version_id)
     if pv is None:
@@ -50,29 +51,71 @@ def export_proposal_docx(
     opp = session.get(Opportunity, proposal.opportunity_id) if proposal else None
     title = (opp.title or f"Proposal #{pv.proposal_id}") if opp else f"Proposal #{pv.proposal_id}"
 
-    try:
-        from docx import Document
-        from docx.shared import Pt
+    from docx import Document
+    from docx.shared import Pt
 
-        doc = Document()
-        doc.add_heading(title, 0)
-        doc.add_paragraph(f"Version {pv.version_number} — {pv.created_at.date() if pv.created_at else 'draft'}")
-        doc.add_paragraph(f"Prepared by: {pv.created_by}")
+    doc = Document()
+    doc.add_heading(title, 0)
+    doc.add_paragraph(f"Version {pv.version_number} — {pv.created_at.date() if pv.created_at else 'draft'}")
+    doc.add_paragraph(f"Prepared by: {pv.created_by}")
 
-        for section in sections:
-            heading_text = section.heading or (section.section_key or "Section").replace("_", " ").title()
-            doc.add_heading(heading_text, level=1)
-            content = section.content or ""
-            if section.requirement_ids:
-                content += f"\n\n[Addresses requirements: {', '.join(str(r) for r in section.requirement_ids)}]"
-            doc.add_paragraph(content)
+    for section in sections:
+        heading_text = section.heading or (section.section_key or "Section").replace("_", " ").title()
+        doc.add_heading(heading_text, level=1)
+        content = section.content or ""
+        if section.requirement_ids:
+            content += f"\n\n[Addresses requirements: {', '.join(str(r) for r in section.requirement_ids)}]"
+        doc.add_paragraph(content)
 
-        buf = io.BytesIO()
-        doc.save(buf)
-        return buf.getvalue()
+    buf = io.BytesIO()
+    doc.save(buf)
+    data = buf.getvalue()
+    _record_export(session, pv, proposal, data, "docx")
+    return data
 
-    except ImportError:
-        return _export_proposal_text(title, pv, sections).encode("utf-8")
+
+def export_proposal_pdf(session: Session, *, proposal_version_id: int) -> bytes:
+    """Render proposal text with automatic wrapping and pagination."""
+    from xml.sax.saxutils import escape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    pv = session.get(ProposalVersion, proposal_version_id)
+    if pv is None:
+        raise ValueError(f"ProposalVersion {proposal_version_id} not found")
+    proposal = session.get(Proposal, pv.proposal_id)
+    opp = session.get(Opportunity, proposal.opportunity_id)
+    styles = getSampleStyleSheet()
+    story = [Paragraph(escape(opp.title or "Proposal"), styles["Title"]), Paragraph(f"Version {pv.version_number}", styles["Normal"]), Spacer(1, 12)]
+    for section in get_sections_for_version(session, pv.id):
+        story.append(Paragraph(escape(section.heading or section.section_key or "Section"), styles["Heading1"]))
+        for paragraph in (section.content or "").splitlines():
+            story.append(Paragraph(escape(paragraph) or "&#160;", styles["Normal"]))
+            story.append(Spacer(1, 6))
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf).build(story)
+    data = buf.getvalue()
+    _record_export(session, pv, proposal, data, "pdf")
+    return data
+
+
+def _record_export(session: Session, pv: ProposalVersion, proposal: Proposal | None, data: bytes, fmt: str) -> None:
+    """Provenance: these exact bytes were rendered from this pinned version."""
+    from govcon.submissions.manifest import record_proposal_artifact
+
+    record_proposal_artifact(
+        session,
+        proposal_version_id=pv.id,
+        opportunity_id=proposal.opportunity_id if proposal else None,
+        content=data,
+        fmt=fmt,
+    )
+
+
+def spreadsheet_text(value: Any) -> Any:
+    """Prevent solicitation strings from becoming spreadsheet formulas."""
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
 
 
 def _export_proposal_text(
@@ -101,6 +144,10 @@ def export_coverage_xlsx(
     """Export requirement-to-proposal coverage as XLSX."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
+
+    from govcon.proposals.versions import version_for_opportunity
+
+    version_for_opportunity(session, opportunity_id, proposal_version_id)
 
     requirements = list(
         session.scalars(
@@ -145,7 +192,7 @@ def export_coverage_xlsx(
             "Yes" if req.blocks_submission else "No",
         ]
         for col, value in enumerate(row_data, 1):
-            cell = ws.cell(row=row_idx, column=col, value=value)
+            cell = ws.cell(row=row_idx, column=col, value=spreadsheet_text(value))
             cell.fill = fill
 
     buf = io.BytesIO()
@@ -159,6 +206,7 @@ def export_submission_zip(
     opportunity_id: int,
     include_proposal_docx: bool = True,
     include_coverage_xlsx: bool = True,
+    include_proposal_pdf: bool = True,
 ) -> bytes:
     """Assemble a submission ZIP package.
 
@@ -178,6 +226,46 @@ def export_submission_zip(
     opp = session.get(Opportunity, opportunity_id)
     sol_num = (opp.solicitation_number or str(opportunity_id)) if opp else str(opportunity_id)
 
+    from govcon.compliance.deterministic import PackageFile, SubmissionPackage, required_files_present
+    from govcon.submissions.manifest import current_package, verify_package
+    from govcon.submissions.service import _extract_submission_info
+    from govcon.compliance.matrix import active_requirements
+    if _extract_submission_info(active_requirements(session, opportunity_id))["destination_conflicts"]:
+        raise ValueError("submission_destination_conflict: resolve conflicting destinations before exporting")
+    assembled = current_package(session, submission) if submission else None
+    artifacts: dict[str, bytes] = {}
+    if assembled:
+        problems = verify_package(assembled)
+        if problems:
+            raise ValueError("; ".join(problems))
+        for file in assembled.files:
+            if not file.local_path:
+                raise ValueError(f"required artifact has no local content: {file.name}")
+            content = Path(file.local_path).read_bytes()
+            if hashlib.sha256(content).hexdigest() != file.sha256:
+                raise ValueError(f"assembled file changed: {file.name}")
+            artifacts[file.name] = content
+    if (include_proposal_docx or include_proposal_pdf or include_coverage_xlsx) and (not proposal or not proposal.current_version_id):
+        raise ValueError("a current proposal version is required to generate the package")
+    if proposal and proposal.current_version_id:
+        pv = session.get(ProposalVersion, proposal.current_version_id)
+        if pv is None:
+            raise ValueError("current proposal version is unavailable")
+        for enabled, name, generate in (
+            (include_proposal_docx, f"proposal_v{pv.version_number}.docx", lambda: export_proposal_docx(session, proposal_version_id=pv.id)),
+            (include_proposal_pdf, f"proposal_v{pv.version_number}.pdf", lambda: export_proposal_pdf(session, proposal_version_id=pv.id)),
+            (include_coverage_xlsx, "coverage_matrix.xlsx", lambda: export_coverage_xlsx(session, opportunity_id=opportunity_id, proposal_version_id=pv.id)),
+        ):
+            if enabled and name.casefold() not in {n.casefold() for n in artifacts}:
+                artifacts[name] = generate()
+    required = submission.required_files if submission else None
+    required = required.get("files", []) if isinstance(required, dict) else (required or [])
+    export_files = [PackageFile(name=name, form_id=next((f.form_id for f in assembled.files if f.name == name), None) if assembled else None) for name in artifacts]
+    if required:
+        result = required_files_present(required, SubmissionPackage(files=export_files))
+        if result.status != "pass":
+            raise ValueError(f"required artifacts could not be assembled: {result.reason}")
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         manifest: dict[str, Any] = {
@@ -186,37 +274,20 @@ def export_submission_zip(
             "files": [],
         }
 
-        if proposal and proposal.current_version_id and include_proposal_docx:
-            pv = session.get(ProposalVersion, proposal.current_version_id)
-            if pv:
-                docx_bytes = export_proposal_docx(session, proposal_version_id=pv.id)
-                fname = f"proposal_v{pv.version_number}.docx"
-                zf.writestr(fname, docx_bytes)
-                manifest["files"].append({"filename": fname, "type": "proposal_docx"})
-
-        if include_coverage_xlsx and proposal and proposal.current_version_id:
-            try:
-                xlsx_bytes = export_coverage_xlsx(
-                    session,
-                    opportunity_id=opportunity_id,
-                    proposal_version_id=proposal.current_version_id,
-                )
-                fname = "coverage_matrix.xlsx"
-                zf.writestr(fname, xlsx_bytes)
-                manifest["files"].append({"filename": fname, "type": "coverage_xlsx"})
-            except Exception:
-                pass
-
         # Submission instructions
         instructions = _build_instructions_text(opp, submission)
-        zf.writestr("submission_instructions.txt", instructions)
-        manifest["files"].append({"filename": "submission_instructions.txt", "type": "instructions"})
 
         # Checklist
         from govcon.submissions.checklist import generate_final_checklist
         checklist = generate_final_checklist(session, opportunity_id=opportunity_id)
-        zf.writestr("submission_checklist.json", json.dumps(checklist, indent=2, default=str))
-        manifest["files"].append({"filename": "submission_checklist.json", "type": "checklist"})
+        for name in ("submission_instructions.txt", "submission_checklist.json", "file_manifest.json"):
+            if name.casefold() in {n.casefold() for n in artifacts}:
+                raise ValueError(f"assembled filename is reserved: {name}")
+        artifacts["submission_instructions.txt"] = instructions.encode("utf-8")
+        artifacts["submission_checklist.json"] = json.dumps(checklist, indent=2, default=str).encode("utf-8")
+        for name, content in artifacts.items():
+            zf.writestr(name, content)
+            manifest["files"].append({"filename": name, "size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()})
 
         zf.writestr("file_manifest.json", json.dumps(manifest, indent=2, default=str))
 

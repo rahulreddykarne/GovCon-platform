@@ -44,6 +44,10 @@ class SourceDocument:
     document_date: date | None = None
     precedence_rank: int = 0
     extraction_error: str | None = None
+    # Set when the retained bytes no longer match the stored SHA-256.
+    integrity_error: str | None = None
+    classification: str = "UNKNOWN"
+    source_origin: str = "legacy_unknown"
 
     def pages(self) -> list[tuple[int | None, str]]:
         if self.page_texts:
@@ -58,6 +62,8 @@ class SourceDocument:
     def manifest(self) -> dict[str, Any]:
         return {
             "file_id": self.file_id,
+            "classification": self.classification,
+            "source_origin": self.source_origin,
             "filename": self.filename,
             "url": self.url,
             "sha256": self.sha256,

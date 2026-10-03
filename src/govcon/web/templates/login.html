@@ -17,6 +17,7 @@
     {% endif %}
 
     <form method="post" action="/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="form-group">
         <label for="email">Email</label>
         <input type="email" id="email" name="email" required autofocus value="{{ prefill_email|default('') }}">

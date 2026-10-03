@@ -26,9 +26,10 @@ from sqlalchemy.orm import Session
 
 from govcon.collaboration.users import invite_user
 from govcon.learning import analytics as anl
-from govcon.learning.outcomes import NO_BID_CATEGORIES, record_outcome
+from govcon.learning.outcomes import NO_BID_CATEGORIES
+from govcon.learning.outcomes import record_outcome as _record_outcome_service
 from govcon.mcp import operations as mcp_ops
-from govcon.models import Opportunity, OutcomeFeedback, Pursuit
+from govcon.models import Opportunity, OutcomeFeedback, Pursuit, Submission
 
 
 @pytest.fixture()
@@ -36,6 +37,36 @@ def session(upgraded_engine):
     with Session(upgraded_engine) as s:
         yield s
         s.rollback()
+
+
+def _approver(session: Session):
+    """One approver per test session; outcomes are recorded by an authorized human."""
+    user = session.info.get("outcome_approver")
+    if user is None:
+        user = invite_user(
+            session,
+            email=f"ol-approver-{uuid4().hex[:8]}@example.test",
+            display_name="OL Approver",
+            password="correct horse battery",
+            role="approver",
+        )
+        session.info["outcome_approver"] = user
+    return user
+
+
+def record_outcome(session: Session, **kwargs):
+    kwargs.setdefault("actor", _approver(session))
+    return _record_outcome_service(session, **kwargs)
+
+
+@pytest.fixture()
+def mcp_actor(owner, monkeypatch):
+    from govcon.mcp.context import reset_server_actor
+
+    reset_server_actor()
+    monkeypatch.setenv("MCP_ACTOR_EMAIL", owner.email)
+    yield owner
+    reset_server_actor()
 
 
 @pytest.fixture()
@@ -77,9 +108,12 @@ def _opp(
 
 
 def _pursuit(session: Session, opp_id: int, stage: str = "submitted") -> Pursuit:
-    p = Pursuit(opportunity_id=opp_id, stage=stage)
+    p = Pursuit(opportunity_id=opp_id, stage=stage, submitted_at=datetime.now(UTC) if stage == "submitted" else None)
     session.add(p)
     session.flush()
+    if stage == "submitted":
+        session.add(Submission(opportunity_id=opp_id, pursuit_id=p.id, status="submitted", submitted_at=p.submitted_at))
+        session.flush()
     return p
 
 
@@ -337,14 +371,13 @@ class TestAnalytics:
 
 
 class TestMCPOutcome:
-    def test_mcp_record_outcome_structured(self, session: Session, owner):
+    def test_mcp_record_outcome_structured(self, session: Session, mcp_actor):
         opp = _opp(session, psc="6515", agency="DEPT OF DEFENSE > DLA")
         _pursuit(session, opp.id, "submitted")
         result = mcp_ops.op_record_outcome(
             session,
             opp.id,
             outcome="won",
-            actor_email=owner.email,
             win_reason="Best price and delivery",
             win_margin_pct=18.0,
             win_supplier="Widgets Corp",
@@ -355,14 +388,13 @@ class TestMCPOutcome:
         assert result["data"]["win_supplier"] == "Widgets Corp"
         assert result["data"]["denorm_psc"] == "6515"
 
-    def test_mcp_record_outcome_loss_structured(self, session: Session, owner):
+    def test_mcp_record_outcome_loss_structured(self, session: Session, mcp_actor):
         opp = _opp(session, psc="5895")
         _pursuit(session, opp.id, "submitted")
         result = mcp_ops.op_record_outcome(
             session,
             opp.id,
             outcome="lost",
-            actor_email=owner.email,
             loss_reason="pricing",
             known_winning_price=38_000.0,
             awarded_vendor_name="Other Widgets LLC",
@@ -373,13 +405,12 @@ class TestMCPOutcome:
         assert result["data"]["loss_reason"] == "pricing"
         assert result["data"]["known_winning_price"] == pytest.approx(38_000.0)
 
-    def test_mcp_record_outcome_no_bid(self, session: Session, owner):
+    def test_mcp_record_outcome_no_bid(self, session: Session, mcp_actor):
         opp = _opp(session)
         result = mcp_ops.op_record_outcome(
             session,
             opp.id,
             outcome="no_bid",
-            actor_email=owner.email,
             no_bid_category="margin",
             no_bid_reason="Below threshold margin after commodity spike.",
         )
@@ -473,7 +504,7 @@ class TestOutcomeAnalysisPrompt:
             / "outcome_learning_v1.yaml"
         )
         assert spec_path.exists()
-        content = spec_path.read_text()
+        content = spec_path.read_text(encoding="utf-8")
         assert "outcome_learning" in content
         assert "questions" in content
 

@@ -118,7 +118,7 @@ def _opp(session: Session, **overrides) -> Opportunity:
 
 
 def _file(session: Session, opp: Opportunity, text: str | None, filename: str, *, mime: str = "text/plain", status: str = "success", sha: str | None = None, url: str | None = None, error: str | None = None) -> StoredFile:
-    row = StoredFile(
+    row = StoredFile(classification="PUBLIC", source_origin="synthetic_test_fixture",
         opportunity_id=opp.id,
         filename=filename,
         url=url or f"https://example.test/{_uid()}/{filename}",
@@ -135,7 +135,7 @@ def _file(session: Session, opp: Opportunity, text: str | None, filename: str, *
 
 
 def _remap(path: Path, ids: dict[int, int]) -> dict:
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     for item in data["requirements"]:
         if item.get("source_file_id") in ids:
             item["source_file_id"] = ids[item["source_file_id"]]
@@ -144,8 +144,8 @@ def _remap(path: Path, ids: dict[int, int]) -> dict:
 
 def _dla_setup(session: Session, *, with_amendment: bool = False, **opp):
     o = _opp(session, **opp)
-    f1 = _file(session, o, (DLA / "solicitation.txt").read_text(), "SPE2DM-26-Q-0412_solicitation.txt")
-    f2 = _file(session, o, (DLA / "price_schedule.txt").read_text(), "Attachment_2_Price_Schedule.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    f1 = _file(session, o, (DLA / "solicitation.txt").read_text(encoding="utf-8"), "SPE2DM-26-Q-0412_solicitation.txt")
+    f2 = _file(session, o, (DLA / "price_schedule.txt").read_text(encoding="utf-8"), "Attachment_2_Price_Schedule.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     ids = {1: f1.id, 2: f2.id}
     if with_amendment:
         ids[3] = _add_amendment(session, o).id
@@ -153,7 +153,7 @@ def _dla_setup(session: Session, *, with_amendment: bool = False, **opp):
 
 
 def _add_amendment(session: Session, opp: Opportunity) -> StoredFile:
-    return _file(session, opp, (DLA / "amendment_0001.txt").read_text(), "SPE2DM-26-Q-0412_amendment_0001.txt")
+    return _file(session, opp, (DLA / "amendment_0001.txt").read_text(encoding="utf-8"), "SPE2DM-26-Q-0412_amendment_0001.txt")
 
 
 def _dla_provider(ids: dict[int, int], extra: dict | None = None) -> FakeProvider:
@@ -191,12 +191,30 @@ def _user(session, role: str):
     return invite_user(session, email=f"{role}-{_uid()}@example.test", display_name=role, password="correct horse battery", role=role)
 
 
+# Mocked AI here sends PROPRIETARY data; the default policy blocks that.
+pytestmark = pytest.mark.usefixtures("allow_proprietary_ai")
+
+
+@pytest.fixture(autouse=True)
+def independent_pass_b(monkeypatch):
+    """Pass B on a different model, so A/B agreement counts as independent confirmation."""
+    from govcon.config import get_settings
+
+    monkeypatch.setenv("COMPLIANCE_PASS_B_MODEL", "deepseek-v4-pro")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture()
 def session(upgraded_engine):
     from govcon.compliance.clauses import seed_clause_library
 
     with Session(upgraded_engine) as s:
         seed_clause_library(s)
+        from govcon.config import get_settings
+        from govcon.prompting.registry import sync_prompts
+        sync_prompts(s, get_settings().resolved_prompt_root())
         yield s
         s.rollback()
 
@@ -274,6 +292,21 @@ def test_independent_passes_reconcile_and_single_pass_is_kept(session) -> None:
     references = _req(session, o, "three past performance references")
     assert "ab_disagreement" in references.reconciliation["flags"]
     assert references.status == "needs_review"
+
+
+def test_passes_on_the_same_model_are_not_independent_confirmation(session, monkeypatch) -> None:
+    from govcon.config import get_settings
+
+    monkeypatch.delenv("COMPLIANCE_PASS_B_MODEL", raising=False)
+    get_settings.cache_clear()
+    o, ids = _dla_setup(session)
+    result = _run(session, o, _dla_provider(ids))
+    passes = result["extraction"]["passes"]
+    assert (passes["A"]["provider"], passes["A"]["model"]) == (passes["B"]["provider"], passes["B"]["model"])
+    deadline = _req(session, o, "October 15, 2026")
+    assert set(deadline.reconciliation["found_by"]) >= {"A", "B"}
+    assert deadline.independently_confirmed is False
+    assert "ab_same_model" in deadline.reconciliation["flags"]
 
 
 def test_reconciler_never_merges_conflicting_values_or_drops_candidates() -> None:
@@ -355,10 +388,11 @@ def test_ai_cannot_override_deterministic_failure(session) -> None:
     evidence = add_evidence(session, requirement_id=recipient.id, evidence_type="submission_package", verification_method="submission_preflight", verification_status="verified", description="package manifest")
     validator = {"validations": [{"requirement_id": recipient.id, "status": "SATISFIED", "reason": "looks fine", "evidence_refs": [{"evidence_id": evidence.id}], "confidence": 0.99}]}
     package = SubmissionPackage(files=[PackageFile("quote.pdf", role="proposal")], recipient_email="someone.else@dla.mil")
-    _run(session, o, _dla_provider(ids, {"compliance_validator": validator}), package=package, force=True)
+    repeated = _run(session, o, _dla_provider(ids, {"compliance_validator": validator}), package=package, force=True)
     session.refresh(recipient)
     assert recipient.status in {"missing", "needs_review"}
     assert recipient.validation["deterministic_fail"] is True
+    assert "blocked_ai_claims" in recipient.validation, repeated.get("warnings")
     assert any("deterministic validator(s) failed" in c for c in recipient.validation["blocked_ai_claims"])
     finding = session.scalar(select(ComplianceFinding).where(ComplianceFinding.requirement_id == recipient.id, ComplianceFinding.finding_type == "ai_claim_blocked"))
     assert finding is not None and finding.status == "open"
@@ -416,8 +450,8 @@ def test_clause_references_map_to_library(session) -> None:
 
 def test_conflicting_instructions_are_surfaced(session) -> None:
     o = _opp(session, set_aside_code=None, response_deadline=datetime(2026, 12, 1, 22, 0, tzinfo=UTC))
-    f1 = _file(session, o, (QA / "solicitation.txt").read_text(), "W912DY-26-R-0077_RFP.txt")
-    f2 = _file(session, o, (QA / "questions_and_answers.txt").read_text(), "W912DY-26-R-0077_Questions_and_Answers.txt")
+    f1 = _file(session, o, (QA / "solicitation.txt").read_text(encoding="utf-8"), "W912DY-26-R-0077_RFP.txt")
+    f2 = _file(session, o, (QA / "questions_and_answers.txt").read_text(encoding="utf-8"), "W912DY-26-R-0077_Questions_and_Answers.txt")
     ids = {1: f1.id, 2: f2.id}
     provider = FakeProvider({"requirement_extraction_a": _remap(QA / "pass_a.json", ids), "requirement_extraction_b": _remap(QA / "pass_b.json", ids)})
     _run(session, o, provider, company_facts={})
@@ -625,15 +659,30 @@ def test_proposal_coverage_is_checked_against_the_matrix(session) -> None:
 # ── AC15 / AC16 / AC17: pre-flight, readiness blocking, audited overrides ──
 
 
-def test_preflight_blocks_ready_to_submit_and_override_is_audited(session) -> None:
+def test_preflight_blocks_ready_to_submit_and_override_is_audited(session, tmp_path) -> None:
     from govcon.compliance.submission_preflight import ReadinessBlocked, move_to_ready_to_submit, run_submission_preflight
 
     o, ids = _dla_setup(session, with_amendment=True)
     _run(session, o, _dla_provider(ids))
-    pursuit = Pursuit(opportunity_id=o.id, stage="review")
+    pursuit = Pursuit(opportunity_id=o.id, stage="review", approved_to_bid_at=datetime.now(UTC))  # bid approved
     session.add(pursuit)
     session.flush()
-    package = SubmissionPackage(files=[PackageFile("quote.docx", role="proposal", size_bytes=10)], recipient_email="jane.buyer@dla.mil", amendments_acknowledged=[])
+    submission = Submission(opportunity_id=o.id, pursuit_id=pursuit.id)
+    session.add(submission)
+    session.flush()
+    quote = tmp_path / "quote.docx"
+    from govcon.proposals.service import get_or_create_proposal
+    from govcon.proposals.versions import create_proposal_version
+    from govcon.proposals.export import export_proposal_docx
+    proposal = get_or_create_proposal(session, opportunity_id=o.id, pursuit_id=pursuit.id)
+    version = create_proposal_version(session, proposal_id=proposal.id, created_by="synthetic fixture",
+                                     status_after="ai_generated", sections=[{"section_key":"quote", "content":"Fixture quote content"}])
+    content = export_proposal_docx(session, proposal_version_id=version.id)
+    quote.write_bytes(content)
+    package = SubmissionPackage(files=[PackageFile(
+        "quote.docx", role="proposal", size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(), local_path=str(quote),
+    )], proposal_version_id=version.id, recipient_email="jane.buyer@dla.mil", amendments_acknowledged=[])
     result = run_submission_preflight(session, o.id, package, now=NOW)
     items = {i["check"]: i for i in result["items"]}
     assert result["ready"] is False
@@ -688,7 +737,7 @@ def test_override_requirement_needs_role_reason_version_and_audit(session) -> No
     assert updated.status == "satisfied", "later validation keeps an authorized override"
 
 
-def test_ready_to_submit_succeeds_only_when_everything_is_green(session) -> None:
+def test_ready_to_submit_succeeds_only_when_everything_is_green(session, tmp_path) -> None:
     from govcon.compliance.proposal_coverage import check_proposal_coverage
     from govcon.compliance.submission_preflight import move_to_ready_to_submit, readiness_blockers, run_submission_preflight
     from govcon.compliance.validator import run_validation
@@ -703,7 +752,7 @@ def test_ready_to_submit_succeeds_only_when_everything_is_green(session) -> None
     _file(session, o, text, "RFQ_55_solicitation.txt")
     _run(session, o, FakeProvider(), company_facts={}, use_ai=False)
     owner = _user(session, "owner")
-    pursuit = Pursuit(opportunity_id=o.id, stage="review")
+    pursuit = Pursuit(opportunity_id=o.id, stage="review", approved_to_bid_at=datetime.now(UTC))  # bid approved
     session.add(pursuit)
     session.flush()
     product = _req(session, o, "proposed nitrile glove product")
@@ -719,7 +768,12 @@ def test_ready_to_submit_succeeds_only_when_everything_is_green(session) -> None
     submission = Submission(opportunity_id=o.id, pursuit_id=pursuit.id, recipient_email="buyer@agency.gov", deadline_timezone="ET", required_files=[])
     session.add(submission)
     session.flush()
-    package = SubmissionPackage(files=[PackageFile("quote.pdf", role="proposal", size_bytes=1000, page_count=2)], recipient_email="buyer@agency.gov", amendments_acknowledged=[], proposal_version_id=version.id)
+    quote = tmp_path / "quote.pdf"
+    from govcon.proposals.export import export_proposal_pdf
+
+    # The proposal file must be bytes exported from the pinned version (F26).
+    quote.write_bytes(export_proposal_pdf(session, proposal_version_id=version.id))
+    package = SubmissionPackage(files=[PackageFile("quote.pdf", role="proposal", size_bytes=quote.stat().st_size, page_count=2, sha256=hashlib.sha256(quote.read_bytes()).hexdigest(), local_path=str(quote))], recipient_email="buyer@agency.gov", amendments_acknowledged=[], proposal_version_id=version.id)
     result = run_submission_preflight(session, o.id, package, submission_id=submission.id, now=NOW)
     assert result["deterministic_ready"], [i for i in result["items"] if i["status"] not in {"pass", "not_applicable"}]
     assert result["status"] == "ready", (result["status"], result["jev"], result["ai"])
@@ -750,7 +804,7 @@ def test_compliance_benchmark_passes_and_metrics_are_measurable() -> None:
     table = next(c for c in suite.cases if c.case_id == "table_embedded_packaging")
     assert table.details["found_by"]["packaging_mil_std"] == ["D"], "table-embedded requirement caught only by the deterministic scan"
     for case_dir in (DLA, TABLE, QA):
-        case = json.loads((case_dir / "case.json").read_text())
+        case = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
         for key in ("source_files", "expected_mandatory_requirements", "expected_critical_requirements", "expected_conflicts", "expected_amendment_changes", "expected_submission_files"):
             assert key in case
 
@@ -766,9 +820,9 @@ def test_critical_recall_regression_blocks_release(tmp_path) -> None:
     assert not suite.gate.passed
     assert any("critical requirement recall regression" in f and "packaging_mil_std" in f for f in suite.gate.failures)
 
-    case = json.loads((root / "qa_conflict_injection" / "case.json").read_text())
+    case = json.loads((root / "qa_conflict_injection" / "case.json").read_text(encoding="utf-8"))
     case["expected_mandatory_requirements"].append({"id": "offer_acceptance_period", "match": ["acceptance period of 90 days"], "critical": True})
-    (root / "qa_conflict_injection" / "case.json").write_text(json.dumps(case))
+    (root / "qa_conflict_injection" / "case.json").write_text(json.dumps(case), encoding="utf-8")
     result = CliRunner().invoke(app, ["compliance", "benchmark", "--fixtures", str(root)])
     assert result.exit_code == 1 and "FAIL" in result.output and "offer_acceptance_period" in result.output
 
@@ -791,14 +845,14 @@ def test_compliance_prompts_are_registry_managed_and_gated(session) -> None:
 
     candidate = PROMPT_ROOT / "deepseek" / "requirement_extraction_a_v2.md"
     try:
-        candidate.write_text((PROMPT_ROOT / "deepseek" / "requirement_extraction_a_v1.md").read_text().replace("version: v1", "version: v2").replace("status: active", "status: candidate"))
+        candidate.write_text((PROMPT_ROOT / "deepseek" / "requirement_extraction_a_v1.md").read_text(encoding="utf-8").replace("version: v1", "version: v2").replace("status: active", "status: candidate"))
         sync_prompts(session, PROMPT_ROOT)
         result = activate_prompt(session, "requirement_extraction_a", "v2", prompt_root=PROMPT_ROOT)
         assert result["gate"]["required"] and result["gate"]["passed"] and result["previous_version"] == "v1"
         assert active_version(session, "requirement_extraction_a") == "v2"
         assert rollback_prompt(session, "requirement_extraction_a")["active_version"] == "v1"
 
-        candidate.write_text(candidate.read_text().replace("required_variables: OPPORTUNITY_JSON, DOCUMENT_INVENTORY_JSON, SOURCE_CHUNKS, AMENDMENT_JSON\n", "").replace("version: v2", "version: v3"))
+        candidate.write_text(candidate.read_text(encoding="utf-8").replace("required_variables: OPPORTUNITY_JSON, DOCUMENT_INVENTORY_JSON, SOURCE_CHUNKS, AMENDMENT_JSON\n", "").replace("version: v2", "version: v3"))
         candidate.rename(candidate.with_name("requirement_extraction_a_v3.md"))
         sync_prompts(session, PROMPT_ROOT)
         with pytest.raises(PromptActivationBlocked):
@@ -812,13 +866,14 @@ def test_compliance_prompts_are_registry_managed_and_gated(session) -> None:
 def test_no_hardcoded_prompts_in_compliance_services() -> None:
     root = Path(__file__).parent.parent / "src" / "govcon" / "compliance"
     for py_file in root.glob("*.py"):
-        for node in ast.walk(ast.parse(py_file.read_text())):
+        for node in ast.walk(ast.parse(py_file.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and len(node.value) > 200:
                 assert "you are" not in node.value.lower(), f"hardcoded prompt in {py_file.name}"
 
 
 def test_structured_runner_fails_closed_on_malformed_output(session) -> None:
     from govcon.ai.structured import StructuredCallError, run_structured_prompt
+    from govcon.security.classification import DataClassification
 
     o = _opp(session)
     for bad in ("not json", json.dumps({"requirements": [{"requirement_text": "x"}]}), json.dumps({"validations": [{"requirement_id": 1, "status": "SATISFIED", "reason": "no evidence"}]})):
@@ -826,11 +881,11 @@ def test_structured_runner_fails_closed_on_malformed_output(session) -> None:
         variables = {"REQUIREMENTS_JSON": [], "EVIDENCE_JSON": []} if prompt == "compliance_validator" else {"DOCUMENT_INVENTORY_JSON": [], "SOURCE_CHUNKS": "x", "AMENDMENT_JSON": {}}
         with patch("govcon.ai.structured.get_provider", return_value=FakeProvider({prompt: bad})):
             with pytest.raises(StructuredCallError):
-                run_structured_prompt(session, opportunity_id=o.id, prompt_name=prompt, analysis_type="compliance_review", variables=variables, context_manifest={})
+                run_structured_prompt(session, opportunity_id=o.id, prompt_name=prompt, analysis_type="compliance_review", variables=variables, context_manifest={}, classification=DataClassification.PUBLIC)
     assert not session.scalars(select(AIAnalysis).where(AIAnalysis.opportunity_id == o.id)).all()
     with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()):
         with pytest.raises(StructuredCallError) as exc:
-            run_structured_prompt(session, opportunity_id=o.id, prompt_name="requirement_extraction_b", analysis_type="compliance_review", variables={"SOURCE_CHUNKS": "x"}, context_manifest={})
+            run_structured_prompt(session, opportunity_id=o.id, prompt_name="requirement_extraction_b", analysis_type="compliance_review", variables={"SOURCE_CHUNKS": "x"}, context_manifest={}, classification=DataClassification.PUBLIC)
     assert exc.value.reason == "render_error"
 
 

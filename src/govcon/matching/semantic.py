@@ -15,6 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from govcon.models import Award, Match, Opportunity, OutcomeFeedback, Watchlist
+from govcon.matching.eligibility import ELIGIBLE_STATUSES, pursuit_eligibility
 
 if TYPE_CHECKING:
     from govcon.enrich.embeddings import EmbeddingProvider
@@ -29,8 +30,8 @@ CATEGORY_SIMILAR_WON = "Similar to won bids"
 CATEGORY_SIMILAR_PURSUED = "Similar to pursued bids"
 CATEGORY_RECOMPETE_RADAR = "Recompete radar"
 
-# Opportunities are only eligible for pursuit when their status is open/active.
-_ELIGIBLE_STATUSES = frozenset({"open", "active"})
+# Ingest normalizes actionable listings to the canonical open status.
+_ELIGIBLE_STATUSES = ELIGIBLE_STATUSES
 
 _DEFAULT_LIMIT = 10
 _MAX_LIMIT = 50
@@ -38,10 +39,11 @@ _MAX_LIMIT = 50
 
 def is_eligible_for_pursuit(opp: Opportunity) -> bool:
     """Return True when an opportunity is open and could be legitimately pursued."""
-    return opp.status in _ELIGIBLE_STATUSES
+    return pursuit_eligibility(opp)[0] == "eligible"
 
 
-def _compact_opp(opp: Opportunity, *, eligible: bool, distance: float | None = None) -> dict[str, Any]:
+def _compact_opp(opp: Opportunity, *, distance: float | None = None) -> dict[str, Any]:
+    eligibility, reason = pursuit_eligibility(opp)
     result: dict[str, Any] = {
         "id": opp.id,
         "title": opp.title,
@@ -53,12 +55,13 @@ def _compact_opp(opp: Opportunity, *, eligible: bool, distance: float | None = N
         "agency_path": opp.agency_path,
         "status": opp.status,
         "response_deadline": opp.response_deadline.isoformat() if opp.response_deadline else None,
-        "eligible_for_pursuit": eligible,
+        "eligible_for_pursuit": eligibility == "eligible",
+        "eligibility_status": eligibility,
     }
     if distance is not None:
         result["cosine_distance"] = round(distance, 4)
-    if not eligible:
-        result["ineligible_reason"] = f"status={opp.status!r}; semantic match does not auto-pursue"
+    if reason:
+        result["ineligible_reason"] = reason
     return result
 
 
@@ -70,6 +73,7 @@ def _vector_search(
     query_embedding: list[float],
     *,
     exclude_id: int | None = None,
+    exclude_watchlist_id: int | None = None,
     limit: int = _DEFAULT_LIMIT,
 ) -> list[tuple[Opportunity, float]]:
     """Return (opportunity, cosine_distance) pairs ordered by closeness.
@@ -86,10 +90,20 @@ def _vector_search(
         select(Opportunity, text(f"embedding <=> '{vec_literal}'::vector AS cosine_dist"))
         .where(Opportunity.embedding.is_not(None))
         .order_by(text(f"embedding <=> '{vec_literal}'::vector"))
-        .limit(limit + (1 if exclude_id is not None else 0))
+        .limit(limit)
     )
     if exclude_id is not None:
         stmt = stmt.where(Opportunity.id != exclude_id)
+    if exclude_watchlist_id is not None:
+        # Only live, non-dismissed rule matches are already surfaced. Historical
+        # matches may become useful again and must not hide recommendations.
+        existing_match = select(Match.id).where(
+            Match.watchlist_id == exclude_watchlist_id,
+            Match.opportunity_id == Opportunity.id,
+            Match.active.is_(True),
+            Match.status.in_(["new", "seen", "reviewing", "pursuing"]),
+        ).exists()
+        stmt = stmt.where(~existing_match)
 
     rows = session.execute(stmt).all()
     return [(row[0], float(row[1])) for row in rows[:limit]]
@@ -119,7 +133,7 @@ def similar_opportunities(
     if opp.embedding is not None:
         results = _vector_search(session, opp.embedding, exclude_id=opportunity_id, limit=limit)
         matches = [
-            _compact_opp(o, eligible=is_eligible_for_pursuit(o), distance=d)
+            _compact_opp(o, distance=d)
             for o, d in results
         ]
         return {
@@ -138,7 +152,7 @@ def similar_opportunities(
             session.flush()
             results = _vector_search(session, opp.embedding, exclude_id=opportunity_id, limit=limit)
             matches = [
-                _compact_opp(o, eligible=is_eligible_for_pursuit(o), distance=d)
+                _compact_opp(o, distance=d)
                 for o, d in results
             ]
             return {
@@ -175,7 +189,7 @@ def similar_opportunities(
         "opportunity_id": opportunity_id,
         "method": "heuristic",
         "note": "Embedding missing; run 'govcon embed run' for vector search.",
-        "matches": [_compact_opp(o, eligible=is_eligible_for_pursuit(o)) for o in rows],
+        "matches": [_compact_opp(o) for o in rows],
     }
 
 
@@ -202,21 +216,9 @@ def semantic_recommendations_for_watchlist(
             "matches": [],
         }
 
-    # IDs already matched by rule engine for this watchlist
-    existing_opp_ids = set(
-        session.scalars(
-            select(Match.opportunity_id).where(Match.watchlist_id == watchlist_id)
-        ).all()
-    )
-
-    results = _vector_search(session, wl.embedding, limit=limit + len(existing_opp_ids))
-    matches = []
-    for opp, dist in results:
-        if opp.id in existing_opp_ids:
-            continue  # already surfaced via rule match
-        matches.append(_compact_opp(opp, eligible=is_eligible_for_pursuit(opp), distance=dist))
-        if len(matches) >= limit:
-            break
+    limit = max(1, min(limit, _MAX_LIMIT))
+    results = _vector_search(session, wl.embedding, limit=limit, exclude_watchlist_id=watchlist_id)
+    matches = [_compact_opp(opp, distance=dist) for opp, dist in results]
 
     return {
         "watchlist_id": watchlist_id,
@@ -242,14 +244,8 @@ def win_profile_recommendations(
 
     win_embedding = compute_win_profile(session, provider, min_wins=min_wins)
     if win_embedding is None:
-        won_count = session.scalar(
-            select(OutcomeFeedback).where(OutcomeFeedback.outcome == "won")
-        )
-        actual = len(
-            session.scalars(
-                select(OutcomeFeedback.id).where(OutcomeFeedback.outcome == "won")
-            ).all()
-        )
+        from govcon.learning.analytics import win_count
+        actual = win_count(session)
         return {
             "category": CATEGORY_SIMILAR_WON,
             "note": f"Win-profile requires at least {min_wins} recorded wins (have {actual}).",
@@ -259,7 +255,7 @@ def win_profile_recommendations(
     results = _vector_search(session, win_embedding, limit=limit)
     return {
         "category": CATEGORY_SIMILAR_WON,
-        "matches": [_compact_opp(o, eligible=is_eligible_for_pursuit(o), distance=d) for o, d in results],
+        "matches": [_compact_opp(o, distance=d) for o, d in results],
     }
 
 
@@ -283,7 +279,7 @@ def pursued_profile_recommendations(
     results = _vector_search(session, pursued_embedding, limit=limit)
     return {
         "category": CATEGORY_SIMILAR_PURSUED,
-        "matches": [_compact_opp(o, eligible=is_eligible_for_pursuit(o), distance=d) for o, d in results],
+        "matches": [_compact_opp(o, distance=d) for o, d in results],
     }
 
 
@@ -302,6 +298,7 @@ def recompete_radar(
     # Phase 5 stored recompete candidate flags in awards.recompete_candidates.
     from govcon.models import Award
 
+    limit = max(1, min(limit, _MAX_LIMIT))
     award_opps_stmt = (
         select(Opportunity)
         .join(
@@ -317,7 +314,7 @@ def recompete_radar(
     return {
         "category": CATEGORY_RECOMPETE_RADAR,
         "note": "Open opportunities sharing PSC or agency with a past award.",
-        "matches": [_compact_opp(o, eligible=True) for o in rows],
+        "matches": [_compact_opp(o) for o in rows],
     }
 
 

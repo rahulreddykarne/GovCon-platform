@@ -25,6 +25,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
+from govcon.ai.providers import resolve_provider_model
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.matrix import record_run
 from govcon.compliance.records import REQUIREMENT_TYPES, Candidate, Inventory, SourceDocument
@@ -41,6 +43,7 @@ from govcon.compliance.text import (
 )
 from govcon.config import Settings, get_settings
 from govcon.models import Opportunity
+from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.compliance.extractor")
 
@@ -288,9 +291,33 @@ def _pass_provider(pass_label: str, opportunity: Opportunity, settings: Settings
     value = float(opportunity.estimated_value_max) if opportunity.estimated_value_max is not None else None
     if threshold is not None and value is not None and value >= threshold:
         if settings.compliance_escalation_provider:
-            return settings.compliance_escalation_provider, settings.compliance_escalation_model, warnings
-        warnings.append({"code": "escalation_unconfigured", "severity": "medium", "message": "High-value opportunity but no COMPLIANCE_ESCALATION_PROVIDER is configured; Pass B uses the default provider."})
+            provider, model = settings.compliance_escalation_provider, settings.compliance_escalation_model
+        else:
+            warnings.append({"code": "escalation_unconfigured", "severity": "medium", "message": "High-value opportunity but no COMPLIANCE_ESCALATION_PROVIDER is configured; Pass B uses the default provider."})
+    warnings += independence_warnings(settings, provider, model, code="pass_b_not_independent", what="Pass B")
     return provider, model, warnings
+
+
+def independence_warnings(
+    settings: Settings, provider: str | None, model: str | None, *, code: str, what: str
+) -> list[dict[str, Any]]:
+    """Warn when a 'second opinion' resolves to the primary provider and model.
+
+    Two calls to the same model share its blind spots, so agreement between
+    them is weak evidence that nothing was missed.
+    """
+    primary = resolve_provider_model(settings)
+    second = resolve_provider_model(settings, provider_name=provider, model=model)
+    if second != primary:
+        return []
+    return [{
+        "code": code,
+        "severity": "medium",
+        "message": (
+            f"{what} resolves to the same provider and model as the primary pass "
+            f"({primary[0]}/{primary[1]}); set a different provider or model to get an independent check."
+        ),
+    }]
 
 
 def run_ai_pass(
@@ -303,7 +330,7 @@ def run_ai_pass(
 ) -> PassOutcome:
     settings = settings or get_settings()
     prompt_name = PASS_PROMPTS[pass_label]
-    budget = int(settings.ai_max_input_tokens_per_opportunity * _CHARS_PER_TOKEN / 2)
+    budget = min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity) // 2
     chunks = build_context(inventory, pass_label, char_budget=budget)
     provider_name, model, warnings = _pass_provider(pass_label, opportunity, settings)
     variables: dict[str, Any] = {
@@ -327,7 +354,7 @@ def run_ai_pass(
         "opportunity_id": opportunity.id,
         "strategy": pass_label,
         "source_snapshots": sorted({d.snapshot_id for d in inventory.documents if d.snapshot_id}),
-        "files": [{"file_id": d.file_id, "sha256": d.sha256, "pages": d.page_count} for d in inventory.documents],
+        "files": [{"file_id": d.file_id, "sha256": d.sha256, "pages": d.page_count, "classification": d.classification, "source_origin": d.source_origin} for d in inventory.documents],
         "chunks": [{"chunk_id": c["chunk_id"], "file_id": c["file_id"], "page": c["page"]} for c in chunks],
         "truncated": len(chunks) < len(build_context(inventory, pass_label, char_budget=10**12)),
     }
@@ -335,11 +362,13 @@ def run_ai_pass(
         warnings.append({"code": "context_truncated", "severity": "high", "message": f"Pass {pass_label} context exceeded the configured token budget; some source text was not sent."})
     run_type = f"extraction_pass_{pass_label.lower()}"
     try:
+        from govcon.security.classification import strictest_classification
         result = run_structured_prompt(
             session,
+            classification=strictest_classification(*(d.classification for d in inventory.documents)),
             opportunity_id=opportunity.id,
             prompt_name=prompt_name,
-            analysis_type="compliance_review",
+            analysis_type=AnalysisType.COMPLIANCE_REVIEW,
             variables=variables,
             context_manifest=manifest,
             settings=settings,

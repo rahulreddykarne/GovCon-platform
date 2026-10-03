@@ -1,4 +1,11 @@
-"""Deterministic watchlist matching engine (Phase 2)."""
+"""Deterministic watchlist matching engine (Phase 2).
+
+Every run reconciles: only open opportunities whose deadline has not passed
+are evaluated, and a stored match the watchlist no longer produces (criteria
+changed, opportunity closed, watchlist disabled) is marked inactive rather
+than deleted, keeping its triage status and alert history. A match that
+starts matching again is reactivated with that history intact.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +15,20 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from govcon.matching.pricing import canonical_nsn
+from govcon.matching.eligibility import ELIGIBLE_STATUSES, pursuit_eligibility
 from govcon.models import Match, Opportunity, Watchlist
+
+OPEN_STATUS = "open"
+INACTIVE_NO_LONGER_MATCHES = "no_longer_matches"
+INACTIVE_OPPORTUNITY_CLOSED = "opportunity_closed"
+INACTIVE_WATCHLIST_DISABLED = "watchlist_disabled"
+# Evidence that changes with the clock alone; ignored when deciding whether a
+# stored match changed.
+_TIME_VARYING_KEYS = frozenset({"days_remaining"})
 
 GROUP_NAMES = (
     "psc",
@@ -34,6 +51,7 @@ class MatchStats:
     updated: int = 0
     removed: int = 0
     unchanged: int = 0
+    reactivated: int = 0
 
 
 def _non_empty(values: list[str] | None) -> list[str]:
@@ -110,16 +128,27 @@ def _evaluate_exclude_keywords(watchlist: Watchlist, opportunity: Opportunity) -
     }
 
 
+def _nsn_key(value: str) -> str:
+    """Dashed canonical form when the value is an NSN, else the trimmed text."""
+    return canonical_nsn(value) or value.strip().upper()
+
+
 def _evaluate_nsn(watchlist: Watchlist, opportunity: Opportunity) -> dict[str, Any]:
     configured = _non_empty(watchlist.nsn_list)
     if not configured:
         return _wildcard_evidence()
-    nsn = opportunity.nsn or ""
-    matched = nsn in configured
+    wanted = {_nsn_key(value) for value in configured}
+    candidates: list[str] = []
+    for value in [*(getattr(opportunity, "nsn_candidates", None) or []), opportunity.nsn]:
+        if value and _nsn_key(value) not in candidates:
+            candidates.append(_nsn_key(value))
+    matched = [candidate for candidate in candidates if candidate in wanted]
     return {
         "status": "pass" if matched else "fail",
         "configured": configured,
-        "opportunity": nsn or None,
+        "opportunity": opportunity.nsn or None,
+        "candidates": candidates,
+        "matched": matched,
     }
 
 
@@ -248,12 +277,29 @@ def evaluate_match(
     return is_match, matched_on, score
 
 
-def _opportunity_query(watchlist: Watchlist):
-    query = select(Opportunity)
+def _is_open(opportunity: Opportunity, now: datetime) -> bool:
+    return pursuit_eligibility(opportunity, now)[0] != "ineligible"
+
+
+def _opportunity_query(watchlist: Watchlist, now: datetime):
+    """Open opportunities whose response deadline has not passed (or is unknown)."""
+    query = select(Opportunity).where(
+        Opportunity.status.in_(ELIGIBLE_STATUSES),
+        or_(Opportunity.response_deadline.is_(None), Opportunity.response_deadline > now),
+    )
     configured_sources = _non_empty(watchlist.sources)
     if configured_sources:
         query = query.where(Opportunity.source.in_(configured_sources))
     return query
+
+
+def _stable(value: Any) -> Any:
+    """``matched_on`` without the clock-driven fields."""
+    if isinstance(value, dict):
+        return {key: _stable(item) for key, item in value.items() if key not in _TIME_VARYING_KEYS}
+    if isinstance(value, list):
+        return [_stable(item) for item in value]
+    return value
 
 
 def _upsert_match(
@@ -277,18 +323,58 @@ def _upsert_match(
             score=score,
             matched_on=matched_on,
             status="new",
+            active=True,
         )
         session.add(row)
         session.flush()
         return row, "inserted"
 
-    changed = existing.score != score or existing.matched_on != matched_on
+    if not existing.active:
+        # Matching again: keep status and alert history, refresh the evidence.
+        existing.active = True
+        existing.deactivated_at = None
+        existing.inactive_reason = None
+        existing.score = score
+        existing.matched_on = matched_on
+        session.flush()
+        return existing, "reactivated"
+
+    changed = existing.score != score or _stable(existing.matched_on) != _stable(matched_on)
     if changed:
         existing.score = score
         existing.matched_on = matched_on
         session.flush()
         return existing, "updated"
     return existing, "unchanged"
+
+
+def _deactivate(session: Session, watchlist: Watchlist, keep: set[int], now: datetime, *, reason: str | None) -> int:
+    """Mark this watchlist's active matches outside ``keep`` inactive. Returns the count.
+
+    ``reason`` None means: closed opportunity -> opportunity_closed, otherwise
+    no_longer_matches.
+    """
+    rows = session.execute(
+        select(Match, Opportunity)
+        .join(Opportunity, Match.opportunity_id == Opportunity.id)
+        .where(Match.watchlist_id == watchlist.id, Match.active.is_(True))
+    ).all()
+    count = 0
+    for match, opportunity in rows:
+        if match.opportunity_id in keep:
+            continue
+        match.active = False
+        match.deactivated_at = now
+        if reason is not None:
+            match.inactive_reason = reason
+        elif not _is_open(opportunity, now):
+            match.inactive_reason = INACTIVE_OPPORTUNITY_CLOSED
+        else:
+            match.inactive_reason = INACTIVE_NO_LONGER_MATCHES
+        count += 1
+    if count:
+        session.flush()
+    return count
 
 
 def run_matching(
@@ -298,25 +384,30 @@ def run_matching(
     now: datetime | None = None,
     rebuild: bool = False,
 ) -> MatchStats:
-    """Evaluate enabled watchlists and upsert matches.
+    """Evaluate watchlists, upsert their matches, and reconcile stale ones.
 
-    When ``rebuild`` is true for a single watchlist, stale matches for that watchlist
-    are removed after evaluation.
+    Every run (scheduled, CLI, or UI) reconciles: matches a watchlist no longer
+    produces are marked inactive, and matches of a disabled watchlist are
+    marked inactive with reason ``watchlist_disabled``. ``rebuild`` is kept for
+    callers that rebuild one watchlist explicitly; reconciliation is the same.
     """
+    del rebuild  # reconciliation always runs; see the docstring
     stats = MatchStats()
+    now = now or datetime.now(UTC)
     if watchlist_id is not None:
         watchlist = session.get(Watchlist, watchlist_id)
         if watchlist is None:
             raise ValueError(f"watchlist {watchlist_id} not found")
         watchlists = [watchlist]
     else:
-        watchlists = list(session.scalars(select(Watchlist).where(Watchlist.enabled.is_(True))))
+        watchlists = list(session.scalars(select(Watchlist).order_by(Watchlist.id)))
 
     for watchlist in watchlists:
         if not watchlist.enabled:
+            stats.removed += _deactivate(session, watchlist, set(), now, reason=INACTIVE_WATCHLIST_DISABLED)
             continue
         matched_opportunity_ids: set[int] = set()
-        for opportunity in session.scalars(_opportunity_query(watchlist)):
+        for opportunity in session.scalars(_opportunity_query(watchlist, now)):
             stats.evaluated += 1
             is_match, matched_on, score = evaluate_match(watchlist, opportunity, now=now)
             if not is_match:
@@ -332,27 +423,16 @@ def run_matching(
             )
             if action == "inserted":
                 stats.inserted += 1
+            elif action == "reactivated":
+                stats.reactivated += 1
             elif action == "updated":
                 stats.updated += 1
             else:
                 stats.unchanged += 1
 
-        watchlist.last_evaluated_at = now or datetime.now(UTC)
-
-        if rebuild and watchlist_id is not None:
-            stale = session.scalars(
-                select(Match.opportunity_id).where(
-                    Match.watchlist_id == watchlist.id,
-                    Match.opportunity_id.not_in(matched_opportunity_ids or [-1]),
-                )
-            ).all()
-            if stale:
-                session.execute(
-                    delete(Match).where(
-                        Match.watchlist_id == watchlist.id,
-                        Match.opportunity_id.in_(stale),
-                    )
-                )
-                stats.removed += len(stale)
+        watchlist.last_evaluated_at = now
+        stats.removed += _deactivate(session, watchlist, matched_opportunity_ids, now, reason=None)
 
     return stats
+
+

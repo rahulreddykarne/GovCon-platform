@@ -1,7 +1,19 @@
 <!-- Collaborative Review tab -->
 {% if not review_session %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No review session yet. Start one from Overview.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No review session yet. An approver can assign the first reviewer below.</p>
+  {% if can_approve and assignable_users %}
+  <form method="post" action="/workspace/{{ opp.id }}/assign" class="mt-2 d-flex gap-1 align-center flex-wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <label for="assign_user">Assign reviewer</label>
+    <select id="assign_user" name="user_id" required>
+      {% for u in assignable_users %}
+        <option value="{{ u.id }}">{{ u.display_name }} ({{ u.role }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">Assign</button>
+  </form>
+  {% endif %}
 </div>
 {% else %}
 
@@ -39,22 +51,49 @@
   </div>
   {% endif %}
 
+  <!-- Reviewer assignment (approver/owner only) -->
+  {% if can_approve and review_session.status not in ('approved_to_bid', 'no_bid') and assignable_users %}
+  <form method="post" action="/workspace/{{ opp.id }}/assign" class="mt-2 d-flex gap-1 align-center flex-wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <label for="assign_user">Assign reviewer</label>
+    <select id="assign_user" name="user_id" required>
+      {% for u in assignable_users %}
+        <option value="{{ u.id }}">{{ u.display_name }} ({{ u.role }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">Assign</button>
+  </form>
+  {% endif %}
+
   <!-- Approval actions (approver/owner only) -->
-  {% if can_approve and review_session.status == 'approval_pending' %}
-  <div class="mt-2 d-flex gap-1 flex-wrap">
-    <form method="post" action="/workspace/{{ opp.id }}/approve" style="display:contents;">
-      <input type="hidden" name="decision" value="approve_to_bid">
-      <button type="submit" class="btn btn-success">Approve to Bid</button>
-    </form>
-    <form method="post" action="/workspace/{{ opp.id }}/approve" style="display:contents;">
-      <input type="hidden" name="decision" value="return_for_review">
-      <button type="submit" class="btn btn-secondary">Return for Review</button>
-    </form>
-    <form method="post" action="/workspace/{{ opp.id }}/approve" style="display:contents;">
-      <input type="hidden" name="decision" value="no_bid">
-      <button type="submit" class="btn btn-danger">No Bid</button>
+  {% if can_approve and review_session.status not in ('approved_to_bid', 'no_bid') %}
+  <div class="mt-2">
+    {% if approval and approval.decision_package_stale %}
+      <div class="alert alert-warning">The AI decision package was built from a superseded source revision. Regenerate it before approving.</div>
+    {% endif %}
+    {% if review_session.completed_review_count < review_session.required_review_count %}
+      <p class="text-muted">Quorum not met ({{ review_session.completed_review_count }}/{{ review_session.required_review_count }}). Approving now requires an override reason and is audited.</p>
+    {% endif %}
+    <form method="post" action="/workspace/{{ opp.id }}/approve">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="expected_version" value="{{ review_session.version }}">
+      <div class="form-group">
+        <label for="override_reason">Override reason (only when approving without quorum)</label>
+        <textarea id="override_reason" name="override_reason" rows="2"></textarea>
+      </div>
+      <div class="d-flex gap-1 flex-wrap">
+        <button type="submit" name="decision" value="approve_to_bid" class="btn btn-success">Approve to Bid</button>
+        <button type="submit" name="decision" value="return_for_review" class="btn btn-secondary">Return for Review</button>
+        <button type="submit" name="decision" value="no_bid" class="btn btn-danger">No Bid</button>
+      </div>
     </form>
   </div>
+  {% elif can_approve and review_session.status == 'approved_to_bid' %}
+  <form method="post" action="/workspace/{{ opp.id }}/approve" class="mt-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="hidden" name="expected_version" value="{{ review_session.version }}">
+    <button type="submit" name="decision" value="return_for_review" class="btn btn-secondary">Return for Review (revokes approval)</button>
+  </form>
   {% endif %}
 
   <!-- Final approval status -->
@@ -112,6 +151,7 @@
   <!-- Add comment form -->
   {% if can_review %}
   <form method="post" action="/workspace/{{ opp.id }}/comment" class="mt-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <div class="form-group">
       <label for="comment_body">Add comment</label>
       <textarea id="comment_body" name="body" rows="3" required></textarea>
@@ -132,20 +172,37 @@
 {% if can_review %}
 <div class="card">
   <div class="card-header"><span class="card-title">My Review Actions</span></div>
-  <div class="d-flex gap-1 flex-wrap">
-    {% if my_assignment and my_assignment.status != 'complete' %}
-    <form method="post" action="/workspace/{{ opp.id }}/complete-review">
-      <div class="d-flex gap-1 align-center">
-        <select name="recommendation">
-          <option value="bid">Bid</option>
-          <option value="no_bid">No bid</option>
-          <option value="needs_more_info">Needs more info</option>
-        </select>
-        <button type="submit" class="btn btn-success">Mark Review Complete</button>
-      </div>
-    </form>
-    {% endif %}
-  </div>
+  {% if not my_assignment %}
+    <p class="text-muted">You are not assigned to review this opportunity.</p>
+  {% elif my_assignment.status == 'complete' %}
+    <p class="text-muted">Your review is complete.</p>
+  {% elif review_session.status in ('approved_to_bid', 'no_bid') %}
+    <p class="text-muted">This review session is decided.</p>
+  {% else %}
+  <form method="post" action="/workspace/{{ opp.id }}/complete-review">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div class="d-flex gap-1 align-center flex-wrap">
+      <select name="action" aria-label="Review action">
+        <option value="approve_continue">Complete review</option>
+        <option value="request_second_review">Request second review</option>
+        <option value="return_for_ai_analysis">Return for AI analysis</option>
+        <option value="no_bid">Recommend no bid</option>
+      </select>
+      <select name="recommendation" aria-label="Recommendation">
+        <option value="bid">Bid</option>
+        <option value="no_bid">No bid</option>
+        <option value="needs_more_info">Needs more info</option>
+      </select>
+      <label><input type="checkbox" name="agree_with_ai_assessment" value="on"> I agree with the AI assessment</label>
+    </div>
+    <div class="form-group mt-1">
+      <label for="second_review_reason">Second-review reason (if requesting one)</label>
+      <input id="second_review_reason" type="text" name="second_review_reason">
+    </div>
+    <p class="text-muted" style="font-size:12px;">Add a comment first, or tick agreement with the AI assessment.</p>
+    <button type="submit" class="btn btn-success">Submit Review</button>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 

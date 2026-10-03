@@ -22,11 +22,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.matrix import active_requirements, close_undetected_findings, record_run, upsert_open_finding
 from govcon.compliance.records import Inventory, SourceDocument
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement
+from govcon.security.classification import DataClassification
 
 CONFLICT_VERSION = "conflict_scan.v1"
 SCALAR_TOPICS = (
@@ -264,9 +266,10 @@ def _ai_conflicts(session, opportunity_id, inventory, requirements, docs, run_id
     try:
         result = run_structured_prompt(
             session,
+            classification=DataClassification.PUBLIC,
             opportunity_id=opportunity_id,
             prompt_name="contradiction_detection",
-            analysis_type="compliance_review",
+            analysis_type=AnalysisType.COMPLIANCE_REVIEW,
             variables={
                 "REQUIREMENTS_JSON": [
                     {"requirement_id": r.id, "text": r.requirement_text, "type": r.requirement_type, "source_file_id": r.source_file_id, "page": r.source_page, "quote": r.source_quote, "values": r.key_values}

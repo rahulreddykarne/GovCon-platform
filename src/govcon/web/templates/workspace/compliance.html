@@ -1,7 +1,7 @@
 <!-- Compliance tab -->
 {% if not compliance_run %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Run <code>govcon compliance run --opp-id {{ opp.id }}</code>.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Run <code>govcon compliance run --opportunity-id {{ opp.id }}</code>.</p>
 </div>
 {% else %}
 <div class="card">
@@ -33,23 +33,29 @@
     </div>
   </div>
 
-  {% if compliance_run.output_json %}
-    {% set out = compliance_run.output_json %}
-    {% if out.get('preflight_passed') is not none %}
-      {% if out['preflight_passed'] %}
-        <div class="alert alert-success mt-1">Pre-flight: PASS — ready to submit</div>
-      {% else %}
-        <div class="alert alert-error mt-1">Pre-flight: FAIL — submission blocked</div>
-        {% if out.get('blocking_items') %}
-          <ul>{% for item in out['blocking_items'] %}<li>{{ item }}</li>{% endfor %}</ul>
-        {% endif %}
-      {% endif %}
-    {% endif %}
-  {% endif %}
 </div>
 
 <!-- Requirements detail -->
 {% if requirements %}
   {% include "workspace/requirements.html" %}
 {% endif %}
+{% endif %}
+
+{% if preflight_run %}
+<div class="card">
+  {% set out = preflight_run.output_json %}
+  {% if out.get('ready') and not preflight_blockers %}
+    <div class="alert alert-success mt-1">Pre-flight: PASS — ready to submit</div>
+  {% elif out.get('ready') %}
+    <div class="alert alert-warning mt-1">Pre-flight: STALE — re-run pre-flight before submitting</div>
+  {% else %}
+    <div class="alert alert-error mt-1">Pre-flight: FAIL — submission blocked</div>
+  {% endif %}
+  <ul>
+    {% for item in out.get('items', []) if item.get('status') not in ('pass', 'not_applicable') %}
+      <li>{{ item.get('check') }}: {{ item.get('reason') }}</li>
+    {% endfor %}
+    {% for item in preflight_blockers %}<li>{{ item.description }}</li>{% endfor %}
+  </ul>
+</div>
 {% endif %}

@@ -5,14 +5,26 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from urllib.parse import quote
 
-from fastapi import Cookie, Form, Query, Request, status
+from fastapi import Cookie, Form, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select, text, or_
 from sqlalchemy.orm import Session as OrmSession
 
-from govcon.collaboration.comments import list_comments
+from govcon.ai.analysis_types import AnalysisType
+from govcon.audit import record_audit
+from govcon.collaboration.assignments import assign_reviewer
+from govcon.collaboration.comments import add_comment, list_comments
+from govcon.collaboration.review_sessions import (
+    ReviewWorkflowError,
+    approval_context,
+    complete_assignment,
+    ensure_review_session,
+    finalize_approval,
+    recalculate_quorum,
+)
 from govcon.collaboration.users import (
     AuthError,
     PermissionDenied,
@@ -23,6 +35,8 @@ from govcon.collaboration.users import (
     require_permission,
     user_for_token,
 )
+from govcon.compliance.submission_preflight import ReadinessBlocked
+from govcon.concurrency import StaleRecordError
 from govcon.db import session_scope
 from govcon.models import (
     AIAnalysis,
@@ -54,7 +68,18 @@ from govcon.models import (
 )
 from govcon.learning.analytics import WIN_PROFILE_MINIMUM, outcome_analytics, similar_past_outcomes
 from govcon.learning.outcomes import NO_BID_CATEGORIES, record_outcome
-from govcon.web.helpers import deadline_info, format_value
+from govcon.proposals.service import (
+    finalize_proposal,
+    get_proposal_workspace,
+    record_submission_confirmation,
+)
+from govcon.web.helpers import deadline_info, format_value, primary_source_url, source_links
+from govcon.web.security import secure_cookies
+from govcon.workflow.transitions import APPROVABLE_PROPOSAL_STATUSES
+
+# Errors a workflow service raises to refuse an action. They become a message
+# for the user; the request's transaction is rolled back.
+_WORKFLOW_ERRORS = (ValueError, RuntimeError, AuthError, StaleRecordError)
 
 import pathlib
 
@@ -64,8 +89,19 @@ _templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 # ── Deadline helper exposed to templates ──────────────────────────────────────
 
 
+def _money(value: Any, places: int = 2) -> str:
+    """``$1,234.50`` — Python ``%`` formatting has no thousands separator."""
+    try:
+        return f"${float(value):,.{int(places)}f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
 def _add_template_globals(templates: Jinja2Templates) -> None:
+    from govcon.web.security import csrf_token
+    templates.env.globals["csrf_token"] = csrf_token
     templates.env.globals["now"] = lambda: datetime.now(UTC)
+    templates.env.filters["money"] = _money
 
 
 _add_template_globals(_templates)
@@ -74,7 +110,6 @@ _add_template_globals(_templates)
 # ── Cookie / auth helpers ──────────────────────────────────────────────────────
 
 _COOKIE_NAME = "govcon_session"
-_COOKIE_MAX_AGE = 12 * 3600  # matches session_ttl_hours default
 
 
 def _current_user(request: Request) -> User | None:
@@ -107,6 +142,43 @@ class _NeedsLogin(Exception):
     pass
 
 
+def _redirect(url: str, *, error: str | None = None, notice: str | None = None) -> RedirectResponse:
+    """303 redirect carrying an optional message for the next page."""
+    params = []
+    if error:
+        params.append("error=" + quote(error[:600]))
+    if notice:
+        params.append("notice=" + quote(notice[:300]))
+    if params:
+        url = url + ("&" if "?" in url else "?") + "&".join(params)
+    return RedirectResponse(url, status_code=303)
+
+
+def _error_text(exc: Exception) -> str:
+    if isinstance(exc, ReadinessBlocked):
+        lines = [b.get("description", "") for b in exc.blockers]
+        return "Submission readiness is blocked: " + " | ".join(lines)
+    if isinstance(exc, PermissionDenied):
+        return f"Not permitted: {exc}"
+    return str(exc) or exc.__class__.__name__
+
+
+def _actor(db: OrmSession, user: User, permission: str) -> User:
+    """Reload the logged-in user in this transaction and check the permission."""
+    actor = db.get(User, user.id)
+    if actor is None or not actor.is_active:
+        raise PermissionDenied("account is inactive")
+    require_permission(actor, permission)
+    return actor
+
+
+def _form_int(value: str | None) -> int | None:
+    try:
+        return int(value) if value is not None and str(value).strip() else None
+    except ValueError:
+        return None
+
+
 def _render(request: Request, template: str, ctx: dict[str, Any], user: User) -> HTMLResponse:
     ctx["current_user"] = user
     ctx["unread_notification_count"] = _unread_count(user)
@@ -136,13 +208,14 @@ def login_post(
                 {"error": "Invalid email or password.", "prefill_email": email},
                 status_code=401,
             )
-        raw_token = create_session(db, user)
+        raw_token = create_session(db, user, settings=request.app.state.settings)
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(
         _COOKIE_NAME,
         raw_token,
-        max_age=_COOKIE_MAX_AGE,
+        max_age=request.app.state.settings.session_ttl_hours * 3600,
         httponly=True,
+        secure=secure_cookies(request),
         samesite="lax",
     )
     return resp
@@ -156,6 +229,39 @@ def logout_post(request: Request) -> HTMLResponse:
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(_COOKIE_NAME)
     return resp
+
+
+def notifications(request: Request, before: Annotated[int | None, Query(ge=1)] = None) -> HTMLResponse:
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    with session_scope() as db:
+        query = select(Notification).where(Notification.user_id == user.id)
+        if before is not None:
+            query = query.where(Notification.id < before)
+        rows = db.scalars(query.order_by(Notification.id.desc()).limit(51)).all()
+        next_before = rows[49].id if len(rows) > 50 else None
+        items = [{"id": row.id, "title": row.notification_type.replace("_", " ").capitalize(),
+                  "opportunity_id": row.opportunity_id, "created_at": row.created_at,
+                  "payload": json.dumps(row.payload or {}, ensure_ascii=False, default=str),
+                  "unread": row.read_at is None} for row in rows[:50]]
+    return _render(request, "notifications.html", {"notifications": items, "next_before": next_before, "active_page": "notifications"}, user)
+
+
+def notification_read(request: Request, notification_id: int) -> RedirectResponse:
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    with session_scope() as db:
+        row = db.scalar(select(Notification).where(
+            Notification.id == notification_id, Notification.user_id == user.id).with_for_update())
+        if row is None:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        if row.read_at is None:
+            row.read_at = datetime.now(UTC)
+    return _redirect("/notifications")
 
 
 # ── Inbox ─────────────────────────────────────────────────────────────────────
@@ -176,7 +282,7 @@ def inbox(request: Request) -> HTMLResponse:
             rows = db.execute(
                 select(Match, Opportunity)
                 .join(Opportunity, Match.opportunity_id == Opportunity.id)
-                .where(Match.watchlist_id == wl.id, Match.status == "new")
+                .where(Match.watchlist_id == wl.id, Match.status == "new", Match.active.is_(True))
                 .order_by(Opportunity.response_deadline.asc().nullslast())
                 .limit(50)
             ).all()
@@ -197,6 +303,7 @@ def inbox(request: Request) -> HTMLResponse:
                         "deadline_class": deadline_class,
                         "estimated_value": format_value(opp.estimated_value_min, opp.estimated_value_max),
                         "matched_on": _fmt_matched_on(m.matched_on),
+                        "alerted": m.alerted_at is not None,
                     }
                 )
             total += len(matches)
@@ -229,10 +336,44 @@ def inbox_action(
     if action not in valid_actions:
         return HTMLResponse("", status_code=400)
 
-    with session_scope() as db:
-        m = db.get(Match, match_id)
-        if m:
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            m = db.get(Match, match_id)
+            if m is None:
+                return HTMLResponse("", status_code=404)
+            if action == "pursuing":
+                from govcon.workflow.invalidation import lock_opportunity
+
+                lock_opportunity(db, m.opportunity_id)
+                pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == m.opportunity_id))
+                if pursuit is None:
+                    pursuit = Pursuit(opportunity_id=m.opportunity_id, stage="evaluating")
+                    db.add(pursuit)
+                    db.flush()
+                    record_audit(
+                        db,
+                        action_type="pursuit_created",
+                        user_id=actor.id,
+                        opportunity_id=m.opportunity_id,
+                        entity_type="pursuits",
+                        entity_id=pursuit.id,
+                        new_value={"stage": "evaluating"},
+                    )
+            old = m.status
             m.status = action
+            record_audit(
+                db,
+                action_type="match_status_changed",
+                user_id=actor.id,
+                opportunity_id=m.opportunity_id,
+                entity_type="matches",
+                entity_id=m.id,
+                old_value={"status": old},
+                new_value={"status": action},
+            )
+    except PermissionDenied:
+        return HTMLResponse("Not permitted", status_code=403)
     # HTMX: return empty so the row disappears
     return HTMLResponse("")
 
@@ -331,7 +472,7 @@ def opp_detail(request: Request, opp_id: int) -> HTMLResponse:
         # ai summary
         ai_summary = db.scalar(
             select(AIAnalysis)
-            .where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "solicitation_analysis")
+            .where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY)
             .order_by(desc(AIAnalysis.created_at))
         )
 
@@ -373,6 +514,8 @@ def opp_detail(request: Request, opp_id: int) -> HTMLResponse:
 
         return _render(request, "opp_detail.html", {
             "opp": opp,
+            "source_links": source_links(opp.links),
+            "primary_source_url": primary_source_url(opp.links),
             "deadline_label": deadline_label,
             "deadline_class": deadline_cls,
             "workspace_id": workspace_id,
@@ -419,14 +562,28 @@ def opp_start_workspace(request: Request, opp_id: int) -> HTMLResponse:
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    with session_scope() as db:
-        opp = db.get(Opportunity, opp_id)
-        if opp is None:
-            return HTMLResponse("Not found", status_code=404)
-        existing = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
-        if not existing:
-            pursuit = Pursuit(opportunity_id=opp_id, stage="evaluating")
-            db.add(pursuit)
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            opp = db.get(Opportunity, opp_id)
+            if opp is None:
+                return HTMLResponse("Not found", status_code=404)
+            existing = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
+            if not existing:
+                pursuit = Pursuit(opportunity_id=opp_id, stage="evaluating")
+                db.add(pursuit)
+                db.flush()
+                record_audit(
+                    db,
+                    action_type="pursuit_created",
+                    user_id=actor.id,
+                    opportunity_id=opp_id,
+                    entity_type="pursuits",
+                    entity_id=pursuit.id,
+                    new_value={"stage": "evaluating"},
+                )
+    except PermissionDenied as exc:
+        return _redirect(f"/opp/{opp_id}", error=_error_text(exc))
     return RedirectResponse(f"/workspace/{opp_id}", status_code=303)
 
 
@@ -453,7 +610,7 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             select(BidDecision).where(BidDecision.opportunity_id == opp_id).order_by(desc(BidDecision.created_at))
         )
         ai_summary = db.scalar(
-            select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "solicitation_analysis")
+            select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY)
             .order_by(desc(AIAnalysis.created_at))
         )
 
@@ -466,10 +623,12 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
                 .order_by(Requirement.severity.nullslast(), Requirement.id)
                 .limit(200)
             ).all()
-            tab_ctx["compliance_run"] = db.scalar(
-                select(ComplianceRun).where(ComplianceRun.opportunity_id == opp_id)
-                .order_by(desc(ComplianceRun.created_at))
-            )
+            from govcon.compliance.matrix import latest_run
+            from govcon.compliance.submission_preflight import readiness_blockers
+
+            tab_ctx["compliance_run"] = latest_run(db, opp_id, "compliance_matrix")
+            tab_ctx["preflight_run"] = latest_run(db, opp_id, "submission_preflight")
+            tab_ctx["preflight_blockers"] = readiness_blockers(db, opp_id) if tab_ctx["preflight_run"] else []
 
         if active_tab == "awards" or active_tab == "market":
             tab_ctx["awards"] = db.scalars(
@@ -480,19 +639,19 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
 
         if active_tab == "market":
             tab_ctx["ai_market"] = db.scalar(
-                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "market_analysis")
+                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.MARKET)
                 .order_by(desc(AIAnalysis.created_at))
             )
 
         if active_tab == "products":
             tab_ctx["ai_sourcing"] = db.scalar(
-                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "sourcing_analysis")
+                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.SOURCING)
                 .order_by(desc(AIAnalysis.created_at))
             )
 
         if active_tab == "pricing":
             tab_ctx["ai_pricing"] = db.scalar(
-                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "pricing_analysis")
+                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.PRICING)
                 .order_by(desc(AIAnalysis.created_at))
             )
 
@@ -501,7 +660,7 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
 
         if active_tab == "ai_decision":
             tab_ctx["decision_package_analysis"] = db.scalar(
-                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == "decision_package")
+                select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.DECISION_PACKAGE)
                 .order_by(desc(AIAnalysis.created_at))
             )
 
@@ -518,6 +677,14 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             ]
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
             tab_ctx["can_review"] = user.role in ("owner", "approver", "reviewer")
+            tab_ctx["approval"] = approval_context(db, opportunity_id=opp_id) if review_session else None
+            tab_ctx["assignable_users"] = [
+                u
+                for u in db.scalars(
+                    select(User).where(User.is_active.is_(True)).order_by(User.display_name)
+                ).all()
+                if u.role in ("owner", "approver", "reviewer")
+            ]
             my_assign = db.scalar(
                 select(ReviewAssignment).where(
                     ReviewAssignment.opportunity_id == opp_id,
@@ -532,6 +699,9 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             if proposal and proposal.current_version_id:
                 tab_ctx["proposal_version"] = db.get(ProposalVersion, proposal.current_version_id)
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
+            tab_ctx["approvable_statuses"] = sorted(APPROVABLE_PROPOSAL_STATUSES)
+            if proposal is not None:
+                tab_ctx["proposal_workspace"] = get_proposal_workspace(db, opportunity_id=opp_id)
 
         if active_tab == "submission":
             proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
@@ -546,6 +716,11 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
                 sub = db.get(Submission, proposal.submission_id)
             tab_ctx["submission"] = sub
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
+            if sub is not None:
+                from govcon.submissions.checklist import generate_final_checklist, generate_step_by_step_instructions
+
+                tab_ctx["submission_checklist"] = generate_final_checklist(db, opportunity_id=opp_id)
+                tab_ctx["submission_instructions"] = generate_step_by_step_instructions(db, opportunity_id=opp_id)
 
         if active_tab == "activity":
             evts = db.execute(
@@ -563,6 +738,8 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
 
         ctx: dict[str, Any] = {
             "opp": opp,
+            "primary_source_url": primary_source_url(opp.links),
+            "can_run_analysis": user.role in ("owner", "approver", "reviewer"),
             "deadline_label": deadline_label,
             "deadline_class": deadline_cls,
             "pursuit": pursuit,
@@ -626,131 +803,191 @@ def _user_display_map(db: OrmSession) -> dict[int, str]:
 def workspace_comment(
     request: Request,
     opp_id: int,
-    body: Annotated[str, Form()],
+    body: Annotated[str, Form()] = "",
     user_recommendation: Annotated[str | None, Form()] = None,
+    topic: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
+    """Add a comment through the comment service (assignment, AI side-opinion, audit, notifications)."""
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=review"
     try:
-        require_permission(user, "review")
-    except PermissionDenied:
-        return RedirectResponse(f"/workspace/{opp_id}?tab=review", status_code=303)
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            add_comment(
+                db,
+                opportunity_id=opp_id,
+                user_id=actor.id,
+                body=body,
+                topic=(topic or "").strip() or None,
+                user_recommendation=user_recommendation or None,
+                validate_with_ai=True,
+            )
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="Comment added.")
 
-    with session_scope() as db:
-        comment = ReviewComment(
-            opportunity_id=opp_id,
-            user_id=user.id,
-            body=body,
-            user_recommendation=user_recommendation or None,
-        )
-        db.add(comment)
-    return RedirectResponse(f"/workspace/{opp_id}?tab=review", status_code=303)
+
+_ANALYSIS_TABS = {"market": "market", "supplier": "products", "pricing": "pricing"}
+
+
+def workspace_run_analysis(request: Request, opp_id: int, kind: str) -> HTMLResponse:
+    """Run the market / supplier / pricing AI analysis from its workspace tab."""
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    from govcon.ai.structured import StructuredCallError
+    from govcon.intelligence.ai_analyses import PRODUCERS
+
+    tab = _ANALYSIS_TABS.get(kind)
+    if tab is None or kind not in PRODUCERS:
+        return HTMLResponse("Unknown analysis", status_code=404)
+    target = f"/workspace/{opp_id}?tab={tab}"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            analysis = PRODUCERS[kind](db, opp_id)
+            record_audit(
+                db,
+                action_type="ai_analysis_requested",
+                user_id=actor.id,
+                opportunity_id=opp_id,
+                entity_type="ai_analyses",
+                entity_id=analysis.id,
+                new_value={"kind": kind},
+            )
+    except StructuredCallError as exc:
+        return _redirect(target, error=f"Analysis not run ({exc.reason}): {exc.detail}")
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice=f"{kind.title()} analysis complete.")
+
+
+def workspace_assign_reviewer(
+    request: Request,
+    opp_id: int,
+    user_id: Annotated[int, Form()],
+    assignment_role: Annotated[str, Form()] = "reviewer",
+) -> HTMLResponse:
+    """Assign a reviewer (owner/approver only)."""
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=review"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            if db.get(Opportunity, opp_id) is None:
+                return HTMLResponse("Opportunity not found", status_code=404)
+            reviewer = db.get(User, user_id)
+            if reviewer is None or not reviewer.is_active:
+                raise ValueError("reviewer must be an active user")
+            require_permission(reviewer, "review")
+            ensure_review_session(db, opportunity_id=opp_id)
+            assign_reviewer(
+                db,
+                opportunity_id=opp_id,
+                user_id=reviewer.id,
+                assignment_role=assignment_role or "reviewer",
+                actor_user_id=actor.id,
+            )
+            recalculate_quorum(db, opportunity_id=opp_id)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="Reviewer assigned.")
 
 
 def workspace_complete_review(
     request: Request,
     opp_id: int,
-    recommendation: Annotated[str, Form()],
+    recommendation: Annotated[str | None, Form()] = None,
+    action: Annotated[str, Form()] = "approve_continue",
+    agree_with_ai_assessment: Annotated[str | None, Form()] = None,
+    second_review_reason: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
+    """Complete the caller's own review assignment through the quorum service."""
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
-
-    with session_scope() as db:
-        assignment = db.scalar(
-            select(ReviewAssignment).where(
-                ReviewAssignment.opportunity_id == opp_id,
-                ReviewAssignment.user_id == user.id,
+    target = f"/workspace/{opp_id}?tab=review"
+    agree = True if (agree_with_ai_assessment or "").lower() in {"on", "true", "1", "yes"} else None
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            complete_assignment(
+                db,
+                opportunity_id=opp_id,
+                user_id=actor.id,
+                action=action,
+                recommendation=recommendation or None,
+                agree_with_ai_assessment=agree,
+                second_review_reason=second_review_reason,
             )
-        )
-        if assignment:
-            assignment.status = "complete"
-            assignment.recommendation = recommendation
-            assignment.completed_at = datetime.now(UTC)
-        # Update review session count
-        rs = db.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp_id))
-        if rs:
-            rs.completed_review_count = (rs.completed_review_count or 0) + 1
-            if rs.completed_review_count >= rs.required_review_count:
-                rs.status = "approval_pending"
-    return RedirectResponse(f"/workspace/{opp_id}?tab=review", status_code=303)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="Review recorded.")
 
 
 def workspace_approve(
     request: Request,
     opp_id: int,
     decision: Annotated[str, Form()],
+    expected_version: Annotated[str | None, Form()] = None,
+    override_reason: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
+    """Final bid decision through ``finalize_approval`` (quorum, override, version, audit)."""
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=review"
+    version = _form_int(expected_version)
+    if version is None:
+        return _redirect(target, error="The review changed or the form is out of date; reload and try again.")
     try:
-        require_permission(user, "approve")
-    except PermissionDenied:
-        return RedirectResponse(f"/workspace/{opp_id}?tab=review", status_code=303)
-
-    with session_scope() as db:
-        rs = db.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp_id))
-        if rs:
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            finalize_approval(
+                db,
+                opportunity_id=opp_id,
+                actor=actor,
+                action=decision,
+                expected_version=version,
+                override_reason=(override_reason or "").strip() or None,
+            )
             if decision == "approve_to_bid":
-                rs.status = "approved_to_bid"
-                rs.final_approval_status = "approved_to_bid"
-                rs.approved_by_user_id = user.id
-                rs.approved_at = datetime.now(UTC)
-                # create/update pursuit
-                pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
-                if not pursuit:
-                    pursuit = Pursuit(opportunity_id=opp_id, stage="bid_approved")
-                    db.add(pursuit)
-                    db.flush()
-                else:
-                    pursuit.stage = "bid_approved"
-                    pursuit.approved_to_bid_at = datetime.now(UTC)
-                    db.flush()
-
-                # ── Phase 11 auto-generation ──────────────────────────────────
-                # Generate proposal draft immediately; skip_ai=True when no key
-                # is configured so the UI always shows real draft state, not
-                # "forever generating…".
-                _trigger_proposal_generation(db, opp_id=opp_id, actor=user)
-
-            elif decision == "return_for_review":
-                rs.status = "returned_for_review"
-                rs.final_approval_status = "returned_for_review"
-            elif decision == "no_bid":
-                rs.status = "no_bid"
-                rs.final_approval_status = "no_bid"
-    return RedirectResponse(f"/workspace/{opp_id}?tab=review", status_code=303)
+                _trigger_proposal_generation(db, opp_id=opp_id, actor=actor)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice=f"Decision recorded: {decision.replace('_', ' ')}.")
 
 
 def _trigger_proposal_generation(db: Any, *, opp_id: int, actor: Any) -> None:
     """Call Phase 11 generate_proposal + generate_submission_package.
 
-    Uses skip_ai=True so the UI always shows a real draft (with BLOCKER
-    placeholders for missing requirements) even when no AI key is configured.
-    Falls back gracefully if the services raise; errors are logged, not raised.
+    Runs in a savepoint: a generation failure is logged and rolled back without
+    undoing the approval itself. ``skip_ai`` is used when no AI provider key is
+    configured, so the UI shows a real draft with [[BLOCKER:...]] markers.
     """
     import logging
     _log = logging.getLogger("govcon.web.routes")
+    from govcon.db import current_settings as get_settings
+    from govcon.proposals.service import generate_proposal
+    from govcon.submissions.service import generate_submission_package
+
+    settings = get_settings()
+    from govcon.ai.providers import provider_available
+    skip = not provider_available(settings)
     try:
-        from govcon.proposals.service import generate_proposal
-        from govcon.submissions.service import generate_submission_package
-        from govcon.config import get_settings
-        settings = get_settings()
-        # skip_ai=True → placeholder draft with [[BLOCKER:...]] markers;
-        # real AI generation happens if a key is available.
-        skip = not bool(
-            getattr(settings, "deepseek_api_key", None)
-            or getattr(settings, "anthropic_api_key", None)
-            or getattr(settings, "openai_api_key", None)
-        )
-        generate_proposal(db, opportunity_id=opp_id, actor=actor, skip_ai=skip)
-        generate_submission_package(db, opportunity_id=opp_id, actor=actor)
-    except Exception as exc:
+        with db.begin_nested():
+            generate_proposal(db, opportunity_id=opp_id, actor=actor, skip_ai=skip)
+            generate_submission_package(db, opportunity_id=opp_id, actor=actor)
+    except Exception as exc:  # generation must not undo a recorded human decision
         _log.warning("auto-generate on approve_to_bid failed for opp %s: %s", opp_id, exc)
 
 
@@ -758,59 +995,77 @@ def workspace_proposal_approve(
     request: Request,
     opp_id: int,
     decision: Annotated[str, Form()],
+    expected_version: Annotated[str | None, Form()] = None,
+    override_reason: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
+    """Final proposal decision through ``finalize_proposal`` and the compliance gate."""
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=proposal"
+    version = _form_int(expected_version)
+    if version is None:
+        return _redirect(target, error="The proposal changed or the form is out of date; reload and try again.")
     try:
-        require_permission(user, "approve")
-    except PermissionDenied:
-        return RedirectResponse(f"/workspace/{opp_id}?tab=proposal", status_code=303)
-
-    with session_scope() as db:
-        proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
-        if proposal:
-            if decision == "APPROVE_FOR_SUBMISSION":
-                proposal.status = "final_approved"
-                proposal.final_approved_by_user_id = user.id
-                proposal.final_approved_at = datetime.now(UTC)
-            elif decision == "RETURN_FOR_FIX":
-                proposal.status = "returned_for_fix"
-    return RedirectResponse(f"/workspace/{opp_id}?tab=proposal", status_code=303)
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            finalize_proposal(
+                db,
+                opportunity_id=opp_id,
+                action=decision,
+                actor=actor,
+                expected_version=version,
+                override_reason=(override_reason or "").strip() or None,
+            )
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice=f"Proposal decision recorded: {decision}.")
 
 
 def workspace_submission_approve(
     request: Request,
     opp_id: int,
-    decision: Annotated[str, Form()],
+    expected_version: Annotated[str | None, Form()] = None,
+    confirmation_number: Annotated[str | None, Form()] = None,
+    confirmation_notes: Annotated[str | None, Form()] = None,
+    submitted_at: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
+    """Record the human's manual submission with confirmation evidence."""
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=submission"
+    version = _form_int(expected_version)
+    if version is None:
+        return _redirect(target, error="The submission changed or the form is out of date; reload and try again.")
+    when: datetime | None = None
+    if submitted_at and submitted_at.strip():
+        try:
+            when = datetime.fromisoformat(submitted_at.strip())
+        except ValueError:
+            return _redirect(target, error="Submission time is not a valid date/time.")
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
     try:
-        require_permission(user, "approve")
-    except PermissionDenied:
-        return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
-
-    with session_scope() as db:
-        # Find submission by opportunity_id (preferred) or proposal.submission_id
-        sub = db.scalar(
-            select(Submission).where(Submission.opportunity_id == opp_id)
-            .order_by(desc(Submission.created_at))
-        )
-        if sub is None:
-            proposal = db.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
-            if proposal and proposal.submission_id:
-                sub = db.get(Submission, proposal.submission_id)
-        if sub and decision == "approve":
-            sub.status = "submitted"
-            sub.submitted_at = datetime.now(UTC)
-    return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            record_submission_confirmation(
+                db,
+                opportunity_id=opp_id,
+                actor=actor,
+                expected_version=version,
+                confirmation_number=confirmation_number,
+                confirmation_notes=confirmation_notes,
+                submitted_at=when,
+            )
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice="Submission recorded.")
 
 
-def workspace_record_outcome(
+async def workspace_record_outcome(
     request: Request,
     opp_id: int,
     outcome: Annotated[str, Form()],
@@ -835,45 +1090,61 @@ def workspace_record_outcome(
     lessons_learned: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
     try:
-        _require_login(request)
+        user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=submission"
 
     valid_outcomes = ("won", "lost", "no_bid", "cancelled")
     if outcome not in valid_outcomes:
-        return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
+        return _redirect(target, error=f"Unknown outcome {outcome!r}.")
 
-    def _float(val: str | None) -> float | None:
-        try:
-            return float(val) if val and val.strip() else None
-        except ValueError:
+    def _float(val: str | None, field: str) -> float | None:
+        import math
+        if val is None or not val.strip():
             return None
-
-    with session_scope() as db:
         try:
+            value = float(val)
+        except ValueError as exc:
+            raise ValueError(f"{field} must be a valid number") from exc
+        if not math.isfinite(value) or (field != "win_margin_pct" and value < 0):
+            raise ValueError(f"{field} must be finite" + (" and nonnegative" if field != "win_margin_pct" else ""))
+        return value
+
+    try:
+        form = await request.form()
+        for field in ("award_amount", "known_winning_price", "win_margin_pct"):
+            if len(form.getlist(field)) > 1:
+                raise ValueError(f"duplicate {field} fields are not allowed")
+        amount = _float(award_amount, "award_amount")
+        winning_price = _float(known_winning_price, "known_winning_price")
+        margin = _float(win_margin_pct, "win_margin_pct")
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
             record_outcome(
                 db,
                 opportunity_id=opp_id,
                 outcome=outcome,
+                actor=actor,
                 no_bid_reason=no_bid_reason or None,
                 no_bid_category=no_bid_category or None,
                 loss_reason=loss_reason or None,
-                known_winning_price=_float(known_winning_price),
+                known_winning_price=winning_price,
                 win_reason=win_reason or None,
-                win_margin_pct=_float(win_margin_pct),
+                win_margin_pct=margin,
                 win_supplier=win_supplier or None,
                 win_delivery_terms=win_delivery_terms or None,
                 win_proposal_version=win_proposal_version or None,
                 awarded_vendor_name=awarded_vendor_name or None,
                 awarded_vendor_uei=awarded_vendor_uei or None,
-                award_amount=_float(award_amount),
+                award_amount=amount,
                 government_feedback=government_feedback or None,
                 debrief_notes=debrief_notes or None,
                 lessons_learned=lessons_learned or None,
             )
-        except ValueError:
-            pass
-    return RedirectResponse(f"/workspace/{opp_id}?tab=submission", status_code=303)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc))
+    return _redirect(target, notice=f"Outcome recorded: {outcome}.")
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -894,6 +1165,7 @@ _PIPELINE_COLUMNS = [
     ("won",                 "Won"),
     ("lost",                "Lost"),
     ("no_bid",              "No Bid"),
+    ("cancelled",           "Cancelled"),
 ]
 
 
@@ -911,7 +1183,7 @@ def pipeline(request: Request) -> HTMLResponse:
         new_matches = db.execute(
             select(Match, Opportunity)
             .join(Opportunity, Match.opportunity_id == Opportunity.id)
-            .where(Match.status.in_(["new", "seen", "reviewing"]))
+            .where(Match.status.in_(["new", "seen", "reviewing"]), Match.active.is_(True))
             .where(~Match.opportunity_id.in_(list(matched_opp_ids) or [-1]))
             .limit(50)
         ).all()
@@ -922,7 +1194,7 @@ def pipeline(request: Request) -> HTMLResponse:
             stage = p.stage or "evaluating"
             # Map review session statuses to pipeline stage
             rs = db.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp.id))
-            if rs:
+            if rs and stage in {"evaluating", "sourcing", "bid_approved"}:
                 if rs.status == "under_review":
                     stage = "under_review"
                 elif rs.status == "approval_pending":
@@ -994,7 +1266,10 @@ async def watchlist_new_post(request: Request) -> HTMLResponse:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
-
+    try:
+        require_permission(user, "manage_watchlists")
+    except PermissionDenied as exc:
+        return _redirect("/watchlists", error=_error_text(exc))
     return await _watchlist_save(request, user, wl_id=None)
 
 
@@ -1016,6 +1291,10 @@ async def watchlist_edit_post(request: Request, wl_id: int) -> HTMLResponse:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
+    try:
+        require_permission(user, "manage_watchlists")
+    except PermissionDenied as exc:
+        return _redirect("/watchlists", error=_error_text(exc))
     return await _watchlist_save(request, user, wl_id=wl_id)
 
 
@@ -1038,13 +1317,25 @@ async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> HT
             return None
 
     with session_scope() as db:
+        actor = _actor(db, user, "manage_watchlists")
         if wl_id:
             wl = db.get(Watchlist, wl_id)
             if wl is None:
                 return HTMLResponse("Not found", status_code=404)
+            old_value = {
+                "name": wl.name,
+                "psc_codes": wl.psc_codes,
+                "naics_codes": wl.naics_codes,
+                "keywords": wl.keywords,
+                "exclude_keywords": wl.exclude_keywords,
+                "nsn_list": wl.nsn_list,
+                "set_asides": wl.set_asides,
+                "sources": wl.sources,
+            }
         else:
             wl = Watchlist()
             db.add(wl)
+            old_value = None
 
         wl.name = name
         wl.psc_codes = parse_list(form.get("psc_codes"))
@@ -1058,6 +1349,25 @@ async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> HT
         wl.min_deadline_days = int(form.get("min_deadline_days")) if form.get("min_deadline_days") and form.get("min_deadline_days").strip() else None
         wl.sources = parse_list(form.get("sources"))
         wl.notes = (form.get("notes") or "").strip() or None
+        db.flush()
+        record_audit(
+            db,
+            action_type="watchlist_updated" if wl_id else "watchlist_created",
+            user_id=actor.id,
+            entity_type="watchlists",
+            entity_id=wl.id,
+            old_value=old_value,
+            new_value={
+                "name": wl.name,
+                "psc_codes": wl.psc_codes,
+                "naics_codes": wl.naics_codes,
+                "keywords": wl.keywords,
+                "exclude_keywords": wl.exclude_keywords,
+                "nsn_list": wl.nsn_list,
+                "set_asides": wl.set_asides,
+                "sources": wl.sources,
+            },
+        )
 
     return RedirectResponse("/watchlists", status_code=303)
 
@@ -1072,27 +1382,59 @@ def watchlist_toggle(
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    with session_scope() as db:
-        wl = db.get(Watchlist, wl_id)
-        if wl:
-            wl.enabled = enabled.lower() == "true"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "manage_watchlists")
+            wl = db.get(Watchlist, wl_id)
+            if wl:
+                old = wl.enabled
+                wl.enabled = enabled.lower() == "true"
+                record_audit(
+                    db,
+                    action_type="watchlist_toggled",
+                    user_id=actor.id,
+                    entity_type="watchlists",
+                    entity_id=wl.id,
+                    old_value={"enabled": old},
+                    new_value={"enabled": wl.enabled},
+                )
+    except PermissionDenied as exc:
+        return _redirect("/watchlists", error=_error_text(exc))
     return RedirectResponse("/watchlists", status_code=303)
 
 
 def watchlist_rebuild(request: Request, wl_id: int) -> HTMLResponse:
+    """Re-evaluate one watchlist and drop matches it no longer produces."""
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    try:
-        from govcon.matching.engine import run_matching
-        with session_scope() as db:
-            run_matching(db, watchlist_id=wl_id)
-    except Exception:
-        pass
+    from govcon.matching.engine import run_matching
 
-    return RedirectResponse("/watchlists", status_code=303)
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "manage_watchlists")
+            stats = run_matching(db, watchlist_id=wl_id, rebuild=True)
+            record_audit(
+                db,
+                action_type="watchlist_rebuilt",
+                user_id=actor.id,
+                entity_type="watchlists",
+                entity_id=wl_id,
+                new_value={
+                    "matched": stats.matched,
+                    "inserted": stats.inserted,
+                    "updated": stats.updated,
+                    "removed": stats.removed,
+                },
+            )
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect("/watchlists", error=f"Rebuild failed: {_error_text(exc)}")
+    return _redirect(
+        "/watchlists",
+        notice=f"Rebuilt: {stats.matched} matched, {stats.inserted} new, {stats.removed} removed.",
+    )
 
 
 # ── Vendors ───────────────────────────────────────────────────────────────────
@@ -1150,8 +1492,10 @@ def ops(request: Request) -> HTMLResponse:
     with session_scope() as db:
         opp_count = db.scalar(select(func.count()).select_from(Opportunity)) or 0
         opp_open = db.scalar(select(func.count()).select_from(Opportunity).where(Opportunity.status == "open")) or 0
-        match_count = db.scalar(select(func.count()).select_from(Match)) or 0
-        match_new = db.scalar(select(func.count()).select_from(Match).where(Match.status == "new")) or 0
+        match_count = db.scalar(select(func.count()).select_from(Match).where(Match.active.is_(True))) or 0
+        match_new = db.scalar(
+            select(func.count()).select_from(Match).where(Match.status == "new", Match.active.is_(True))
+        ) or 0
         match_pursuing = db.scalar(select(func.count()).select_from(Match).where(Match.status == "pursuing")) or 0
         user_count = db.scalar(select(func.count()).select_from(User).where(User.is_active == True)) or 0
 

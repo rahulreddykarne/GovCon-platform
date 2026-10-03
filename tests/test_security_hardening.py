@@ -110,7 +110,7 @@ class TestSecretFieldsNeverInLogs:
         )
         for handler in logging.getLogger("govcon").handlers:
             handler.flush()
-        log_text = (tmp_path / "govcon.log").read_text()
+        log_text = (tmp_path / "govcon.log").read_text(encoding="utf-8")
         assert "my_very_secret_key" not in log_text
         assert "[REDACTED]" in log_text
         get_settings.cache_clear()
@@ -337,7 +337,7 @@ class TestAIGatewayBlocksDisallowedContent:
 
     def test_all_classification_levels_defined(self) -> None:
         levels = {c.value for c in DataClassification}
-        assert levels == {"PUBLIC", "PROPRIETARY", "FCI", "CUI", "SECRET_CREDENTIAL"}
+        assert levels == {"PUBLIC", "PROPRIETARY", "FCI", "CUI", "UNKNOWN", "SECRET_CREDENTIAL"}
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +386,7 @@ class TestLocalhostDefault:
         compose = _REPO_ROOT / "docker-compose.yml"
         if not compose.exists():
             pytest.skip("docker-compose.yml not present")
-        content = compose.read_text()
+        content = compose.read_text(encoding="utf-8")
         assert "127.0.0.1:5432" in content or "127.0.0.1:" in content, (
             "Postgres port mapping must bind to 127.0.0.1, not all interfaces"
         )
@@ -477,7 +477,7 @@ class TestRepositoryContainsNoLiveCredentials:
         gitignore = _REPO_ROOT / ".gitignore"
         if not gitignore.exists():
             pytest.skip(".gitignore not found")
-        content = gitignore.read_text()
+        content = gitignore.read_text(encoding="utf-8")
         # .env must be gitignored; .env.example may be tracked
         assert ".env" in content, ".env must be listed in .gitignore"
 
@@ -485,7 +485,7 @@ class TestRepositoryContainsNoLiveCredentials:
         env_example = _REPO_ROOT / ".env.example"
         if not env_example.exists():
             pytest.skip(".env.example not present")
-        content = env_example.read_text()
+        content = env_example.read_text(encoding="utf-8")
         # The example must not contain real long secret values
         for label, pattern in _LIVE_SECRET_PATTERNS:
             for match in pattern.finditer(content):
@@ -555,7 +555,7 @@ class TestSharedPromptFragments:
     def _read_fragment(self, name: str) -> str:
         path = self._PROMPTS_SHARED / name
         assert path.exists(), f"Missing shared prompt fragment: {name}"
-        return path.read_text()
+        return path.read_text(encoding="utf-8")
 
     def test_source_security_rules_exists_and_is_active(self) -> None:
         content = self._read_fragment("source_security_rules_v1.md")
@@ -583,7 +583,7 @@ class TestSharedPromptFragments:
 
     def test_no_fragment_reveals_secrets(self) -> None:
         for md in self._PROMPTS_SHARED.glob("*.md"):
-            content = md.read_text()
+            content = md.read_text(encoding="utf-8")
             for label, pattern in _LIVE_SECRET_PATTERNS:
                 assert not pattern.search(content), (
                     f"Prompt fragment {md.name} contains a suspicious pattern [{label}]"
@@ -603,14 +603,14 @@ class TestNoHardcodedSecretsInSourceModules:
 
     def test_security_module_has_no_real_api_keys(self) -> None:
         for py in self._SECURITY_DIR.rglob("*.py"):
-            content = py.read_text()
+            content = py.read_text(encoding="utf-8")
             for label, pattern in _LIVE_SECRET_PATTERNS:
                 assert not pattern.search(content), (
                     f"{py.name} contains suspected live credential [{label}]"
                 )
 
     def test_gateway_module_has_no_real_api_keys(self) -> None:
-        content = self._GATEWAY_FILE.read_text()
+        content = self._GATEWAY_FILE.read_text(encoding="utf-8")
         for label, pattern in _LIVE_SECRET_PATTERNS:
             assert not pattern.search(content), (
                 f"gateway.py contains suspected live credential [{label}]"

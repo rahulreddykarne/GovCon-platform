@@ -23,8 +23,8 @@
           <td>{{ a.action_date or "—" }}</td>
           <td>{{ a.recipient_name or a.recipient_uei or "—" }}</td>
           <td>{{ a.awarding_agency or "—" }}</td>
-          <td>{{ "$%,.2f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
-          <td>{{ "$%,.4f"|format(a.unit_price|float) if a.unit_price else "—" }}</td>
+          <td>{{ a.total_obligation|money(2) if a.total_obligation else "—" }}</td>
+          <td>{{ a.unit_price|money(4) if a.unit_price else "—" }}</td>
           <td>{{ a.quantity or "—" }}</td>
           <td>{{ a.psc_code or "—" }}</td>
         </tr>

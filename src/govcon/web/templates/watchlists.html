@@ -28,15 +28,18 @@
     <div class="d-flex gap-1">
       <a href="/watchlists/{{ wl.id }}/edit" class="btn btn-secondary btn-sm">Edit</a>
       <form method="post" action="/watchlists/{{ wl.id }}/rebuild" style="display:contents;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <button type="submit" class="btn btn-secondary btn-sm">Rebuild Matches</button>
       </form>
       {% if wl.enabled %}
       <form method="post" action="/watchlists/{{ wl.id }}/toggle" style="display:contents;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="enabled" value="false">
         <button type="submit" class="btn btn-secondary btn-sm">Disable</button>
       </form>
       {% else %}
       <form method="post" action="/watchlists/{{ wl.id }}/toggle" style="display:contents;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="enabled" value="true">
         <button type="submit" class="btn btn-primary btn-sm">Enable</button>
       </form>

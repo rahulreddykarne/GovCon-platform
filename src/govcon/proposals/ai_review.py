@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.matrix import (
     active_requirements,
@@ -30,6 +31,8 @@ from govcon.models import (
     ProposalVersion,
 )
 from govcon.proposals.versions import get_sections_for_version
+from govcon.security.classification import DataClassification
+from govcon.workflow.transitions import can_transition
 
 logger = logging.getLogger("govcon.proposals.ai_review")
 
@@ -100,7 +103,7 @@ def run_proposal_red_team(
         p = pathlib.Path(settings.company_facts_path)
         if p.exists():
             try:
-                company_facts_data = _json.loads(p.read_text())
+                company_facts_data = _json.loads(p.read_text(encoding="utf-8"))
             except Exception:
                 pass
 
@@ -119,9 +122,10 @@ def run_proposal_red_team(
 
     result = run_structured_prompt(
         session,
+        classification=DataClassification.PROPRIETARY,
         opportunity_id=opportunity_id,
         prompt_name=RED_TEAM_PROMPT,
-        analysis_type="proposal_red_team",
+        analysis_type=AnalysisType.PROPOSAL_RED_TEAM,
         variables=variables,
         context_manifest=context_manifest,
         settings=settings,
@@ -156,6 +160,12 @@ def run_proposal_red_team(
     # Link analysis to proposal
     if analysis is not None:
         proposal.red_team_analysis_id = analysis.id
+        # Only a red team of the current version moves the proposal to red_teamed.
+        if proposal.current_version_id == proposal_version_id and can_transition(
+            "proposal", proposal.status, "red_teamed"
+        ) and proposal.status in {"draft", "ai_generated", "returned_for_fix"}:
+            proposal.status = "red_teamed"
+            proposal.version = (proposal.version or 1) + 1
         session.flush()
 
     return {

@@ -1,0 +1,3 @@
+include alembic.ini
+recursive-include alembic *.py *.mako
+recursive-include tests/fixtures/compliance *.json *.txt *.pdf *.docx *.xlsx

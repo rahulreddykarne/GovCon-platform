@@ -145,10 +145,10 @@ class RuleDecisionProvider:
         delivery_feasibility = "review"
         lead_time = sourcing.get("lead_time_days")
         required_days = opportunity.get("required_delivery_days")
+        # Feasible only when verified supplier lead time fits the buyer's
+        # requirement; either one unknown stays "review".
         if isinstance(lead_time, (int, float)) and isinstance(required_days, (int, float)):
             delivery_feasibility = "yes" if lead_time <= required_days else "no"
-        elif lead_time is not None:
-            delivery_feasibility = "yes"
 
         country_risk = "medium"
         if (state.get("compliance") or {}).get("country_of_origin_conflict") is True:
@@ -186,13 +186,9 @@ class RuleDecisionProvider:
         supplier_count = sourcing.get("supplier_count")
         lead_time = sourcing.get("lead_time_days")
         required_days = (state.get("opportunity") or {}).get("required_delivery_days")
-        lead_fit = "risky"
+        lead_fit = "risky"  # unknown lead time or unknown requirement
         if isinstance(lead_time, (int, float)) and isinstance(required_days, (int, float)):
             lead_fit = "yes" if lead_time <= required_days else "no"
-        elif lead_time is None:
-            lead_fit = "risky"
-        else:
-            lead_fit = "yes"
 
         availability = "review"
         if supplier_count is not None:
@@ -227,22 +223,41 @@ class RuleDecisionProvider:
         else:
             comparability = "low"
         competitiveness = "unclear"
-        supplier_cost = pricing.get("supplier_cost")
-        historical_median = pricing.get("historical_median")
-        proposed_price = pricing.get("proposed_price")
-        if isinstance(supplier_cost, (int, float)) and isinstance(historical_median, (int, float)):
-            competitiveness = "yes" if supplier_cost <= historical_median else "no"
-        elif isinstance(proposed_price, (int, float)) and isinstance(historical_median, (int, float)):
-            competitiveness = "yes" if proposed_price <= historical_median else "no"
+        unit_median = pricing.get("historical_median_unit_price")
+        unit_price = pricing.get("proposed_unit_price")
+        unit_cost = pricing.get("unit_cost")
+        if isinstance(unit_median, (int, float)) and isinstance(unit_price, (int, float)):
+            # Unit price vs. comparable awards that state a unit price.
+            competitiveness = "yes" if unit_price <= unit_median else "no"
+        elif isinstance(unit_median, (int, float)) and isinstance(unit_cost, (int, float)):
+            competitiveness = "yes" if unit_cost <= unit_median else "no"
+        elif "historical_median_unit_price" not in pricing:
+            # Externally supplied states (fixtures, JEV callers) may still use the
+            # legacy same-unit fields; the engine no longer emits them.
+            legacy_median = pricing.get("historical_median")
+            supplier_cost = pricing.get("supplier_cost")
+            proposed_price = pricing.get("proposed_price")
+            if isinstance(supplier_cost, (int, float)) and isinstance(legacy_median, (int, float)):
+                competitiveness = "yes" if supplier_cost <= legacy_median else "no"
+            elif isinstance(proposed_price, (int, float)) and isinstance(legacy_median, (int, float)):
+                competitiveness = "yes" if proposed_price <= legacy_median else "no"
         margin_quality = _margin_quality(pricing.get("margin_pct"))
         pricing_research_required = comparability == "low" or competitiveness in {"no", "unclear"}
         competition_level = "medium"
-        competitor_buckets = int(signals.get("competitor_bucket_count") or 0)
-        if competitor_buckets >= 3:
-            competition_level = "high"
-        elif competitor_buckets == 0:
-            competition_level = "low"
-        incumbent_advantage = "high" if signals.get("incumbent_signal") else "low"
+        if "distinct_awardee_count" in signals:
+            awardees = int(signals.get("distinct_awardee_count") or 0)
+            if awardees >= 5:
+                competition_level = "high"
+            elif awardees == 0:
+                competition_level = "low"
+        else:
+            competitor_buckets = int(signals.get("competitor_bucket_count") or 0)
+            if competitor_buckets >= 3:
+                competition_level = "high"
+            elif competitor_buckets == 0:
+                competition_level = "low"
+        repeat = signals.get("repeat_awardee_signal", signals.get("incumbent_signal"))
+        incumbent_advantage = "high" if repeat else "low"
         return (
             {
                 "historical_comparability": comparability,
@@ -330,7 +345,11 @@ class RuleDecisionProvider:
                     "human_interpretation_required": need_review > 0,
                 }
             )
-        amendment_material = bool(amendment.get("material")) or int(amendment.get("count") or 0) > 0
+        # Material only when revalidation says so; a count alone is not material.
+        if "material_known" in amendment:
+            amendment_material = amendment.get("material") is True
+        else:
+            amendment_material = bool(amendment.get("material")) or int(amendment.get("count") or 0) > 0
         return (
             {
                 "requirement_decisions": requirement_decisions,

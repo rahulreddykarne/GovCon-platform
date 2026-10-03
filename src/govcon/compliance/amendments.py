@@ -25,12 +25,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.matrix import active_requirements, record_run, upsert_open_finding
 from govcon.compliance.records import Inventory, SourceDocument
 from govcon.compliance.text import split_sentences
 from govcon.config import Settings, get_settings
 from govcon.models import OpportunityEvent, ProposalSection, Requirement, ReviewSession
+from govcon.security.classification import DataClassification
 
 AMENDMENT_VERSION = "amendment_revalidation.v1"
 _CHANGE_VERB = re.compile(r"\b(revised|changed|replaced|deleted|amended|extended|updated|is now|are now|hereby|superseded|modified|added|removed|reduced|increased)\b", re.I)
@@ -54,7 +56,7 @@ _EVENT_TOPICS = {
     "links_changed": (),
     "description_changed": (),
 }
-_REOPEN_REVIEW_STATES = {"review_complete", "approval_pending", "approved_to_bid"}
+_REOPEN_REVIEW_STATES = {"review_complete", "approval_pending", "approved_to_bid", "no_bid"}
 
 
 @dataclass
@@ -96,7 +98,9 @@ def diff_inventory(prior_files: list[dict[str, Any]], inventory: Inventory) -> I
             continue
         diff.new_file_ids.append(doc.file_id)
         previous = prior_by_name.get((doc.filename or "").lower())
-        if previous is not None and previous.get("sha256") != doc.sha256:
+        # A failed download (no content) records a fetch problem; it does not
+        # replace the version already in the inventory.
+        if previous is not None and doc.sha256 is not None and previous.get("sha256") != doc.sha256:
             diff.replaced.append({"filename": doc.filename, "old_file_id": previous["file_id"], "new_file_id": doc.file_id})
         if doc.document_type == "amendment":
             diff.new_amendments.append(doc)
@@ -230,9 +234,10 @@ def run_amendment_revalidation(
         try:
             result = run_structured_prompt(
                 session,
+                classification=DataClassification.PUBLIC,
                 opportunity_id=opportunity_id,
                 prompt_name="amendment_analysis",
-                analysis_type="amendment_analysis",
+                analysis_type=AnalysisType.AMENDMENT,
                 variables={
                     "REQUIREMENTS_JSON": [{"requirement_id": r.id, "text": r.requirement_text, "type": r.requirement_type, "status": r.status, "section": r.source_section, "values": r.key_values} for r in prior.values()],
                     "AMENDMENT_JSON": [{"file_id": d.file_id, "amendment_number": d.amendment_number, "text": d.text} for d in new_docs],

@@ -401,7 +401,7 @@ class TestAppendixDDoD:
 
         assert callable(record_submission_confirmation)
 
-        src = (SRC_ROOT / "submissions" / "service.py").read_text()
+        src = (SRC_ROOT / "submissions" / "service.py").read_text(encoding="utf-8")
         # No automatic portal automation
         for forbidden in ["submit_to_sam", "submit_to_piee", "portal_login"]:
             assert forbidden not in src, (
@@ -469,7 +469,7 @@ class TestAppendixDDoD:
             for py_file in root.rglob("*.py"):
                 if "__pycache__" in str(py_file):
                     continue
-                src_text = py_file.read_text()
+                src_text = py_file.read_text(encoding="utf-8")
                 matches = re.findall(inline_pattern, src_text)
                 assert not matches, (
                     f"Inline system prompt found in {py_file.relative_to(REPO_ROOT)}"
@@ -615,7 +615,7 @@ class TestFeatureChecklist:
         """Source prompt-injection defense: shared source-security contract (Phase 7+)."""
         fragment = PROMPT_ROOT / "shared" / "source_security_rules_v1.md"
         assert fragment.exists()
-        text = fragment.read_text()
+        text = fragment.read_text(encoding="utf-8")
         assert len(text) > 100
 
     def test_jev_decision_layer_present(self) -> None:
@@ -679,11 +679,11 @@ class TestFeatureChecklist:
     def test_phase16_waiver_documented(self) -> None:
         """Phase 16 (state/local) is waived and documented in SPEC_DEVIATIONS."""
         spec_dev = REPO_ROOT / "SPEC_DEVIATIONS.md"
-        text = spec_dev.read_text()
+        text = spec_dev.read_text(encoding="utf-8")
         assert "Phase 16" in text or "DEV-015" in text
 
         impl_status = REPO_ROOT / "IMPLEMENTATION_STATUS.md"
-        text2 = impl_status.read_text()
+        text2 = impl_status.read_text(encoding="utf-8")
         assert "DEFERRED" in text2
 
 
@@ -884,7 +884,7 @@ class TestNonGoalsNotImplemented:
 
     def test_no_automatic_portal_submission(self) -> None:
         """§28 — No automatic portal login or SAM/PIEE/eBuy submission."""
-        submission_src = (SRC_ROOT / "submissions" / "service.py").read_text()
+        submission_src = (SRC_ROOT / "submissions" / "service.py").read_text(encoding="utf-8")
         for forbidden in ["submit_to_sam", "submit_to_piee", "submit_to_ebuy", "portal_login"]:
             assert forbidden not in submission_src, (
                 f"Non-goal portal automation found: {forbidden!r}"
@@ -903,7 +903,7 @@ class TestNonGoalsNotImplemented:
         """§28 — State/local adapters (Phase 16) are DEFERRED, not implemented."""
         state_adapter = SRC_ROOT / "ingest" / "state_local.py"
         if state_adapter.exists():
-            content = state_adapter.read_text()
+            content = state_adapter.read_text(encoding="utf-8")
             # Must be a stub — no real scraping logic
             assert len(content.strip()) < 500, (
                 "state_local.py exists with substantive content — Phase 16 may be implemented"

@@ -1,0 +1,9 @@
+{
+  "test_exit": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 0,
+  "failures": [
+    "tests.test_feature_audit_fixes.test_f1_pursue_creates_one_visible_workspace"
+  ]
+}

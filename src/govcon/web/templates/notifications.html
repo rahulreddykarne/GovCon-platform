@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Notifications · GovCon{% endblock %}
+{% block content %}
+<h1>Notifications</h1>
+{% for item in notifications %}
+<article class="card">
+  <h2>{{ item.title }}{% if item.unread %} · Unread{% endif %}</h2>
+  <time>{{ item.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time>
+  <pre style="white-space: pre-wrap; overflow-wrap: anywhere">{{ item.payload }}</pre>
+  {% if item.opportunity_id %}<a href="/workspace/{{ item.opportunity_id }}">Open workspace</a>{% endif %}
+  {% if item.unread %}
+  <form method="post" action="/notifications/{{ item.id }}/read">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit">Mark read</button>
+  </form>
+  {% endif %}
+</article>
+{% else %}<p>No notifications.</p>{% endfor %}
+{% if next_before %}<a href="/notifications?before={{ next_before }}">Older notifications</a>{% endif %}
+{% endblock %}

@@ -1,0 +1,57 @@
+{
+  "pursue": {
+    "http": 200,
+    "match_status": "pursuing",
+    "pursuit_exists": false,
+    "visible_in_pipeline": false,
+    "visible_in_inbox": false
+  },
+  "fresh_workspace": {
+    "http": 303,
+    "pursuit_exists": true,
+    "review_session_exists": false,
+    "overview_forms": [
+      "/logout"
+    ],
+    "review_forms": [
+      "/logout"
+    ],
+    "message": true
+  },
+  "submission_display": {
+    "required_files": {
+      "files": [
+        "pricing.xlsx",
+        "proposal.docx"
+      ]
+    },
+    "actual_recipient": "release@example.test",
+    "recipient_visible": false,
+    "pricing_filename_visible": false,
+    "proposal_filename_visible": false,
+    "checklist_shows_keys": true
+  },
+  "compliance_display": {
+    "active_requirements": 1,
+    "page_excerpt": "Compliance Matrix AI  2026-10-03     Mandatory Total  0    Satisfied  0    Missing  0    Unknown  0    Needs Review  0         ",
+    "latest_run_type": "submission_preflight",
+    "preflight_ready": true,
+    "preflight_indicator_visible": false
+  },
+  "local_submission_time": {
+    "http": 303,
+    "error_redirect": false,
+    "entered_datetime_local": "2026-10-02T21:31",
+    "stored": "2026-10-02T21:31:00+00:00"
+  },
+  "generation_failure": {
+    "http": 303,
+    "redirect": "/workspace/4?tab=review&notice=Decision%20recorded%3A%20approve%20to%20bid.",
+    "review_status": "approved_to_bid",
+    "proposal_exists": false,
+    "page_message": true,
+    "forms": [
+      "/logout"
+    ]
+  }
+}

@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.audit import record_audit
 from govcon.collaboration.assignments import (
     assignment_for_user,
@@ -32,6 +33,17 @@ from govcon.models import (
     ReviewSession,
     User,
 )
+from govcon.security.classification import DataClassification
+from govcon.workflow.invalidation import (
+    DECIDED_REVIEW_STATES,
+    apply_source_change,
+    invalidate_proposal_approval,
+    invalidate_submission_readiness,
+    lock_one,
+    lock_opportunity,
+)
+from govcon.workflow.source_revision import current_source_revision, is_stale, stamp_of
+from govcon.workflow.transitions import InvalidTransition, can_transition, require_transition
 
 
 class ReviewWorkflowError(RuntimeError):
@@ -112,11 +124,13 @@ def complete_assignment(
     agree_with_ai_assessment: bool | None = None,
     second_review_reason: str | None = None,
 ) -> ReviewAssignment:
-    assignment = assignment_for_user(
-        session, opportunity_id=opportunity_id, user_id=user_id
-    )
-    if assignment is None:
-        raise ReviewWorkflowError("review assignment not found")
+    """Complete the calling reviewer's own assignment.
+
+    The reviewer must be active and hold the ``review`` permission. The review
+    session and assignment rows are locked so concurrent completions serialize.
+    Completing an already-complete assignment is a no-op, so a repeated submit
+    counts once toward quorum.
+    """
     if action not in {
         "approve_continue",
         "request_second_review",
@@ -124,6 +138,27 @@ def complete_assignment(
         "no_bid",
     }:
         raise ValueError("unknown review action")
+    user = session.get(User, user_id)
+    if user is None or not user.is_active:
+        raise ReviewWorkflowError("an active reviewer account is required")
+    require_permission(user, "review")
+
+    review = _locked_review(session, opportunity_id)
+    if review.status in DECIDED_REVIEW_STATES:
+        raise ReviewWorkflowError(
+            f"review session is already {review.status}; it must be reopened before reviews change"
+        )
+    assignment = lock_one(
+        session,
+        select(ReviewAssignment).where(
+            ReviewAssignment.opportunity_id == opportunity_id,
+            ReviewAssignment.user_id == user_id,
+        ),
+    )
+    if assignment is None:
+        raise ReviewWorkflowError("review assignment not found")
+    if assignment.status == "complete":
+        return assignment
 
     start_assignment(session, opportunity_id=opportunity_id, user_id=user_id)
     comment_count = reviewer_comment_count(
@@ -153,11 +188,12 @@ def complete_assignment(
         assignment.completed_at = now
     session.flush()
 
-    review = ensure_review_session(session, opportunity_id=opportunity_id)
     if action == "return_for_ai_analysis":
-        review.status = "returned_for_review"
+        if can_transition("review_session", review.status, "returned_for_review"):
+            review.status = "returned_for_review"
         review.final_approval_status = "returned_for_review"
         review.ai_consolidated_review = None
+        review.version = (review.version or 1) + 1
     session.flush()
 
     record_audit(
@@ -175,13 +211,14 @@ def complete_assignment(
             "second_review_request_reason": assignment.second_review_request_reason,
         },
     )
-    notify(
-        session,
-        user_id=user_id,
-        opportunity_id=opportunity_id,
-        notification_type="reviewer_completed",
-        payload={"assignment_id": assignment.id, "action": action},
-    )
+    for approver in _approvers(session):
+        notify(
+            session,
+            user_id=approver.id,
+            opportunity_id=opportunity_id,
+            notification_type="reviewer_completed",
+            payload={"assignment_id": assignment.id, "action": action, "reviewer_user_id": user_id},
+        )
     recalculate_quorum(session, opportunity_id=opportunity_id)
     return assignment
 
@@ -225,6 +262,13 @@ def apply_material_amendment_reopen(
     opportunity_id: int,
     actor: User | None = None,
 ) -> bool:
+    """Consume an open ``review_reopen_required`` finding.
+
+    Reopens completed reviews and decided sessions (including override-only
+    approvals with no completed assignments), and invalidates the proposal
+    approval, submission readiness, and pursuit stage that depended on them.
+    The finding stays open until a human resolves it.
+    """
     review = session.scalar(
         select(ReviewSession).where(ReviewSession.opportunity_id == opportunity_id)
     )
@@ -236,41 +280,37 @@ def apply_material_amendment_reopen(
     )
     if not should_reopen:
         return False
-    changed = False
-    for assignment in list_assignments(session, opportunity_id):
-        if assignment.status == "complete":
-            assignment.status = "reopened"
-            assignment.reopened_at = datetime.now(UTC)
-            assignment.completed_at = None
-            changed = True
-            notify(
-                session,
-                user_id=assignment.user_id,
-                opportunity_id=opportunity_id,
-                notification_type="material_amendment_after_review",
-                payload={"review_session_id": review.id},
-            )
+    actor_id = actor.id if actor is not None else None
+    applied = apply_source_change(
+        session,
+        opportunity_id,
+        level="material",
+        reason="material_amendment_after_review",
+        actor_id=actor_id,
+    )
+    changed = any(applied.values())
     if changed:
-        review.status = "under_review"
-        review.final_approval_status = None
-        review.ai_consolidated_review = None
-        review.second_review_required = True
-        review.second_review_reason = "material_amendment_after_review"
-        session.flush()
         record_audit(
             session,
             action_type="review_reopened_for_amendment",
-            user_id=actor.id if actor is not None else None,
+            user_id=actor_id,
             opportunity_id=opportunity_id,
             entity_type="review_sessions",
             entity_id=review.id,
-            new_value={"reason": "material_amendment_after_review"},
+            new_value={"reason": "material_amendment_after_review", **applied},
         )
         recalculate_quorum(session, opportunity_id=opportunity_id)
     return changed
 
 
 def recalculate_quorum(session: Session, *, opportunity_id: int) -> QuorumState:
+    """Recompute quorum counts and move an undecided session between review states.
+
+    A decided session (``approved_to_bid`` / ``no_bid``) keeps its status; only
+    a reopen changes it. The consolidated review runs once per distinct set of
+    completed reviews, so repeated recalculation does not repeat AI/JEV calls
+    or approval notifications.
+    """
     review = ensure_review_session(session, opportunity_id=opportunity_id)
     assignments = list_assignments(session, opportunity_id)
     completed = [row for row in assignments if row.status == "complete"]
@@ -279,6 +319,9 @@ def recalculate_quorum(session: Session, *, opportunity_id: int) -> QuorumState:
 
     required = 1
     if review.review_policy == "dual":
+        required = 2
+    elif "reviewer_requested_second_review" in triggers:
+        # An explicit reviewer request is honored under every policy.
         required = 2
     elif review.review_policy == "conditional" and triggers:
         required = 2
@@ -291,13 +334,21 @@ def recalculate_quorum(session: Session, *, opportunity_id: int) -> QuorumState:
     review.completed_review_count = completed_count
     review.second_review_required = second_required
     review.second_review_reason = second_reason
-    if completed_count > 0 and review.status in {"ready_for_review", "pending"}:
-        review.status = "under_review"
-    if completed_count >= required:
-        review.status = "review_complete"
-        _run_consolidated_review(session, review=review)
-    elif review.status not in {"returned_for_review", "approved_to_bid", "no_bid"}:
-        review.status = "under_review" if assignments else "ready_for_review"
+    if review.status not in DECIDED_REVIEW_STATES:
+        if completed_count > 0 and review.status in {"ready_for_review", "pending"}:
+            review.status = "under_review"
+        if completed_count >= required:
+            signature = _quorum_signature(completed)
+            consolidated = review.ai_consolidated_review or {}
+            already_consolidated = (
+                consolidated.get("quorum_signature") == signature
+                and review.status in {"approval_pending", "review_complete"}
+            )
+            if not already_consolidated:
+                review.status = "review_complete"
+                _run_consolidated_review(session, review=review, signature=signature)
+        elif review.status != "returned_for_review":
+            review.status = "under_review" if assignments else "ready_for_review"
     review.reviewer_summary = _reviewer_summary(
         review=review, assignments=assignments, triggers=triggers
     )
@@ -348,6 +399,8 @@ def approval_context(session: Session, *, opportunity_id: int) -> dict[str, Any]
         "override_reason": review.override_reason,
         "ai_jev_disagreements": list(ai_cons.get("disagreements_with_ai_package") or []),
         "open_risks": open_risks,
+        "decision_package_stale": _package_is_stale(session, review),
+        "version": review.version,
     }
 
 
@@ -357,20 +410,65 @@ def finalize_approval(
     opportunity_id: int,
     actor: User,
     action: str,
-    expected_version: int | None = None,
+    expected_version: int,
     override_reason: str | None = None,
 ) -> ReviewSession:
-    """Set the final human approval action for a reviewed opportunity."""
-    require_permission(actor, "approve")
-    review = ensure_review_session(session, opportunity_id=opportunity_id)
-    quorum = recalculate_quorum(session, opportunity_id=opportunity_id)
-    if action not in {"approve_to_bid", "return_for_review", "no_bid"}:
-        raise ValueError("approval action must be approve_to_bid, return_for_review, or no_bid")
+    """Set the final human approval action for a reviewed opportunity.
 
-    updates: dict[str, Any]
+    The caller must hold ``approve`` and pass the review-session version it
+    read. ``approve_to_bid`` requires quorum, or ``override_review`` plus an
+    explicit reason, and refuses a decision package built from superseded
+    source. ``return_for_review`` reopens completed reviews and undoes the
+    downstream proposal approval and submission readiness.
+    """
+    require_permission(actor, "approve")
+    targets = {
+        "approve_to_bid": "approved_to_bid",
+        "return_for_review": "returned_for_review",
+        "no_bid": "no_bid",
+    }
+    if action not in targets:
+        raise ValueError("approval action must be approve_to_bid, return_for_review, or no_bid")
+    if expected_version is None:
+        raise ReviewWorkflowError("expected_version is required for approval decisions")
+
+    review = _locked_review(session, opportunity_id)
+    if action == "approve_to_bid" and review.review_policy == "dual" and any(
+        row.user_id == actor.id and row.status == "complete"
+        for row in list_assignments(session, opportunity_id)
+    ):
+        raise ReviewWorkflowError("dual review requires an approver who did not complete a review")
+    if review.version != expected_version:
+        raise ReviewWorkflowError(
+            f"{StaleRecordError(review.version, expected_version)}; reload the review before deciding"
+        )
+    target = targets[action]
+    if review.status == target:
+        raise ReviewWorkflowError(f"review session is already {target}")
+    try:
+        require_transition("review_session", review.status, target)
+    except InvalidTransition as exc:
+        raise ReviewWorkflowError(str(exc)) from exc
+    pursuit_target = _PURSUIT_TARGETS[action]
+    pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
+    if pursuit is not None and pursuit.stage != pursuit_target and not can_transition("pursuit", pursuit.stage, pursuit_target):
+        raise ReviewWorkflowError(
+            f"pursuit is {pursuit.stage!r}; the review decision {action} no longer applies"
+        )
+
+    quorum = recalculate_quorum(session, opportunity_id=opportunity_id)
     now = datetime.now(UTC)
     settings = get_settings()
+    override_fields: dict[str, Any] = {}
     if action == "approve_to_bid":
+        package = _decision_package(session, review=review)
+        if package is not None and is_stale(
+            stamp_of(package.context_manifest), current_source_revision(session, opportunity_id)
+        ):
+            raise ReviewWorkflowError(
+                "the AI decision package was built from a superseded source revision; "
+                "regenerate it before approving"
+            )
         if not quorum.quorum_satisfied:
             if not settings.review_override_allowed:
                 raise ReviewWorkflowError(
@@ -381,10 +479,12 @@ def finalize_approval(
                     "approval is blocked until review quorum is satisfied or a valid override reason is provided"
                 )
             require_permission(actor, "override_review")
-            review.override_used = True
-            review.override_by_user_id = actor.id
-            review.override_reason = override_reason.strip()
-            review.override_at = now
+            override_fields = {
+                "override_used": True,
+                "override_by_user_id": actor.id,
+                "override_reason": override_reason.strip(),
+                "override_at": now,
+            }
             record_audit(
                 session,
                 action_type="review_quorum_override",
@@ -394,42 +494,32 @@ def finalize_approval(
                 entity_id=review.id,
                 new_value={"reason": override_reason.strip(), "required_review_count": quorum.required_review_count},
             )
-        updates = {
-            "status": "approved_to_bid",
-            "final_approval_status": "approved_to_bid",
-            "approved_by_user_id": actor.id,
-            "approved_at": now,
-        }
-    elif action == "return_for_review":
-        updates = {
-            "status": "returned_for_review",
-            "final_approval_status": "returned_for_review",
-            "approved_by_user_id": actor.id,
-            "approved_at": now,
-        }
-    else:
-        updates = {
-            "status": "no_bid",
-            "final_approval_status": "no_bid",
-            "approved_by_user_id": actor.id,
-            "approved_at": now,
-        }
 
     old = {
         "status": review.status,
         "final_approval_status": review.final_approval_status,
         "version": review.version,
     }
-    if expected_version is None:
-        expected_version = review.version
+    if action == "return_for_review":
+        _reopen_for_return(session, opportunity_id=opportunity_id, actor_id=actor.id)
+    _sync_pursuit_stage(
+        session, opportunity_id=opportunity_id, action=action, approved_at=now, actor_id=actor.id
+    )
+
+    updates: dict[str, Any] = {
+        "status": target,
+        "final_approval_status": target,
+        "approved_by_user_id": actor.id,
+        "approved_at": now,
+        **override_fields,
+    }
+    if action == "return_for_review":
+        updates["ai_consolidated_review"] = None
     try:
-        apply_versioned_update(session, review, expected_version, updates)
+        apply_versioned_update(session, review, review.version, updates)
     except StaleRecordError as exc:
         raise ReviewWorkflowError(str(exc)) from exc
 
-    _sync_pursuit_stage(
-        session, opportunity_id=opportunity_id, action=action, approved_at=now
-    )
     record_audit(
         session,
         action_type="review_final_approval_set",
@@ -442,6 +532,7 @@ def finalize_approval(
             "status": review.status,
             "final_approval_status": review.final_approval_status,
             "override_used": review.override_used,
+            "version": review.version,
         },
     )
     session.flush()
@@ -506,6 +597,13 @@ def review_workspace(
     }
 
 
+def _package_is_stale(session: Session, review: ReviewSession) -> bool:
+    package = _decision_package(session, review=review)
+    if package is None:
+        return False
+    return is_stale(stamp_of(package.context_manifest), current_source_revision(session, review.opportunity_id))
+
+
 def _decision_package(session: Session, *, review: ReviewSession) -> AIAnalysis | None:
     analysis = (
         session.get(AIAnalysis, review.ai_decision_package_id)
@@ -518,7 +616,7 @@ def _decision_package(session: Session, *, review: ReviewSession) -> AIAnalysis 
         select(AIAnalysis)
         .where(
             AIAnalysis.opportunity_id == review.opportunity_id,
-            AIAnalysis.analysis_type == "decision_package",
+            AIAnalysis.analysis_type == AnalysisType.DECISION_PACKAGE,
         )
         .order_by(desc(AIAnalysis.created_at), desc(AIAnalysis.id))
         .limit(1)
@@ -557,7 +655,7 @@ def _second_review_triggers(
     }
 
     triggers: list[str] = []
-    if "reviewer_requested_second_review" in configured and any(
+    if any(
         row.second_review_requested for row in assignments
     ):
         triggers.append("reviewer_requested_second_review")
@@ -621,7 +719,9 @@ def _second_review_triggers(
     return sorted(set(triggers))
 
 
-def _run_consolidated_review(session: Session, *, review: ReviewSession) -> None:
+def _run_consolidated_review(
+    session: Session, *, review: ReviewSession, signature: list[list[Any]] | None = None
+) -> None:
     assignments = list_assignments(session, review.opportunity_id)
     comments = list_comments(session, review.opportunity_id)
     completed = [row for row in assignments if row.status == "complete"]
@@ -718,6 +818,7 @@ def _run_consolidated_review(session: Session, *, review: ReviewSession) -> None
     ai_output["jev_final_recommendation"] = jev.result.get("recommendation")
     ai_output["approval_gate_status"] = jev.result.get("approval_gate_status")
     ai_output["decision_run_id"] = jev.run.id
+    ai_output["quorum_signature"] = signature
     review.ai_consolidated_review = ai_output
     review.status = "approval_pending"
     session.flush()
@@ -778,9 +879,10 @@ def run_consolidated_review_prompt(
     try:
         result = run_structured_prompt(
             session,
+            classification=DataClassification.PROPRIETARY,
             opportunity_id=opportunity_id,
             prompt_name="consolidated_review",
-            analysis_type="consolidated_review",
+            analysis_type=AnalysisType.CONSOLIDATED_REVIEW,
             variables={
                 "AI_DECISION_PACKAGE_JSON": package,
                 "REVIEWER_RECOMMENDATIONS_JSON": recommendations,
@@ -817,18 +919,84 @@ def _sync_pursuit_stage(
     opportunity_id: int,
     action: str,
     approved_at: datetime,
+    actor_id: int | None = None,
 ) -> None:
-    pursuit = session.scalar(
-        select(Pursuit).where(Pursuit.opportunity_id == opportunity_id).limit(1)
-    )
+    target = _PURSUIT_TARGETS[action]
+    lock_opportunity(session, opportunity_id)
+    pursuit = lock_one(session, select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
     if pursuit is None:
-        pursuit = Pursuit(opportunity_id=opportunity_id, stage="review")
+        pursuit = Pursuit(opportunity_id=opportunity_id, stage="evaluating")
         session.add(pursuit)
         session.flush()
+    old_stage = pursuit.stage
+    if old_stage != target:
+        try:
+            require_transition("pursuit", old_stage, target)
+        except InvalidTransition as exc:
+            raise ReviewWorkflowError(f"{exc}; the pursuit is past the approval stage") from exc
+        pursuit.stage = target
+        pursuit.version = (pursuit.version or 1) + 1
     if action == "approve_to_bid":
-        pursuit.stage = "bid_approved"
         pursuit.approved_to_bid_at = approved_at
-    elif action == "no_bid":
-        pursuit.stage = "no_bid"
-    elif action == "return_for_review":
-        pursuit.stage = "review"
+    else:
+        pursuit.approved_to_bid_at = None
+    session.flush()
+    if old_stage != target:
+        record_audit(
+            session,
+            action_type="pursuit_stage_changed",
+            user_id=actor_id,
+            opportunity_id=opportunity_id,
+            entity_type="pursuits",
+            entity_id=pursuit.id,
+            old_value={"stage": old_stage},
+            new_value={"stage": target, "reason": f"review decision {action}"},
+        )
+
+
+# A revoked/returned bid approval sends the pursuit back to evaluating.
+_PURSUIT_TARGETS = {"approve_to_bid": "bid_approved", "no_bid": "no_bid", "return_for_review": "evaluating"}
+
+
+def _reopen_for_return(session: Session, *, opportunity_id: int, actor_id: int) -> None:
+    """``return_for_review``: reviewers must look again and downstream approvals lapse."""
+    for assignment in list_assignments(session, opportunity_id):
+        if assignment.status == "complete":
+            assignment.status = "reopened"
+            assignment.reopened_at = datetime.now(UTC)
+            assignment.completed_at = None
+            notify(
+                session,
+                user_id=assignment.user_id,
+                opportunity_id=opportunity_id,
+                notification_type="review_assigned",
+                payload={"reason": "returned_for_review"},
+            )
+    invalidate_proposal_approval(session, opportunity_id, reason="returned_for_review", actor_id=actor_id)
+    invalidate_submission_readiness(session, opportunity_id, reason="returned_for_review", actor_id=actor_id)
+    session.flush()
+
+
+def _locked_review(session: Session, opportunity_id: int) -> ReviewSession:
+    lock_opportunity(session, opportunity_id)
+    ensure_review_session(session, opportunity_id=opportunity_id)
+    review = lock_one(session, select(ReviewSession).where(ReviewSession.opportunity_id == opportunity_id))
+    assert review is not None
+    return review
+
+
+def _approvers(session: Session) -> list[User]:
+    return list(
+        session.scalars(
+            select(User).where(User.is_active.is_(True), User.role.in_(["owner", "approver"]))
+        ).all()
+    )
+
+
+def _quorum_signature(completed: list[ReviewAssignment]) -> list[list[Any]]:
+    return sorted(
+        [row.id, row.completed_at.isoformat() if row.completed_at else None, row.recommendation]
+        for row in completed
+    )
+
+

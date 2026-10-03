@@ -5,6 +5,7 @@ task_type: solicitation_analysis
 provider_family: generative_llm
 schema_version: solicitation_analysis.v1
 status: active
+allowed_data_classes: PUBLIC
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1
 required_variables: OPPORTUNITY_JSON, SOURCE_PACKAGE_JSON
 ---

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import smtplib
+import ssl
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -195,7 +196,7 @@ def test_digest_includes_required_fields_and_groups_watchlists(session: Session,
     assert "Historical awards" not in html
     assert "Bid recommendation" not in html
     for match in session.scalars(select(Match).where(Match.watchlist_id.in_([first.id, second.id]))):
-        assert match.status == "seen"
+        assert match.status == "new"  # alerting is not triage; the match stays in the inbox
         assert match.alerted_at == NOW
     audit = session.scalar(
         select(AuditEvent).where(AuditEvent.action_type == "alert_digest_sent").order_by(AuditEvent.id.desc())
@@ -218,7 +219,7 @@ def test_repeat_run_does_not_duplicate(session: Session, tmp_path) -> None:
     assert second.channel == "none"
     assert len(_html_files(tmp_path)) == 1
     assert match.alerted_at == NOW
-    assert match.status == "seen"
+    assert match.status == "new"
 
 
 def test_seen_match_is_not_a_new_alert(session: Session, tmp_path) -> None:
@@ -274,7 +275,7 @@ def test_material_deadline_change_can_realert(session: Session, tmp_path) -> Non
     assert "2026-10-06 12:00 UTC" in html
     assert "10 days remaining" in html
     assert match.alerted_at == later
-    assert match.status == "seen"
+    assert match.status == "new"
     third = run_digest(session, settings=_settings(tmp_path), now=later + timedelta(hours=1))
     assert third.sent is False
     assert len(_html_files(tmp_path)) == 2
@@ -329,7 +330,7 @@ def test_non_deadline_change_does_not_realert(session: Session, tmp_path) -> Non
     assert len(_html_files(tmp_path)) == 1
 
 
-def test_dismissed_match_can_receive_amendment_alert(session: Session, tmp_path) -> None:
+def test_dismissed_match_gets_no_amendment_alert(session: Session, tmp_path) -> None:
     _quiet_existing(session)
     watchlist = _watchlist(session)
     opportunity = _opportunity(session)
@@ -348,10 +349,100 @@ def test_dismissed_match_can_receive_amendment_alert(session: Session, tmp_path)
     )
     session.flush()
     result = run_digest(session, settings=_settings(tmp_path), now=NOW + timedelta(hours=1))
-    assert result.amendment_count == 1
+    assert result.sent is False and result.amendment_count == 0
     assert match.status == "dismissed"
+
+
+def _event(session: Session, opportunity: Opportunity, event_type: str, *, minutes: int = 10, **fields) -> None:
+    session.add(
+        OpportunityEvent(
+            opportunity_id=opportunity.id,
+            event_type=event_type,
+            field_name=fields.get("field_name"),
+            old_value=fields.get("old_value"),
+            new_value=fields.get("new_value"),
+            detected_at=NOW + timedelta(minutes=minutes),
+        )
+    )
+    session.flush()
+
+
+def test_new_match_alerts_skip_closed_and_expired_opportunities(session: Session, tmp_path) -> None:
+    _quiet_existing(session)
+    watchlist = _watchlist(session)
+    cancelled = _opportunity(session, status="cancelled")
+    expired = _opportunity(session, response_deadline=NOW - timedelta(hours=1))
+    inactive = _opportunity(session)
+    live = _opportunity(session, title="Still open")
+    for opportunity in (cancelled, expired, inactive, live):
+        _match(session, opportunity, watchlist)
+    inactive_match = session.scalar(select(Match).where(Match.opportunity_id == inactive.id))
+    inactive_match.active = False
+    inactive_match.inactive_reason = "no_longer_matches"
+    session.flush()
+    result = run_digest(session, settings=_settings(tmp_path), now=NOW)
+    assert result.new_count == 1
+    live_match = session.scalar(select(Match).where(Match.opportunity_id == live.id))
+    assert result.match_ids == [live_match.id]
+
+
+def test_cancellation_files_and_set_aside_changes_realert(session: Session, tmp_path) -> None:
+    _quiet_existing(session)
+    watchlist = _watchlist(session)
+    files = _opportunity(session, title="Files posted")
+    set_aside = _opportunity(session, title="Set-aside changed")
+    cancelled = _opportunity(session, title="Cancelled notice")
+    matches = {opp.id: _match(session, opp, watchlist) for opp in (files, set_aside, cancelled)}
+    run_digest(session, settings=_settings(tmp_path), now=NOW)
+
+    _event(session, files, "files_added", field_name="links", new_value={"value": ["https://sam.gov/f.pdf"]})
+    _event(session, set_aside, "set_aside_changed", field_name="set_aside_code",
+           old_value={"value": "SBA"}, new_value={"value": "8A"})
+    cancelled.status = "cancelled"
+    _event(session, cancelled, "cancelled", field_name="status", new_value={"value": "cancelled"})
+    # Matching after the cancellation closes the match; the cancellation still alerts.
+    cancelled_match = matches[cancelled.id]
+    cancelled_match.active = False
+    cancelled_match.inactive_reason = "opportunity_closed"
+    session.flush()
+
+    result = run_digest(session, settings=_settings(tmp_path), now=NOW + timedelta(hours=1))
+    assert result.amendment_count == 3
     html = _html_files(tmp_path)[-1].read_text(encoding="utf-8")
-    assert "dismissed" in html
+    for label in ("new files posted", "set-aside changed", "opportunity cancelled"):
+        assert label in html
+    assert "Previous deadline" not in html  # only shown for deadline changes
+
+    again = run_digest(session, settings=_settings(tmp_path), now=NOW + timedelta(hours=2))
+    assert again.sent is False
+
+
+def test_other_changes_to_a_closed_opportunity_do_not_alert(session: Session, tmp_path) -> None:
+    _quiet_existing(session)
+    watchlist = _watchlist(session)
+    opportunity = _opportunity(session)
+    _match(session, opportunity, watchlist)
+    run_digest(session, settings=_settings(tmp_path), now=NOW)
+    opportunity.status = "archived"
+    _event(session, opportunity, "files_added", field_name="links", new_value={"value": ["https://sam.gov/x.pdf"]})
+    result = run_digest(session, settings=_settings(tmp_path), now=NOW + timedelta(hours=1))
+    assert result.sent is False
+
+
+def test_files_alert_even_when_deadline_realerts_are_off(session: Session, tmp_path) -> None:
+    _quiet_existing(session)
+    watchlist = _watchlist(session)
+    opportunity = _opportunity(session)
+    _match(session, opportunity, watchlist)
+    run_digest(session, settings=_settings(tmp_path), now=NOW)
+    _event(session, opportunity, "deadline_changed", minutes=5, field_name="response_deadline",
+           old_value={"value": "2026-10-01T12:00:00+00:00"}, new_value={"value": "2026-10-02T12:00:00+00:00"})
+    _event(session, opportunity, "files_added", minutes=6, field_name="links", new_value={"value": ["https://sam.gov/y.pdf"]})
+    settings = _settings(tmp_path, alert_on_material_deadline_change=False)
+    result = run_digest(session, settings=settings, now=NOW + timedelta(hours=1))
+    assert result.amendment_count == 1
+    html = _html_files(tmp_path)[-1].read_text(encoding="utf-8")
+    assert "new files posted" in html and "material deadline change" not in html
 
 
 def test_matching_pipeline_then_digest(session: Session, tmp_path) -> None:
@@ -394,8 +485,8 @@ class _FakeSMTP:
     def has_extn(self, name):
         return name == "starttls"
 
-    def starttls(self):
-        return None
+    def starttls(self, context=None):
+        self.tls_context = context
 
     def login(self, user, password):
         self.logged_in = (user, password)
@@ -435,6 +526,8 @@ def test_smtp_sends_html_and_skips_outbox(session: Session, tmp_path, monkeypatc
     html = next(part.get_content() for part in message.walk() if part.get_content_type() == "text/html")
     assert "SMTP hull" in html
     assert created[0].logged_in == ("alerts@example.test", "supersecret-value")
+    # STARTTLS used a certificate- and host-verifying context before login.
+    assert created[0].tls_context.check_hostname and created[0].tls_context.verify_mode == ssl.CERT_REQUIRED
 
 
 def test_smtp_failure_leaves_match_unalerted(session: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -530,7 +623,10 @@ def test_alerts_digest_cli_outbox_and_repeat(session: Session, tmp_path, monkeyp
 
         get_settings.cache_clear()
         watchlist = _watchlist(session, name=f"alert-watchlist-{uuid4()}")
-        opportunity = _opportunity(session, title="CLI digest hull")
+        # The CLI runs on the wall clock, so the deadline must be in the future.
+        opportunity = _opportunity(
+            session, title="CLI digest hull", response_deadline=datetime.now(UTC) + timedelta(days=10)
+        )
         _match(session, opportunity, watchlist)
         watchlist_id = watchlist.id
         opportunity_id = opportunity.id
@@ -545,7 +641,7 @@ def test_alerts_digest_cli_outbox_and_repeat(session: Session, tmp_path, monkeyp
         session.expire_all()
         stored = session.get(Match, session.scalar(select(Match.id).where(Match.watchlist_id == watchlist_id)))
         assert stored is not None
-        assert stored.status == "seen"
+        assert stored.status == "new"
         assert stored.alerted_at is not None
 
         second = runner.invoke(app, ["alerts", "digest"])

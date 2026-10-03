@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
 from govcon.models import OutcomeFeedback, Opportunity, Pursuit
@@ -19,6 +19,15 @@ WIN_PROFILE_MINIMUM = 3
 
 # Minimum group size to report a rate without a small-sample warning
 SMALL_SAMPLE_THRESHOLD = 3
+
+
+def current_outcome_ids():
+    """Defend analytics against legacy duplicates until migration is applied."""
+    return select(func.max(OutcomeFeedback.id)).group_by(OutcomeFeedback.opportunity_id)
+
+
+def current_outcomes():
+    return OutcomeFeedback.id.in_(current_outcome_ids())
 
 
 @dataclass
@@ -91,17 +100,14 @@ def _win_rate_rows(
     limit: int = 20,
 ) -> list[tuple[str | None, int, int]]:
     """Return (group_key, total, won_count) tuples for submitted outcomes grouped by a column."""
-    from sqlalchemy import Integer, case
-
     rows = session.execute(
         select(
             group_col,
-            func.count().label("total"),
-            func.sum(
-                case((OutcomeFeedback.outcome == "won", 1), else_=0)
-            ).label("won_count"),
+            func.count(func.distinct(OutcomeFeedback.opportunity_id)).label("total"),
+            func.count(func.distinct(case((OutcomeFeedback.outcome == "won", OutcomeFeedback.opportunity_id)))).label("won_count"),
         )
         .where(
+            current_outcomes(),
             OutcomeFeedback.outcome.in_(["won", "lost"]),
             group_col.is_not(None),
         )
@@ -152,7 +158,7 @@ def win_rate_by_agency(session: Session, limit: int = 20) -> list[WinRateRow]:
 def win_rate_by_size(session: Session) -> list[WinRateRow]:
     """Win/loss counts grouped by estimated contract value bucket."""
     rows = session.scalars(
-        select(OutcomeFeedback).where(OutcomeFeedback.outcome.in_(["won", "lost"]))
+        select(OutcomeFeedback).where(current_outcomes(), OutcomeFeedback.outcome.in_(["won", "lost"]))
     ).all()
     buckets: dict[str, dict[str, int]] = {}
     for row in rows:
@@ -190,6 +196,7 @@ def avg_margin_on_wins(session: Session) -> float | None:
     """Average win_margin_pct across won outcomes. None if no data."""
     val = session.scalar(
         select(func.avg(OutcomeFeedback.win_margin_pct)).where(
+            current_outcomes(),
             OutcomeFeedback.outcome == "won",
             OutcomeFeedback.win_margin_pct.is_not(None),
         )
@@ -202,9 +209,9 @@ def no_bid_reason_counts(session: Session) -> list[ReasonCount]:
     rows = session.execute(
         select(
             func.coalesce(OutcomeFeedback.no_bid_category, OutcomeFeedback.no_bid_reason, "unspecified").label("reason"),
-            func.count().label("cnt"),
+            func.count(func.distinct(OutcomeFeedback.opportunity_id)).label("cnt"),
         )
-        .where(OutcomeFeedback.outcome == "no_bid")
+        .where(current_outcomes(), OutcomeFeedback.outcome == "no_bid")
         .group_by("reason")
         .order_by(desc("cnt"))
     ).all()
@@ -216,9 +223,9 @@ def loss_reason_counts(session: Session) -> list[ReasonCount]:
     rows = session.execute(
         select(
             func.coalesce(OutcomeFeedback.loss_reason, "unspecified").label("reason"),
-            func.count().label("cnt"),
+            func.count(func.distinct(OutcomeFeedback.opportunity_id)).label("cnt"),
         )
-        .where(OutcomeFeedback.outcome == "lost")
+        .where(current_outcomes(), OutcomeFeedback.outcome == "lost")
         .group_by("reason")
         .order_by(desc("cnt"))
     ).all()
@@ -230,9 +237,10 @@ def common_competitors(session: Session, limit: int = 10) -> list[ReasonCount]:
     rows = session.execute(
         select(
             OutcomeFeedback.awarded_vendor_name,
-            func.count().label("cnt"),
+            func.count(func.distinct(OutcomeFeedback.opportunity_id)).label("cnt"),
         )
         .where(
+            current_outcomes(),
             OutcomeFeedback.outcome == "lost",
             OutcomeFeedback.awarded_vendor_name.is_not(None),
         )
@@ -244,17 +252,21 @@ def common_competitors(session: Session, limit: int = 10) -> list[ReasonCount]:
 
 
 def reliable_suppliers(session: Session, limit: int = 10) -> list[SupplierRow]:
-    """Win counts grouped by win_supplier (sourcing partners on winning bids)."""
+    """Wins / resolved submitted bids involving each sourcing supplier."""
+    supplier = func.coalesce(OutcomeFeedback.win_supplier, Pursuit.supplier)
     rows = session.execute(
         select(
-            OutcomeFeedback.win_supplier,
-            func.count().label("wins"),
+            supplier,
+            func.count(func.distinct(case((OutcomeFeedback.outcome == "won", OutcomeFeedback.opportunity_id)))).label("wins"),
+            func.count(func.distinct(OutcomeFeedback.opportunity_id)).label("total"),
         )
+        .outerjoin(Pursuit, Pursuit.opportunity_id == OutcomeFeedback.opportunity_id)
         .where(
-            OutcomeFeedback.outcome == "won",
-            OutcomeFeedback.win_supplier.is_not(None),
+            current_outcomes(),
+            OutcomeFeedback.outcome.in_(["won", "lost"]),
+            supplier.is_not(None),
         )
-        .group_by(OutcomeFeedback.win_supplier)
+        .group_by(supplier)
         .order_by(desc("wins"))
         .limit(limit)
     ).all()
@@ -262,10 +274,10 @@ def reliable_suppliers(session: Session, limit: int = 10) -> list[SupplierRow]:
         SupplierRow(
             supplier=s,
             wins=w,
-            total=w,
-            win_rate_pct=None,
+            total=t,
+            win_rate_pct=round(w / t * 100, 1) if t else None,
         )
-        for s, w in rows
+        for s, w, t in rows
     ]
 
 
@@ -282,7 +294,6 @@ def avg_cycle_times(session: Session) -> dict[str, float | None]:
         .join(Opportunity, Pursuit.opportunity_id == Opportunity.id)
         .where(
             Pursuit.submitted_at.is_not(None),
-            Opportunity.posted_date.is_not(None),
         )
     ).all()
     cycle_days = []
@@ -293,21 +304,34 @@ def avg_cycle_times(session: Session) -> dict[str, float | None]:
                 posted_dt = datetime(posted.year, posted.month, posted.day, tzinfo=timezone.utc)
             else:
                 posted_dt = posted
-            delta = pursuit.submitted_at - posted_dt
+            if posted_dt is None:
+                continue
+            if posted_dt.tzinfo is None:
+                posted_dt = posted_dt.replace(tzinfo=timezone.utc)
+            submitted = pursuit.submitted_at
+            if submitted.tzinfo is None:
+                submitted = submitted.replace(tzinfo=timezone.utc)
+            delta = submitted - posted_dt
             cycle_days.append(delta.days)
         except Exception:
             continue
     avg_days = (sum(cycle_days) / len(cycle_days)) if cycle_days else None
+    from govcon.compliance.inventory import load_inventory
+    amendment_counts = []
+    for _, opp in pursuits:
+        docs = load_inventory(session, opp).documents
+        amendment_counts.append(len({d.amendment_number if d.amendment_number is not None else (d.sha256 or d.file_id) for d in docs if d.document_type == "amendment"}))
     return {
         "avg_days_discovery_to_submission": round(avg_days, 1) if avg_days is not None else None,
-        "avg_amendment_count": None,
+        "avg_amendment_count": round(sum(amendment_counts) / len(amendment_counts), 1) if amendment_counts else None,
     }
 
 
 def win_count(session: Session) -> int:
     """Total number of recorded won outcomes."""
     return session.scalar(
-        select(func.count()).where(
+        select(func.count(func.distinct(OutcomeFeedback.opportunity_id))).where(
+            current_outcomes(),
             OutcomeFeedback.outcome == "won",
         )
     ) or 0
@@ -356,6 +380,7 @@ def similar_past_outcomes(
 
     stmt = (
         stmt.where(
+            current_outcomes(),
             or_(*filters),
             OutcomeFeedback.opportunity_id != opportunity_id,
         )
@@ -385,7 +410,7 @@ def similar_past_outcomes(
 
 def outcome_analytics(session: Session) -> OutcomeAnalytics:
     """Full analytics snapshot — called by the learning page and MCP summary."""
-    all_feedback = session.scalars(select(OutcomeFeedback)).all()
+    all_feedback = session.scalars(select(OutcomeFeedback).where(current_outcomes())).all()
 
     total_won = sum(1 for f in all_feedback if f.outcome == "won")
     total_lost = sum(1 for f in all_feedback if f.outcome == "lost")

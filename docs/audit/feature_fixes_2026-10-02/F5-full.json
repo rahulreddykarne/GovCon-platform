@@ -1,0 +1,13 @@
+{
+  "test_exit": 0,
+  "passed": 1060,
+  "failed": 0,
+  "skipped": 3,
+  "failures": [],
+  "baseline_regressions": [],
+  "typecheck_exit": 1,
+  "typecheck_output": "C:\\Users\\karne\\OneDrive\\Desktop\\GovCon\\.venv\\Scripts\\python.exe: No module named mypy",
+  "lint_exit": 1,
+  "lint_output": "C:\\Users\\karne\\OneDrive\\Desktop\\GovCon\\.venv\\Scripts\\python.exe: No module named ruff",
+  "build_exit": 0
+}

@@ -1,0 +1,10 @@
+{
+  "test_exit": 1,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 0,
+  "failures": [
+    "tests.test_feature_audit_fixes.test_f5_submission_renders_real_checklist_and_instructions",
+    "tests.test_feature_audit_fixes.test_f5_portal_unknown_and_unsafe_instructions_are_visible_and_escaped"
+  ]
+}

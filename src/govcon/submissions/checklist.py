@@ -42,8 +42,16 @@ def generate_final_checklist(
     opp = session.get(Opportunity, opportunity_id)
     requirements = active_requirements(session, opportunity_id=opportunity_id)
     summary = coverage_summary(requirements)
+    from govcon.submissions.manifest import current_package, verify_package
+    from govcon.submissions.service import _extract_submission_info
+    package = current_package(session, submission) if submission else None
+    package_problems = verify_package(package) if package else ["No immutable assembled package manifest"]
+    conflicts = _extract_submission_info(requirements)["destination_conflicts"]
 
     items: list[dict[str, Any]] = []
+    items.append(_item("Package integrity", "blocked" if package_problems else "ready", "; ".join(package_problems)))
+    if conflicts:
+        items.append(_item("Submission destination conflict", "blocked", "Conflicting submission instructions require resolution"))
 
     # Proposal readiness
     if proposal is None:
@@ -121,10 +129,13 @@ def generate_final_checklist(
         items.append(_item("Deadline", "unknown", "No deadline found"))
 
     # Required files
-    if submission and submission.required_files:
+    if submission and submission.required_files is not None:
         rf = submission.required_files
         files = rf.get("files", []) if isinstance(rf, dict) else (rf or [])
-        items.append(_item("Required files", "pending" if files else "unknown", f"{len(files)} required file(s) identified"))
+        from govcon.compliance.deterministic import required_files_present
+        result = required_files_present(files, package) if package and files else None
+        status = "ready" if not files and package else ("ready" if result and result.status == "pass" and not package_problems else "pending")
+        items.append(_item("Required files", status, result.reason if result else f"{len(files)} required file(s) identified"))
     else:
         items.append(_item("Required files", "unknown", "Required file list not yet established"))
 
@@ -132,10 +143,12 @@ def generate_final_checklist(
     reqs_data = submission.required_actions or {} if submission else {}
     amendment_acks = reqs_data.get("amendment_acknowledgments", [])
     if amendment_acks:
+        from govcon.compliance.deterministic import amendments_acknowledged
+        result = amendments_acknowledged(amendment_acks, package)
         items.append(_item(
             "Amendment acknowledgments",
-            "pending",
-            f"{len(amendment_acks)} amendment acknowledgment(s) required",
+            "ready" if result.status == "pass" and not package_problems else "pending",
+            result.reason,
         ))
     else:
         items.append(_item("Amendment acknowledgments", "ready", "No amendment acknowledgments required"))
@@ -183,6 +196,8 @@ def generate_step_by_step_instructions(
     opp = session.get(Opportunity, opportunity_id)
 
     steps: list[dict[str, Any]] = []
+    checklist = generate_final_checklist(session, opportunity_id=opportunity_id)
+    file_checks = [i for i in checklist["items"] if i["label"] in {"Required files", "Package integrity"}]
 
     steps.append({
         "step": 1,
@@ -199,7 +214,7 @@ def generate_step_by_step_instructions(
         "step": 2,
         "title": "Assemble required files",
         "description": "Gather all required files per submission_checklist.json.",
-        "status": "pending",
+        "status": "complete" if all(i["status"] == "ready" for i in file_checks) else "pending",
     })
 
     method = submission.submission_method if submission else None

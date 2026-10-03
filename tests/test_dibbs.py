@@ -24,9 +24,14 @@ from typer.testing import CliRunner
 
 from govcon.cli import app
 from govcon.config import Settings
+from govcon.ingest import dibbs as dibbs_module
 from govcon.ingest.dibbs import (
     ARCHIVE_ROOT,
     DibbsError,
+    dibbs_return_deadline,
+    federal_holidays,
+    last_ingested_index_date,
+    next_business_day,
     fetch_consented,
     index_file_url,
     index_links,
@@ -38,7 +43,7 @@ from govcon.ingest.dibbs import (
 from govcon.ingest.snapshots import canonical_content_hash, upsert_opportunity
 from govcon.matching.engine import run_matching
 from govcon.matching.watchlists import create_watchlist
-from govcon.models import Contact, Match, Opportunity, OpportunityEvent, OpportunitySnapshot
+from govcon.models import Contact, IngestionRun, Match, Opportunity, OpportunityEvent, OpportunitySnapshot
 
 runner = CliRunner()
 FIXTURE = Path(__file__).parent / "fixtures" / "dibbs" / "in260925.txt"
@@ -132,7 +137,7 @@ def test_index_parses_solicitation_nsn_quantity_and_buyer() -> None:
     assert first.unit == "EA"
     assert first.title == "BAG,FLYER'S HELMET"
     assert first.set_aside_code == "N"
-    assert first.response_deadline == datetime(2026, 9, 30, 23, 59, 59, tzinfo=UTC)
+    assert first.response_deadline == datetime(2026, 9, 30, 19, 0, tzinfo=UTC)  # 3:00 PM EDT
     assert first.posted_date == date(2026, 9, 25)
     assert first.status == "open"
     assert first.agency_path == "Defense Logistics Agency"
@@ -250,7 +255,7 @@ def test_amendment_writes_snapshot_and_field_events(session: Session) -> None:
     assert upsert_opportunity(session, changed[0]) == "updated"
     row = _opportunity(session, FIRST_SOURCE_ID)
     assert row.quantity == Decimal("201")
-    assert row.response_deadline == datetime(2026, 10, 15, 23, 59, 59, tzinfo=UTC)
+    assert row.response_deadline == datetime(2026, 10, 15, 19, 0, tzinfo=UTC)  # 3:00 PM EDT
     assert _snapshot_count(session, row.id) == 2
     events = session.scalars(select(OpportunityEvent).where(OpportunityEvent.opportunity_id == row.id)).all()
     event_types = {event.event_type for event in events}
@@ -387,3 +392,107 @@ def test_ingest_bytes_counts_parse_errors(session: Session) -> None:
     assert result.stats.fetched == 1
     assert result.stats.inserted == 1
     assert len(result.stats.errors) == 1
+
+
+def test_return_time_is_3pm_eastern_on_a_business_day() -> None:
+    # EDT (UTC-4) in summer, EST (UTC-5) in winter.
+    assert dibbs_return_deadline(date(2026, 9, 30)) == datetime(2026, 9, 30, 19, 0, tzinfo=UTC)
+    assert dibbs_return_deadline(date(2026, 1, 15)) == datetime(2026, 1, 15, 20, 0, tzinfo=UTC)
+    # Saturday 2026-10-10 -> Monday 10-12 is Columbus Day -> Tuesday 10-13.
+    assert dibbs_return_deadline(date(2026, 10, 10)) == datetime(2026, 10, 13, 19, 0, tzinfo=UTC)
+    # Thanksgiving 2026-11-26 -> Friday 11-27 (EST).
+    assert dibbs_return_deadline(date(2026, 11, 26)) == datetime(2026, 11, 27, 20, 0, tzinfo=UTC)
+    # July 4 2026 is a Saturday, observed Friday July 3.
+    assert date(2026, 7, 3) in federal_holidays(2026)
+    assert next_business_day(date(2026, 7, 3)) == date(2026, 7, 6)
+    # New Year's Day 2028 is a Saturday, observed Friday 2027-12-31.
+    assert date(2027, 12, 31) in federal_holidays(2027)
+    assert next_business_day(date(2026, 9, 29)) == date(2026, 9, 29)
+
+
+def _listing(*names: str) -> str:
+    return "".join(f"<a href='{ARCHIVE_ROOT}/{name}'>{name}</a>" for name in names)
+
+
+def test_pull_catches_up_on_every_missed_index(session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lines = FIXTURE.read_text(encoding="latin-1").splitlines()
+    day_one = ("\n".join(lines[:3]) + "\n").encode("latin-1")
+    day_two = ("\n".join(lines[3:5]) + "\n").encode("latin-1")
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        seen.append(url)
+        if "RFQDates.aspx" in url:
+            return httpx.Response(200, text=_listing("in260925.txt", "in260924.txt", "in260923.txt"))
+        if url.endswith("/in260924.txt"):
+            return httpx.Response(200, content=day_one)
+        if url.endswith("/in260925.txt"):
+            return httpx.Response(200, content=day_two)
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr(dibbs_module, "last_ingested_index_date", lambda _session: date(2026, 9, 23))
+    result = pull_dibbs_index(
+        session,
+        settings=Settings(data_dir=tmp_path, dibbs_request_interval_seconds=0),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        interval=0,
+    )
+    assert seen[1:] == [f"{ARCHIVE_ROOT}/in260924.txt", f"{ARCHIVE_ROOT}/in260925.txt"]  # oldest first
+    assert result.index_names == ["in260924.txt", "in260925.txt"]
+    assert result.index_name == "in260925.txt"
+    assert result.stats.inserted == 5 and result.coverage.records == 5
+    assert result.run_details() == {"indexes": ["in260924.txt", "in260925.txt"]}
+
+
+def test_one_missing_index_does_not_block_the_others(session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lines = FIXTURE.read_text(encoding="latin-1").splitlines()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "RFQDates.aspx" in url:
+            return httpx.Response(200, text=_listing("in260925.txt", "in260924.txt"))
+        if url.endswith("/in260924.txt"):
+            return httpx.Response(200, text="<html><h1>File was not found</h1></html>")
+        return httpx.Response(200, content=(lines[0] + "\n").encode("latin-1"))
+
+    monkeypatch.setattr(dibbs_module, "last_ingested_index_date", lambda _session: date(2026, 9, 23))
+    result = pull_dibbs_index(
+        session,
+        settings=Settings(data_dir=tmp_path, dibbs_request_interval_seconds=0),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        interval=0,
+    )
+    assert result.index_names == ["in260925.txt"]
+    assert result.stats.inserted == 1
+    assert any("in260924.txt" in error for error in result.stats.errors)
+
+
+def test_last_ingested_index_comes_from_runs_and_rows(session: Session) -> None:
+    session.add(
+        IngestionRun(
+            job="dibbs_index",
+            started_at=NOW,
+            status="succeeded",
+            fetched=0,
+            inserted=0,
+            updated=0,
+            unchanged=0,
+            errors={"messages": [], "details": {"indexes": ["in361230.txt"]}},
+        )
+    )
+    session.add(
+        IngestionRun(
+            job="dibbs_index",
+            started_at=NOW,
+            status="failed",
+            fetched=0,
+            inserted=0,
+            updated=0,
+            unchanged=0,
+            errors={"messages": [], "details": {"indexes": ["in361231.txt"]}},
+        )
+    )
+    session.flush()
+    assert last_ingested_index_date(session) == date(2036, 12, 30)  # failed runs do not count
+    session.rollback()

@@ -1,0 +1,968 @@
+{
+  "audit_date": "2026-10-02",
+  "review_target": "current working tree, including pre-existing uncommitted changes",
+  "git_head": "a39c63794a07e1c79c814fe59cce451de74445d5",
+  "source_python_files": 137,
+  "source_python_lines": 31500,
+  "files": [
+    {
+      "path": "src/govcon/__init__.py",
+      "sha256": "a75f82e37537a04e08ea0a53c78ff6b7d0665365f7662d300f1d87f89644200e",
+      "lines": 3,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/ai/__init__.py",
+      "sha256": "979ffd4748721da24f6b3d4e079706f2610e9a69697f123d7c794384a1794992",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/ai/analysis_types.py",
+      "sha256": "eab354c732faa70cba71dcdc815a4ba12cff8e3228a0b5155cb9ec866ad4ea0d",
+      "lines": 28,
+      "functions": 0,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ai/base.py",
+      "sha256": "18ce0785348984477db34ca5dabc26cee05f432d8a350d4ecb3ca9c6fe99c8c2",
+      "lines": 12,
+      "functions": 1,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ai/context_builder.py",
+      "sha256": "bfdd19a62324c9a9a1d49681123f547b5e9e0e89238cbcc412d7a87fb82ed94a",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/ai/gateway.py",
+      "sha256": "e5a2b7052f1f4898de2e839bc3a6c572775fa6f23c8bb99aa1d1f4c90dcb109b",
+      "lines": 65,
+      "functions": 3,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ai/providers/__init__.py",
+      "sha256": "59bbd62d153a0087c22880599b3cc88e9528da012610f46c44ec0543b95576e4",
+      "lines": 96,
+      "functions": 2,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ai/providers/anthropic.py",
+      "sha256": "388f9796856857b293019068ca819c0a11790869f4c52a8ac8b4504d3de35dc8",
+      "lines": 143,
+      "functions": 3,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ai/providers/base.py",
+      "sha256": "d873584d232da389bb99d18da2711e381b629cb7abdf675fa473656eeb0542c6",
+      "lines": 42,
+      "functions": 2,
+      "classes": 3
+    },
+    {
+      "path": "src/govcon/ai/providers/deepseek.py",
+      "sha256": "b19dc8f88c59a690ed1597719b73e5a08368437d6aa4e8156a85574d886ddca2",
+      "lines": 155,
+      "functions": 4,
+      "classes": 3
+    },
+    {
+      "path": "src/govcon/ai/providers/local.py",
+      "sha256": "4ce07a5211f20c91dfc9aaf651e62f7541e25f04c8331a9d3e6e8cb3f01f181a",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/ai/providers/openai.py",
+      "sha256": "361621c2179aeefdaee0e1970e9403708ff62386bac9740b5cfc7f7715e99c68",
+      "lines": 137,
+      "functions": 3,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ai/schemas.py",
+      "sha256": "e55250a9712d9eb474293d8113b498798840f413a7dec861e2df6e0aa3f43ffb",
+      "lines": 277,
+      "functions": 1,
+      "classes": 21
+    },
+    {
+      "path": "src/govcon/ai/structured.py",
+      "sha256": "59cff641e283091f590cd8b939e6e2974bf2d39864a11c6ce54dd55e1c2df079",
+      "lines": 222,
+      "functions": 6,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/alerts/__init__.py",
+      "sha256": "64763ea59409fe75a1a3b5eb3e99a1eff726b378be40e33b6a4e8242aae82957",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/alerts/digest.py",
+      "sha256": "817bc84638415eeb04753d210d1953575aa2ba5653ed4203b2f594058ab6fa5d",
+      "lines": 603,
+      "functions": 32,
+      "classes": 3
+    },
+    {
+      "path": "src/govcon/audit.py",
+      "sha256": "29a7bd74e8410317ab6d6f64b0b4440c8453b0c11653cc30a28eb5163e675d2b",
+      "lines": 71,
+      "functions": 3,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/cli.py",
+      "sha256": "d9fa72d251736049e99e74a4225e24ff8b3e46c3f1c8416e0b207d2144b387bb",
+      "lines": 2921,
+      "functions": 110,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/collaboration/__init__.py",
+      "sha256": "30cde1992200704449d5395f089ec84082fe06a05bcfd2a2a50b19f6b720e7b7",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/collaboration/ai_comment_review.py",
+      "sha256": "bef0acc25e3829584e49f1988a7e949f3a0338ab608c0a594efbab1990f9ef66",
+      "lines": 179,
+      "functions": 8,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/collaboration/assignments.py",
+      "sha256": "154df3e1c3dfb437b4a4b951ccbe21a51d583063183d3415e8d3ab7577b77187",
+      "lines": 154,
+      "functions": 5,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/collaboration/comments.py",
+      "sha256": "bf59d7036b5aa213556aa058ef838b3aab67099ce741e6c085d56946d03cdbc8",
+      "lines": 199,
+      "functions": 6,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/collaboration/notifications.py",
+      "sha256": "edd8ab6b329d6cd3c0044c437f61ac81fb2f034563c2ae7fe9fc915d09fc427f",
+      "lines": 59,
+      "functions": 1,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/collaboration/review_sessions.py",
+      "sha256": "656b6fef3342fe169dad78610822b4fde37682f86c5603990b85edd4c624f472",
+      "lines": 999,
+      "functions": 20,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/collaboration/users.py",
+      "sha256": "8d97a798a75e8ab5bec98510af900c27a7413dafabbaa35727ac699efeb9db58",
+      "lines": 207,
+      "functions": 12,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/compliance/__init__.py",
+      "sha256": "84df45c0cf6025f093e489c82627e15bf3ad690a1dcdb7ddb6fcb468f9395c0a",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/compliance/amendments.py",
+      "sha256": "2ac876cd57047920a5ec5e8995d4fc632eb257e1c8f7bbfc5e1a4e16696efb13",
+      "lines": 328,
+      "functions": 9,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/compliance/clauses.py",
+      "sha256": "11891339bf443d2cb268f22da85401f83b3650b9c45dcb67a5da243357507bb2",
+      "lines": 261,
+      "functions": 9,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/compliance/conflicts.py",
+      "sha256": "37eb5fe11bf02295f3b6adc637cc461d8aeb94f60d0e4b76bba73b7637e9ae52",
+      "lines": 317,
+      "functions": 11,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/compliance/deterministic.py",
+      "sha256": "eb95cc1a977f76e9499247845dd7313d76a8e887aa7fecbdc14cd83d4376b459",
+      "lines": 535,
+      "functions": 31,
+      "classes": 3
+    },
+    {
+      "path": "src/govcon/compliance/extractor.py",
+      "sha256": "0776a72d11fabad8dc145dc6eb89c61c8266d3ce3d7ada4807850d53f77f6a55",
+      "lines": 424,
+      "functions": 13,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/compliance/inventory.py",
+      "sha256": "d44002b6fd6a64b6dfd64794696017d6ccfbb6ffa9d1f87e0103a7080452f249",
+      "lines": 372,
+      "functions": 8,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/compliance/matrix.py",
+      "sha256": "8460a4af7c21f8cff366f580dbee566c7d9803294326712f0835aa03f1e8a757",
+      "lines": 717,
+      "functions": 20,
+      "classes": 3
+    },
+    {
+      "path": "src/govcon/compliance/metrics.py",
+      "sha256": "b581fe9db3b287e895e8603d99b7eefa967a7a0f39500462be59366cb4067836",
+      "lines": 156,
+      "functions": 9,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/compliance/pipeline.py",
+      "sha256": "c5d29162b7662316480e008d009be79420252e4abb6a8e220a0455c54229c806",
+      "lines": 202,
+      "functions": 3,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/compliance/proposal_coverage.py",
+      "sha256": "541fc2811866408ea0a2b504ea9f5273f5bb6b174fb0ce3430141d10af7687cc",
+      "lines": 246,
+      "functions": 6,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/compliance/reconciler.py",
+      "sha256": "6044c17d555698bd807cf0e22f37b805bc4a4e66e08cc03cd1c8db93bd7e4b9a",
+      "lines": 387,
+      "functions": 13,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/compliance/records.py",
+      "sha256": "70b7c050a59b10975840255cc163ab20a275288b988cf0272e42359592d0f660",
+      "lines": 232,
+      "functions": 16,
+      "classes": 6
+    },
+    {
+      "path": "src/govcon/compliance/red_team.py",
+      "sha256": "fbe73b5fe75026b43d475dec9692b7dcbf6c0424e2fb248beadce87a24d146c7",
+      "lines": 159,
+      "functions": 3,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/compliance/regression.py",
+      "sha256": "3719aaf8027659eef90a86d41c996212656ba0139f017fbce111038189b1af67",
+      "lines": 370,
+      "functions": 14,
+      "classes": 4
+    },
+    {
+      "path": "src/govcon/compliance/schemas.py",
+      "sha256": "894891471c81429968b93497885034e3b2e6f7968309c54252bc6f02fd294268",
+      "lines": 226,
+      "functions": 3,
+      "classes": 22
+    },
+    {
+      "path": "src/govcon/compliance/submission_preflight.py",
+      "sha256": "6df9b9fdb6c10b9e46e7d947652bfca560f9345f99c911fcf31a653fab7c55ac",
+      "lines": 453,
+      "functions": 10,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/compliance/text.py",
+      "sha256": "bd7e6b671de59d22dea3194e36c58cc4e2c1afa2f0ee534af3355a0bdbd087e0",
+      "lines": 304,
+      "functions": 14,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/compliance/validator.py",
+      "sha256": "bb2df1124fabdba0bf781a598c86090d42b3e0f5d84ddc292a6a36a67cd02b93",
+      "lines": 298,
+      "functions": 6,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/concurrency.py",
+      "sha256": "06704f23674ba12b38d549d728c7f5f532d51425456b0cf51c9db6498749c4d3",
+      "lines": 48,
+      "functions": 2,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/config.py",
+      "sha256": "62ecb7ac90144710ee6f8f0277d76cd34ea838f38413d72320d8f7fff245ccea",
+      "lines": 219,
+      "functions": 10,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/db.py",
+      "sha256": "b9ff9ec7a33010a01e932d9e615a080d2096530f602f7d902374305333aa9197",
+      "lines": 54,
+      "functions": 4,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/decision/__init__.py",
+      "sha256": "e1d7892d03609eeac1b484329f281ede7a4f1e45d14a29b7d4751f3426cb9a37",
+      "lines": 15,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/decision/bundles.py",
+      "sha256": "8785645a4aacbd5d62828c244dd2106ea71451025335c9b482d46df094de815e",
+      "lines": 384,
+      "functions": 4,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/decision/engine.py",
+      "sha256": "8ec6ceb53b432a8bcb36cde95f44d3373cd682be90f53270c677e5da5870f241",
+      "lines": 835,
+      "functions": 10,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/decision/provider.py",
+      "sha256": "793519a5fccab9ae15f4a8fa88866193f1d0bf83e71b95dcb7e6d9b5cf81f988",
+      "lines": 43,
+      "functions": 1,
+      "classes": 4
+    },
+    {
+      "path": "src/govcon/decision/providers/__init__.py",
+      "sha256": "135311a24039e61a8128f3dd76b341aa5757c63c3986edb4882e08928e33875f",
+      "lines": 11,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/decision/providers/jev.py",
+      "sha256": "6e4994183cb729609808f96898fc28b180aac65dc80cd0d62562512821e0bd4b",
+      "lines": 171,
+      "functions": 6,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/decision/providers/llm_fallback.py",
+      "sha256": "7d78013f56dbe15eb515847b1ef13d6a01ce657f7cbce731195de985bf949685",
+      "lines": 100,
+      "functions": 2,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/decision/providers/rule_fallback.py",
+      "sha256": "d34f84e4484c6621f9bb6518b39737ed4a72ac62109d3936554c0463b8998c74",
+      "lines": 519,
+      "functions": 19,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/decision/rules.py",
+      "sha256": "093819eab782b3a6efae12836a1b9e8767e0d553ccf84950f0d7cd4d83c20cd3",
+      "lines": 190,
+      "functions": 4,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/decision/schemas.py",
+      "sha256": "6cb5efa331163b2220534fa66cb12f80da49be3ed23a5bab02cdf703385901f6",
+      "lines": 236,
+      "functions": 1,
+      "classes": 15
+    },
+    {
+      "path": "src/govcon/decision/signals.py",
+      "sha256": "9366fc8e2c7c3fb9f010405c443c372c608b78a5ba202427e0f698a1134595ad",
+      "lines": 287,
+      "functions": 9,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/enrich/__init__.py",
+      "sha256": "2b65951f73aaad7c2df059d743522107d7a405b4c7cedab960b9f084a652a206",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/enrich/attachment_refs.py",
+      "sha256": "4fc9caf583dfbe572f1d48a981d892a84622b737ccbf941c774d690e629814bf",
+      "lines": 88,
+      "functions": 4,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/enrich/attachments.py",
+      "sha256": "5f75e6ca1ce2f9bbe6e40cb80c70ed565d3f77c022c082b0de458800e7fd27ba",
+      "lines": 374,
+      "functions": 14,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/enrich/embeddings.py",
+      "sha256": "7f070efd9c20c037f9c73ada525e6e19ec37f86f15a1677a3e1dc90d1a088528",
+      "lines": 333,
+      "functions": 19,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/enrich/extract.py",
+      "sha256": "43704b29cb37be36b0cc6a7a0b525f119b439d9d57b00fc6eab2996824e7621e",
+      "lines": 264,
+      "functions": 10,
+      "classes": 3
+    },
+    {
+      "path": "src/govcon/enrich/safe_fetch.py",
+      "sha256": "a6ef02faa8b0360210b8c2bc55e554125625290c48ba73b8f9a224ea6142c81a",
+      "lines": 190,
+      "functions": 5,
+      "classes": 5
+    },
+    {
+      "path": "src/govcon/enrich/summarize.py",
+      "sha256": "bc9be36b87c0a899eab236805344a301cd13ba2f15fc589138a3f66bdf79857a",
+      "lines": 235,
+      "functions": 3,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/http.py",
+      "sha256": "4c92138dc78d2b80ecf9d7bebeca01c1bcc475655efbcbf9ac30ffe62787b519",
+      "lines": 65,
+      "functions": 4,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ingest/__init__.py",
+      "sha256": "45c8a7d44af5db506f99c80f26f68d8b559566e57d2631cdde53a81d261abc42",
+      "lines": 7,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/ingest/dibbs.py",
+      "sha256": "fccedec62dc2ff85366327f76055aa276e117f02c375a41164a72167a184a16e",
+      "lines": 647,
+      "functions": 37,
+      "classes": 4
+    },
+    {
+      "path": "src/govcon/ingest/lifecycle.py",
+      "sha256": "b20ff408a86150495fb73c056073fb6463676db66f9b63b06f2ac2cd164d1a4e",
+      "lines": 50,
+      "functions": 1,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/ingest/runs.py",
+      "sha256": "2e3376b66a00c405c255b614e0d6572fc5b98d75d0651dd1652b6b43233c14f2",
+      "lines": 61,
+      "functions": 3,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ingest/sam_entities.py",
+      "sha256": "311dd651d7f3a890fd3070bfd3bf3cc315104517886c840e5330d09c3661b570",
+      "lines": 244,
+      "functions": 8,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/ingest/sam_opportunities.py",
+      "sha256": "ad42ec0ef420eb558e03824db991d64594df6e56ac6a32e5563d2af8f8193ef6",
+      "lines": 632,
+      "functions": 30,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ingest/snapshots.py",
+      "sha256": "ef77de8ff025f954a1549f2221142be6be1b30d784a894e37686550792513a7d",
+      "lines": 414,
+      "functions": 15,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/ingest/usaspending.py",
+      "sha256": "f396ac9cc9d4d519af0e60e3e31493586ea495e9b82c0790fccf572b1938d5cf",
+      "lines": 792,
+      "functions": 37,
+      "classes": 4
+    },
+    {
+      "path": "src/govcon/intelligence/__init__.py",
+      "sha256": "0c4672b149073477515fde504c2d7710074aff7cbf10619573536146c8d072cd",
+      "lines": 32,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/intelligence/ai_analyses.py",
+      "sha256": "f226f122606c8a8ab8f4e319e18bf9a88afcfa504b6b9d88763c962526cb6ee2",
+      "lines": 231,
+      "functions": 8,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/intelligence/awards.py",
+      "sha256": "add75227dca6cdabb36f614314a879515db88b0b399ead7eedade6cef06162bd",
+      "lines": 180,
+      "functions": 5,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/intelligence/competitors.py",
+      "sha256": "dcd866ee82c25a06fd460d0afeb9c682f41be4ff267d11b191496adbcb9ba941",
+      "lines": 197,
+      "functions": 6,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/intelligence/contacts.py",
+      "sha256": "35e6ccebfc4290186ee2a45e888359c8fc2cd017704fd6cf8fc2054cab981931",
+      "lines": 75,
+      "functions": 2,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/intelligence/sourcing.py",
+      "sha256": "cc83db4095a2f4fc8d2b2e00789a6bb1617f73489041c159401a48dbb6386e25",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/intelligence/vendors.py",
+      "sha256": "2432398c19c25f8e0ab3444ba78ae293be923346c410202d1508f319c9411d2f",
+      "lines": 155,
+      "functions": 5,
+      "classes": 3
+    },
+    {
+      "path": "src/govcon/learning/__init__.py",
+      "sha256": "59dc3c295e9302b1c023eab75b8ef601739ac3e597bcd68e215e9d521fc3a9e3",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/learning/analytics.py",
+      "sha256": "0d589268f0a12eeb499b3650526240e22d9ce58d0f1b70b0a9f28c475d1e26a0",
+      "lines": 480,
+      "functions": 17,
+      "classes": 4
+    },
+    {
+      "path": "src/govcon/learning/outcomes.py",
+      "sha256": "2d7f3604e939eaaa7cdc6c7683197a7e657cd4a320bd1937aa7e6bde43b55edf",
+      "lines": 237,
+      "functions": 4,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/learning/schemas.py",
+      "sha256": "56cdd03c63858fb3056a072ee075c89ebdccb5bd68d758642e221375098d4cb4",
+      "lines": 51,
+      "functions": 0,
+      "classes": 6
+    },
+    {
+      "path": "src/govcon/logging.py",
+      "sha256": "74f985af9664702df74d2f727347df3ba9f243b07da5072b23691bae9e85933d",
+      "lines": 72,
+      "functions": 3,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/matching/__init__.py",
+      "sha256": "b8fbe4a61073437ebe3fbce059f8a3a53074fd37d6ffa7b8ff375f074d39f2ab",
+      "lines": 21,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/matching/dedup.py",
+      "sha256": "840371e0566d716e213e78058edfda950581ce13155e58a737fd11e7d353fcc3",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/matching/engine.py",
+      "sha256": "d2d0b928901983489699bbe51e89248f26f7ea0dc64e8185f009d5cf1080930a",
+      "lines": 444,
+      "functions": 21,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/matching/pricing.py",
+      "sha256": "060ec878cd21ccf1538fc731b92b98230a2b61a4ee5232296ac1e3e90c7ee2c0",
+      "lines": 130,
+      "functions": 7,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/matching/semantic.py",
+      "sha256": "6191d8c544c2fd011820ff91534c05542c28e1fb3a5f8ac088e5cbb2a9ab521c",
+      "lines": 352,
+      "functions": 9,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/matching/watchlists.py",
+      "sha256": "30b2c5017c588f0df6984296eec8dd6fca68ccf886d5af8a75f0adddf16f7fa5",
+      "lines": 93,
+      "functions": 6,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/mcp/__init__.py",
+      "sha256": "14b5d3e79262a32e4aeebe5e04e81aece20a52a17e6dab011978071709d00b68",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/mcp/context.py",
+      "sha256": "ebfd56ae5187481ac3454686be4c432bab55f11322a3a625027c6d6a22cc3ab1",
+      "lines": 101,
+      "functions": 7,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/mcp/operations.py",
+      "sha256": "e119b718c06a7c67dba92792cf7a6d5e7534a282f70afdbcc09729c0ed67ee24",
+      "lines": 893,
+      "functions": 29,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/mcp/serialize.py",
+      "sha256": "a6eedf0738d41eb81a00645ad482c4f02031d0f2cb17da79414d0010778692f9",
+      "lines": 85,
+      "functions": 5,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/mcp/server.py",
+      "sha256": "45c490172e1729be487d96fdb649ceeea50a7271a3207a72dd8ff004785eaa32",
+      "lines": 146,
+      "functions": 4,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/models.py",
+      "sha256": "2eafb42ce82a8ae4fe1f2078a2f8cf232096cab208b43eae84a93f1f6b79723a",
+      "lines": 939,
+      "functions": 1,
+      "classes": 40
+    },
+    {
+      "path": "src/govcon/paths.py",
+      "sha256": "65642181f5f2b0eca75e2c8303dc68f7acd741b456d5cab2e26ed192922e0692",
+      "lines": 12,
+      "functions": 1,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/prompting/__init__.py",
+      "sha256": "d49c281202a45519f1e837a567602109c3cddf3d87914f7e803638a4eca1b4bd",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/prompting/cli.py",
+      "sha256": "9590349027d47b8522d54a632ac163630941f124726de9f6500fd7dd4a31e9f5",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/prompting/evaluation.py",
+      "sha256": "0687b0ab4caac3cf0f0aebaaa1d4495662d15dbbdc8528e1613bee508e5b7df2",
+      "lines": 138,
+      "functions": 5,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/prompting/hashing.py",
+      "sha256": "4037fd5a870a4160e7292fe75ba7573d584ec7e026178c8923379368cca23030",
+      "lines": 9,
+      "functions": 1,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/prompting/loader.py",
+      "sha256": "8cdbcbb66c3f6fa80aeb22b0325d519a12ae1a066311d924eb25b981895ee6af",
+      "lines": 64,
+      "functions": 3,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/prompting/registry.py",
+      "sha256": "8774683fc4db85e87fae2cb86d10da0ce46ef0a40120138ca6a262778cfb1a85",
+      "lines": 254,
+      "functions": 10,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/prompting/renderer.py",
+      "sha256": "362f7a77cdc87c4692ca2d04e05cace2c299f09fe0c6b16ea5df962e857717a7",
+      "lines": 106,
+      "functions": 5,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/prompting/schemas.py",
+      "sha256": "108e83971528a6b6a4d1ca189981620d4f34cf7e81644bb76f3986359b872565",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/proposals/__init__.py",
+      "sha256": "f14165a1036d7dcd8f1c5f902d459246e5f0956477ae73d39e3374590d9079f2",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/proposals/ai_review.py",
+      "sha256": "bb21b8d3e4a9489d7fb794ba70e85ab0ddeefbf58e5e890651aec2173edc0fcf",
+      "lines": 178,
+      "functions": 3,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/proposals/drafting.py",
+      "sha256": "ec3001c2f283e89df2a2ec355e2a440d9e489534e8812dffce3d725bbee06185",
+      "lines": 207,
+      "functions": 4,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/proposals/export.py",
+      "sha256": "89a9b1b99f42d42113af757e69a992eb7d8f669ec8d7a25bba8663e812336dd8",
+      "lines": 308,
+      "functions": 7,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/proposals/service.py",
+      "sha256": "06602e2c5b2c3b2035202984066a0822207d9a5090cb836153af220ff1111f52",
+      "lines": 739,
+      "functions": 9,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/proposals/versions.py",
+      "sha256": "b79d10ec79736d468ebafbecdbd124e47eaec5dbd59406fc150d0d0d33859031",
+      "lines": 182,
+      "functions": 5,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/scheduler/__init__.py",
+      "sha256": "978bd676ec1c7a6e5d01141fe5bae5cad312e268fa3e0f7d1e048dfce7a2396b",
+      "lines": 5,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/scheduler/chains.py",
+      "sha256": "fa63563917d3ca7b0c85e0bdc63fa896ef90f28e7f3d14cbb85a2565c27e6914",
+      "lines": 341,
+      "functions": 7,
+      "classes": 2
+    },
+    {
+      "path": "src/govcon/scheduler/jobs.py",
+      "sha256": "d16bed2e8a9a0284f3e9512a05be8be853cd954a29416ffca1be6721e0b24176",
+      "lines": 379,
+      "functions": 15,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/scheduler/runner.py",
+      "sha256": "8eac10c0b97b75fdb98d63fb165bbbaed6c4e8b9201138fc2a82736d88fca7e3",
+      "lines": 174,
+      "functions": 5,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/security/__init__.py",
+      "sha256": "9fa57d46bfb2a31d2ded2417ec815157234aa29fb256d4fa80d2a39c0e3e142d",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/security/classification.py",
+      "sha256": "82ff33f8dc8db75657d6e17469b9758a4f922d0311f29ad89b6e1b72727ce51b",
+      "lines": 39,
+      "functions": 1,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/security/secrets.py",
+      "sha256": "1ee0ffa6a6b9123620aa62396a4128c6d6f0b8a8e93f52af99d77dfdaf464794",
+      "lines": 26,
+      "functions": 1,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/seed.py",
+      "sha256": "9c9e95bcc66d96a83fb823fd9a83ae598dd4cd2044e7fcc73faed84d38477f9d",
+      "lines": 50,
+      "functions": 2,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/submissions/__init__.py",
+      "sha256": "1b935eacde4b9b960da03551761fd0dbceddc8a85e805a18b6ae84375581aa04",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/submissions/adapters/__init__.py",
+      "sha256": "5035995a3ebfef7f94827ed3796a10bca9b398186056fef2364011789e8c593d",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/submissions/checklist.py",
+      "sha256": "98ecfe5f6b7b39431dc1bd8b6d36dc3d9882906278f56f85221372b7f92cd674",
+      "lines": 278,
+      "functions": 4,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/submissions/email_adapter.py",
+      "sha256": "4af5f2dfeb89aa122c715db4daf96894daf7a61a1d23c362b219df16ec624bde",
+      "lines": 113,
+      "functions": 1,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/submissions/manifest.py",
+      "sha256": "3c249538012166cf1332460d95b100edc32b1a5cdbc0796a9a016d8029fc8e3a",
+      "lines": 95,
+      "functions": 5,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/submissions/service.py",
+      "sha256": "b790510f79a39257cb0fea1f3e242ba4bdeed4a47ba2922489f1daa555a456d9",
+      "lines": 289,
+      "functions": 4,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/web/__init__.py",
+      "sha256": "61a721331ce1686ebc6cf4785570fb9b0f6f57956890d8b4167142787104f693",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/web/app.py",
+      "sha256": "39ae1d2a7ce42cadb78e7927b6e141a7e5c8378a29bed1ccf62ae673bdb99f43",
+      "lines": 119,
+      "functions": 2,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/web/auth.py",
+      "sha256": "ba16c8529c73abd015a17f0b3fa576dc6e6eb48786cc4e9e1391937fd37fd44f",
+      "lines": 60,
+      "functions": 4,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/web/helpers.py",
+      "sha256": "f08317b0b011dae7b017d17d449146c1d776dee20aa23842312cc348fb9269d2",
+      "lines": 111,
+      "functions": 6,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/web/routes/__init__.py",
+      "sha256": "df344c8baf1718f0632b46a518fe1cf4cd0faa061ff523810e98c8df93761746",
+      "lines": 1550,
+      "functions": 50,
+      "classes": 1
+    },
+    {
+      "path": "src/govcon/workflow/__init__.py",
+      "sha256": "ea644873278a63a9b5377dae6d79bc6ac9b8a193f92247757a3d20023a761983",
+      "lines": 1,
+      "functions": 0,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/workflow/invalidation.py",
+      "sha256": "20d358ad96c7a046cb4f943605424c37dff2c55a823b110c0d94768a01a64c59",
+      "lines": 450,
+      "functions": 14,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/workflow/source_events.py",
+      "sha256": "4429b00e834cb15c6bddd13c49ae644be514e6e8c448af601e5bf5bcb2499c52",
+      "lines": 36,
+      "functions": 1,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/workflow/source_revision.py",
+      "sha256": "5dd25a9a689301d3fff382777e3bc53259ffcf264aa2599efc44374cbfebe5c8",
+      "lines": 49,
+      "functions": 3,
+      "classes": 0
+    },
+    {
+      "path": "src/govcon/workflow/transitions.py",
+      "sha256": "e3cfd9ba50fb84eace3f86b5c9ceeb8b130f855ce17f63d25db465ca3a08b843",
+      "lines": 106,
+      "functions": 3,
+      "classes": 1
+    }
+  ]
+}

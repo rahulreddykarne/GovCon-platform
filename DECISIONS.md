@@ -472,3 +472,103 @@ Record durable architecture/implementation decisions.
 - Decision: Rewrite `_purge` with raw SQL to delete from all 21 dependent tables in correct topological order, including: proposal_sections → proposal_versions (+ circular FK null-out) → proposals → submissions → outcome_feedback → review_notes → review_comments → review_assignments → review_sessions → bid_decisions → decision_runs → pursuits → compliance_findings → requirement_evidence → requirements → compliance_runs → ai_analyses → files → notifications → audit_events → opportunity_events → opportunity_snapshots → matches → contacts. Add pre-test cleanup call for the three tests that use PUBLISHED_NOTICE_ID to ensure test isolation even on databases contaminated by a prior smoke run.
 - Alternatives considered: Use TRUNCATE ... CASCADE (too destructive; clears unrelated data). Add ON DELETE CASCADE to all FK constraints (migration risk; changes production behavior). Use a test transaction rollback (not possible since these tests commit).
 - Consequences: test_sam_ingestion tests are now idempotent and isolated regardless of whether smoke.sh ran against the same database first. No schema change. No behavior change.
+
+### ADR-058 — Workflow gate hardening: one service path per state change
+- Phase: post-20 remediation
+- Date: 2026-10-02
+- Context: A codebase review found that the web routes and MCP tools changed review, proposal, submission, and pursuit state directly, bypassing the quorum, compliance, version, and audit gates in the services; structured AI calls defaulted to PUBLIC classification so PROPRIETARY data (pricing, supplier, company facts, internal comments) reached external providers under the default deny policy; final proposal approval auto-overrode compliance blockers with a fixed reason; submission confirmation had no preconditions; and a material amendment after approval left approvals intact.
+- Decision:
+  1. `govcon.workflow.transitions` holds the allowed transitions for review sessions, pursuits, proposals, and submissions. Services reject anything else. Gated pursuit stages are entered only through their service (`finalize_approval`, `move_to_ready_to_submit`, `record_submission_confirmation`, `record_outcome`). The pursuit `review` stage is post-drafting submission validation; a revoked bid approval returns the pursuit to `evaluating`.
+  2. Web routes are thin wrappers over `add_comment`, `assign_reviewer`, `complete_assignment`, `finalize_approval`, `finalize_proposal`, `record_submission_confirmation`, and `record_outcome`. Each reloads the actor in the request transaction, checks its permission, passes the version the form rendered, and shows service errors to the user. Watchlist changes require `manage_watchlists` (owner/approver) and are audited.
+  3. `run_structured_prompt` requires `classification`. Each task prompt declares `allowed_data_classes` (and optionally `allowed_providers`) in front matter; the runner refuses undeclared classes and consults the AI gateway before rendering or resolving a provider. Proposal, red-team, review, validation, coverage, pre-flight, outcome, market, supplier, and pricing prompts are PROPRIETARY. Provider errors no longer carry response bodies. A JEV call blocked by policy falls back to rules instead of raising.
+  4. The MCP actor is pinned from `MCP_ACTOR_EMAIL` at server start; tools take no actor or user parameter and there is no owner fallback. Without the setting (or with `--read-only`) only read tools are served. Approve-to-bid, complete-review, human bid decisions, compliance overrides, set-ready, and submission confirmation are not MCP tools.
+  5. Final approval passes the approver's own override reason (none means blocked), is allowed only from `ai_generated`/`red_teamed`, runs the gate before any change, and pins `proposals.approved_version_id` (migration `c7d8e9f0a1b2`). A new version after approval returns the proposal to `draft` and lapses submission readiness. Submission confirmation requires a final-approved current version, a `ready_to_submit` pursuit, a `ready` submission, confirmation evidence, and a time not after the deadline; repeats are no-ops.
+  6. Ingest emits `material_source_change` when files, description, set-aside, quantity, or cancellation change (`deadline_changed` invalidates readiness only). The `source_changes` scheduler step fetches attachments, reruns compliance, reopens review (including override-only approvals), and invalidates proposal approval, submission readiness, and the pursuit stage. The compliance pipeline consumes `review_reopen_required` itself. Derived artifacts carry a `source_revision` stamp; a stale decision package, solicitation analysis, proposal version, or pre-flight is refused or re-run.
+  7. Quorum recalculation never changes a decided session and runs the consolidated review once per distinct set of completed reviews. `return_for_review` reopens completed assignments.
+- Alternatives considered: Keep direct route updates and add checks there (rejected: two code paths drift). Make PROPRIETARY prompts PUBLIC-allowed (rejected: defeats the default-deny policy). Keep MCP approval tools behind a flag (rejected: an AI client must not satisfy a human quorum).
+- Consequences: Tests that set statuses by hand now build real quorum and approval state. Tests that mock AI for proprietary prompts opt in with the `allow_proprietary_ai` fixture; `tests/test_workflow_gates.py` checks the default-deny policy and every gate. Deployments that want AI drafting/review must set `AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=true` deliberately.
+
+### ADR-059 — Pipeline correctness hardening (attachments, inputs, scheduling, providers)
+- Phase: post-20 remediation
+- Date: 2026-10-02
+- Context: The same review behind ADR-058 found high-severity defects. The scheduled USAspending step imported a function that did not exist. Attachments were never downloaded, and the downloader had no SSRF, size, or path protection. The compliance inventory mixed superseded files with current ones. Prompt hashing and file reads depended on the platform's line endings and encoding. Opportunity pages crashed on list-valued links. Alerted matches disappeared from the inbox. Analysis type strings did not match between producers and the UI. A JEV call blocked by the gateway crashed the decision engine. Decision inputs were guessed from field presence. Quorum recalculation could undo decisions. One bad ingest record stopped the morning alerts. Only DeepSeek was implemented.
+- Decision:
+  1. **USAspending scheduling.** `ingest_usaspending_awards` is the scheduled entry point. It records its run under the job name and ends `succeeded`, `completed_with_errors`, or `failed`.
+  2. **Attachment download.** Downloads go through `enrich.safe_fetch`:
+     - HTTPS only (unless `ATTACHMENT_ALLOW_HTTP`), no userinfo, and no non-global addresses on any redirect hop;
+     - a streamed byte cap and bounded retries;
+     - the SAM key is sent only to api.sam.gov.
+     Stored files are content-addressed, never overwrite, and record `snapshot_id` and `downloaded_at`. A failed download leaves a `download_failed` row. Extraction enforces page, character, ZIP-member, ratio, and spreadsheet limits.
+  3. **File versions.** Migration `d8e9f0a1b2c3` adds `files.active` and `files.removed_at`. Only the newest stored version of each listed URL stays active. The inventory reads only active rows, re-verifies the SHA-256 of local bytes, and treats these as blocking: `download_failed`, `file_integrity_mismatch`, and same filename with a different hash.
+  4. **Portability.** All text I/O names UTF-8. `.gitattributes` pins LF line endings, and CI runs a Windows job in no-DB mode (`GOVCON_TEST_NO_DB`).
+  5. **Links and the inbox.** Source links are normalized whether they arrive as a string, a list, or a dict. Alert delivery sets `alerted_at` and leaves the match `new`, so it stays in the inbox with an "Alerted" marker. This supersedes ADR-019's "`new` becomes `seen`".
+  6. **Analysis types.** `ai.analysis_types.AnalysisType` is the only source of these strings. Market, supplier, and pricing analyses have producers in `intelligence/ai_analyses.py`, reachable from the CLI (`govcon enrich intelligence`) and the workspace.
+  7. **Unavailable providers.** The decision engine logs a warning and falls back when JEV or the LLM is blocked or unavailable.
+  8. **Decision signals.** Signals (`decision/signals.py`) are three-state with provenance:
+     - eligibility comes from the company-facts profile;
+     - sourcing comes only from recorded supplier or cost data;
+     - capability comes from watchlists, wins, and profile NAICS;
+     - prices are compared per unit, and only against awards that state a unit price;
+     - "incumbent" is renamed the repeat-awardee heuristic;
+     - an amendment is material only when revalidation says so.
+  9. **Quorum recalculation.** It never changes a decided session, and the consolidated review runs once per distinct set of completed reviews.
+  10. **Scheduler errors.** Ingest steps are soft in the ingest chains: their failure is recorded, and matching and alerts still run. Per-record errors end a step and chain `completed_with_errors`.
+  11. **Providers.** `AnthropicProvider` (official `anthropic` SDK, default `claude-opus-5`) and `OpenAIProvider` (Chat Completions over httpx, default `gpt-5`) share DeepSeek's `complete()` interface and pass through the AI gateway first. Neither sends `temperature`, because current models reject it. Errors carry the status only.
+      - Claude models with safety classifiers opt into server-side `fallbacks: "default"` (`ANTHROPIC_REFUSAL_FALLBACK`). The model that actually answered is recorded.
+      - A refusal raises `ProviderRefusal`.
+      - Compliance Pass B and the secondary validator record `pass_b_not_independent` / `secondary_validator_not_independent` when they resolve to the primary provider and model.
+- Alternatives considered:
+  - Download attachments inside ingest (rejected: a slow file server would stall ingest).
+  - Reconcile file versions on every inventory build (rejected: it deactivated rows the downloader had not seen).
+  - Call Anthropic over raw HTTP like DeepSeek (rejected: the SDK supplies retries and typed errors).
+  - Block the run when Pass B is not independent (rejected: a single-provider deployment is valid, but the weaker check must be visible).
+- Consequences:
+  - Two migrations: `c7d8e9f0a1b2` (ADR-058) and `d8e9f0a1b2c3`.
+  - New dependency: `anthropic>=1.11`.
+  - New settings: `ANTHROPIC_MODEL`, `OPENAI_MODEL`, `ANTHROPIC_REFUSAL_FALLBACK`, `ATTACHMENT_ALLOW_HTTP`.
+  - Without `COMPANY_FACTS_PATH`, eligibility factors show as unknown instead of passing.
+  - Ops pages show `completed_with_errors` as a warning.
+
+### ADR-060 — Source lifecycle: snapshot reverts, match reconciliation, DIBBS timing, award history
+- Phase: post-20 remediation
+- Date: 2026-10-02
+- Context:
+  - **Snapshot reverts:** a revert (A → B → A) was dropped as "unchanged" because snapshot A already existed.
+  - **Matching:** it scanned closed and expired opportunities and never removed stale matches outside an explicit rebuild. It compared NSNs as exact strings against only the first NSN. It also counted the clock-driven `days_remaining` as a change.
+  - **Alerts:** the digest alerted on expired or cancelled opportunities and re-alerted dismissed matches. Only deadline changes re-alerted.
+  - **DIBBS:** rows never closed, only the newest index was pulled, and deadlines were assumed to be 23:59 UTC.
+  - **USAspending:** one global watermark meant codes added later never got their history. Bare 13-digit NSNs were missed.
+- Decision:
+  1. **Snapshot reverts.** Content seen before is still an update to the live row. It reuses the stored snapshot (unique per hash) and links the new field events to it. The current snapshot is the one whose hash equals `opportunities.raw_hash`; `enrich.attachments.latest_snapshot_id` uses that.
+  2. **Match reconciliation.** Migration `e9f0a1b2c3d4` adds `matches.active`, `deactivated_at`, and `inactive_reason`, plus `opportunities.nsn_candidates` (backfilled from the current snapshot).
+     - Every `run_matching` call reconciles, whether it comes from the scheduler, the CLI, or the UI.
+     - Only `open` opportunities whose deadline has not passed are evaluated.
+     - A match the watchlist no longer produces becomes inactive with reason `no_longer_matches`, `opportunity_closed`, or `watchlist_disabled`. Matches are never deleted.
+     - A match that matches again is reactivated with its status and `alerted_at` intact.
+     - NSNs are compared in canonical dashed form against every candidate.
+     - `days_remaining` is ignored when deciding whether a match changed.
+     - The inbox, pipeline, dashboard, MCP match list, and decision signals read active matches only.
+  3. **Alerts.**
+     - New-match alerts need an active match on an open, unexpired opportunity.
+     - Amendment alerts go to already-alerted, non-dismissed matches. They cover `deadline_changed` (still gated by `ALERT_ON_MATERIAL_DEADLINE_CHANGE`), `cancelled`, `files_added`, and `set_aside_changed`, and list every change in one item.
+     - A cancellation alerts even though it closes the match. Other changes to a closed opportunity do not alert.
+  4. **Expired opportunities.** `ingest.lifecycle.close_expired_opportunities` sets `open` rows of every source to `closed` once their deadline passes. It records a non-material `status_changed` event and writes no snapshot. It runs in the midday check, in the Sunday archive sweep, and from `govcon ingest close-expired`. Ingest does not derive status from the wall clock, so results don't depend on when ingest runs.
+  5. **DIBBS timing and catch-up.**
+     - Quotes are due at 3:00 PM `America/New_York` (EST or EDT) on the return date. A weekend or federal holiday moves it to the next business day, per the DLA Master Solicitation. Migration `f0a1b2c3d4e5` recomputes stored DIBBS deadlines from `raw.return_by`.
+     - The default pull ingests every listed index newer than the last one ingested, oldest first and at most 14. The last one comes from run `details.indexes` and stored `posted_date`. With no history only the newest index is pulled.
+     - One missing index is reported in the stats, and the others are still ingested.
+  6. **USAspending history and NSNs.**
+     - Each network pull records its PSC and NAICS codes in run details. An incremental pull also runs the 3-year `action_date` lookback for codes the latest history run did not cover; a code under a covered prefix counts as covered.
+     - Runs recorded before codes were tracked count as covering today's codes, so upgrading triggers no mass re-pull. Use `--backfill` to force one.
+     - After an NSN label the digit groups may be dashed, spaced, or run together. Without a label only the dashed form counts.
+- Alternatives considered:
+  - Delete stale matches (rejected: loses triage and alert history).
+  - Add `closed` or `inactive` to the match status CHECK constraint (rejected: it would mix workflow state with matching state).
+  - Set status from the wall clock during ingest (rejected: ingest of historical fixtures would depend on today's date).
+  - Backfill all codes on every incremental pull (rejected: repeats 3 years of history daily).
+- Consequences:
+  - Migrations `e9f0a1b2c3d4` and `f0a1b2c3d4e5`.
+  - `MatchStats` gains `reactivated`, and `removed` now counts deactivations.
+  - DIBBS deadlines move earlier, from 23:59 UTC to 19:00 or 20:00 UTC.
+  - The scheduler and CLI DIBBS runs record which indexes they ingested.
+  - Federal holidays follow 5 U.S.C. 6103 and are computed, not configured. An ad-hoc closure, such as an executive-order day off, is not known.

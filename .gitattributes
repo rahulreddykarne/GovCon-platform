@@ -1,0 +1,13 @@
+# Keep text files LF in every checkout so prompt hashes and fixtures are
+# byte-identical on Windows, macOS, and Linux.
+* text=auto eol=lf
+
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.zip binary
+*.png binary
+*.jpg binary
+
+# Real DIBBS index files use CRLF; keep the fixture byte-exact.
+tests/fixtures/dibbs/*.txt -text

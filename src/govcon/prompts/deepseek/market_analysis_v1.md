@@ -5,6 +5,7 @@ task_type: market_analysis
 provider_family: generative_llm
 schema_version: market_analysis.v1
 status: active
+allowed_data_classes: PUBLIC, PROPRIETARY
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1
 required_variables: OPPORTUNITY_JSON, AWARDS_JSON, VENDOR_PROFILES_JSON
 ---

@@ -81,6 +81,8 @@ class Opportunity(TimestampMixin, Base):
     agency_path: Mapped[str | None] = mapped_column(Text)
     place_of_performance: Mapped[dict | None] = mapped_column(JSONB)
     nsn: Mapped[str | None] = mapped_column(Text)
+    # Every NSN parsed from the source; ``nsn`` is the first of them.
+    nsn_candidates: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     quantity: Mapped[Decimal | None] = mapped_column(Numeric)
     unit: Mapped[str | None] = mapped_column(Text)
     estimated_value_min: Mapped[Decimal | None] = mapped_column(Numeric)
@@ -95,6 +97,9 @@ class Opportunity(TimestampMixin, Base):
     raw: Mapped[dict] = mapped_column(JSONB, nullable=False)
     raw_hash: Mapped[str | None] = mapped_column(Text)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384))
+    embedding_model: Mapped[str | None] = mapped_column(Text)
+    embedding_dimension: Mapped[int | None] = mapped_column(Integer)
+    embedding_source_hash: Mapped[str | None] = mapped_column(Text)
 
 
 class OpportunitySnapshot(Base):
@@ -207,6 +212,9 @@ class Watchlist(TimestampMixin, Base):
     last_evaluated_at: Mapped[datetime | None] = mapped_column(_ts())
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384))
     embedding_updated_at: Mapped[datetime | None] = mapped_column(_ts())
+    embedding_model: Mapped[str | None] = mapped_column(Text)
+    embedding_dimension: Mapped[int | None] = mapped_column(Integer)
+    embedding_source_hash: Mapped[str | None] = mapped_column(Text)
 
 
 class Match(TimestampMixin, Base):
@@ -217,6 +225,7 @@ class Match(TimestampMixin, Base):
             "status IN ('new', 'seen', 'dismissed', 'reviewing', 'pursuing')",
             name="ck_matches_status",
         ),
+        Index("ix_matches_watchlist_active", "watchlist_id", "active"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
@@ -226,6 +235,11 @@ class Match(TimestampMixin, Base):
     matched_on: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'new'"))
     alerted_at: Mapped[datetime | None] = mapped_column(_ts())
+    # False once the watchlist no longer produces this match (criteria changed,
+    # opportunity closed, watchlist disabled). Kept for history, never deleted.
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"), default=True)
+    deactivated_at: Mapped[datetime | None] = mapped_column(_ts())
+    inactive_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class User(TimestampMixin, Base):
@@ -449,6 +463,9 @@ class StoredFile(TimestampMixin, Base):
     __tablename__ = "files"
     __table_args__ = (
         UniqueConstraint("opportunity_id", "url", "sha256", name="uq_files_opportunity_url_sha256"),
+        Index("ix_files_opportunity_active", "opportunity_id", "active"),
+        CheckConstraint("classification IN ('PUBLIC','PROPRIETARY','FCI','CUI','UNKNOWN','SECRET_CREDENTIAL')", name="ck_files_classification"),
+        CheckConstraint("length(trim(source_origin)) BETWEEN 1 AND 200", name="ck_files_source_origin"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
@@ -458,11 +475,41 @@ class StoredFile(TimestampMixin, Base):
     url: Mapped[str | None] = mapped_column(Text)
     local_path: Mapped[str | None] = mapped_column(Text)
     mime_type: Mapped[str | None] = mapped_column(Text)
+    classification: Mapped[str] = mapped_column(Text, nullable=False, default="UNKNOWN", server_default=text("'UNKNOWN'"))
+    source_origin: Mapped[str] = mapped_column(Text, nullable=False, default="legacy_unknown", server_default=text("'legacy_unknown'"))
     sha256: Mapped[str | None] = mapped_column(Text)
     extracted_text: Mapped[str | None] = mapped_column(Text)
     extraction_status: Mapped[str | None] = mapped_column(Text)
     extraction_error: Mapped[str | None] = mapped_column(Text)
     downloaded_at: Mapped[datetime | None] = mapped_column(_ts())
+    # Each row is an immutable attachment version (``downloaded_at`` = latest fetch that
+    # returned these bytes); ``active`` = what the current source's latest fetch produced
+    # (while a refresh fails: the failure row plus the last good version).
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    removed_at: Mapped[datetime | None] = mapped_column(_ts())
+
+
+class AICallUsage(CreatedAtMixin, Base):
+    """Durable reservations independent of the business transaction.
+
+    No opportunity FK: calls may precede its commit, and rollback must never
+    erase incurred usage. IDs remain unique because sequences do not roll back.
+    """
+    __tablename__ = "ai_call_usage"
+    __table_args__ = (
+        CheckConstraint("input_tokens >= 0 AND output_tokens >= 0 AND (cost_usd IS NULL OR cost_usd >= 0)", name="ck_ai_call_usage_nonnegative"),
+        CheckConstraint("status IN ('reserved','succeeded','failed')", name="ck_ai_call_usage_status"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric)
+    usage: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class PromptRegistryEntry(TimestampMixin, Base):
@@ -630,6 +677,11 @@ class Proposal(TimestampMixin, VersionMixin, Base):
     )
     final_approved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     final_approved_at: Mapped[datetime | None] = mapped_column(_ts())
+    # Final approval applies to exactly this immutable version.
+    approved_version_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("proposal_versions.id", use_alter=True, name="fk_proposals_approved_version_id"),
+    )
     red_team_analysis_id: Mapped[int | None] = mapped_column(ForeignKey("ai_analyses.id"))
     submission_id: Mapped[int | None] = mapped_column(ForeignKey("submissions.id"))
 
@@ -755,6 +807,7 @@ class ProposalSection(TimestampMixin, Base):
 class Submission(TimestampMixin, VersionMixin, Base):
     __tablename__ = "submissions"
     __table_args__ = (
+        UniqueConstraint("opportunity_id", name="uq_submissions_opportunity"),
         CheckConstraint(
             "status IN ('preparing', 'ready', 'submitted', 'confirmed', 'failed', 'withdrawn')",
             name="ck_submissions_status",
@@ -773,6 +826,9 @@ class Submission(TimestampMixin, VersionMixin, Base):
     deadline_timezone: Mapped[str | None] = mapped_column(Text)
     required_files: Mapped[dict | None] = mapped_column(JSONB)
     submitted_files: Mapped[dict | None] = mapped_column(JSONB)
+    assembled_files: Mapped[dict | None] = mapped_column(JSONB)
+    completed_actions: Mapped[dict | None] = mapped_column(JSONB)
+    package_manifest_hash: Mapped[str | None] = mapped_column(Text)
     required_actions: Mapped[dict | None] = mapped_column(JSONB)
     readiness_status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'not_ready'"))
     submitted_at: Mapped[datetime | None] = mapped_column(_ts())
@@ -784,6 +840,13 @@ class Submission(TimestampMixin, VersionMixin, Base):
 
 class OutcomeFeedback(TimestampMixin, Base):
     __tablename__ = "outcome_feedback"
+    __table_args__ = (
+        UniqueConstraint("opportunity_id", name="uq_outcome_feedback_opportunity"),
+        CheckConstraint("outcome IN ('won', 'lost', 'no_bid', 'cancelled')", name="ck_outcome_feedback_outcome"),
+        CheckConstraint("award_amount IS NULL OR (award_amount >= 0 AND award_amount < 'Infinity'::numeric)", name="ck_outcome_award_amount"),
+        CheckConstraint("known_winning_price IS NULL OR (known_winning_price >= 0 AND known_winning_price < 'Infinity'::numeric)", name="ck_outcome_winning_price"),
+        CheckConstraint("win_margin_pct IS NULL OR (win_margin_pct >= 0 AND win_margin_pct <= 100)", name="ck_outcome_margin"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     opportunity_id: Mapped[int] = mapped_column(ForeignKey("opportunities.id"), nullable=False)
@@ -829,6 +892,32 @@ class OutcomeFeedback(TimestampMixin, Base):
     outcome_analysis_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("ai_analyses.id", ondelete="SET NULL"), nullable=True
     )
+
+
+class OutcomeCorrection(CreatedAtMixin, Base):
+    __tablename__ = "outcome_corrections"
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(ForeignKey("opportunities.id"), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    old_value: Mapped[dict | None] = mapped_column(JSONB)
+    new_value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class PackageManifest(CreatedAtMixin, Base):
+    __tablename__ = "submission_package_manifests"
+    __table_args__ = (UniqueConstraint("submission_id", "sha256", name="uq_submission_manifest_hash"),)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), nullable=False)
+    sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    manifest: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class SubmissionLegacyHistory(Base):
+    """Read-only archive of duplicate submissions retained during migration."""
+    __tablename__ = "submission_legacy_history"
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
 
 class ReviewNote(CreatedAtMixin, Base):

@@ -21,7 +21,7 @@ class AIGatewayBlocked(Exception):
 def external_call_allowed(classification: DataClassification, settings: Settings | None = None) -> bool:
     """Return whether an external provider may receive this classification.
 
-    ``SECRET_CREDENTIAL`` is always blocked. FCI, CUI, and proprietary data
+    ``SECRET_CREDENTIAL`` and ``UNKNOWN`` are always blocked. FCI, CUI, and proprietary data
     follow configuration and are blocked by default.
     """
     settings = settings or get_settings()

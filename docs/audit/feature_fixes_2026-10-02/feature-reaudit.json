@@ -1,0 +1,12 @@
+{
+  "test_exit": 1,
+  "passed": 375,
+  "failed": 4,
+  "skipped": 1,
+  "failures": [
+    "tests.test_proposal_submission.test_generate_proposal_with_ai_mock",
+    "tests.test_proposal_submission.test_red_team_runs_and_persists_findings",
+    "tests.test_proposal_submission.test_red_team_major_only_does_not_block",
+    "tests.test_collaborative_review.test_ai_validation_populates_side_opinion_without_changing_human_comment"
+  ]
+}

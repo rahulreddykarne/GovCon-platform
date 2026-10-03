@@ -19,8 +19,10 @@ mcp = FastMCP(
     instructions=(
         "Operate the local GovCon opportunity and bid workflow. "
         "Read tools return compact structured JSON. "
-        "Write tools echo the changed record. "
-        "Submission tools never auto-submit to government portals."
+        "Write tools act as the single user set by MCP_ACTOR_EMAIL and echo the changed record. "
+        "Approving bids, completing human reviews, overriding compliance, and recording "
+        "submissions are human actions in the GovCon web UI or CLI and are not available here. "
+        "Nothing here submits to a government portal."
     ),
 )
 
@@ -73,25 +75,70 @@ submission_status = _tool(ops.op_submission_status)
 learning_summary = _tool(ops.op_learning_summary)
 similar_opportunities = _tool(ops.op_similar_opportunities)
 
-# Write tools
+# Write tools (run as the pinned MCP actor; see govcon.mcp.context)
 update_match = _tool(ops.op_update_match)
 add_pursuit = _tool(ops.op_add_pursuit)
 update_pursuit = _tool(ops.op_update_pursuit)
-record_human_bid_decision = _tool(ops.op_record_human_bid_decision)
 assign_reviewer = _tool(ops.op_assign_reviewer)
 add_review_comment = _tool(ops.op_add_review_comment)
-complete_review = _tool(ops.op_complete_review)
 request_ai_comment_validation = _tool(ops.op_request_ai_comment_validation)
-approve_to_bid = _tool(ops.op_approve_to_bid)
-update_requirement_status = _tool(ops.op_update_requirement_status)
 create_proposal_version = _tool(ops.op_create_proposal_version)
-set_submission_ready = _tool(ops.op_set_submission_ready)
-record_submission_confirmation = _tool(ops.op_record_submission_confirmation)
 record_outcome = _tool(ops.op_record_outcome)
 
+READ_TOOL_NAMES = frozenset(
+    {
+        "search_opportunities",
+        "get_opportunity",
+        "get_opportunity_history",
+        "price_history",
+        "vendor_profile",
+        "competitor_summary",
+        "list_matches",
+        "pipeline_summary",
+        "get_bid_analysis",
+        "get_compliance_matrix",
+        "get_proposal",
+        "submission_status",
+        "learning_summary",
+        "similar_opportunities",
+    }
+)
+WRITE_TOOL_NAMES = frozenset(
+    {
+        "update_match",
+        "add_pursuit",
+        "update_pursuit",
+        "assign_reviewer",
+        "add_review_comment",
+        "request_ai_comment_validation",
+        "create_proposal_version",
+        "record_outcome",
+    }
+)
 
-def main() -> None:
-    """Run the MCP server on stdio (default local transport)."""
+
+def _remove_write_tools() -> None:
+    """Hide and disable every write tool (read-only server)."""
+    mcp.disable(names=set(WRITE_TOOL_NAMES), components={"tool"})
+
+
+def main(*, read_only: bool = False) -> None:
+    """Run the MCP server on stdio (default local transport).
+
+    Write tools need ``MCP_ACTOR_EMAIL``; it is resolved and pinned once here.
+    Without it, or with ``read_only=True``, only read tools are served.
+    """
+    import logging
+
+    from govcon.mcp.context import configure_server_actor, configured_actor_email
+
+    log = logging.getLogger("govcon.mcp.server")
+    if read_only or not configured_actor_email():
+        _remove_write_tools()
+        log.info("mcp: serving read-only tools")
+    else:
+        actor = configure_server_actor()
+        log.info("mcp: write tools act as %s", actor)
     mcp.run()
 
 

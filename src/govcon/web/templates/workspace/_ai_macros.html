@@ -1,0 +1,15 @@
+{% macro bullet_list(title, items) -%}
+  {% if items %}
+    <h3 style="font-size:13px; font-weight:600; margin:1rem 0 0.5rem;">{{ title }}</h3>
+    <ul>{% for item in items %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+{%- endmacro %}
+
+{% macro run_button(opp_id, kind, label, allowed) -%}
+  {% if allowed %}
+  <form method="post" action="/workspace/{{ opp_id }}/analyze/{{ kind }}" style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-secondary btn-sm">{{ label }}</button>
+  </form>
+  {% endif %}
+{%- endmacro %}

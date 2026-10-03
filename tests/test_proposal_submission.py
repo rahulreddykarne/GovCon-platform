@@ -133,6 +133,26 @@ def session(upgraded_engine):
         s.rollback()
 
 
+pytestmark = pytest.mark.usefixtures("allow_proprietary_ai")
+
+
+OVERRIDE = "Pre-flight reviewed manually by the approver for this test package."
+
+
+def _proposal_version(session: Session, opp_id: int) -> int:
+    proposal = session.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
+    assert proposal is not None
+    return proposal.version
+
+
+def _submission_version(session: Session, opp_id: int) -> int:
+    sub = session.scalar(
+        select(Submission).where(Submission.opportunity_id == opp_id).order_by(Submission.id.desc())
+    )
+    assert sub is not None
+    return sub.version
+
+
 def _uid() -> str:
     return uuid4().hex[:8]
 
@@ -428,7 +448,7 @@ def test_email_draft_generated(session):
     assert draft["subject"]
     assert draft["body"]
     assert "co@agency.gov" == draft["to"] or "co@agency.gov" in draft["body"]
-    assert len(draft["attachments"]) >= 1
+    assert draft["attachments"] == []  # No proposal exists yet.
 
 
 # ---------------------------------------------------------------------------
@@ -569,11 +589,12 @@ def test_final_approval_requires_approver_role(session):
             opportunity_id=opp.id,
             action="APPROVE_FOR_SUBMISSION",
             actor=reviewer,
+            expected_version=_proposal_version(session, opp.id),
         )
 
 
 def test_approve_for_submission_sets_final_approved(session):
-    """AC-6: APPROVE_FOR_SUBMISSION sets proposal.status=final_approved and records actor."""
+    """AC-6: APPROVE_FOR_SUBMISSION goes through the compliance gate, then sets final_approved."""
     from govcon.proposals.service import generate_proposal, finalize_proposal
     from govcon.compliance.submission_preflight import ReadinessBlocked
 
@@ -585,12 +606,25 @@ def test_approve_for_submission_sets_final_approved(session):
 
     approver = _user(session, "approver")
 
+    # No pre-flight has run, so the gate refuses without the approver's own reason.
+    with pytest.raises(ReadinessBlocked):
+        finalize_proposal(
+            session,
+            opportunity_id=opp.id,
+            action="APPROVE_FOR_SUBMISSION",
+            actor=approver,
+            expected_version=_proposal_version(session, opp.id),
+            override_reason=None,
+        )
+    assert session.scalar(select(Proposal).where(Proposal.opportunity_id == opp.id)).status == "ai_generated"
+
     result = finalize_proposal(
         session,
         opportunity_id=opp.id,
         action="APPROVE_FOR_SUBMISSION",
         actor=approver,
-        override_reason=None,
+        expected_version=_proposal_version(session, opp.id),
+        override_reason=OVERRIDE,
     )
 
     assert result["status"] == "final_approved"
@@ -599,6 +633,9 @@ def test_approve_for_submission_sets_final_approved(session):
     proposal = session.get(Proposal, result["proposal_id"])
     assert proposal.final_approved_by_user_id == approver.id
     assert proposal.final_approved_at is not None
+    assert proposal.approved_version_id == proposal.current_version_id
+    session.refresh(pursuit)
+    assert pursuit.stage == "ready_to_submit"
 
 
 def test_return_for_fix_sets_returned_status(session):
@@ -613,7 +650,11 @@ def test_return_for_fix_sets_returned_status(session):
     approver = _user(session, "approver")
 
     result = finalize_proposal(
-        session, opportunity_id=opp.id, action="RETURN_FOR_FIX", actor=approver
+        session,
+        opportunity_id=opp.id,
+        action="RETURN_FOR_FIX",
+        actor=approver,
+        expected_version=_proposal_version(session, opp.id),
     )
     assert result["status"] == "returned_for_fix"
 
@@ -630,7 +671,11 @@ def test_cancel_bid_sets_pursuit_cancelled(session):
     approver = _user(session, "approver")
 
     result = finalize_proposal(
-        session, opportunity_id=opp.id, action="CANCEL_BID", actor=approver
+        session,
+        opportunity_id=opp.id,
+        action="CANCEL_BID",
+        actor=approver,
+        expected_version=_proposal_version(session, opp.id),
     )
     assert result["status"] == "cancelled"
     assert result["pursuit_stage"] == "cancelled"
@@ -652,6 +697,8 @@ def test_final_approval_is_audited(session):
         opportunity_id=opp.id,
         action="APPROVE_FOR_SUBMISSION",
         actor=approver,
+        expected_version=_proposal_version(session, opp.id),
+        override_reason=OVERRIDE,
     )
 
     events = session.scalars(
@@ -669,13 +716,19 @@ def test_final_approval_is_audited(session):
 
 def test_no_auto_submission_in_v1(session):
     """AC-7: record_submission_confirmation() requires explicit human call — no auto-submit."""
-    from govcon.proposals.service import record_submission_confirmation
+    from govcon.proposals.service import (
+        finalize_proposal,
+        generate_proposal,
+        record_submission_confirmation,
+    )
+    from govcon.proposals.versions import ProposalWorkflowError
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
+    generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
     generate_submission_package(session, opportunity_id=opp.id)
     approver = _user(session, "approver")
 
@@ -685,15 +738,73 @@ def test_no_auto_submission_in_v1(session):
     ).first()
     assert submission.status == "preparing"
 
-    # Must be explicitly confirmed by a human
+    from hashlib import sha256
+    from govcon.compliance.deterministic import PackageFile, SubmissionPackage
+    from govcon.compliance.matrix import record_run
+    from govcon.proposals.export import export_proposal_docx
+    from govcon.submissions.manifest import snapshot_package
+    proposal = session.scalar(select(Proposal).where(Proposal.opportunity_id == opp.id))
+    content = export_proposal_docx(session, proposal_version_id=proposal.current_version_id)
+    import tempfile
+    from pathlib import Path
+    artifact = Path(tempfile.mkdtemp()) / "proposal.docx"
+    artifact.write_bytes(content)
+    package = SubmissionPackage(files=[PackageFile("proposal.docx", role="proposal", size_bytes=len(content), sha256=sha256(content).hexdigest(), local_path=str(artifact))], proposal_version_id=proposal.current_version_id)
+    snapshot_package(session, submission, package, actor=approver)
+    record_run(session, opportunity_id=opp.id, run_type="submission_preflight", run_version="test", output={"package": package.manifest(), "ready": False})
+
+    # A submission cannot be recorded before the proposal is final-approved.
+    with pytest.raises(ProposalWorkflowError):
+        record_submission_confirmation(
+            session,
+            opportunity_id=opp.id,
+            confirmation_number="CONF-12345",
+            actor=approver,
+            expected_version=_submission_version(session, opp.id),
+        )
+
+    finalize_proposal(
+        session,
+        opportunity_id=opp.id,
+        action="APPROVE_FOR_SUBMISSION",
+        actor=approver,
+        expected_version=_proposal_version(session, opp.id),
+        override_reason=OVERRIDE,
+    )
+    session.refresh(submission)
+    assert submission.status == "ready"
+
+    # Must be explicitly confirmed by a human, with evidence
+    with pytest.raises(ProposalWorkflowError, match="evidence"):
+        record_submission_confirmation(
+            session,
+            opportunity_id=opp.id,
+            actor=approver,
+            expected_version=_submission_version(session, opp.id),
+        )
     result = record_submission_confirmation(
         session,
         opportunity_id=opp.id,
         confirmation_number="CONF-12345",
         actor=approver,
+        expected_version=_submission_version(session, opp.id),
     )
     assert result["status"] == "submitted"
     assert result["confirmation_number"] == "CONF-12345"
+    session.refresh(pursuit)
+    assert pursuit.stage == "submitted"
+    assert pursuit.submitted_at is not None
+
+    # Repeating the confirmation changes nothing.
+    again = record_submission_confirmation(
+        session,
+        opportunity_id=opp.id,
+        confirmation_number="CONF-OTHER",
+        actor=approver,
+        expected_version=0,
+    )
+    assert again["already_recorded"] is True
+    assert again["confirmation_number"] == "CONF-12345"
 
 
 # ---------------------------------------------------------------------------
@@ -850,7 +961,7 @@ def test_cli_proposal_status_shows_readiness(session, upgraded_engine):
     result = runner.invoke(
         app,
         ["proposal", "status", f"--opportunity-id={opp.id}"],
-        env={"DATABASE_URL": str(upgraded_engine.url)},
+        env={"DATABASE_URL": upgraded_engine.url.render_as_string(hide_password=False)},
         catch_exceptions=False,
     )
     assert result.exit_code == 0
@@ -874,7 +985,7 @@ def test_cli_submission_checklist(session, upgraded_engine):
     result = runner.invoke(
         app,
         ["submission", "checklist", f"--opportunity-id={opp.id}"],
-        env={"DATABASE_URL": str(upgraded_engine.url)},
+        env={"DATABASE_URL": upgraded_engine.url.render_as_string(hide_password=False)},
         catch_exceptions=False,
     )
     assert result.exit_code == 0

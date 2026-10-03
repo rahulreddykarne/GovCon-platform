@@ -1,0 +1,1282 @@
+{
+  "cli": [
+    {
+      "command": "govcon status",
+      "args": [
+        "status"
+      ],
+      "symbol": "status",
+      "line": 121,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon db upgrade",
+      "args": [
+        "db",
+        "upgrade"
+      ],
+      "symbol": "db_upgrade",
+      "line": 178,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon db seed-demo-watchlist",
+      "args": [
+        "db",
+        "seed-demo-watchlist"
+      ],
+      "symbol": "db_seed_demo_watchlist",
+      "line": 190,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon users invite",
+      "args": [
+        "users",
+        "invite"
+      ],
+      "symbol": "users_invite",
+      "line": 205,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon users deactivate",
+      "args": [
+        "users",
+        "deactivate"
+      ],
+      "symbol": "users_deactivate",
+      "line": 243,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon users list",
+      "args": [
+        "users",
+        "list"
+      ],
+      "symbol": "users_list",
+      "line": 263,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon ingest sam",
+      "args": [
+        "ingest",
+        "sam"
+      ],
+      "symbol": "ingest_sam",
+      "line": 313,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon ingest dibbs",
+      "args": [
+        "ingest",
+        "dibbs"
+      ],
+      "symbol": "ingest_dibbs",
+      "line": 410,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon ingest usaspending",
+      "args": [
+        "ingest",
+        "usaspending"
+      ],
+      "symbol": "ingest_usaspending",
+      "line": 480,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon ingest sam-backfill",
+      "args": [
+        "ingest",
+        "sam-backfill"
+      ],
+      "symbol": "ingest_sam_backfill",
+      "line": 585,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon ingest sam-archive-sweep",
+      "args": [
+        "ingest",
+        "sam-archive-sweep"
+      ],
+      "symbol": "ingest_sam_archive_sweep",
+      "line": 643,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon ingest close-expired",
+      "args": [
+        "ingest",
+        "close-expired"
+      ],
+      "symbol": "ingest_close_expired",
+      "line": 664,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon match run",
+      "args": [
+        "match",
+        "run"
+      ],
+      "symbol": "match_run",
+      "line": 712,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon match rebuild",
+      "args": [
+        "match",
+        "rebuild"
+      ],
+      "symbol": "match_rebuild",
+      "line": 727,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon watchlist add",
+      "args": [
+        "watchlist",
+        "add"
+      ],
+      "symbol": "watchlist_add",
+      "line": 748,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon watchlist list",
+      "args": [
+        "watchlist",
+        "list"
+      ],
+      "symbol": "watchlist_list",
+      "line": 792,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon watchlist edit",
+      "args": [
+        "watchlist",
+        "edit"
+      ],
+      "symbol": "watchlist_edit",
+      "line": 814,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon alerts digest",
+      "args": [
+        "alerts",
+        "digest"
+      ],
+      "symbol": "alerts_digest",
+      "line": 887,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon awards price-history",
+      "args": [
+        "awards",
+        "price-history"
+      ],
+      "symbol": "awards_price_history",
+      "line": 931,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon awards price-history-psc",
+      "args": [
+        "awards",
+        "price-history-psc"
+      ],
+      "symbol": "awards_price_history_psc",
+      "line": 948,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon awards history",
+      "args": [
+        "awards",
+        "history"
+      ],
+      "symbol": "awards_history",
+      "line": 966,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon awards top",
+      "args": [
+        "awards",
+        "top"
+      ],
+      "symbol": "awards_top",
+      "line": 986,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon awards recompete",
+      "args": [
+        "awards",
+        "recompete"
+      ],
+      "symbol": "awards_recompete",
+      "line": 1012,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon vendors show",
+      "args": [
+        "vendors",
+        "show"
+      ],
+      "symbol": "vendors_show",
+      "line": 1067,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon vendors competitors",
+      "args": [
+        "vendors",
+        "competitors"
+      ],
+      "symbol": "vendors_competitors",
+      "line": 1111,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon contacts search",
+      "args": [
+        "contacts",
+        "search"
+      ],
+      "symbol": "contacts_search",
+      "line": 1132,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon watchlist disable",
+      "args": [
+        "watchlist",
+        "disable"
+      ],
+      "symbol": "watchlist_disable",
+      "line": 1161,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon enrich download",
+      "args": [
+        "enrich",
+        "download"
+      ],
+      "symbol": "enrich_download",
+      "line": 1185,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon enrich analyze",
+      "args": [
+        "enrich",
+        "analyze"
+      ],
+      "symbol": "enrich_analyze",
+      "line": 1215,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon enrich intelligence",
+      "args": [
+        "enrich",
+        "intelligence"
+      ],
+      "symbol": "enrich_intelligence",
+      "line": 1254,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon enrich process",
+      "args": [
+        "enrich",
+        "process"
+      ],
+      "symbol": "enrich_process",
+      "line": 1285,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon enrich ingest-file",
+      "args": [
+        "enrich",
+        "ingest-file"
+      ],
+      "symbol": "enrich_ingest_file",
+      "line": 1315,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts sync",
+      "args": [
+        "prompts",
+        "sync"
+      ],
+      "symbol": "prompts_sync",
+      "line": 1364,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts activate",
+      "args": [
+        "prompts",
+        "activate"
+      ],
+      "symbol": "prompts_activate",
+      "line": 1403,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts rollback",
+      "args": [
+        "prompts",
+        "rollback"
+      ],
+      "symbol": "prompts_rollback",
+      "line": 1430,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts list",
+      "args": [
+        "prompts",
+        "list"
+      ],
+      "symbol": "prompts_list",
+      "line": 1450,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts validate",
+      "args": [
+        "prompts",
+        "validate"
+      ],
+      "symbol": "prompts_validate",
+      "line": 1469,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts render",
+      "args": [
+        "prompts",
+        "render"
+      ],
+      "symbol": "prompts_render",
+      "line": 1511,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts diff",
+      "args": [
+        "prompts",
+        "diff"
+      ],
+      "symbol": "prompts_diff",
+      "line": 1559,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon prompts eval",
+      "args": [
+        "prompts",
+        "eval"
+      ],
+      "symbol": "prompts_eval",
+      "line": 1613,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon decision run-bundle",
+      "args": [
+        "decision",
+        "run-bundle"
+      ],
+      "symbol": "decision_run_bundle",
+      "line": 1710,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon decision run-package",
+      "args": [
+        "decision",
+        "run-package"
+      ],
+      "symbol": "decision_run_package",
+      "line": 1751,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon decision runs",
+      "args": [
+        "decision",
+        "runs"
+      ],
+      "symbol": "decision_runs",
+      "line": 1790,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon review assign",
+      "args": [
+        "review",
+        "assign"
+      ],
+      "symbol": "review_assign",
+      "line": 1828,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon review comment",
+      "args": [
+        "review",
+        "comment"
+      ],
+      "symbol": "review_comment",
+      "line": 1861,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon review complete",
+      "args": [
+        "review",
+        "complete"
+      ],
+      "symbol": "review_complete",
+      "line": 1897,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon review context",
+      "args": [
+        "review",
+        "context"
+      ],
+      "symbol": "review_context",
+      "line": 1939,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon review approve",
+      "args": [
+        "review",
+        "approve"
+      ],
+      "symbol": "review_approve",
+      "line": 1957,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon review reopen-for-amendment",
+      "args": [
+        "review",
+        "reopen-for-amendment"
+      ],
+      "symbol": "review_reopen_for_amendment",
+      "line": 1998,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance run",
+      "args": [
+        "compliance",
+        "run"
+      ],
+      "symbol": "compliance_run",
+      "line": 2047,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance inventory",
+      "args": [
+        "compliance",
+        "inventory"
+      ],
+      "symbol": "compliance_inventory",
+      "line": 2084,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance matrix",
+      "args": [
+        "compliance",
+        "matrix"
+      ],
+      "symbol": "compliance_matrix_cmd",
+      "line": 2105,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance coverage",
+      "args": [
+        "compliance",
+        "coverage"
+      ],
+      "symbol": "compliance_coverage",
+      "line": 2142,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance findings",
+      "args": [
+        "compliance",
+        "findings"
+      ],
+      "symbol": "compliance_findings",
+      "line": 2157,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance clauses-seed",
+      "args": [
+        "compliance",
+        "clauses-seed"
+      ],
+      "symbol": "compliance_clauses_seed",
+      "line": 2175,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance evidence-add",
+      "args": [
+        "compliance",
+        "evidence-add"
+      ],
+      "symbol": "compliance_evidence_add",
+      "line": 2188,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance override",
+      "args": [
+        "compliance",
+        "override"
+      ],
+      "symbol": "compliance_override",
+      "line": 2233,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance proposal-coverage",
+      "args": [
+        "compliance",
+        "proposal-coverage"
+      ],
+      "symbol": "compliance_proposal_coverage",
+      "line": 2262,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance preflight",
+      "args": [
+        "compliance",
+        "preflight"
+      ],
+      "symbol": "compliance_preflight",
+      "line": 2283,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance ready",
+      "args": [
+        "compliance",
+        "ready"
+      ],
+      "symbol": "compliance_ready",
+      "line": 2320,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon compliance benchmark",
+      "args": [
+        "compliance",
+        "benchmark"
+      ],
+      "symbol": "compliance_benchmark",
+      "line": 2347,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon proposal generate",
+      "args": [
+        "proposal",
+        "generate"
+      ],
+      "symbol": "proposal_generate",
+      "line": 2378,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon proposal status",
+      "args": [
+        "proposal",
+        "status"
+      ],
+      "symbol": "proposal_status",
+      "line": 2402,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon proposal red-team",
+      "args": [
+        "proposal",
+        "red-team"
+      ],
+      "symbol": "proposal_red_team",
+      "line": 2427,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon proposal approve",
+      "args": [
+        "proposal",
+        "approve"
+      ],
+      "symbol": "proposal_approve",
+      "line": 2470,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon proposal return",
+      "args": [
+        "proposal",
+        "return"
+      ],
+      "symbol": "proposal_return",
+      "line": 2505,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon proposal cancel",
+      "args": [
+        "proposal",
+        "cancel"
+      ],
+      "symbol": "proposal_cancel",
+      "line": 2532,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon proposal export",
+      "args": [
+        "proposal",
+        "export"
+      ],
+      "symbol": "proposal_export",
+      "line": 2559,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon submission assemble",
+      "args": [
+        "submission",
+        "assemble"
+      ],
+      "symbol": "submission_assemble",
+      "line": 2615,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon submission package",
+      "args": [
+        "submission",
+        "package"
+      ],
+      "symbol": "submission_package",
+      "line": 2632,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon submission checklist",
+      "args": [
+        "submission",
+        "checklist"
+      ],
+      "symbol": "submission_checklist",
+      "line": 2658,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon submission instructions",
+      "args": [
+        "submission",
+        "instructions"
+      ],
+      "symbol": "submission_instructions",
+      "line": 2679,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon submission email-draft",
+      "args": [
+        "submission",
+        "email-draft"
+      ],
+      "symbol": "submission_email_draft",
+      "line": 2699,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon mcp serve",
+      "args": [
+        "mcp",
+        "serve"
+      ],
+      "symbol": "mcp_serve",
+      "line": 2724,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon submission correct-commercial",
+      "args": [
+        "submission",
+        "correct-commercial"
+      ],
+      "symbol": "submission_correct_commercial",
+      "line": 2737,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon submission confirm",
+      "args": [
+        "submission",
+        "confirm"
+      ],
+      "symbol": "submission_confirm",
+      "line": 2766,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon embed run",
+      "args": [
+        "embed",
+        "run"
+      ],
+      "symbol": "embed_run",
+      "line": 2810,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon embed watchlists",
+      "args": [
+        "embed",
+        "watchlists"
+      ],
+      "symbol": "embed_watchlists",
+      "line": 2830,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon semantic similar",
+      "args": [
+        "semantic",
+        "similar"
+      ],
+      "symbol": "semantic_similar",
+      "line": 2847,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon semantic recommendations",
+      "args": [
+        "semantic",
+        "recommendations"
+      ],
+      "symbol": "semantic_recommendations",
+      "line": 2863,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon jobs list",
+      "args": [
+        "jobs",
+        "list"
+      ],
+      "symbol": "jobs_list",
+      "line": 2888,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon jobs run",
+      "args": [
+        "jobs",
+        "run"
+      ],
+      "symbol": "jobs_run",
+      "line": 2936,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon scheduler start",
+      "args": [
+        "scheduler",
+        "start"
+      ],
+      "symbol": "scheduler_start",
+      "line": 2977,
+      "help_exit_code": 0
+    },
+    {
+      "command": "govcon web serve",
+      "args": [
+        "web",
+        "serve"
+      ],
+      "symbol": "web_serve",
+      "line": 2993,
+      "help_exit_code": 0
+    }
+  ],
+  "web_routes": [
+    {
+      "path": "/login",
+      "symbol": "login_get",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/login",
+      "symbol": "login_post",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/logout",
+      "symbol": "logout_post",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/",
+      "symbol": "inbox",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/inbox/action",
+      "symbol": "inbox_action",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/notifications",
+      "symbol": "notifications",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/notifications/{notification_id}/read",
+      "symbol": "notification_read",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/search",
+      "symbol": "search",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/opp/{opp_id}",
+      "symbol": "opp_detail",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/opp/{opp_id}/start-workspace",
+      "symbol": "opp_start_workspace",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}",
+      "symbol": "workspace",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/comment",
+      "symbol": "workspace_comment",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/assign",
+      "symbol": "workspace_assign_reviewer",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/complete-review",
+      "symbol": "workspace_complete_review",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/approve",
+      "symbol": "workspace_approve",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/proposal/approve",
+      "symbol": "workspace_proposal_approve",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/submission/approve",
+      "symbol": "workspace_submission_approve",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/record-outcome",
+      "symbol": "workspace_record_outcome",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/workspace/{opp_id}/analyze/{kind}",
+      "symbol": "workspace_run_analysis",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/pipeline",
+      "symbol": "pipeline",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/watchlists",
+      "symbol": "watchlists",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/watchlists/new",
+      "symbol": "watchlist_new_get",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/watchlists/new",
+      "symbol": "watchlist_new_post",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/watchlists/{wl_id}/edit",
+      "symbol": "watchlist_edit_get",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/watchlists/{wl_id}/edit",
+      "symbol": "watchlist_edit_post",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/watchlists/{wl_id}/toggle",
+      "symbol": "watchlist_toggle",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/watchlists/{wl_id}/rebuild",
+      "symbol": "watchlist_rebuild",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/vendors",
+      "symbol": "vendors",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/ops",
+      "symbol": "ops",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/learning",
+      "symbol": "learning",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/admin/users/invite",
+      "symbol": "admin_invite_get",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/admin/users/invite",
+      "symbol": "admin_invite_post",
+      "methods": [
+        "POST"
+      ]
+    }
+  ],
+  "mcp_read_tools": [
+    "competitor_summary",
+    "get_bid_analysis",
+    "get_compliance_matrix",
+    "get_opportunity",
+    "get_opportunity_history",
+    "get_proposal",
+    "learning_summary",
+    "list_matches",
+    "pipeline_summary",
+    "price_history",
+    "search_opportunities",
+    "similar_opportunities",
+    "submission_status",
+    "vendor_profile"
+  ],
+  "mcp_write_tools": [
+    "add_pursuit",
+    "add_review_comment",
+    "assign_reviewer",
+    "create_proposal_version",
+    "record_outcome",
+    "request_ai_comment_validation",
+    "update_match",
+    "update_pursuit"
+  ],
+  "test_modules": {
+    "test_ai_providers": {
+      "passed": 19,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_alerts": {
+      "passed": 21,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_attachment_download": {
+      "passed": 32,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_attachments_analysis": {
+      "passed": 34,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_audit": {
+      "passed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_cli_and_schema": {
+      "passed": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_collaborative_review": {
+      "passed": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_compliance": {
+      "passed": 26,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_config_security": {
+      "passed": 8,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_decision_engine": {
+      "passed": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_decision_signals": {
+      "passed": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_dibbs": {
+      "passed": 18,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_f01_f10_regressions": {
+      "passed": 56,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_f11_f20_regressions": {
+      "passed": 82,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_f21_f28_regressions": {
+      "passed": 55,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_f29_f33_regressions": {
+      "passed": 25,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_http_prompts": {
+      "passed": 2,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_installed_artifact": {
+      "passed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_intelligence_analyses": {
+      "passed": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_m5_m13_regressions": {
+      "passed": 43,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_matching": {
+      "passed": 20,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_mcp": {
+      "passed": 6,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_opportunity_lifecycle": {
+      "passed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_outcome_learning": {
+      "passed": 37,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_phase19_testing_gates": {
+      "passed": 98,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_phase20_final_acceptance": {
+      "passed": 81,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_prompt_portability": {
+      "passed": 3,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_proposal_submission": {
+      "passed": 27,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_release_lifecycle": {
+      "passed": 3,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_sam_ingestion": {
+      "passed": 18,
+      "skipped": 1,
+      "failed": 0
+    },
+    "test_scheduler": {
+      "passed": 44,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_security_hardening": {
+      "passed": 54,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_semantic_search": {
+      "passed": 24,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_usaspending": {
+      "passed": 19,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_vendors": {
+      "passed": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_web_ui": {
+      "passed": 51,
+      "skipped": 0,
+      "failed": 0
+    },
+    "test_workflow_gates": {
+      "passed": 67,
+      "skipped": 0,
+      "failed": 0
+    }
+  }
+}

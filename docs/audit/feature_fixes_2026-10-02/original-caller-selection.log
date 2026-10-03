@@ -1,0 +1,261 @@
+........F...F.x....FF.F.FF..FF.F.FF..................................... [ 18%]
+......................F..................FF............................. [ 37%]
+...........................................F............................ [ 56%]
+...........................................s.ss......................... [ 75%]
+........................................................................ [ 94%]
+....................                                                     [100%]
+================================== FAILURES ===================================
+________________ test_f1_pursue_creates_one_visible_workspace _________________
+tests\test_feature_audit_fixes.py:101: in test_f1_pursue_creates_one_visible_workspace
+    assert len(pursuits) == 1, "Pursue must create a workspace instead of hiding the opportunity"
+E   AssertionError: Pursue must create a workspace instead of hiding the opportunity
+E   assert 0 == 1
+E    +  where 0 = len([])
+_______________ test_f2_empty_review_can_assign_first_reviewer ________________
+tests\test_feature_audit_fixes.py:145: in test_f2_empty_review_can_assign_first_reviewer
+    assert f'action="/workspace/{opp.id}/assign"' in page.text, "Empty reviews need a reachable assignment form"
+E   AssertionError: Empty reviews need a reachable assignment form
+E   assert 'action="/workspace/13/assign"' in '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...e="padding:2rem 0;">No review session yet. Start one from Overview.</p>\n</div>\n\n\n\n\n\n</main>\n\n</body>\n</html>'
+E    +  where '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...e="padding:2rem 0;">No review session yet. Start one from Overview.</p>\n</div>\n\n\n\n\n\n</main>\n\n</body>\n</html>' = <Response [200 OK]>.text
+_ test_f6_browser_local_time_records_correct_instant[2026-01-15T12:00-2026-01-15T18:00:00.000Z] _
+tests\test_feature_audit_fixes.py:270: in test_f6_browser_local_time_records_correct_instant
+    assert field["value"] == utc_time, "The browser must send an explicit instant, not a naive local datetime"
+E   AssertionError: The browser must send an explicit instant, not a naive local datetime
+E   assert '2026-01-15T12:00' == '2026-01-15T18:00:00.000Z'
+E     
+E     - 2026-01-15T18:00:00.000Z
+E     ?             ^   --------
+E     + 2026-01-15T12:00
+E     ?             ^
+_ test_f6_browser_local_time_records_correct_instant[2026-07-15T12:00-2026-07-15T17:00:00.000Z] _
+tests\test_feature_audit_fixes.py:270: in test_f6_browser_local_time_records_correct_instant
+    assert field["value"] == utc_time, "The browser must send an explicit instant, not a naive local datetime"
+E   AssertionError: The browser must send an explicit instant, not a naive local datetime
+E   assert '2026-07-15T12:00' == '2026-07-15T17:00:00.000Z'
+E     
+E     - 2026-07-15T17:00:00.000Z
+E     ?             ^   --------
+E     + 2026-07-15T12:00
+E     ?             ^
+________________ test_f8_protocol_reads_real_decision_history _________________
+tests\test_feature_audit_fixes.py:321: in test_f8_protocol_reads_real_decision_history
+    assert result["ok"], result["error"]
+E   AssertionError: {'code': 'operation_failed', 'message': "AttributeError: 'DecisionRun' object has no attribute 'status'"}
+E   assert False
+_____ test_f4_matrix_survives_other_runs_and_failed_preflight_is_visible ______
+tests\test_feature_audit_fixes.py:371: in test_f4_matrix_survives_other_runs_and_failed_preflight_is_visible
+    assert stat_value(page.text, "Mandatory Total") == 3, "Inventory/preflight runs must not replace matrix counts"
+E   AssertionError: Inventory/preflight runs must not replace matrix counts
+E   assert 0 == 3
+E    +  where 0 = stat_value('<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...d>\n        </tr>\n        \n      </tbody>\n    </table>\n  </div>\n</div>\n\n\n\n\n\n\n\n</main>\n\n</body>\n</html>', 'Mandatory Total')
+E    +    where '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...d>\n        </tr>\n        \n      </tbody>\n    </table>\n  </div>\n</div>\n\n\n\n\n\n\n\n</main>\n\n</body>\n</html>' = <Response [200 OK]>.text
+____________ test_f4_current_preflight_pass_and_stale_requirements ____________
+tests\test_feature_audit_fixes.py:383: in test_f4_current_preflight_pass_and_stale_requirements
+    assert "Pre-flight: PASS" in page.text, "Current readiness must render from the separate preflight result"
+E   AssertionError: Current readiness must render from the separate preflight result
+E   assert 'Pre-flight: PASS' in '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...d>\n        </tr>\n        \n      </tbody>\n    </table>\n  </div>\n</div>\n\n\n\n\n\n\n\n</main>\n\n</body>\n</html>'
+E    +  where '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...d>\n        </tr>\n        \n      </tbody>\n    </table>\n  </div>\n</div>\n\n\n\n\n\n\n\n</main>\n\n</body>\n</html>' = <Response [200 OK]>.text
+_________ test_f5_submission_renders_real_checklist_and_instructions __________
+tests\test_feature_audit_fixes.py:422: in test_f5_submission_renders_real_checklist_and_instructions
+    assert "Submission Instructions" in page.text, "Render instructions from the existing instruction service"
+E   AssertionError: Render instructions from the existing instruction service
+E   assert 'Submission Instructions' in '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...ess">Record Manual Submission</button>\n    </form>\n    \n\n    \n  </div>\n  \n\n\n\n\n\n</main>\n\n</body>\n</html>'
+E    +  where '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...ess">Record Manual Submission</button>\n    </form>\n    \n\n    \n  </div>\n  \n\n\n\n\n\n</main>\n\n</body>\n</html>' = <Response [200 OK]>.text
+___ test_f5_portal_unknown_and_unsafe_instructions_are_visible_and_escaped ____
+tests\test_feature_audit_fixes.py:447: in test_f5_portal_unknown_and_unsafe_instructions_are_visible_and_escaped
+    assert "Upload via portal" in page.text and escape(sub.portal_url) in page.text
+E   assert ('Upload via portal' in '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...ess">Record Manual Submission</button>\n    </form>\n    \n\n    \n  </div>\n  \n\n\n\n\n\n</main>\n\n</body>\n</html>')
+E    +  where '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...ess">Record Manual Submission</button>\n    </form>\n    \n\n    \n  </div>\n  \n\n\n\n\n\n</main>\n\n</body>\n</html>' = <Response [200 OK]>.text
+_____________ test_f7_empty_compliance_command_is_accepted_by_cli _____________
+tests\test_feature_audit_fixes.py:480: in test_f7_empty_compliance_command_is_accepted_by_cli
+    with compliance_run_command().make_context("run", words[3:]) as context:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\typer\_click\core.py:708: in make_context
+    self.parse_args(ctx, args)
+..\..\..\..\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\typer\_click\core.py:716: in parse_args
+    opts, args, param_order = parser.parse_args(args=args)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\typer\_click\parser.py:286: in parse_args
+    self._process_args_for_options(state)
+..\..\..\..\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\typer\_click\parser.py:313: in _process_args_for_options
+    self._process_opts(arg, state)
+..\..\..\..\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\typer\_click\parser.py:444: in _process_opts
+    self._match_long_opt(norm_long_opt, explicit_value, state)
+..\..\..\..\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\typer\_click\parser.py:347: in _match_long_opt
+    raise NoSuchOption(opt, possibilities=possibilities, ctx=self.ctx)
+E   typer._click.exceptions.NoSuchOption: No such option: --opp-id
+____________ test_f1_concurrent_pursue_creates_only_one_workspace _____________
+tests\test_feature_audit_fixes.py:516: in test_f1_concurrent_pursue_creates_only_one_workspace
+    assert db.scalar(select(func.count()).select_from(Pursuit).where(Pursuit.opportunity_id == opp.id)) == 1
+E   assert 0 == 1
+E    +  where 0 = scalar(<sqlalchemy.sql.selectable.Select object at 0x000002CF03251D00>)
+E    +    where scalar = <sqlalchemy.orm.session.Session object at 0x000002CF0255C920>.scalar
+E    +    and   <sqlalchemy.sql.selectable.Select object at 0x000002CF03251D00> = where(<sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000002CF5B71BC40> == 34)
+E    +      where where = <sqlalchemy.sql.selectable.Select object at 0x000002CF03253380>.where
+E    +        where <sqlalchemy.sql.selectable.Select object at 0x000002CF03253380> = select_from(Pursuit)
+E    +          where select_from = <sqlalchemy.sql.selectable.Select object at 0x000002CF03251EB0>.select_from
+E    +            where <sqlalchemy.sql.selectable.Select object at 0x000002CF03251EB0> = select(<sqlalchemy.sql.functions.count at 0x2cf57124c80; count>)
+E    +              where <sqlalchemy.sql.functions.count at 0x2cf57124c80; count> = <sqlalchemy.sql.functions._FunctionGenerator object at 0x000002CF030C46E0>()
+E    +                where <sqlalchemy.sql.functions._FunctionGenerator object at 0x000002CF030C46E0> = func.count
+E    +      and   <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000002CF5B71BC40> = Pursuit.opportunity_id
+E    +      and   34 = <govcon.models.Opportunity object at 0x000002CF0241D100>.id
+_____________ test_f2_fresh_start_workspace_and_rejected_assignee _____________
+tests\test_feature_audit_fixes.py:530: in test_f2_fresh_start_workspace_and_rejected_assignee
+    assert f'action="/workspace/{opp.id}/assign"' in page.text
+E   assert 'action="/workspace/35/assign"' in '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...e="padding:2rem 0;">No review session yet. Start one from Overview.</p>\n</div>\n\n\n\n\n\n</main>\n\n</body>\n</html>'
+E    +  where '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-wi...e="padding:2rem 0;">No review session yet. Start one from Overview.</p>\n</div>\n\n\n\n\n\n</main>\n\n</body>\n</html>' = <Response [200 OK]>.text
+_____________________ test_generate_proposal_with_ai_mock _____________________
+tests\test_proposal_submission.py:291: in test_generate_proposal_with_ai_mock
+    assert result["section_count"] == 2
+E   assert 3 == 2
+---------------------------- Captured stderr call -----------------------------
+WARNI [govcon.proposals.service] AI drafting failed (registry_absent); using placeholder draft: no active version for prompt 'proposal_drafting'
+------------------------------ Captured log call ------------------------------
+WARNING  govcon.proposals.service:service.py:158 AI drafting failed (registry_absent); using placeholder draft: no active version for prompt 'proposal_drafting'
+__________________ test_red_team_runs_and_persists_findings ___________________
+src\govcon\ai\structured.py:69: in resolve_prompt
+    return load_prompt(session, prompt_name, version="active", prompt_root=prompt_root)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\prompting\registry.py:320: in load_prompt
+    raise error(f"no active version for prompt {prompt_name!r}")
+E   govcon.prompting.registry.PromptRegistryAbsent: no active version for prompt 'proposal_red_team'
+
+The above exception was the direct cause of the following exception:
+tests\test_proposal_submission.py:834: in test_red_team_runs_and_persists_findings
+    rt_result = run_proposal_red_team(
+src\govcon\proposals\ai_review.py:123: in run_proposal_red_team
+    result = run_structured_prompt(
+src\govcon\ai\structured.py:139: in run_structured_prompt
+    prompt = resolve_prompt(session, prompt_name, settings)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\ai\structured.py:72: in resolve_prompt
+    raise StructuredCallError("registry_absent", str(exc)) from exc
+E   govcon.ai.structured.StructuredCallError: registry_absent: no active version for prompt 'proposal_red_team'
+___________________ test_red_team_major_only_does_not_block ___________________
+src\govcon\ai\structured.py:69: in resolve_prompt
+    return load_prompt(session, prompt_name, version="active", prompt_root=prompt_root)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\prompting\registry.py:320: in load_prompt
+    raise error(f"no active version for prompt {prompt_name!r}")
+E   govcon.prompting.registry.PromptRegistryAbsent: no active version for prompt 'proposal_red_team'
+
+The above exception was the direct cause of the following exception:
+tests\test_proposal_submission.py:873: in test_red_team_major_only_does_not_block
+    rt_result = run_proposal_red_team(
+src\govcon\proposals\ai_review.py:123: in run_proposal_red_team
+    result = run_structured_prompt(
+src\govcon\ai\structured.py:139: in run_structured_prompt
+    prompt = resolve_prompt(session, prompt_name, settings)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\govcon\ai\structured.py:72: in resolve_prompt
+    raise StructuredCallError("registry_absent", str(exc)) from exc
+E   govcon.ai.structured.StructuredCallError: registry_absent: no active version for prompt 'proposal_red_team'
+__ test_ai_validation_populates_side_opinion_without_changing_human_comment ___
+tests\test_collaborative_review.py:202: in test_ai_validation_populates_side_opinion_without_changing_human_comment
+    assert row.ai_position == "disagree"
+E   AssertionError: assert None == 'disagree'
+E    +  where None = <govcon.models.ReviewComment object at 0x000002CF037D0230>.ai_position
+---------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\karne\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(_console_main())
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\Users\karne\AppData\Local\Temp\govcon-original-caller-check-wyygjekh\tests\test_collaborative_review.py", line 186, in test_ai_validation_populates_side_opinion_without_changing_human_comment
+    assign_reviewer(session, opportunity_id=opp.id, user_id=reviewer.id)
+  File "C:\Users\karne\AppData\Local\Temp\govcon-original-caller-check-wyygjekh\src\govcon\collaboration\assignments.py", line 87, in assign_reviewer
+    notify(
+  File "C:\Users\karne\AppData\Local\Temp\govcon-original-caller-check-wyygjekh\src\govcon\collaboration\notifications.py", line 54, in notify
+    logger.info(
+Message: 'notification_stored type=review_assigned user_id=144 email_delivery=disabled'
+Arguments: ()
+------------------------------ Captured log call ------------------------------
+INFO     govcon.collaboration.notifications:notifications.py:54 notification_stored type=review_assigned user_id=144 email_delivery=disabled
+============================== warnings summary ===============================
+tests/test_feature_audit_fixes.py: 14 warnings
+tests/test_web_ui.py: 66 warnings
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_feature_audit_fixes.py::test_f1_pursue_creates_one_visible_workspace
+FAILED tests/test_feature_audit_fixes.py::test_f2_empty_review_can_assign_first_reviewer
+FAILED tests/test_feature_audit_fixes.py::test_f6_browser_local_time_records_correct_instant[2026-01-15T12:00-2026-01-15T18:00:00.000Z]
+FAILED tests/test_feature_audit_fixes.py::test_f6_browser_local_time_records_correct_instant[2026-07-15T12:00-2026-07-15T17:00:00.000Z]
+FAILED tests/test_feature_audit_fixes.py::test_f8_protocol_reads_real_decision_history
+FAILED tests/test_feature_audit_fixes.py::test_f4_matrix_survives_other_runs_and_failed_preflight_is_visible
+FAILED tests/test_feature_audit_fixes.py::test_f4_current_preflight_pass_and_stale_requirements
+FAILED tests/test_feature_audit_fixes.py::test_f5_submission_renders_real_checklist_and_instructions
+FAILED tests/test_feature_audit_fixes.py::test_f5_portal_unknown_and_unsafe_instructions_are_visible_and_escaped
+FAILED tests/test_feature_audit_fixes.py::test_f7_empty_compliance_command_is_accepted_by_cli
+FAILED tests/test_feature_audit_fixes.py::test_f1_concurrent_pursue_creates_only_one_workspace
+FAILED tests/test_feature_audit_fixes.py::test_f2_fresh_start_workspace_and_rejected_assignee
+FAILED tests/test_proposal_submission.py::test_generate_proposal_with_ai_mock
+FAILED tests/test_proposal_submission.py::test_red_team_runs_and_persists_findings
+FAILED tests/test_proposal_submission.py::test_red_team_major_only_does_not_block
+FAILED tests/test_collaborative_review.py::test_ai_validation_populates_side_opinion_without_changing_human_comment
+16 failed, 360 passed, 3 skipped, 1 xfailed, 80 warnings in 81.94s (0:01:21)

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="2.992" timestamp="2026-10-02T23:00:16.629738-05:00" hostname="RahulROG"><testcase classname="tests.test_feature_audit_fixes" name="test_f3_failed_generation_is_honest_and_recoverable" time="2.037"><failure message="AssertionError: Approval must report a failed proposal generation&#10;assert 'error=' in '/workspace/1?tab=review&amp;notice=Decision%20recorded%3A%20approve%20to%20bid.'">tests\test_feature_audit_fixes.py:179: in test_f3_failed_generation_is_honest_and_recoverable
+    assert "error=" in response.headers["location"], "Approval must report a failed proposal generation"
+E   AssertionError: Approval must report a failed proposal generation
+E   assert 'error=' in '/workspace/1?tab=review&amp;notice=Decision%20recorded%3A%20approve%20to%20bid.'</failure></testcase></testsuite></testsuites>

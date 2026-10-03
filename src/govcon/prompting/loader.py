@@ -23,6 +23,8 @@ class PromptAsset:
 
 
 def parse_front_matter(text: str) -> tuple[dict[str, str], str]:
+    # Windows checkouts (core.autocrlf) carry CRLF; the hash still covers raw bytes.
+    text = text.replace("\r\n", "\n")
     if not text.startswith("---\n"):
         raise ValueError("prompt file is missing YAML front matter")
     try:

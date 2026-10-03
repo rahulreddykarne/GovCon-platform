@@ -68,20 +68,21 @@ def test_env_file_is_ignored() -> None:
     assert tracked.returncode != 0
     example = root / ".env.example"
     assert example.is_file()
-    assert "SAM_API_KEY=" in example.read_text()
-    assert "live-" not in example.read_text()
+    assert "SAM_API_KEY=" in example.read_text(encoding="utf-8")
+    assert "live-" not in example.read_text(encoding="utf-8")
 
 
 def test_upgrade_from_empty_database(upgraded_engine) -> None:
-    admin = create_engine(
-        "postgresql+psycopg://govcon:govcon@localhost:5432/postgres",
-        isolation_level="AUTOCOMMIT",
-    )
+    from sqlalchemy.engine import make_url
+
+    # Same server as the suite's DATABASE_URL; never a hardcoded one.
+    base = make_url(os.environ.get("DATABASE_URL", "postgresql+psycopg://govcon:govcon@localhost:5432/govcon"))
+    admin = create_engine(base.set(database="postgres"), isolation_level="AUTOCOMMIT")
     name = "govcon_phase0_empty"
     with admin.connect() as connection:
         connection.execute(text(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
         connection.execute(text(f"CREATE DATABASE {name}"))
-    url = f"postgresql+psycopg://govcon:govcon@localhost:5432/{name}"
+    url = base.set(database=name).render_as_string(hide_password=False)
     previous = os.environ.get("GOVCON_ALEMBIC_URL")
     os.environ["GOVCON_ALEMBIC_URL"] = url
     try:
@@ -328,4 +329,4 @@ def test_repository_layout_files_exist() -> None:
     ]
     for relative in expected:
         assert (root / relative).is_file(), relative
-    assert not (root / ".env").exists() or ".env" in Path(root / ".gitignore").read_text()
+    assert not (root / ".env").exists() or ".env" in Path(root / ".gitignore").read_text(encoding="utf-8")

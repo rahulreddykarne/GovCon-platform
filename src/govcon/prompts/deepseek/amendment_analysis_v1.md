@@ -5,6 +5,7 @@ task_type: amendment_analysis
 provider_family: generative_llm
 schema_version: amendment_analysis.v1
 status: active
+allowed_data_classes: PUBLIC
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1
 required_variables: REQUIREMENTS_JSON, AMENDMENT_JSON, DOCUMENT_INVENTORY_JSON
 regression_suite: compliance_amendment_analysis

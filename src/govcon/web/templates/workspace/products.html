@@ -1,20 +1,28 @@
+{% import "workspace/_ai_macros.html" as ai with context %}
 <!-- Products & Suppliers tab -->
 {% if ai_sourcing %}
 <div class="card">
   <div class="card-header">
     <span class="card-title">Product &amp; Supplier Analysis <span class="label-ai">AI</span></span>
+    {{ ai.run_button(opp.id, "supplier", "Re-run", can_run_analysis) }}
   </div>
   {% set out = ai_sourcing.output_json %}
-  {% if out.get('product_match') %}<p><strong>Product match:</strong> {{ out['product_match'] }}</p>{% endif %}
-  {% if out.get('sources') %}
-    <h3 style="font-size:13px; font-weight:600; margin:1rem 0 0.5rem;">Sources</h3>
-    <ul>{% for s in out['sources'] %}<li>{{ s }}</li>{% endfor %}</ul>
-  {% endif %}
-  {% if out.get('lead_time') %}<p class="mt-1"><strong>Lead time:</strong> {{ out['lead_time'] }}</p>{% endif %}
-  {% if out.get('supplier_risk') %}<p class="mt-1"><strong>Supplier risk:</strong> {{ out['supplier_risk'] }}</p>{% endif %}
+  <p><strong>Overall sourcing risk:</strong> {{ out.get('overall_sourcing_risk') or 'UNKNOWN' }}</p>
+  {% for c in out.get('candidates') or [] %}
+    <div class="mt-1" style="border-top:1px solid var(--color-border); padding-top:0.5rem;">
+      <strong>{{ c.get('supplier') or 'Unnamed supplier' }}</strong>{% if c.get('product') %} — {{ c['product'] }}{% endif %}
+      {% if c.get('delivery_lead_time_risk') %}<div class="text-sm">Lead-time risk: {{ c['delivery_lead_time_risk'] }}</div>{% endif %}
+      {{ ai.bullet_list("Exact requirement matches", c.get('exact_requirement_matches')) }}
+      {{ ai.bullet_list("Specification mismatches", c.get('specification_mismatches')) }}
+      {{ ai.bullet_list("Origin compliance gaps", c.get('origin_compliance_gaps')) }}
+      {{ ai.bullet_list("Evidence still required", c.get('evidence_still_required')) }}
+    </div>
+  {% endfor %}
+  {{ ai.bullet_list("Recommended next steps", out.get('recommended_next_steps')) }}
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No product/supplier analysis yet.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No product/supplier analysis yet. Record a supplier on the pursuit, then
+  {{ ai.run_button(opp.id, "supplier", "Run supplier analysis", can_run_analysis) }}</p>
 </div>
 {% endif %}

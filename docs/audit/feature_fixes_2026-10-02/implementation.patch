@@ -1,0 +1,198 @@
+--- src/govcon/web/routes/__init__.py (pre-fix working tree)
++++ src/govcon/web/routes/__init__.py
+@@ -342,6 +342,24 @@
+             m = db.get(Match, match_id)
+             if m is None:
+                 return HTMLResponse("", status_code=404)
++            if action == "pursuing":
++                from govcon.workflow.invalidation import lock_opportunity
++
++                lock_opportunity(db, m.opportunity_id)
++                pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == m.opportunity_id))
++                if pursuit is None:
++                    pursuit = Pursuit(opportunity_id=m.opportunity_id, stage="evaluating")
++                    db.add(pursuit)
++                    db.flush()
++                    record_audit(
++                        db,
++                        action_type="pursuit_created",
++                        user_id=actor.id,
++                        opportunity_id=m.opportunity_id,
++                        entity_type="pursuits",
++                        entity_id=pursuit.id,
++                        new_value={"stage": "evaluating"},
++                    )
+             old = m.status
+             m.status = action
+             record_audit(
+@@ -605,10 +623,12 @@
+                 .order_by(Requirement.severity.nullslast(), Requirement.id)
+                 .limit(200)
+             ).all()
+-            tab_ctx["compliance_run"] = db.scalar(
+-                select(ComplianceRun).where(ComplianceRun.opportunity_id == opp_id)
+-                .order_by(desc(ComplianceRun.created_at))
+-            )
++            from govcon.compliance.matrix import latest_run
++            from govcon.compliance.submission_preflight import readiness_blockers
++
++            tab_ctx["compliance_run"] = latest_run(db, opp_id, "compliance_matrix")
++            tab_ctx["preflight_run"] = latest_run(db, opp_id, "submission_preflight")
++            tab_ctx["preflight_blockers"] = readiness_blockers(db, opp_id) if tab_ctx["preflight_run"] else []
+ 
+         if active_tab == "awards" or active_tab == "market":
+             tab_ctx["awards"] = db.scalars(
+@@ -696,6 +716,11 @@
+                 sub = db.get(Submission, proposal.submission_id)
+             tab_ctx["submission"] = sub
+             tab_ctx["can_approve"] = user.role in ("owner", "approver")
++            if sub is not None:
++                from govcon.submissions.checklist import generate_final_checklist, generate_step_by_step_instructions
++
++                tab_ctx["submission_checklist"] = generate_final_checklist(db, opportunity_id=opp_id)
++                tab_ctx["submission_instructions"] = generate_step_by_step_instructions(db, opportunity_id=opp_id)
+ 
+         if active_tab == "activity":
+             evts = db.execute(
+--- src/govcon/web/templates/workspace/review.html (pre-fix working tree)
++++ src/govcon/web/templates/workspace/review.html
+@@ -1,7 +1,19 @@
+ <!-- Collaborative Review tab -->
+ {% if not review_session %}
+ <div class="card">
+-  <p class="text-muted text-center" style="padding:2rem 0;">No review session yet. Start one from Overview.</p>
++  <p class="text-muted text-center" style="padding:2rem 0;">No review session yet. An approver can assign the first reviewer below.</p>
++  {% if can_approve and assignable_users %}
++  <form method="post" action="/workspace/{{ opp.id }}/assign" class="mt-2 d-flex gap-1 align-center flex-wrap">
++    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
++    <label for="assign_user">Assign reviewer</label>
++    <select id="assign_user" name="user_id" required>
++      {% for u in assignable_users %}
++        <option value="{{ u.id }}">{{ u.display_name }} ({{ u.role }})</option>
++      {% endfor %}
++    </select>
++    <button type="submit" class="btn btn-secondary btn-sm">Assign</button>
++  </form>
++  {% endif %}
+ </div>
+ {% else %}
+ 
+--- src/govcon/web/templates/workspace/submission.html (pre-fix working tree)
++++ src/govcon/web/templates/workspace/submission.html
+@@ -7,12 +7,28 @@
+       <span class="badge badge-{% if submission.status == 'ready' %}success{% elif submission.status == 'submitted' %}primary{% elif submission.status == 'confirmed' %}success{% else %}secondary{% endif %}">{{ submission.status|replace('_',' ') }}</span>
+     </div>
+ 
++    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Checklist</h3>
++    <p>Overall: {{ submission_checklist.overall }}</p>
++    <ul>
++      {% for item in submission_checklist['items'] %}
++        <li><strong>{{ item.label }}</strong>: {{ item.status }}{% if item.detail %} — {{ item.detail }}{% endif %}</li>
++      {% endfor %}
++    </ul>
++    {% set files = submission.required_files.get('files', []) if submission.required_files is mapping else (submission.required_files or []) %}
++    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Required Files</h3>
++    <ul>
++      {% for file in files %}
++        <li>{% if file is mapping %}{{ file.get('filename') or file.get('name') or file }}{% else %}{{ file }}{% endif %}</li>
++      {% else %}<li>No required file list established.</li>{% endfor %}
++    </ul>
++    <p>Method: {{ submission.submission_method or 'Unknown' }}<br>
++       Destination: {{ submission.submission_destination or submission.recipient_email or submission.portal_url or submission.portal_name or 'Unknown' }}</p>
+     {% if submission.required_actions %}
+-    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Checklist</h3>
++    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Required Actions</h3>
+     <ul>
+       {% if submission.required_actions is mapping %}
+         {% for key, val in submission.required_actions.items() %}
+-          <li>{% if val %}<strong>{{ key }}</strong>{% else %}{{ key }}{% endif %}</li>
++          <li><strong>{{ key }}</strong>: {{ val }}</li>
+         {% endfor %}
+       {% else %}
+         {% for item in submission.required_actions %}
+@@ -22,14 +38,16 @@
+     </ul>
+     {% endif %}
+ 
+-    {% if submission.instructions %}
+     <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Submission Instructions</h3>
+-    <p>{{ submission.instructions }}</p>
+-    {% endif %}
++    <ol>
++      {% for step in submission_instructions %}
++        <li><strong>{{ step.title }}</strong> ({{ step.status }}): {{ step.description }}</li>
++      {% endfor %}
++    </ol>
+ 
+     <!-- Record the manual submission (the platform never submits for you) -->
+     {% if can_approve and submission.status == 'ready' and pursuit and pursuit.stage == 'ready_to_submit' %}
+-    <form method="post" action="/workspace/{{ opp.id }}/submission/approve" class="mt-2">
++    <form method="post" action="/workspace/{{ opp.id }}/submission/approve" class="mt-2" onsubmit="var when = this.elements.submitted_at; if (when.value) { var instant = new Date(when.value).toISOString(); when.type = 'hidden'; when.value = instant; }">
+     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+       <input type="hidden" name="expected_version" value="{{ submission.version }}">
+       <div class="d-flex gap-1 flex-wrap">
+--- src/govcon/web/templates/workspace/compliance.html (pre-fix working tree)
++++ src/govcon/web/templates/workspace/compliance.html
+@@ -1,7 +1,7 @@
+ <!-- Compliance tab -->
+ {% if not compliance_run %}
+ <div class="card">
+-  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Run <code>govcon compliance run --opp-id {{ opp.id }}</code>.</p>
++  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Run <code>govcon compliance run --opportunity-id {{ opp.id }}</code>.</p>
+ </div>
+ {% else %}
+ <div class="card">
+@@ -33,19 +33,6 @@
+     </div>
+   </div>
+ 
+-  {% if compliance_run.output_json %}
+-    {% set out = compliance_run.output_json %}
+-    {% if out.get('preflight_passed') is not none %}
+-      {% if out['preflight_passed'] %}
+-        <div class="alert alert-success mt-1">Pre-flight: PASS — ready to submit</div>
+-      {% else %}
+-        <div class="alert alert-error mt-1">Pre-flight: FAIL — submission blocked</div>
+-        {% if out.get('blocking_items') %}
+-          <ul>{% for item in out['blocking_items'] %}<li>{{ item }}</li>{% endfor %}</ul>
+-        {% endif %}
+-      {% endif %}
+-    {% endif %}
+-  {% endif %}
+ </div>
+ 
+ <!-- Requirements detail -->
+@@ -53,3 +40,22 @@
+   {% include "workspace/requirements.html" %}
+ {% endif %}
+ {% endif %}
++
++{% if preflight_run %}
++<div class="card">
++  {% set out = preflight_run.output_json %}
++  {% if out.get('ready') and not preflight_blockers %}
++    <div class="alert alert-success mt-1">Pre-flight: PASS — ready to submit</div>
++  {% elif out.get('ready') %}
++    <div class="alert alert-warning mt-1">Pre-flight: STALE — re-run pre-flight before submitting</div>
++  {% else %}
++    <div class="alert alert-error mt-1">Pre-flight: FAIL — submission blocked</div>
++  {% endif %}
++  <ul>
++    {% for item in out.get('items', []) if item.get('status') not in ('pass', 'not_applicable') %}
++      <li>{{ item.get('check') }}: {{ item.get('reason') }}</li>
++    {% endfor %}
++    {% for item in preflight_blockers %}<li>{{ item.description }}</li>{% endfor %}
++  </ul>
++</div>
++{% endif %}
+--- src/govcon/mcp/operations.py (pre-fix working tree)
++++ src/govcon/mcp/operations.py
+@@ -367,7 +367,7 @@
+                     "id": run.id,
+                     "bundle_name": run.bundle_name,
+                     "provider": run.provider,
+-                    "status": run.status,
++                    "status": run.result.get("status"),
+                     "created_at": run.created_at,
+                 }
+                 for run in runs

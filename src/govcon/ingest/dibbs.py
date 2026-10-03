@@ -28,6 +28,16 @@ Index columns (widths sum to 140, no delimiter):
 - Small-business set-aside (1): Y, H, R, L, A, E, N
 - Set-aside percentage (3)
 
+Return-by time: quotes are due at 3:00 PM Eastern (EST or EDT) on the return
+date, and a return date on a Saturday, Sunday, or federal holiday moves to the
+next business day (DLA Master Solicitation, "Time for receipt of quotes"). The
+stored ``response_deadline`` is that instant in UTC.
+
+Catch-up: the scheduled pull ingests every index the recent page lists that is
+newer than the last one ingested (oldest first, at most
+``MAX_CATCHUP_INDEXES``), so a missed day is picked up. With no DIBBS history
+only the newest index is pulled.
+
 A DoD notice-and-consent banner gates both hosts. ``/robots.txt`` is not
 published (www returns 404 after consent; dibbs2 returns its file-not-found
 page). Requests are sequential and wait ``DIBBS_REQUEST_INTERVAL_SECONDS``
@@ -40,19 +50,22 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as clock_time, timedelta, timezone
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from tenacity import wait_exponential
 
 from govcon.config import Settings, get_settings
 from govcon.http import build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
+from govcon.models import IngestionRun, Opportunity
 from govcon.ingest.snapshots import (
     NormalizedOpportunity,
     canonical_content_hash,
@@ -70,6 +83,11 @@ RECORD_URL = "https://www.dibbs.bsm.dla.mil/RFQ/RfqRec.aspx?sn={solicitation}"
 INDEX_RECORD_LENGTH = 140
 DIBBS_RETRY_ATTEMPTS = 3
 DIBBS_RETRY_WAIT = wait_exponential(multiplier=1, min=1, max=8)
+EASTERN = ZoneInfo("America/New_York")
+QUOTES_DUE_LOCAL_TIME = clock_time(15, 0)
+MAX_CATCHUP_INDEXES = 14
+# Ingestion-run job names whose ``details.indexes`` record pulled index files.
+DIBBS_RUN_JOBS = ("sched:dibbs_ingest", "dibbs_index")
 
 INDEX_FIELDS: tuple[tuple[str, int], ...] = (
     ("solicitation_number", 13),
@@ -137,6 +155,11 @@ class DibbsIngestResult:
     coverage: DibbsCoverage
     index_name: str
     retained_path: str | None = None
+    # Every index file ingested by this call, oldest first.
+    index_names: list[str] | None = None
+
+    def run_details(self) -> dict:
+        return {"indexes": list(self.index_names or [self.index_name])}
 
 
 class _FormParser(HTMLParser):
@@ -213,6 +236,54 @@ def _quantity(text: str) -> Decimal | None:
     return Decimal(int(text))
 
 
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """The ``n``-th ``weekday`` (Mon=0) of a month; ``n=-1`` is the last one."""
+    if n > 0:
+        first = date(year, month, 1)
+        return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+    following = date(year + (month == 12), month % 12 + 1, 1)
+    last = following - timedelta(days=1)
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def _observed(day: date) -> date:
+    if day.weekday() == 5:
+        return day - timedelta(days=1)
+    if day.weekday() == 6:
+        return day + timedelta(days=1)
+    return day
+
+
+def federal_holidays(year: int) -> set[date]:
+    """US federal holidays (5 U.S.C. 6103) as observed, for one calendar year."""
+    fixed = [date(year, 1, 1), date(year, 6, 19), date(year, 7, 4), date(year, 11, 11), date(year, 12, 25)]
+    days = {_observed(day) for day in fixed}
+    days |= {
+        _nth_weekday(year, 1, 0, 3),  # Birthday of Martin Luther King, Jr.
+        _nth_weekday(year, 2, 0, 3),  # Washington's Birthday
+        _nth_weekday(year, 5, 0, -1),  # Memorial Day
+        _nth_weekday(year, 9, 0, 1),  # Labor Day
+        _nth_weekday(year, 10, 0, 2),  # Columbus Day
+        _nth_weekday(year, 11, 3, 4),  # Thanksgiving Day
+    }
+    # New Year's Day of the next year can be observed on Dec 31.
+    days.add(_observed(date(year + 1, 1, 1)))
+    return days
+
+
+def next_business_day(day: date) -> date:
+    """``day`` itself when it is a business day, else the next one."""
+    while day.weekday() >= 5 or day in federal_holidays(day.year):
+        day += timedelta(days=1)
+    return day
+
+
+def dibbs_return_deadline(day: date) -> datetime:
+    """3:00 PM Eastern on the business-day return date, as an aware UTC datetime."""
+    local = datetime.combine(next_business_day(day), QUOTES_DUE_LOCAL_TIME, tzinfo=EASTERN)
+    return local.astimezone(timezone.utc)
+
+
 def _return_deadline(text: str) -> datetime | None:
     if not text:
         return None
@@ -220,7 +291,7 @@ def _return_deadline(text: str) -> datetime | None:
         day = datetime.strptime(text, "%m/%d/%y").date()
     except ValueError:
         return None
-    return datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=timezone.utc)
+    return dibbs_return_deadline(day)
 
 
 def _source_id(solicitation: str, purchase_request: str, nsn_or_part: str, line_number: int) -> str:
@@ -448,6 +519,56 @@ def _payload_is_index(payload: bytes) -> bool:
     return False
 
 
+def last_ingested_index_date(session: Session) -> date | None:
+    """Newest DIBBS index already ingested, from run records and stored rows."""
+    dates: list[date] = []
+    newest_row = session.scalar(
+        select(func.max(Opportunity.posted_date)).where(Opportunity.source == SOURCE_DIBBS)
+    )
+    if newest_row is not None:
+        dates.append(newest_row)
+    runs = session.scalars(
+        select(IngestionRun.errors).where(
+            IngestionRun.job.in_(DIBBS_RUN_JOBS),
+            IngestionRun.status.in_(("succeeded", "completed_with_errors")),
+        )
+    ).all()
+    for payload in runs:
+        details = payload.get("details") if isinstance(payload, dict) else None
+        for name in (details or {}).get("indexes") or []:
+            posted = posted_date_from_name(str(name))
+            if posted is not None:
+                dates.append(posted)
+    return max(dates) if dates else None
+
+
+def _catchup_urls(links: list[str], last: date | None) -> list[str]:
+    """Listed indexes newer than ``last``, oldest first; the newest alone when none are."""
+    dated = [(posted_date_from_name(Path(urlparse(url).path).name), url) for url in links]
+    dated = [(posted, url) for posted, url in dated if posted is not None]
+    if not dated:
+        return links[:1]
+    newest = max(dated)[1]
+    if last is None:
+        return [newest]
+    newer = sorted((posted, url) for posted, url in dated if posted > last)
+    if not newer:
+        # Re-pull the newest: idempotent, and it picks up same-day revisions.
+        return [newest]
+    return [url for _, url in newer[-MAX_CATCHUP_INDEXES:]]
+
+
+def _pull_one(session: Session, client: httpx.Client, url: str, *, settings: Settings, interval: float) -> DibbsIngestResult:
+    response = fetch_consented(client, url, interval=interval)
+    payload = response.content
+    if not _payload_is_index(payload):
+        raise DibbsError(f"DIBBS index file was not available at {url}")
+    index_name = Path(urlparse(url).path).name.lower()
+    result = ingest_index_bytes(session, payload, index_name=index_name)
+    result.retained_path = str(retain_batch_file(settings.data_dir, index_name, payload))
+    return result
+
+
 def pull_dibbs_index(
     session: Session,
     *,
@@ -456,7 +577,13 @@ def pull_dibbs_index(
     client: httpx.Client | None = None,
     interval: float | None = None,
 ) -> DibbsIngestResult:
-    """Download one daily index and ingest it. The default date is the newest listed file."""
+    """Download and ingest DIBBS indexes.
+
+    With ``posted_date`` exactly that index is pulled. Otherwise every listed
+    index newer than the last one ingested is pulled, oldest first (see the
+    module docstring). An unavailable index among several is reported in the
+    stats and the rest are still ingested; it fails only when none could be.
+    """
     settings = settings or get_settings()
     interval = settings.dibbs_request_interval_seconds if interval is None else interval
     own_client = client is None
@@ -470,18 +597,51 @@ def pull_dibbs_index(
             links = index_links(html)
             if not links:
                 raise DibbsError("DIBBS recent RFQ page did not list an index file")
-            url = links[0]
+            urls = _catchup_urls(links, last_ingested_index_date(session))
             _sleep(interval)
         else:
-            url = index_file_url(posted_date)
-        response = fetch_consented(client, url, interval=interval)
-        payload = response.content
-        if not _payload_is_index(payload):
-            raise DibbsError(f"DIBBS index file was not available at {url}")
-        index_name = Path(urlparse(url).path).name.lower()
-        result = ingest_index_bytes(session, payload, index_name=index_name)
-        result.retained_path = str(retain_batch_file(settings.data_dir, index_name, payload))
-        return result
+            urls = [index_file_url(posted_date)]
+
+        results: list[DibbsIngestResult] = []
+        failures: list[str] = []
+        for position, url in enumerate(urls):
+            if position:
+                _sleep(interval)
+            try:
+                results.append(_pull_one(session, client, url, settings=settings, interval=interval))
+            except DibbsError as exc:
+                if len(urls) == 1:
+                    raise
+                failures.append(str(exc))
+        if not results:
+            raise DibbsError("; ".join(failures) or "no DIBBS index could be ingested")
+        return _combine(results, failures)
     finally:
         if own_client:
             client.close()
+
+
+def _combine(results: list[DibbsIngestResult], failures: list[str]) -> DibbsIngestResult:
+    if len(results) == 1 and not failures:
+        only = results[0]
+        only.index_names = [only.index_name]
+        return only
+    stats = IngestStats()
+    for result in results:
+        stats.add(result.stats)
+    stats.errors.extend(failures)
+    coverage = DibbsCoverage(
+        records=sum(r.coverage.records for r in results),
+        nsn=sum(r.coverage.nsn for r in results),
+        quantity=sum(r.coverage.quantity for r in results),
+    )
+    newest = results[-1]
+    return DibbsIngestResult(
+        stats=stats,
+        coverage=coverage,
+        index_name=newest.index_name,
+        retained_path=newest.retained_path,
+        index_names=[r.index_name for r in results],
+    )
+
+

@@ -7,12 +7,28 @@
       <span class="badge badge-{% if submission.status == 'ready' %}success{% elif submission.status == 'submitted' %}primary{% elif submission.status == 'confirmed' %}success{% else %}secondary{% endif %}">{{ submission.status|replace('_',' ') }}</span>
     </div>
 
-    {% if submission.required_actions %}
     <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Checklist</h3>
+    <p>Overall: {{ submission_checklist.overall }}</p>
+    <ul>
+      {% for item in submission_checklist['items'] %}
+        <li><strong>{{ item.label }}</strong>: {{ item.status }}{% if item.detail %} — {{ item.detail }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% set files = submission.required_files.get('files', []) if submission.required_files is mapping else (submission.required_files or []) %}
+    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Required Files</h3>
+    <ul>
+      {% for file in files %}
+        <li>{% if file is mapping %}{{ file.get('filename') or file.get('name') or file }}{% else %}{{ file }}{% endif %}</li>
+      {% else %}<li>No required file list established.</li>{% endfor %}
+    </ul>
+    <p>Method: {{ submission.submission_method or 'Unknown' }}<br>
+       Destination: {{ submission.submission_destination or submission.recipient_email or submission.portal_url or submission.portal_name or 'Unknown' }}</p>
+    {% if submission.required_actions %}
+    <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Required Actions</h3>
     <ul>
       {% if submission.required_actions is mapping %}
         {% for key, val in submission.required_actions.items() %}
-          <li>{% if val %}<strong>{{ key }}</strong>{% else %}{{ key }}{% endif %}</li>
+          <li><strong>{{ key }}</strong>: {{ val }}</li>
         {% endfor %}
       {% else %}
         {% for item in submission.required_actions %}
@@ -22,19 +38,36 @@
     </ul>
     {% endif %}
 
-    {% if submission.instructions %}
     <h3 style="font-size:13px; font-weight:600; margin:0.75rem 0 0.5rem;">Submission Instructions</h3>
-    <p>{{ submission.instructions }}</p>
-    {% endif %}
+    <ol>
+      {% for step in submission_instructions %}
+        <li><strong>{{ step.title }}</strong> ({{ step.status }}): {{ step.description }}</li>
+      {% endfor %}
+    </ol>
 
-    <!-- Final submit approval -->
-    {% if can_approve and submission.status == 'ready' %}
-    <div class="mt-2 d-flex gap-1">
-      <form method="post" action="/workspace/{{ opp.id }}/submission/approve">
-        <input type="hidden" name="decision" value="approve">
-        <button type="submit" class="btn btn-success">Authorize Submission</button>
-      </form>
-    </div>
+    <!-- Record the manual submission (the platform never submits for you) -->
+    {% if can_approve and submission.status == 'ready' and pursuit and pursuit.stage == 'ready_to_submit' %}
+    <form method="post" action="/workspace/{{ opp.id }}/submission/approve" class="mt-2" onsubmit="var when = this.elements.submitted_at; if (when.value) { var instant = new Date(when.value).toISOString(); when.type = 'hidden'; when.value = instant; }">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="expected_version" value="{{ submission.version }}">
+      <div class="d-flex gap-1 flex-wrap">
+        <div class="form-group">
+          <label for="confirmation_number">Confirmation number</label>
+          <input id="confirmation_number" type="text" name="confirmation_number">
+        </div>
+        <div class="form-group">
+          <label for="submitted_at">Submitted at (optional)</label>
+          <input id="submitted_at" type="datetime-local" name="submitted_at">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="confirmation_notes">Proof of submission (required if there is no confirmation number)</label>
+        <textarea id="confirmation_notes" name="confirmation_notes" rows="2"></textarea>
+      </div>
+      <button type="submit" class="btn btn-success">Record Manual Submission</button>
+    </form>
+    {% elif submission.status in ('preparing', 'ready') %}
+    <p class="text-muted mt-2">The proposal must be final-approved through the compliance gate before a submission can be recorded.</p>
     {% endif %}
 
     {% if submission.status == 'submitted' %}
@@ -50,6 +83,7 @@
         <span class="text-muted" style="font-size:12px;">Structured capture — used for analytics and future learning</span>
       </div>
       <form method="post" action="/workspace/{{ opp.id }}/record-outcome" id="outcome-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <div class="d-flex gap-1 align-center flex-wrap" style="margin-bottom:0.5rem;">
           <select name="outcome" id="outcome-select" required onchange="showOutcomeFields(this.value)" style="width:180px;">
             <option value="">Select outcome…</option>
@@ -169,11 +203,17 @@
     function showOutcomeFields(outcome) {
       ['won', 'lost', 'no_bid'].forEach(function(o) {
         var el = document.getElementById('fields-' + o);
-        if (el) el.style.display = (outcome === o) ? '' : 'none';
+        if (el) {
+          el.style.display = (outcome === o) ? '' : 'none';
+          el.querySelectorAll('input, select, textarea').forEach(function(field) {
+            field.disabled = outcome !== o;
+          });
+        }
       });
       var common = document.getElementById('fields-common');
       if (common) common.style.display = outcome ? '' : 'none';
     }
+    showOutcomeFields(document.getElementById('outcome-select').value);
     </script>
     {% endif %}
 

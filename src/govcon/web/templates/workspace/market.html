@@ -1,23 +1,26 @@
+{% import "workspace/_ai_macros.html" as ai with context %}
 <!-- Market Intelligence tab -->
 {% if ai_market %}
 <div class="card">
   <div class="card-header">
     <span class="card-title">Market Intelligence <span class="label-ai">AI</span></span>
+    {{ ai.run_button(opp.id, "market", "Re-run", can_run_analysis) }}
   </div>
   {% set out = ai_market.output_json %}
-  {% if out.get('market_summary') %}<p>{{ out['market_summary'] }}</p>{% endif %}
-  {% if out.get('agencies') %}
-    <h3 style="font-size:13px; font-weight:600; margin:1rem 0 0.5rem;">Key Agencies</h3>
-    <ul>{% for a in out['agencies'] %}<li>{{ a }}</li>{% endfor %}</ul>
-  {% endif %}
-  {% if out.get('suppliers') %}
-    <h3 style="font-size:13px; font-weight:600; margin:1rem 0 0.5rem;">Known Suppliers</h3>
-    <ul>{% for s in out['suppliers'] %}<li>{{ s }}</li>{% endfor %}</ul>
-  {% endif %}
+  {% if out.get('agency_buying_patterns') %}<p><strong>Agency buying patterns:</strong> {{ out['agency_buying_patterns'] }}</p>{% endif %}
+  {% if out.get('price_comparability') %}<p class="mt-1"><strong>Price comparability:</strong> {{ out['price_comparability'] }}</p>{% endif %}
+  {{ ai.bullet_list("Historical winners", out.get('historical_winners')) }}
+  {{ ai.bullet_list("Recurring vendors", out.get('recurring_vendors')) }}
+  {{ ai.bullet_list("Incumbent signals", out.get('incumbent_signals')) }}
+  {{ ai.bullet_list("Competition signals", out.get('competition_signals')) }}
+  {{ ai.bullet_list("Recompete signals", out.get('recompete_signals')) }}
+  {{ ai.bullet_list("Comparability weaknesses", out.get('comparability_weaknesses')) }}
+  <p class="text-sm text-muted mt-1">Generated {{ ai_market.created_at.strftime('%Y-%m-%d %H:%M') if ai_market.created_at else '' }}</p>
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No market intelligence analysis yet.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No market intelligence analysis yet.
+  {{ ai.run_button(opp.id, "market", "Run market analysis", can_run_analysis) }}</p>
 </div>
 {% endif %}
 
@@ -33,7 +36,7 @@
           <td>{{ a.action_date or "—" }}</td>
           <td>{{ a.recipient_name or a.recipient_uei or "—" }}</td>
           <td>{{ a.awarding_agency or "—" }}</td>
-          <td>{{ "$%,.0f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
+          <td>{{ a.total_obligation|money(0) if a.total_obligation else "—" }}</td>
           <td>{{ a.psc_code or "—" }}</td>
         </tr>
         {% endfor %}

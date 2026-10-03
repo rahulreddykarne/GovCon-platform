@@ -11,17 +11,38 @@
     {% endif %}
 
     <!-- Final approval -->
-    {% if can_approve and proposal.status == 'red_teamed' %}
-    <div class="mt-2 d-flex gap-1">
-      <form method="post" action="/workspace/{{ opp.id }}/proposal/approve">
-        <input type="hidden" name="decision" value="APPROVE_FOR_SUBMISSION">
-        <button type="submit" class="btn btn-success">Approve for Submission</button>
-      </form>
-      <form method="post" action="/workspace/{{ opp.id }}/proposal/approve">
-        <input type="hidden" name="decision" value="RETURN_FOR_FIX">
-        <button type="submit" class="btn btn-secondary">Return for Fix</button>
-      </form>
+    {% if can_approve and proposal.status in approvable_statuses %}
+    {% set blockers = proposal_workspace.readiness_blockers if proposal_workspace else [] %}
+    {% if blockers %}
+    <div class="alert alert-warning mt-2">
+      <strong>The compliance gate will refuse approval until these are resolved or explicitly overridden:</strong>
+      <ul>
+        {% for b in blockers %}<li>{{ b.description }}</li>{% endfor %}
+      </ul>
     </div>
+    {% endif %}
+    <form method="post" action="/workspace/{{ opp.id }}/proposal/approve" class="mt-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="expected_version" value="{{ proposal.version }}">
+      {% if blockers %}
+      <div class="form-group">
+        <label for="proposal_override_reason">Override reason (required to approve with the blockers above; audited)</label>
+        <textarea id="proposal_override_reason" name="override_reason" rows="2"></textarea>
+      </div>
+      {% endif %}
+      <div class="d-flex gap-1">
+        <button type="submit" name="decision" value="APPROVE_FOR_SUBMISSION" class="btn btn-success">Approve for Submission</button>
+        <button type="submit" name="decision" value="RETURN_FOR_FIX" class="btn btn-secondary">Return for Fix</button>
+      </div>
+    </form>
+    {% elif can_approve and proposal.status == 'final_approved' %}
+    <form method="post" action="/workspace/{{ opp.id }}/proposal/approve" class="mt-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="expected_version" value="{{ proposal.version }}">
+      <button type="submit" name="decision" value="RETURN_FOR_FIX" class="btn btn-secondary">Return for Fix (revokes approval)</button>
+    </form>
+    {% elif proposal.status in ('draft', 'returned_for_fix') %}
+    <p class="text-muted mt-2">This version must be red-teamed or regenerated before it can be approved.</p>
     {% endif %}
 
     <!-- Red team -->

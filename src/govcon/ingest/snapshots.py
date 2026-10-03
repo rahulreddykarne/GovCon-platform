@@ -2,6 +2,11 @@
 
 A new snapshot is written only when the canonical payload hash changes.
 Field events are inserted before the current ``opportunities`` row is updated.
+
+Snapshots are unique per content hash. When the source reverts to content seen
+before (A -> B -> A), the live row is still updated and the field events link
+to the existing snapshot for that content; no duplicate snapshot is written.
+The current snapshot is the one whose hash equals ``opportunities.raw_hash``.
 """
 
 from __future__ import annotations
@@ -17,6 +22,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.models import Contact, Opportunity, OpportunityEvent, OpportunitySnapshot
+from govcon.workflow.source_events import (
+    MATERIAL_EVENT_TYPES,
+    MATERIAL_SOURCE_CHANGE_EVENT,
+    change_level,
+)
 
 SOURCE_SAM = "sam"
 
@@ -248,6 +258,7 @@ def _apply_current(row: Opportunity, item: NormalizedOpportunity) -> None:
     row.agency_path = item.agency_path
     row.place_of_performance = item.place_of_performance
     row.nsn = item.nsn
+    row.nsn_candidates = list(item.nsn_candidates) or None
     row.quantity = item.quantity
     row.unit = item.unit
     row.estimated_value_min = item.estimated_value_min
@@ -261,6 +272,27 @@ def _apply_current(row: Opportunity, item: NormalizedOpportunity) -> None:
     row.links = item.links
     row.raw = item.raw
     row.raw_hash = item.content_hash
+
+
+def current_snapshot_id(session: Session, opportunity_id: int) -> int | None:
+    """Snapshot of the content the live row holds, else the most recently fetched one."""
+    current = session.scalar(
+        select(OpportunitySnapshot.id)
+        .join(Opportunity, Opportunity.id == OpportunitySnapshot.opportunity_id)
+        .where(
+            OpportunitySnapshot.opportunity_id == opportunity_id,
+            OpportunitySnapshot.content_hash == Opportunity.raw_hash,
+        )
+        .limit(1)
+    )
+    if current is not None:
+        return current
+    return session.scalar(
+        select(OpportunitySnapshot.id)
+        .where(OpportunitySnapshot.opportunity_id == opportunity_id)
+        .order_by(OpportunitySnapshot.fetched_at.desc(), OpportunitySnapshot.id.desc())
+        .limit(1)
+    )
 
 
 def _insert_snapshot(session: Session, opportunity_id: int, item: NormalizedOpportunity) -> OpportunitySnapshot:
@@ -342,17 +374,37 @@ def upsert_opportunity(session: Session, item: NormalizedOpportunity) -> str:
 
     if existing.raw_hash == item.content_hash:
         return "unchanged"
-    already = session.scalar(
-        select(OpportunitySnapshot.id).where(
+    # Content seen before (a revert, A -> B -> A) is still an update to the live
+    # row; it reuses the stored snapshot for that content.
+    snapshot = session.scalar(
+        select(OpportunitySnapshot).where(
             OpportunitySnapshot.opportunity_id == existing.id,
             OpportunitySnapshot.content_hash == item.content_hash,
         )
     )
-    if already is not None:
-        return "unchanged"
 
     events = _tracked_events(existing, item)
-    snapshot = _insert_snapshot(session, existing.id, item)
+    level = change_level({event.event_type for event in events})
+    if level is not None:
+        # One marker per material update; the source-change workflow consumes it.
+        events.append(
+            OpportunityEvent(
+                opportunity_id=existing.id,
+                event_type=MATERIAL_SOURCE_CHANGE_EVENT,
+                field_name=None,
+                old_value=None,
+                new_value={
+                    "value": {
+                        "level": level,
+                        "event_types": sorted(
+                            {e.event_type for e in events if e.event_type in MATERIAL_EVENT_TYPES}
+                        ),
+                    }
+                },
+            )
+        )
+    if snapshot is None:
+        snapshot = _insert_snapshot(session, existing.id, item)
     for event in events:
         event.snapshot_id = snapshot.id
         session.add(event)

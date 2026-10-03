@@ -22,7 +22,9 @@ class StepResult:
     """Outcome of a single job step."""
 
     step: str
-    status: str  # "succeeded" | "failed" | "skipped"
+    # "succeeded" | "completed_with_errors" (per-record problems; not a failure)
+    # | "failed" | "skipped"
+    status: str
     inserted: int = 0
     updated: int = 0
     fetched: int = 0
@@ -76,7 +78,8 @@ def step_sam_ingest(session: Session, settings) -> StepResult:
             limit=1000,
             settings=settings,
         )
-        status = "succeeded" if not stats.errors else "failed"
+        # Skipped records are reported, not fatal: the rest were ingested.
+        status = "succeeded" if not stats.errors else "completed_with_errors"
         finish_run(run, stats, status=status)
         return StepResult(
             step="sam_ingest",
@@ -96,7 +99,7 @@ def step_sam_ingest(session: Session, settings) -> StepResult:
 
 
 def step_dibbs_ingest(session: Session, settings) -> StepResult:
-    """Pull the newest DIBBS daily index."""
+    """Pull every DIBBS daily index listed since the last one ingested."""
     from govcon.ingest.dibbs import DibbsError, pull_dibbs_index
     from govcon.ingest.runs import IngestStats, finish_run, start_run
     from govcon.logging import redact
@@ -105,8 +108,9 @@ def step_dibbs_ingest(session: Session, settings) -> StepResult:
     try:
         result = pull_dibbs_index(session, settings=settings)
         stats = result.stats
-        status = "succeeded" if not stats.errors else "failed"
-        finish_run(run, stats, status=status)
+        # Malformed index lines are reported, not fatal: valid lines were ingested.
+        status = "succeeded" if not stats.errors else "completed_with_errors"
+        finish_run(run, stats, status=status, details=result.run_details())
         return StepResult(
             step="dibbs_ingest",
             status=status,
@@ -122,6 +126,39 @@ def step_dibbs_ingest(session: Session, settings) -> StepResult:
         finish_run(run, IngestStats(errors=[err]), status="failed")
         logger.error("dibbs_ingest failed: %s", err)
         return StepResult(step="dibbs_ingest", status="failed", error=err)
+
+
+def step_source_changes(session: Session, settings) -> StepResult:
+    """Handle material source changes found by ingest.
+
+    For opportunities with a pursuit or review session: fetch new attachments,
+    rerun compliance, reopen review, and invalidate proposal approval and
+    submission readiness. Per-opportunity errors are recorded and do not stop
+    matching and alerts.
+    """
+    from govcon.ingest.runs import IngestStats, finish_run, start_run
+    from govcon.logging import redact
+    from govcon.workflow.invalidation import process_pending_source_changes
+
+    run = start_run(session, "sched:source_changes")
+    try:
+        summary = process_pending_source_changes(session, settings=settings)
+        errors = [redact(e) for e in summary["errors"]]
+        stats = IngestStats(fetched=summary["events"], updated=summary["invalidated"], errors=errors)
+        finish_run(run, stats, status="completed_with_errors" if errors else "succeeded", details=summary)
+        return StepResult(
+            step="source_changes",
+            status="completed_with_errors" if errors else "succeeded",
+            fetched=summary["events"],
+            updated=summary["invalidated"],
+            error="; ".join(errors) if errors else None,
+            extra={"opportunities": summary["opportunities"]},
+        )
+    except Exception as exc:
+        err = redact(str(exc))
+        finish_run(run, IngestStats(errors=[err]), status="failed")
+        logger.error("source_changes failed: %s", err)
+        return StepResult(step="source_changes", status="failed", error=err)
 
 
 def step_match(session: Session) -> StepResult:
@@ -169,31 +206,31 @@ def step_alerts(session: Session, settings) -> StepResult:
 
 
 def step_usaspending(session: Session, settings) -> StepResult:
-    """Pull USAspending delta for enabled watchlist PSC/NAICS codes."""
-    from govcon.ingest.runs import IngestStats, finish_run, start_run
+    """Pull the USAspending delta for enabled watchlist PSC/NAICS codes.
+
+    The run is recorded under the same job name the CLI uses, so the
+    incremental watermark advances after a scheduled pull.
+    """
     from govcon.ingest.usaspending import ingest_usaspending_awards
     from govcon.logging import redact
 
-    run = start_run(session, "sched:usaspending")
     try:
-        totals = ingest_usaspending_awards(session, settings=settings)
-        status = "succeeded" if not totals.errors else "failed"
-        finish_run(run, totals, status=status)
-        return StepResult(
-            step="usaspending",
-            status=status,
-            inserted=totals.inserted,
-            updated=totals.updated,
-            fetched=totals.fetched,
-            unchanged=totals.unchanged,
-            error="; ".join(totals.errors) if totals.errors else None,
-        )
+        result = ingest_usaspending_awards(session, settings=settings)
     except Exception as exc:
-        from govcon.ingest.runs import IngestStats
         err = redact(str(exc))
-        finish_run(run, IngestStats(errors=[err]), status="failed")
         logger.error("usaspending failed: %s", err)
         return StepResult(step="usaspending", status="failed", error=err)
+    stats = result.stats
+    return StepResult(
+        step="usaspending",
+        status=result.status,
+        inserted=stats.inserted,
+        updated=stats.updated,
+        fetched=stats.fetched,
+        unchanged=stats.unchanged,
+        error="; ".join(stats.errors) if stats.errors else None,
+        extra={"run_id": result.run_id, **result.details},
+    )
 
 
 def step_embeddings(session: Session, settings) -> StepResult:
@@ -240,19 +277,23 @@ def step_semantic_match(session: Session, settings) -> StepResult:
 
 
 def step_midday_deadline_check(session: Session, settings) -> StepResult:
-    """Lightweight deadline/amendment check: archive sweep only (no network quota used)."""
+    """Lightweight deadline check: archive and close sweeps only (no network quota used)."""
+    from govcon.ingest.lifecycle import close_expired_opportunities
     from govcon.ingest.runs import IngestStats, finish_run, start_run
     from govcon.ingest.sam_opportunities import archive_expired_sam_opportunities
 
     run = start_run(session, "sched:midday_check")
     try:
         stats = archive_expired_sam_opportunities(session)
-        finish_run(run, stats, status="succeeded")
+        archived = stats.updated
+        closed = close_expired_opportunities(session)
+        stats.add(closed)
+        finish_run(run, stats, status="succeeded", details={"archived": archived, "closed": closed.updated})
         return StepResult(
             step="midday_deadline_check",
             status="succeeded",
             updated=stats.updated,
-            extra={"archived": stats.updated},
+            extra={"archived": archived, "closed": closed.updated},
         )
     except Exception as exc:
         from govcon.ingest.runs import IngestStats
@@ -263,19 +304,23 @@ def step_midday_deadline_check(session: Session, settings) -> StepResult:
 
 
 def step_archive_sweep(session: Session) -> StepResult:
-    """Archive SAM rows whose archive date has passed."""
+    """Archive SAM rows whose archive date has passed and close expired rows of every source."""
+    from govcon.ingest.lifecycle import close_expired_opportunities
     from govcon.ingest.runs import IngestStats, finish_run, start_run
     from govcon.ingest.sam_opportunities import archive_expired_sam_opportunities
 
     run = start_run(session, "sched:archive_sweep")
     try:
         stats = archive_expired_sam_opportunities(session)
-        finish_run(run, stats, status="succeeded")
+        archived = stats.updated
+        closed = close_expired_opportunities(session)
+        stats.add(closed)
+        finish_run(run, stats, status="succeeded", details={"archived": archived, "closed": closed.updated})
         return StepResult(
             step="archive_sweep",
             status="succeeded",
             updated=stats.updated,
-            extra={"archived": stats.updated},
+            extra={"archived": archived, "closed": closed.updated},
         )
     except Exception as exc:
         from govcon.ingest.runs import IngestStats

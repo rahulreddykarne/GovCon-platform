@@ -27,6 +27,7 @@ from govcon.ingest.usaspending import (
     ingest_award_records,
     load_search_document,
     normalize_award,
+    plan_details,
     plan_pull,
     pull_usaspending,
 )
@@ -571,3 +572,124 @@ def test_load_search_document_reads_the_fixture() -> None:
     rows = load_search_document(FIXTURE)
     assert len(rows) == 2
     assert rows[0]["generated_internal_id"] == FIXTURE_IDS[0]
+
+
+def test_scheduled_usaspending_step_pulls_and_advances_the_watermark(session: Session, tmp_path) -> None:
+    """H1: the scheduler step imports and runs, and records the watermark run."""
+    from unittest.mock import patch
+
+    from govcon.ingest.usaspending import JOB_NAME, last_completed_window_end
+    from govcon.scheduler.jobs import step_usaspending
+
+    _isolate_watchlists(session)
+    create_watchlist(session, name=f"phase5-sched-{uuid4().hex}", psc_codes=["6515"], sources=["usaspending"])
+    row = _search_row(generated_internal_id=f"CONT_AWD_SCHED_{uuid4().hex}")
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"results": [row], "page_metadata": {"hasNext": False}, "messages": []})
+
+    def fake_client(*_args, **_kwargs):
+        return httpx.Client(transport=httpx.MockTransport(handler))
+
+    with patch("govcon.ingest.usaspending.build_client", side_effect=fake_client):
+        first = step_usaspending(session, _settings(tmp_path))
+        assert first.status == "succeeded", first.error
+        assert first.inserted == 1
+        run = session.get(IngestionRun, first.extra["run_id"])
+        assert run.job == JOB_NAME
+        assert run.errors["details"]["mode"] in {"backfill", "incremental"}
+        assert last_completed_window_end(session) is not None
+
+        second = step_usaspending(session, _settings(tmp_path))
+        assert second.status == "succeeded", second.error
+        assert second.extra["mode"] == "incremental"
+        assert bodies[-1]["filters"]["time_period"][0]["date_type"] == "last_modified_date"
+
+
+def test_scheduled_usaspending_step_reports_failure_without_raising(session: Session, tmp_path) -> None:
+    from unittest.mock import patch
+
+    from govcon.scheduler.jobs import step_usaspending
+
+    _isolate_watchlists(session)
+    create_watchlist(session, name=f"phase5-schedfail-{uuid4().hex}", psc_codes=["6515"], sources=["usaspending"])
+
+    def fake_client(*_args, **_kwargs):
+        return httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(400, json={"detail": "bad"})))
+
+    with patch("govcon.ingest.usaspending.build_client", side_effect=fake_client):
+        result = step_usaspending(session, _settings(tmp_path))
+    assert result.status == "failed"
+    assert "HTTP 400" in (result.error or "")
+
+
+def _history_run(session: Session, *, mode: str = "incremental", **codes) -> None:
+    run = start_run(session, JOB_NAME)
+    details = {"mode": mode, "date_type": "last_modified_date", "window_start": "2026-09-18", "window_end": "2026-09-20"}
+    details.update(codes)
+    finish_run(run, IngestStats(), status="succeeded", details=details)
+    session.flush()
+
+
+def _capture() -> tuple[httpx.Client, list[dict]]:
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"results": [], "page_metadata": {"page": 1, "hasNext": False}})
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), bodies
+
+
+def test_new_watchlist_codes_get_their_three_year_history(session: Session) -> None:
+    """M4: the incremental pull also backfills codes no earlier pull covered."""
+    _isolate_watchlists(session)
+    _history_run(session, psc_codes=["R4"], naics_codes=[])
+    create_watchlist(session, name=f"m4-old-{uuid4().hex}", psc_codes=["R4", "R425"], sources=["usaspending"])
+    create_watchlist(session, name=f"m4-new-{uuid4().hex}", psc_codes=["6515"], naics_codes=["339112"], sources=["usaspending"])
+
+    plan = plan_pull(session, today=date(2026, 9, 26))
+    assert plan.mode == "incremental"
+    # R425 sits under the covered R4 prefix; 6515 and 339112 are new.
+    assert plan.backfill_psc_codes == ("6515",)
+    assert plan.backfill_naics_codes == ("339112",)
+    assert (plan.backfill_start, plan.backfill_end) == (date(2023, 9, 26), date(2026, 9, 26))
+
+    client, bodies = _capture()
+    try:
+        pull_usaspending(session, plan, client=client, attempts=1, wait=FAST_WAIT)
+    finally:
+        client.close()
+    periods = [(b["filters"]["time_period"][0]["date_type"], b["filters"].get("psc_codes"), b["filters"].get("naics_codes")) for b in bodies]
+    assert ("last_modified_date", ["R4", "R425", "6515"], None) in periods
+    assert ("last_modified_date", None, {"require": ["339112"]}) in periods
+    assert ("action_date", ["6515"], None) in periods
+    assert ("action_date", None, {"require": ["339112"]}) in periods
+    backfill = next(b for b in bodies if b["filters"]["time_period"][0]["date_type"] == "action_date")
+    assert backfill["filters"]["time_period"][0]["start_date"] == "2023-09-26"
+
+    details = plan_details(plan, trigger="scheduler")
+    assert details["psc_codes"] == ["R4", "R425", "6515"] and details["naics_codes"] == ["339112"]
+    assert details["backfilled_psc_codes"] == ["6515"]
+    # Once recorded, the next incremental pull has nothing new to backfill.
+    _history_run(session, psc_codes=details["psc_codes"], naics_codes=details["naics_codes"])
+    again = plan_pull(session, today=date(2026, 9, 27))
+    assert again.backfill_psc_codes == () and again.backfill_naics_codes == () and again.backfill_start is None
+
+
+def test_runs_from_before_codes_were_recorded_do_not_trigger_backfill(session: Session) -> None:
+    _isolate_watchlists(session)
+    _history_run(session)  # legacy details: no codes recorded
+    create_watchlist(session, name=f"m4-legacy-{uuid4().hex}", psc_codes=["6515"], sources=["usaspending"])
+    plan = plan_pull(session, today=date(2026, 9, 26))
+    assert plan.mode == "incremental" and plan.backfill_psc_codes == ()
+
+
+def test_bare_labeled_nsn_is_parsed_from_award_descriptions() -> None:
+    award = normalize_award(_search_row(Description="BRACKET NSN 5340012345678 QTY 4"))
+    assert award is not None and award.nsn == "5340-01-234-5678"
+    # An unlabeled 13-digit run is not taken as an NSN.
+    unlabeled = normalize_award(_search_row(Description="CONTRACT REF 5340012345678"))
+    assert unlabeled is not None and unlabeled.nsn is None

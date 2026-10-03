@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.matrix import active_requirements
 from govcon.config import Settings, get_settings
@@ -28,6 +29,7 @@ from govcon.models import (
     Pursuit,
     Requirement,
 )
+from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.proposals.drafting")
 
@@ -175,7 +177,7 @@ def draft_proposal(
         p = pathlib.Path(settings.company_facts_path)
         if p.exists():
             try:
-                company_facts_data = _json.loads(p.read_text())
+                company_facts_data = _json.loads(p.read_text(encoding="utf-8"))
             except Exception:
                 pass
 
@@ -193,12 +195,16 @@ def draft_proposal(
 
     result = run_structured_prompt(
         session,
+        classification=DataClassification.PROPRIETARY,
         opportunity_id=opportunity_id,
         prompt_name=DRAFTING_PROMPT,
-        analysis_type="proposal_drafting",
+        analysis_type=AnalysisType.PROPOSAL_DRAFTING,
         variables=variables,
         context_manifest=context_manifest,
         settings=settings,
     )
 
-    return result.output.model_dump()
+    output = result.output.model_dump()
+    output["provider"] = result.analysis.provider
+    output["model"] = result.analysis.model
+    return output

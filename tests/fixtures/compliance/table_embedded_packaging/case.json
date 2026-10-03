@@ -1,26 +1,90 @@
 {
   "case_id": "table_embedded_packaging",
   "description": "Regression for §15.20: packaging, marking, and shelf-life requirements live in an Attachment 7 table that both AI passes missed. The deterministic table-row scan must keep them. Attachment 8 is referenced but absent from the package.",
-  "stages": ["base"],
+  "stages": [
+    "base"
+  ],
   "now": "2026-10-01T12:00:00+00:00",
-  "opportunity": {"response_deadline": "2026-11-03T20:00:00+00:00", "set_aside_code": null},
+  "opportunity": {
+    "response_deadline": "2026-11-03T20:00:00+00:00",
+    "set_aside_code": null
+  },
   "source_files": [
-    {"file_id": 1, "path": "solicitation.txt", "filename": "SPE7L3-26-Q-0099.txt", "stage": "base"},
-    {"file_id": 2, "path": "attachment_7.txt", "filename": "Attachment_7_Packaging.docx", "stage": "base", "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+    {
+      "file_id": 1,
+      "path": "solicitation.txt",
+      "filename": "SPE7L3-26-Q-0099.txt",
+      "stage": "base",
+      "classification": "PUBLIC",
+      "source_origin": "synthetic_benchmark"
+    },
+    {
+      "file_id": 2,
+      "path": "attachment_7.txt",
+      "filename": "Attachment_7_Packaging.docx",
+      "stage": "base",
+      "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "classification": "PUBLIC",
+      "source_origin": "synthetic_benchmark"
+    }
   ],
-  "recorded_passes": {"base": {"A": "pass_a.json", "B": "pass_b.json"}},
+  "recorded_passes": {
+    "base": {
+      "A": "pass_a.json",
+      "B": "pass_b.json"
+    }
+  },
   "expected_mandatory_requirements": [
-    {"id": "deadline", "match": ["due", "november 3, 2026"], "critical": true},
-    {"id": "dibbs_submission", "match": ["through dibbs"]},
-    {"id": "packaging_mil_std", "match": ["mil-std-2073-1", "level a"], "critical": true},
-    {"id": "unit_pack_marking", "match": ["marked with the nsn"]},
-    {"id": "shelf_life", "match": ["85 percent shelf life"]}
+    {
+      "id": "deadline",
+      "match": [
+        "due",
+        "november 3, 2026"
+      ],
+      "critical": true
+    },
+    {
+      "id": "dibbs_submission",
+      "match": [
+        "through dibbs"
+      ]
+    },
+    {
+      "id": "packaging_mil_std",
+      "match": [
+        "mil-std-2073-1",
+        "level a"
+      ],
+      "critical": true
+    },
+    {
+      "id": "unit_pack_marking",
+      "match": [
+        "marked with the nsn"
+      ]
+    },
+    {
+      "id": "shelf_life",
+      "match": [
+        "85 percent shelf life"
+      ]
+    }
   ],
-  "expected_critical_requirements": ["deadline", "packaging_mil_std"],
+  "expected_critical_requirements": [
+    "deadline",
+    "packaging_mil_std"
+  ],
   "expected_conflicts": [],
   "expected_amendment_changes": [],
   "expected_submission_files": [],
   "evidence": {},
-  "expected_not_satisfied": ["packaging_mil_std", "unit_pack_marking", "shelf_life"],
-  "expected_status": {"packaging_mil_std": "unknown", "shelf_life": "unknown"}
+  "expected_not_satisfied": [
+    "packaging_mil_std",
+    "unit_pack_marking",
+    "shelf_life"
+  ],
+  "expected_status": {
+    "packaging_mil_std": "unknown",
+    "shelf_life": "unknown"
+  }
 }

@@ -1,0 +1,38 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____________ test_f3_failed_generation_is_honest_and_recoverable _____________
+tests\test_feature_audit_fixes.py:179: in test_f3_failed_generation_is_honest_and_recoverable
+    assert "error=" in response.headers["location"], "Approval must report a failed proposal generation"
+E   AssertionError: Approval must report a failed proposal generation
+E   assert 'error=' in '/workspace/1?tab=review&notice=Decision%20recorded%3A%20approve%20to%20bid.'
+---------------------------- Captured stderr setup ----------------------------
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 97cb081e9a8e, foundation schema
+INFO  [alembic.runtime.migration] Running upgrade 97cb081e9a8e -> c3e8a1b74f20, award recompete view
+INFO  [alembic.runtime.migration] Running upgrade c3e8a1b74f20 -> d9a4c1e7b209, phase9 compliance subsystem
+INFO  [alembic.runtime.migration] Running upgrade d9a4c1e7b209 -> a1b2c3d4e5f6, phase11 proposal submission
+INFO  [alembic.runtime.migration] Running upgrade a1b2c3d4e5f6 -> f2a3b4c5d6e7, Phase 13 � semantic search: watchlist embeddings + HNSW vector index
+INFO  [alembic.runtime.migration] Running upgrade f2a3b4c5d6e7 -> b5c6d7e8f9a0, phase15 outcome learning � structured outcome fields
+INFO  [alembic.runtime.migration] Running upgrade b5c6d7e8f9a0 -> b1c2d3e4f5a6, Phase 17 � Scheduler job runs tracking table.
+INFO  [alembic.runtime.migration] Running upgrade b1c2d3e4f5a6 -> c7d8e9f0a1b2, Workflow gate hardening � pin the approved proposal version.
+INFO  [alembic.runtime.migration] Running upgrade c7d8e9f0a1b2 -> d8e9f0a1b2c3, Attachment versions � current-snapshot membership for stored files.
+INFO  [alembic.runtime.migration] Running upgrade d8e9f0a1b2c3 -> e9f0a1b2c3d4, Match reconciliation and stored NSN candidates.
+INFO  [alembic.runtime.migration] Running upgrade e9f0a1b2c3d4 -> f0a1b2c3d4e5, DIBBS response deadlines: 3:00 PM Eastern on the business-day return date.
+INFO  [alembic.runtime.migration] Running upgrade f0a1b2c3d4e5 -> 01a2b3c4d5e6, Unique current outcomes/submissions, immutable history and embedding provenance.
+INFO  [alembic.runtime.migration] Running upgrade 01a2b3c4d5e6 -> 7f4d81a9c630, Durable AI budgets and explicit source-document classification.
+---------------------------- Captured stderr call -----------------------------
+WARNI [govcon.decision.engine] JEV unavailable for bundle=collaborative_review_synthesis opportunity=1; using the rules provider: JEV_API_KEY is required for the JEV provider
+WARNI [govcon.web.routes] auto-generate on approve_to_bid failed for opp 1: synthetic provider outage
+------------------------------ Captured log call ------------------------------
+WARNING  govcon.decision.engine:engine.py:374 JEV unavailable for bundle=collaborative_review_synthesis opportunity=1; using the rules provider: JEV_API_KEY is required for the JEV provider
+WARNING  govcon.web.routes:__init__.py:984 auto-generate on approve_to_bid failed for opp 1: synthetic provider outage
+============================== warnings summary ===============================
+tests/test_feature_audit_fixes.py::test_f3_failed_generation_is_honest_and_recoverable
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_feature_audit_fixes.py::test_f3_failed_generation_is_honest_and_recoverable
+1 failed, 1 warning in 2.99s

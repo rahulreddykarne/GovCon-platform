@@ -55,7 +55,7 @@ FAST_WAIT = wait_exponential(multiplier=0.01, min=0.01, max=0.02)
 
 
 def _load_fixture() -> dict:
-    return json.loads(FIXTURE_PATH.read_text())
+    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 def _record() -> dict:
@@ -87,7 +87,7 @@ def _purge(db: Session, source_ids: set[str], emails: set[str] | None = None) ->
     # Delete in topological order (leaves first, then their parents).
     # proposal_sections → proposal_versions (circular with proposals.current_version_id)
     db.execute(text(f"DELETE FROM proposal_sections WHERE proposal_version_id IN (SELECT id FROM proposal_versions WHERE proposal_id IN (SELECT id FROM proposals WHERE opportunity_id IN ({opp_sub})))"), p)
-    db.execute(text(f"UPDATE proposals SET current_version_id = NULL WHERE opportunity_id IN ({opp_sub})"), p)
+    db.execute(text(f"UPDATE proposals SET current_version_id = NULL, approved_version_id = NULL WHERE opportunity_id IN ({opp_sub})"), p)
     db.execute(text(f"DELETE FROM proposal_versions WHERE proposal_id IN (SELECT id FROM proposals WHERE opportunity_id IN ({opp_sub}))"), p)
     db.execute(text(f"DELETE FROM proposals WHERE opportunity_id IN ({opp_sub})"), p)
     db.execute(text(f"DELETE FROM submissions WHERE opportunity_id IN ({opp_sub})"), p)
@@ -139,7 +139,7 @@ def test_fixture_is_the_published_sam_example() -> None:
     assert record["noticeId"] == PUBLISHED_NOTICE_ID
     assert record["award"]["amount"] == "800620"
     assert record["description"].startswith("https://api.sam.gov/")
-    assert "api_key=" not in FIXTURE_PATH.read_text()
+    assert "api_key=" not in FIXTURE_PATH.read_text(encoding="utf-8")
 
 
 def test_default_window_is_last_three_days() -> None:
@@ -235,6 +235,68 @@ def test_changed_payload_creates_one_snapshot_and_deadline_event(session: Sessio
         assert snapshot.content_hash == opportunity.raw_hash
         assert snapshot.raw["responseDeadLine"] == "2026-11-15T17:00:00-05:00"
         assert opportunity.response_deadline is not None
+    finally:
+        _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
+
+
+def test_revert_to_an_earlier_version_updates_the_live_row(session: Session) -> None:
+    """A -> B -> A: the third pull is an update, not 'unchanged' (M1)."""
+    _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
+    version_a = _record()
+    version_a["responseDeadLine"] = "2026-11-01T17:00:00-05:00"
+    version_a["typeOfSetAside"] = None
+    version_b = deepcopy(version_a)
+    version_b["responseDeadLine"] = "2026-11-15T17:00:00-05:00"
+    version_b["typeOfSetAside"] = "SBA"
+    try:
+        ingest_opportunity_records(session, [version_a])
+        session.commit()
+        ingest_opportunity_records(session, [version_b])
+        session.commit()
+        reverted = ingest_opportunity_records(session, [deepcopy(version_a)])
+        session.commit()
+        snapshots, _events, opportunity_id = _counts(session, PUBLISHED_NOTICE_ID)
+        opportunity = session.get(Opportunity, opportunity_id)
+        session.refresh(opportunity)
+
+        assert reverted.updated == 1 and reverted.unchanged == 0
+        assert snapshots == 2  # A's snapshot is reused, never duplicated
+        from datetime import UTC, datetime
+
+        assert opportunity.response_deadline == datetime(2026, 11, 1, 22, 0, tzinfo=UTC)
+        assert opportunity.set_aside_code is None
+
+        snapshot_a = session.scalar(
+            select(OpportunitySnapshot).where(
+                OpportunitySnapshot.opportunity_id == opportunity_id,
+                OpportunitySnapshot.raw["responseDeadLine"].astext == "2026-11-01T17:00:00-05:00",
+            )
+        )
+        assert snapshot_a is not None and snapshot_a.content_hash == opportunity.raw_hash
+
+        deadline_events = session.scalars(
+            select(OpportunityEvent)
+            .where(OpportunityEvent.opportunity_id == opportunity_id, OpportunityEvent.event_type == "deadline_changed")
+            .order_by(OpportunityEvent.id)
+        ).all()
+        set_aside_events = session.scalars(
+            select(OpportunityEvent)
+            .where(OpportunityEvent.opportunity_id == opportunity_id, OpportunityEvent.event_type == "set_aside_changed")
+            .order_by(OpportunityEvent.id)
+        ).all()
+        assert len(deadline_events) == 2 and len(set_aside_events) == 2
+        revert_event = deadline_events[-1]
+        assert revert_event.new_value["value"].startswith("2026-11-01")
+        assert revert_event.snapshot_id == snapshot_a.id
+        assert set_aside_events[-1].snapshot_id == snapshot_a.id
+
+        from govcon.enrich.attachments import latest_snapshot_id
+
+        assert latest_snapshot_id(session, opportunity_id) == snapshot_a.id
+
+        again = ingest_opportunity_records(session, [deepcopy(version_a)])
+        session.commit()
+        assert again.unchanged == 1
     finally:
         _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
 

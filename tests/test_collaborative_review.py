@@ -69,6 +69,9 @@ class _FakeProvider:
         )
 
 
+# Mocked AI here sends PROPRIETARY data; the default policy blocks that.
+pytestmark = pytest.mark.usefixtures("allow_proprietary_ai")
+
 @pytest.fixture()
 def session(upgraded_engine):
     with Session(upgraded_engine) as s:
@@ -252,6 +255,7 @@ def test_single_quorum_can_progress_without_waiting_for_optional_second_reviewer
         opportunity_id=opp.id,
         actor=approver,
         action="approve_to_bid",
+        expected_version=_review(session, opp.id).version,
     )
     assert approved.final_approval_status == "approved_to_bid"
 
@@ -293,6 +297,7 @@ def test_dual_quorum_blocks_approval_until_override_is_explicit(session) -> None
             opportunity_id=opp.id,
             actor=approver,
             action="approve_to_bid",
+            expected_version=_review(session, opp.id).version,
         )
 
     row = finalize_approval(
@@ -300,6 +305,7 @@ def test_dual_quorum_blocks_approval_until_override_is_explicit(session) -> None
         opportunity_id=opp.id,
         actor=approver,
         action="approve_to_bid",
+        expected_version=_review(session, opp.id).version,
         override_reason="Customer urgency requires immediate approval while second reviewer is unavailable.",
     )
     assert row.final_approval_status == "approved_to_bid"
@@ -443,6 +449,7 @@ def test_approved_to_bid_requires_authorized_human_action(session) -> None:
             opportunity_id=opp.id,
             actor=reviewer,
             action="approve_to_bid",
+            expected_version=_review(session, opp.id).version,
         )
 
 
@@ -522,3 +529,26 @@ def test_material_amendment_reopens_completed_reviews(session) -> None:
     assert review.final_approval_status is None
     assert review.second_review_required is True
     assert "material_amendment" in (review.second_review_reason or "")
+
+
+def test_comment_validation_award_context_includes_vendor_names(session) -> None:
+    """H4: the award evidence sent with a comment no longer crashes on PricePoint."""
+    from decimal import Decimal
+
+    from govcon.collaboration.ai_comment_review import _award_payload
+    from govcon.models import Award
+
+    opp = _opp(session)
+    session.add(
+        Award(
+            source="usaspending",
+            award_id=f"phase10-award-{uuid4().hex}",
+            psc_code=opp.psc_code,
+            recipient_name="Comparable Vendor LLC",
+            total_obligation=Decimal("1500"),
+            raw={"fixture": True},
+        )
+    )
+    session.flush()
+    payload = _award_payload(session, opportunity_id=opp.id)
+    assert any(item["vendor"] == "Comparable Vendor LLC" for item in payload["comparables"])

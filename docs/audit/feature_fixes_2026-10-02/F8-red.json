@@ -1,0 +1,9 @@
+{
+  "test_exit": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 0,
+  "failures": [
+    "tests.test_feature_audit_fixes.test_f8_protocol_reads_real_decision_history"
+  ]
+}

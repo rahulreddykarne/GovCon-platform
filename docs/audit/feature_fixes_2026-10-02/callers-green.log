@@ -1,0 +1,10 @@
+...                                                                      [100%]
+============================== warnings summary ===============================
+tests/test_feature_audit_fixes.py::test_f1_concurrent_pursue_creates_only_one_workspace
+tests/test_feature_audit_fixes.py::test_f1_concurrent_pursue_creates_only_one_workspace
+tests/test_feature_audit_fixes.py::test_f2_fresh_start_workspace_and_rejected_assignee
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+3 passed, 32 deselected, 3 warnings in 4.95s

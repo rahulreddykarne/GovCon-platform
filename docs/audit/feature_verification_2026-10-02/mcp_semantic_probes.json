@@ -1,0 +1,114 @@
+{
+  "real_semantic": {
+    "stats": {
+      "embedded": 4,
+      "skipped": 0
+    },
+    "method": "vector",
+    "ranking": [
+      {
+        "title": "Protective hand coverings for clinical examinations",
+        "distance": 0.4523
+      },
+      {
+        "title": "Rebuild highway bridge concrete foundations",
+        "distance": 0.9453
+      },
+      {
+        "title": "Synthetic release lifecycle",
+        "distance": 0.9885
+      }
+    ]
+  },
+  "competitor_summary": {
+    "ok": true,
+    "error": null
+  },
+  "get_bid_analysis": {
+    "ok": false,
+    "error": {
+      "code": "operation_failed",
+      "message": "AttributeError: 'DecisionRun' object has no attribute 'status'"
+    }
+  },
+  "get_compliance_matrix": {
+    "ok": true,
+    "error": null
+  },
+  "get_opportunity": {
+    "ok": true,
+    "error": null
+  },
+  "get_opportunity_history": {
+    "ok": true,
+    "error": null
+  },
+  "get_proposal": {
+    "ok": true,
+    "error": null
+  },
+  "learning_summary": {
+    "ok": true,
+    "error": null
+  },
+  "list_matches": {
+    "ok": true,
+    "error": null
+  },
+  "pipeline_summary": {
+    "ok": true,
+    "error": null
+  },
+  "price_history": {
+    "ok": true,
+    "error": null
+  },
+  "search_opportunities": {
+    "ok": true,
+    "error": null
+  },
+  "similar_opportunities": {
+    "ok": true,
+    "error": null
+  },
+  "submission_status": {
+    "ok": true,
+    "error": null
+  },
+  "vendor_profile": {
+    "ok": true,
+    "error": null
+  },
+  "update_match": {
+    "ok": true,
+    "error": null
+  },
+  "add_pursuit": {
+    "ok": true,
+    "error": null
+  },
+  "update_pursuit": {
+    "ok": true,
+    "error": null
+  },
+  "assign_reviewer": {
+    "ok": true,
+    "error": null
+  },
+  "add_review_comment": {
+    "ok": true,
+    "error": null
+  },
+  "request_ai_comment_validation": {
+    "ok": true,
+    "error": null
+  },
+  "create_proposal_version": {
+    "ok": true,
+    "error": null
+  },
+  "record_outcome": {
+    "ok": true,
+    "error": null
+  }
+}

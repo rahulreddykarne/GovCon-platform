@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.compliance.amendments import affected_requirement_reasons, change_sentences
 from govcon.compliance.conflicts import RequirementFacts, detect_conflicts
 from govcon.compliance.deterministic import SubmissionPackage, ValidationContext, validators_for
@@ -39,6 +40,7 @@ from govcon.compliance.reconciler import reconcile
 from govcon.compliance.records import CanonicalRequirement, Candidate, Inventory, SourceDocument
 from govcon.compliance.schemas import RequirementExtractionV1
 from govcon.compliance.text import quote_in_text
+from govcon.security.classification import DataClassification
 
 BENCHMARK_VERSION = "compliance_benchmark.v1"
 HIGHER_IS_BETTER = ("mandatory_recall", "critical_recall", "citation_accuracy", "canonical_citation_accuracy", "amendment_change_detection", "conflict_recall", "submission_file_completeness", "expected_status_accuracy")
@@ -46,8 +48,11 @@ LOWER_IS_BETTER = ("false_satisfied_rate",)
 
 
 def default_fixture_root() -> Path:
-    from govcon.paths import repo_root
+    from govcon.paths import package_root, repo_root
 
+    packaged = package_root() / "compliance" / "benchmark"
+    if packaged.is_dir():
+        return packaged
     return repo_root() / "tests" / "fixtures" / "compliance"
 
 
@@ -100,6 +105,8 @@ def _documents(case_dir: Path, case: dict[str, Any], stage: str | None) -> list[
         docs.append(
             SourceDocument(
                 file_id=spec["file_id"],
+                classification=spec.get("classification", "UNKNOWN"),
+                source_origin=spec.get("source_origin", "legacy_unknown"),
                 filename=spec["filename"],
                 url=spec.get("url"),
                 sha256=spec.get("sha256", f"fixture-{spec['file_id']}"),
@@ -132,18 +139,40 @@ def _recorded_candidates(case_dir: Path, case: dict[str, Any], stage: str, inven
     return candidates
 
 
-def _live_candidates(inventory: Inventory, settings) -> list[Candidate]:
-    from govcon.ai.structured import run_structured_prompt
+def _live_candidates(inventory: Inventory, settings, candidate=None) -> list[Candidate]:
+    from govcon.ai.budget import complete_with_budget
+    from govcon.ai.providers import get_provider
+    from govcon.ai.providers.deepseek import parse_json_response
+    from govcon.ai.structured import enforce_prompt_policy
+    from govcon.security.classification import strictest_classification
+    from govcon.prompting.behavioral import evaluation_identity
+    from govcon.prompting.registry import load_prompt_from_disk
+    from govcon.prompting.renderer import render_system_prompt, render_user_context
+    from govcon.config import get_settings
+    from govcon.db import session_scope
     from govcon.compliance.extractor import PASS_PROMPTS, _amendment_json, _inventory_json
 
+    settings = settings or get_settings()
     out: list[Candidate] = []
+    classification = strictest_classification(*(doc.classification for doc in inventory.documents))
     for label, prompt in PASS_PROMPTS.items():
         chunks = build_context(inventory, label, char_budget=10**7)
         variables = {"DOCUMENT_INVENTORY_JSON": _inventory_json(inventory), "SOURCE_CHUNKS": "\n\n".join(c["text"] for c in chunks), "AMENDMENT_JSON": _amendment_json(inventory)}
         if label == "A":
             variables["OPPORTUNITY_JSON"] = {"benchmark": True}
-        result = run_structured_prompt(None, opportunity_id=None, prompt_name=prompt, analysis_type="compliance_review", variables=variables, context_manifest={"benchmark": True}, settings=settings)
-        out += candidates_from_output(label, result.output.requirements, inventory)
+        # An explicit evaluation selects its candidate directly; production
+        # business calls still resolve only registry-approved prompts.
+        asset = candidate if candidate is not None and candidate.name == prompt else load_prompt_from_disk(settings.resolved_prompt_root(), prompt)
+        provider_name, model = evaluation_identity(asset, settings)
+        enforce_prompt_policy(asset, classification=classification, provider_name=provider_name)
+        provider = get_provider(settings, provider_name=provider_name)
+        with session_scope(settings) as evaluation_session:
+            result, _ = complete_with_budget(provider, evaluation_session, opportunity_id=None, settings=settings,
+                system_prompt=render_system_prompt(asset, settings.resolved_prompt_root()),
+                user_prompt=render_user_context(asset, variables), temperature=0.0, json_mode=True,
+                classification=classification, purpose=f"benchmark:{asset.name}", model=model)
+        output = RequirementExtractionV1.model_validate(parse_json_response(result))
+        out += candidates_from_output(label, output.requirements, inventory)
     return out
 
 
@@ -163,7 +192,7 @@ def _match(expectations: list[dict[str, Any]], canonicals: list[CanonicalRequire
     return matched
 
 
-def run_case(case_dir: Path, *, live: bool = False, settings=None) -> CaseResult:
+def run_case(case_dir: Path, *, live: bool = False, settings=None, candidate=None) -> CaseResult:
     case = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
     stages = case.get("stages", ["base"])
     final_stage = stages[-1]
@@ -171,7 +200,7 @@ def run_case(case_dir: Path, *, live: bool = False, settings=None) -> CaseResult
 
     def extract(stage: str) -> tuple[Inventory, list[Candidate], list[CanonicalRequirement]]:
         inventory = analyze_inventory(_documents(case_dir, case, stage))
-        ai = _live_candidates(inventory, settings) if live else _recorded_candidates(case_dir, case, stage, inventory)
+        ai = _live_candidates(inventory, settings, candidate) if live else _recorded_candidates(case_dir, case, stage, inventory)
         deterministic = scan_requirements(inventory) + structural_candidates(inventory)
         return inventory, ai, reconcile(ai + deterministic, merge_threshold=thresholds["merge"], duplicate_threshold=thresholds["duplicate"])
 
@@ -356,8 +385,8 @@ def case_dirs(root: Path) -> list[Path]:
     return sorted(p for p in root.iterdir() if (p / "case.json").is_file())
 
 
-def run_benchmark_suite(root: Path, *, live: bool = False, settings=None, baseline: dict[str, Any] | None = None) -> SuiteResult:
-    cases = [run_case(path, live=live, settings=settings) for path in case_dirs(root)]
+def run_benchmark_suite(root: Path, *, live: bool = False, settings=None, baseline: dict[str, Any] | None = None, candidate=None) -> SuiteResult:
+    cases = [run_case(path, live=live, settings=settings, candidate=candidate) for path in case_dirs(root)]
     if baseline is None:
         baseline_path = root / "baseline_metrics.json"
         baseline = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.is_file() else {}

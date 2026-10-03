@@ -5,6 +5,7 @@ task_type: reviewer_comment_validation
 provider_family: generative_llm
 schema_version: reviewer_comment_validation.v1
 status: active
+allowed_data_classes: PUBLIC, PROPRIETARY
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1
 required_variables: REVIEWER_COMMENT_JSON, AI_DECISION_PACKAGE_JSON, SOLICITATION_EVIDENCE_JSON, SUPPLIER_PRICING_EVIDENCE_JSON, COMPLIANCE_STATE_JSON, HISTORICAL_AWARD_EVIDENCE_JSON
 ---

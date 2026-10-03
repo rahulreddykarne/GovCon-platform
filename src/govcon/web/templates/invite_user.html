@@ -12,6 +12,7 @@
 
 <div class="card">
   <form method="post" action="/admin/users/invite">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <div class="form-group">
       <label for="email">Email *</label>
       <input type="email" id="email" name="email" required>

@@ -1,0 +1,17 @@
+{
+  "previously_passing_tests_now_failing": {},
+  "baseline_passed": 1030,
+  "final_passed": 1064,
+  "new_passing_cases": 34,
+  "final_skips_or_xfails": {
+    "tests.test_feature_audit_fixes.test_f3_failed_generation_is_honest_and_recoverable": {
+      "type": "pytest.xfail",
+      "message": "F3 API/response change awaits the user's required approval"
+    },
+    "tests.test_sam_ingestion.test_live_pull_yields_at_least_one_record": {
+      "type": "pytest.skip",
+      "message": "SAM_API_KEY is not set"
+    }
+  },
+  "unseeded_selection_existing_failures_identical_on_original": true
+}

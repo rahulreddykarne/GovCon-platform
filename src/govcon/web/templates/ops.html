@@ -63,7 +63,7 @@
           </td>
           <td>
             {% if chain.last_run %}
-              <span class="badge badge-{% if chain.last_run.status == 'succeeded' %}success{% elif chain.last_run.status == 'running' %}primary{% else %}danger{% endif %}">
+              <span class="badge badge-{% if chain.last_run.status == 'succeeded' %}success{% elif chain.last_run.status == 'running' %}primary{% elif chain.last_run.status == 'completed_with_errors' %}warning{% else %}danger{% endif %}">
                 {{ chain.last_run.status }}
               </span>
             {% else %}
@@ -101,7 +101,7 @@
           <td>{{ r.chain_name }}</td>
           <td><span class="badge">{{ r.trigger or 'manual' }}</span></td>
           <td>
-            <span class="badge badge-{% if r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% else %}danger{% endif %}">{{ r.status }}</span>
+            <span class="badge badge-{% if r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% elif r.status == 'completed_with_errors' %}warning{% else %}danger{% endif %}">{{ r.status }}</span>
           </td>
           <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '—' }}</td>
           <td>{% if r.finished_at and r.started_at %}{{ "%.1f"|format((r.finished_at - r.started_at).total_seconds()) }}s{% else %}—{% endif %}</td>
@@ -131,7 +131,7 @@
         <tr>
           <td>{{ r.job or "—" }}</td>
           <td>
-            <span class="badge badge-{% if r.status == 'success' or r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% elif r.status == 'skipped' %}{% else %}danger{% endif %}">{{ r.status or '?' }}</span>
+            <span class="badge badge-{% if r.status == 'success' or r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% elif r.status == 'skipped' %}{% elif r.status == 'completed_with_errors' %}warning{% else %}danger{% endif %}">{{ r.status or '?' }}</span>
           </td>
           <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '—' }}</td>
           <td>{% if r.finished_at and r.started_at %}{{ "%.1f"|format((r.finished_at - r.started_at).total_seconds()) }}s{% else %}—{% endif %}</td>

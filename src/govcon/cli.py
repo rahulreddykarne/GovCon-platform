@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import pathlib as _pathlib
 
 import typer
@@ -15,7 +16,7 @@ from govcon.config import ConfigError, Settings, get_settings
 from govcon.db import check_connectivity, make_engine, session_scope
 from govcon.logging import configure_logging, redact
 from govcon.models import Opportunity, User
-from govcon.paths import repo_root
+from govcon.paths import migration_root
 from govcon.seed import demo_watchlist_count, seed_demo_watchlist
 
 app = typer.Typer(help="GovCon opportunity and bid management platform.", no_args_is_help=True)
@@ -66,7 +67,23 @@ app.add_typer(scheduler_app, name="scheduler")
 
 
 def main() -> None:
+    _tolerate_narrow_console()
     app()
+
+
+def _tolerate_narrow_console() -> None:
+    """Keep output like the check marks from crashing a cp1252 Windows console or pipe.
+
+    Characters the stream cannot encode are replaced instead of raising
+    ``UnicodeEncodeError``; UTF-8 streams are left alone.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if encoding != "utf8" and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
 
 
 def _settings() -> Settings:
@@ -83,9 +100,11 @@ def _fail_config(exc: ConfigError) -> None:
 
 
 def alembic_config() -> Config:
-    root = repo_root()
-    config = Config(str(root / "alembic.ini"))
-    config.set_main_option("script_location", str(root / "alembic"))
+    scripts = migration_root()
+    ini = scripts / "alembic.ini" if (scripts / "alembic.ini").is_file() else scripts.parent / "alembic.ini"
+    config = Config(str(ini))
+    config.set_main_option("script_location", str(scripts))
+    config.set_main_option("prepend_sys_path", "")
     return config
 
 
@@ -377,6 +396,8 @@ def ingest_sam(
 def _echo_dibbs(run_id: int, status: str, result) -> None:
     coverage = result.coverage
     typer.echo(f"index_file: {result.index_name}")
+    if result.index_names and len(result.index_names) > 1:
+        typer.echo(f"indexes: {', '.join(result.index_names)}")
     if result.retained_path:
         typer.echo(f"retained: {result.retained_path}")
     typer.echo(f"records: {coverage.records}")
@@ -395,7 +416,10 @@ def ingest_dibbs(
     posted_date: str | None = typer.Option(
         None,
         "--date",
-        help="Index post date (YYYY-MM-DD or MM/dd/yyyy). Default is the newest file on the recent RFQ page.",
+        help=(
+            "Index post date (YYYY-MM-DD or MM/dd/yyyy). Default: every index on the recent RFQ page "
+            "newer than the last one ingested (the newest alone the first time)."
+        ),
     ),
 ) -> None:
     """Ingest one DIBBS daily index file. Re-running an unchanged file does not add snapshots."""
@@ -442,7 +466,7 @@ def ingest_dibbs(
             stats = IngestStats(errors=[redact(str(exc))])
             status = "failed"
         status = status if status == "failed" else _run_status(stats)
-        finish_run(run, stats, status=status)
+        finish_run(run, stats, status=status, details=result.run_details() if result is not None else None)
         run_id = run.id
     if result is None:
         _echo_ingest(run_id, status, stats)
@@ -483,6 +507,7 @@ def ingest_usaspending(
         load_search_document,
         parse_user_date,
         plan_pull,
+        plan_details,
         pull_usaspending,
     )
     from govcon.logging import redact
@@ -533,15 +558,13 @@ def ingest_usaspending(
                     end=end,
                     date_type="last_modified_date" if modified else None,
                 )
-                details = {
-                    "mode": plan.mode,
-                    "date_type": plan.date_type,
-                    "window_start": plan.start.isoformat(),
-                    "window_end": plan.end.isoformat(),
-                }
+                details = plan_details(plan)
                 typer.echo(f"mode: {plan.mode}")
                 typer.echo(f"date_type: {plan.date_type}")
                 typer.echo(f"window: {plan.start.isoformat()}..{plan.end.isoformat()}")
+                if plan.backfill_psc_codes or plan.backfill_naics_codes:
+                    new_codes = [*plan.backfill_psc_codes, *plan.backfill_naics_codes]
+                    typer.echo(f"backfill_new_codes: {', '.join(new_codes)}")
                 stats = pull_usaspending(session, plan, settings=settings)
         except (UsaSpendingError, OSError, ValueError) as exc:
             attached = getattr(exc, "stats", None)
@@ -631,6 +654,27 @@ def ingest_sam_archive_sweep() -> None:
     with session_scope(settings) as session:
         run = start_run(session, "sam_archive_sweep")
         stats = archive_expired_sam_opportunities(session)
+        status = _run_status(stats)
+        finish_run(run, stats, status=status)
+        run_id = run.id
+    _echo_ingest(run_id, status, stats)
+
+
+@ingest_app.command("close-expired")
+def ingest_close_expired() -> None:
+    """Close open rows of every source whose response deadline has passed. Does not call the network."""
+    from govcon.ingest.lifecycle import close_expired_opportunities
+    from govcon.ingest.runs import finish_run, start_run
+
+    try:
+        settings = _settings()
+        settings.require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope(settings) as session:
+        run = start_run(session, "close_expired")
+        stats = close_expired_opportunities(session)
         status = _run_status(stats)
         finish_run(run, stats, status=status)
         run_id = run.id
@@ -1206,6 +1250,37 @@ def enrich_analyze(
         typer.echo(_json.dumps(analysis.output_json, indent=2))
 
 
+@enrich_app.command("intelligence")
+def enrich_intelligence(
+    opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
+    kind: str = typer.Option(..., help="market | supplier | pricing"),
+) -> None:
+    """Run the market, supplier, or pricing AI analysis for one opportunity.
+
+    Supplier and pricing analysis send PROPRIETARY pursuit data and need
+    AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY=true.
+    """
+    from govcon.ai.structured import StructuredCallError
+    from govcon.intelligence.ai_analyses import PRODUCERS
+
+    producer = PRODUCERS.get(kind)
+    if producer is None:
+        typer.echo(f"kind must be one of {', '.join(sorted(PRODUCERS))}", err=True)
+        raise typer.Exit(code=2)
+    settings = _settings()
+    try:
+        with session_scope(settings) as session:
+            analysis = producer(session, opportunity_id, settings=settings)
+            analysis_id = analysis.id
+    except StructuredCallError as exc:
+        typer.echo(f"analysis not run: {exc.reason}: {exc.detail}", err=True)
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"analysis_id: {analysis_id}")
+
+
 @enrich_app.command("process")
 def enrich_process(
     opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
@@ -1240,11 +1315,23 @@ def enrich_process(
 def enrich_ingest_file(
     opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
     file_path: str = typer.Option(..., "--file", help="Local file path."),
+    classification: str = typer.Option(..., help="PUBLIC, PROPRIETARY, FCI, CUI, or SECRET_CREDENTIAL."),
+    source_origin: str = typer.Option(..., help="Document source, e.g. supplier or internal engineering."),
 ) -> None:
     """Process a local file: compute SHA-256, extract text, and persist."""
     from pathlib import Path as _Path
 
     from govcon.enrich.attachments import process_local_file
+    from govcon.security.classification import DataClassification
+    try:
+        data_class = DataClassification(classification.upper())
+        if data_class is DataClassification.UNKNOWN:
+            raise ValueError("Local ingest requires a known classification")
+        if not source_origin.strip() or len(source_origin) > 200:
+            raise ValueError("source origin must contain 1–200 characters")
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
     try:
         settings = _settings()
@@ -1261,7 +1348,7 @@ def enrich_ingest_file(
         if opp is None:
             typer.echo("opportunity not found", err=True)
             raise typer.Exit(code=2)
-        sf = process_local_file(session, opp, p)
+        sf = process_local_file(session, opp, p, classification=data_class, source_origin=source_origin)
     typer.echo(f"file_id: {sf.id}")
     typer.echo(f"filename: {sf.filename}")
     typer.echo(f"sha256: {sf.sha256}")
@@ -1274,8 +1361,19 @@ def enrich_ingest_file(
 
 
 @prompts_app.command("sync")
-def prompts_sync() -> None:
-    """Sync source-controlled prompts to the database registry."""
+def prompts_sync(
+    reapprove_changed: bool = typer.Option(
+        False, "--reapprove-changed",
+        help="Record new content for versions edited in place; active ones re-run the activation gate (audited).",
+    ),
+) -> None:
+    """Sync source-controlled prompts to the database registry.
+
+    New versions are recorded inactive. A disk-active version is activated
+    through the activation gate (audited) only when its prompt has no active
+    version or the version is new. Exit 1 when a version was edited in place
+    (without --reapprove-changed) or failed its gate.
+    """
     from govcon.prompting.registry import sync_prompts
 
     try:
@@ -1286,10 +1384,19 @@ def prompts_sync() -> None:
         return
     prompt_root = settings.resolved_prompt_root()
     with session_scope() as session:
-        synced = sync_prompts(session, prompt_root)
+        synced = sync_prompts(session, prompt_root, settings=settings, reapprove_changed=reapprove_changed)
     for name, versions in synced.items():
         typer.echo(f"synced: {name} [{', '.join(versions)}]")
+    for item in synced.activated:
+        typer.echo(f"activated: {item} (gate passed, audited)")
+    for item in synced.changed_in_place:
+        label = "re-approved" if reapprove_changed else "CHANGED IN PLACE (not loaded until re-approved or re-versioned)"
+        typer.echo(f"{label}: {item}", err=not reapprove_changed)
+    for item in synced.blocked:
+        typer.echo(f"BLOCKED by activation gate: {item}", err=True)
     typer.echo(f"total_prompts_synced: {sum(len(v) for v in synced.values())}")
+    if synced.blocked or (synced.changed_in_place and not reapprove_changed):
+        raise typer.Exit(code=1)
 
 
 @prompts_app.command("activate")
@@ -1508,8 +1615,9 @@ def prompts_eval(
     suite: str = typer.Option(None, "--suite", help="Named evaluation suite (e.g. 'compliance')."),
     fixture_dir: str = typer.Option(None, "--fixture-dir", help="Path to fixture directory for evaluation."),
     json_output: bool = typer.Option(False, "--json", help="Output JSON."),
+    live: bool = typer.Option(False, "--live", help="Evaluate the exact candidate with the configured model and save behavioral evidence."),
 ) -> None:
-    """Evaluate a prompt or named suite against its regression fixtures (no live model calls)."""
+    """Replay deterministic fixtures, or explicitly evaluate candidate model behavior."""
     import json as _json
     from govcon.prompting.evaluation import run_activation_gate
     from govcon.prompting.loader import iter_markdown_prompts
@@ -1521,7 +1629,7 @@ def prompts_eval(
         from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
 
         froot = _pathlib.Path(fixture_dir) if fixture_dir else default_fixture_root()
-        result = run_benchmark_suite(froot)
+        result = run_benchmark_suite(froot, live=live, settings=settings)
         if json_output:
             typer.echo(_json.dumps({
                 "suite": "compliance",
@@ -1554,6 +1662,15 @@ def prompts_eval(
         typer.echo(f"prompt not found: {prompt_ref}", err=True)
         raise typer.Exit(code=2)
     asset = matching[-1]
+
+    if live:
+        from govcon.prompting.behavioral import evaluate_candidate
+        try:
+            with session_scope(settings) as evaluation_session:
+                evaluate_candidate(asset, prompt_root, settings, session=evaluation_session)
+        except Exception as exc:
+            typer.echo(f"Candidate behavioral evaluation failed: {type(exc).__name__}", err=True)
+            raise typer.Exit(code=1) from exc
 
     gate_result = run_activation_gate(asset, prompt_root, settings=settings, run_regression=True)
     if json_output:
@@ -1796,6 +1913,7 @@ def review_complete(
 ) -> None:
     """Mark one reviewer action complete and recompute quorum/consolidation."""
     from govcon.collaboration.review_sessions import complete_assignment
+    from govcon.collaboration.users import PermissionDenied
 
     settings = _compliance_settings()
     if settings is None:
@@ -1811,7 +1929,7 @@ def review_complete(
                 agree_with_ai_assessment=agree_with_ai_assessment,
                 second_review_reason=second_review_reason,
             )
-    except (ValueError, RuntimeError) as exc:
+    except (ValueError, RuntimeError, PermissionDenied) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(f"assignment_id: {row.id} status={row.status}")
@@ -1840,14 +1958,17 @@ def review_approve(
     opportunity_id: int = typer.Option(..., help="Stored opportunity id."),
     actor_email: str = typer.Option(..., help="Approver/owner email."),
     action: str = typer.Option(..., help="approve_to_bid | return_for_review | no_bid"),
-    expected_version: int | None = typer.Option(None, help="Optional review-session optimistic version."),
+    expected_version: int | None = typer.Option(
+        None, help="Review-session version you reviewed (default: the current version)."
+    ),
     override_reason: str | None = typer.Option(
         None,
         help="Required when approving without quorum; must be explicit.",
     ),
 ) -> None:
     """Finalize the human approval gate decision after collaborative review."""
-    from govcon.collaboration.review_sessions import finalize_approval
+    from govcon.collaboration.review_sessions import ensure_review_session, finalize_approval
+    from govcon.collaboration.users import PermissionDenied
 
     settings = _compliance_settings()
     if settings is None:
@@ -1855,6 +1976,8 @@ def review_approve(
     try:
         with session_scope(settings) as session:
             actor = _review_actor(session, actor_email)
+            if expected_version is None:
+                expected_version = ensure_review_session(session, opportunity_id=opportunity_id).version
             row = finalize_approval(
                 session,
                 opportunity_id=opportunity_id,
@@ -1863,7 +1986,7 @@ def review_approve(
                 expected_version=expected_version,
                 override_reason=override_reason,
             )
-    except (ValueError, RuntimeError) as exc:
+    except (ValueError, RuntimeError, PermissionDenied) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(
@@ -2071,10 +2194,25 @@ def compliance_evidence_add(
     source_file_id: int | None = typer.Option(None),
     page: int | None = typer.Option(None),
     quote: str | None = typer.Option(None),
+    value: str | None = typer.Option(
+        None, help='JSON object of structured facts, e.g. \'{"lead_time_days": 21}\' for a verified supplier_quote.'
+    ),
 ) -> None:
     """Record evidence for a requirement (does not change its status until validation runs)."""
+    import json
+
     from govcon.compliance.matrix import add_evidence
 
+    evidence_value = None
+    if value is not None:
+        try:
+            evidence_value = json.loads(value)
+        except ValueError as exc:
+            typer.echo(f"--value is not valid JSON: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+        if not isinstance(evidence_value, dict):
+            typer.echo("--value must be a JSON object", err=True)
+            raise typer.Exit(code=2)
     settings = _compliance_settings()
     if settings is None:
         return
@@ -2083,6 +2221,7 @@ def compliance_evidence_add(
             row = add_evidence(
                 session, requirement_id=requirement_id, evidence_type=evidence_type, verification_method=method,
                 verification_status=status, description=description, source_file_id=source_file_id, source_page=page, source_quote=quote,
+                evidence_value=evidence_value,
             )
             typer.echo(f"evidence_id: {row.id}")
     except ValueError as exc:
@@ -2143,7 +2282,7 @@ def compliance_proposal_coverage(
 @compliance_app.command("preflight")
 def compliance_preflight(
     opportunity_id: int = typer.Option(...),
-    package: str = typer.Option(..., help="JSON submission package manifest."),
+    package: str | None = typer.Option(None, help="JSON submission package manifest (every file needs a local_path matching its sha256/size); defaults to the current assembled manifest."),
     submission_id: int | None = typer.Option(None),
     ai: bool = typer.Option(False, help="Also run the AI pre-flight reviewer."),
 ) -> None:
@@ -2155,8 +2294,19 @@ def compliance_preflight(
     if settings is None:
         return
     with session_scope(settings) as session:
+        if package:
+            assembled = SubmissionPackage.from_dict(_load_json_file(package) or {})
+        else:
+            from sqlalchemy import select
+            from govcon.models import Submission
+            from govcon.submissions.manifest import current_package
+            submission = session.scalar(select(Submission).where(Submission.opportunity_id == opportunity_id))
+            assembled = current_package(session, submission) if submission else None
+            if assembled is None:
+                typer.echo("Assemble a submission package first or provide --package.", err=True)
+                raise typer.Exit(code=1)
         result = run_submission_preflight(
-            session, opportunity_id, SubmissionPackage.from_dict(_load_json_file(package) or {}),
+            session, opportunity_id, assembled,
             submission_id=submission_id, use_ai=ai, settings=settings,
         )
     typer.echo(f"preflight_run_id: {result['run_id']} status: {result['status']}")
@@ -2304,11 +2454,24 @@ def proposal_red_team(
         raise typer.Exit(code=1) from exc
 
 
+def _proposal_version(session, opportunity_id: int, explicit: int | None) -> int:
+    """Version guard for proposal decisions: explicit, else the row being acted on now."""
+    if explicit is not None:
+        return explicit
+    from govcon.models import Proposal
+
+    proposal = session.scalar(select(Proposal).where(Proposal.opportunity_id == opportunity_id))
+    if proposal is None:
+        raise ValueError(f"No proposal for opportunity {opportunity_id}")
+    return proposal.version
+
+
 @proposal_app.command("approve")
 def proposal_approve(
     opportunity_id: int = typer.Option(...),
     actor_email: str = typer.Option(..., help="Authorized approver email."),
     override_reason: str | None = typer.Option(None, help="Override reason when blockers remain."),
+    expected_version: int | None = typer.Option(None, help="Proposal version you reviewed (default: current)."),
 ) -> None:
     """APPROVE FOR SUBMISSION: mark proposal final-approved and advance pursuit to ready_to_submit."""
     from govcon.proposals.service import finalize_proposal
@@ -2319,10 +2482,19 @@ def proposal_approve(
     try:
         with session_scope(settings) as session:
             actor = _actor(session, actor_email)
-            result = finalize_proposal(session, opportunity_id=opportunity_id, action="APPROVE_FOR_SUBMISSION", actor=actor, override_reason=override_reason)
+            result = finalize_proposal(
+                session,
+                opportunity_id=opportunity_id,
+                action="APPROVE_FOR_SUBMISSION",
+                actor=actor,
+                override_reason=override_reason,
+                expected_version=_proposal_version(session, opportunity_id, expected_version),
+            )
         typer.echo(f"proposal {result['proposal_id']} → {result['status']}  pursuit → {result['pursuit_stage']}")
     except ReadinessBlocked as exc:
         typer.echo(f"Blocked by {len(exc.blockers)} issue(s). Use --override-reason to bypass.", err=True)
+        for blocker in exc.blockers:
+            typer.echo(f"  - {blocker.get('description')}", err=True)
         raise typer.Exit(code=1) from exc
     except (PermissionDenied, ValueError) as exc:
         typer.echo(str(exc), err=True)
@@ -2333,6 +2505,7 @@ def proposal_approve(
 def proposal_return(
     opportunity_id: int = typer.Option(...),
     actor_email: str = typer.Option(..., help="Authorized approver email."),
+    expected_version: int | None = typer.Option(None, help="Proposal version you reviewed (default: current)."),
 ) -> None:
     """RETURN FOR FIX: return the proposal for additional work."""
     from govcon.proposals.service import finalize_proposal
@@ -2342,7 +2515,13 @@ def proposal_return(
     try:
         with session_scope(settings) as session:
             actor = _actor(session, actor_email)
-            result = finalize_proposal(session, opportunity_id=opportunity_id, action="RETURN_FOR_FIX", actor=actor)
+            result = finalize_proposal(
+                session,
+                opportunity_id=opportunity_id,
+                action="RETURN_FOR_FIX",
+                actor=actor,
+                expected_version=_proposal_version(session, opportunity_id, expected_version),
+            )
         typer.echo(f"proposal {result['proposal_id']} → {result['status']}")
     except (PermissionDenied, ValueError) as exc:
         typer.echo(str(exc), err=True)
@@ -2353,6 +2532,7 @@ def proposal_return(
 def proposal_cancel(
     opportunity_id: int = typer.Option(...),
     actor_email: str = typer.Option(..., help="Authorized approver email."),
+    expected_version: int | None = typer.Option(None, help="Proposal version you reviewed (default: current)."),
 ) -> None:
     """CANCEL BID: cancel the pursuit."""
     from govcon.proposals.service import finalize_proposal
@@ -2362,7 +2542,13 @@ def proposal_cancel(
     try:
         with session_scope(settings) as session:
             actor = _actor(session, actor_email)
-            result = finalize_proposal(session, opportunity_id=opportunity_id, action="CANCEL_BID", actor=actor)
+            result = finalize_proposal(
+                session,
+                opportunity_id=opportunity_id,
+                action="CANCEL_BID",
+                actor=actor,
+                expected_version=_proposal_version(session, opportunity_id, expected_version),
+            )
         typer.echo(f"proposal {result['proposal_id']} → {result['status']}  pursuit → {result['pursuit_stage']}")
     except (PermissionDenied, ValueError) as exc:
         typer.echo(str(exc), err=True)
@@ -2372,7 +2558,7 @@ def proposal_cancel(
 @proposal_app.command("export")
 def proposal_export(
     opportunity_id: int = typer.Option(...),
-    format_: str = typer.Option("zip", "--format", help="docx | xlsx | zip"),
+    format_: str = typer.Option("zip", "--format", help="docx | pdf | xlsx | zip"),
     output: str | None = typer.Option(None, help="Output file path (default: stdout as bytes or current dir)."),
 ) -> None:
     """Export the current proposal version (DOCX/XLSX) or the full submission package (ZIP)."""
@@ -2394,6 +2580,13 @@ def proposal_export(
                 raise typer.Exit(code=1)
             data = export_proposal_docx(session, proposal_version_id=proposal.current_version_id)
             ext = ".docx"
+        elif format_.lower() == "pdf":
+            from govcon.proposals.export import export_proposal_pdf
+            if proposal.current_version_id is None:
+                typer.echo("No proposal version yet.", err=True)
+                raise typer.Exit(code=1)
+            data = export_proposal_pdf(session, proposal_version_id=proposal.current_version_id)
+            ext = ".pdf"
         elif format_.lower() == "xlsx":
             from govcon.proposals.export import export_coverage_xlsx
             if proposal.current_version_id is None:
@@ -2406,7 +2599,7 @@ def proposal_export(
             data = export_submission_zip(session, opportunity_id=opportunity_id)
             ext = ".zip"
         else:
-            typer.echo(f"Unknown format: {format_!r}. Use docx | xlsx | zip.", err=True)
+            typer.echo(f"Unknown format: {format_!r}. Use docx | pdf | xlsx | zip.", err=True)
             raise typer.Exit(code=1)
 
     out_path = pathlib.Path(output) if output else pathlib.Path(f"opp_{opportunity_id}_proposal{ext}")
@@ -2417,6 +2610,23 @@ def proposal_export(
 # ---------------------------------------------------------------------------
 # Phase 11 — Submission commands
 # ---------------------------------------------------------------------------
+
+@submission_app.command("assemble")
+def submission_assemble(
+    opportunity_id: int = typer.Option(...),
+    package_json: str = typer.Option(..., help="Package JSON with local_path for every assembled file"),
+    actor_email: str = typer.Option(...),
+) -> None:
+    """Hash assembled files and record completed actions in an immutable manifest."""
+    import json
+    from pathlib import Path
+    from govcon.compliance.deterministic import SubmissionPackage
+    from govcon.submissions.manifest import assemble_package
+    package = SubmissionPackage.from_dict(json.loads(Path(package_json).read_text(encoding="utf-8")))
+    with session_scope(_settings()) as session:
+        manifest = assemble_package(session, opportunity_id=opportunity_id, package=package, actor=_actor(session, actor_email))
+        typer.echo(f"manifest_sha256: {manifest.sha256}")
+
 
 @submission_app.command("package")
 def submission_package(
@@ -2511,11 +2721,45 @@ def submission_email_draft(
 
 
 @mcp_app.command("serve")
-def mcp_serve() -> None:
-    """Start the GovCon MCP server on stdio."""
+def mcp_serve(
+    read_only: bool = typer.Option(False, "--read-only", help="Serve read tools only."),
+) -> None:
+    """Start the GovCon MCP server on stdio.
+
+    Write tools act as the user in MCP_ACTOR_EMAIL; without it only read tools are served.
+    """
     from govcon.mcp.server import main as run_mcp_server
 
-    run_mcp_server()
+    run_mcp_server(read_only=read_only)
+
+
+@submission_app.command("correct-commercial")
+def submission_correct_commercial(
+    opportunity_id: int = typer.Option(...),
+    actor_email: str = typer.Option(..., help="Authorized approver email."),
+    expected_version: int = typer.Option(..., help="Pursuit version you reviewed."),
+    reason: str = typer.Option(...),
+    quote_price: float | None = typer.Option(None),
+    sourcing_cost: float | None = typer.Option(None),
+    supplier: str | None = typer.Option(None),
+    notes: str | None = typer.Option(None),
+) -> None:
+    """Append a correction to submitted facts without rewriting the offer."""
+    from govcon.workflow.commercial import record_commercial_correction
+    from govcon.collaboration.users import PermissionDenied
+    changes = {key: value for key, value in {
+        "quote_price": quote_price, "sourcing_cost": sourcing_cost, "supplier": supplier, "notes": notes
+    }.items() if value is not None}
+    try:
+        with session_scope(_settings()) as session:
+            result = record_commercial_correction(
+                session, opportunity_id, actor=_actor(session, actor_email),
+                expected_version=expected_version, changes=changes, reason=reason,
+            )
+        typer.echo(f"Correction recorded as audit event {result['audit_event_id']}")
+    except (ValueError, PermissionDenied) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
 
 @submission_app.command("confirm")
@@ -2523,9 +2767,11 @@ def submission_confirm(
     opportunity_id: int = typer.Option(...),
     actor_email: str = typer.Option(..., help="Authorized approver email."),
     confirmation_number: str | None = typer.Option(None, help="Confirmation number from the portal/email."),
-    notes: str | None = typer.Option(None, help="Optional notes about the submission."),
+    notes: str | None = typer.Option(None, help="Proof of submission (required without a confirmation number)."),
+    expected_version: int | None = typer.Option(None, help="Submission version you reviewed (default: current)."),
 ) -> None:
     """Record that the human has submitted and has a confirmation number."""
+    from govcon.models import Submission
     from govcon.proposals.service import record_submission_confirmation
     from govcon.collaboration.users import PermissionDenied
 
@@ -2533,12 +2779,23 @@ def submission_confirm(
     try:
         with session_scope(settings) as session:
             actor = _actor(session, actor_email)
+            if expected_version is None:
+                current = session.scalar(
+                    select(Submission)
+                    .where(Submission.opportunity_id == opportunity_id)
+                    .order_by(Submission.id.desc())
+                    .limit(1)
+                )
+                if current is None:
+                    raise ValueError(f"No submission record for opportunity {opportunity_id}")
+                expected_version = current.version
             result = record_submission_confirmation(
                 session,
                 opportunity_id=opportunity_id,
                 confirmation_number=confirmation_number,
                 confirmation_notes=notes,
                 actor=actor,
+                expected_version=expected_version,
             )
         typer.echo(f"submission {result['submission_id']} → {result['status']}  confirmation: {result.get('confirmation_number')}")
     except (PermissionDenied, ValueError) as exc:

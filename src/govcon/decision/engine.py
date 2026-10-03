@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from statistics import median
 from typing import Any
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.config import Settings, get_settings
 from govcon.decision.bundles import bundle_definition, load_decision_spec_metadata
 from govcon.decision.provider import (
@@ -37,7 +38,28 @@ from govcon.models import (
     Pursuit,
     Requirement,
     ReviewSession,
+    StoredFile,
 )
+from govcon.decision.signals import (
+    Signals,
+    amendment_signal,
+    capability_signal,
+    competition_signals,
+    eligibility_signals,
+    load_company_profile,
+    pricing_signals,
+    supplier_lead_time_signal,
+    sourcing_signals,
+)
+from govcon.workflow.source_revision import (
+    SOURCE_REVISION_KEY,
+    current_source_revision,
+    is_stale,
+    stamp_of,
+)
+
+
+logger = logging.getLogger("govcon.decision.engine")
 
 
 @dataclass(frozen=True)
@@ -75,11 +97,18 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
         select(AIAnalysis)
         .where(
             AIAnalysis.opportunity_id == opportunity_id,
-            AIAnalysis.analysis_type == "solicitation_summary",
+            AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY,
         )
         .order_by(desc(AIAnalysis.created_at), desc(AIAnalysis.id))
         .limit(1)
     )
+    source_revision = current_source_revision(session, opportunity_id)
+    summary_stale = latest_summary is not None and is_stale(
+        stamp_of(latest_summary.context_manifest), source_revision
+    )
+    if summary_stale:
+        # Analysis of a superseded source must not drive the decision.
+        latest_summary = None
     summary_json = latest_summary.output_json if latest_summary and isinstance(latest_summary.output_json, dict) else {}
 
     latest_pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opportunity_id).limit(1))
@@ -96,8 +125,6 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
     ]
 
     award_comps = recent_award_comps(session, nsn=opportunity.nsn, psc_code=opportunity.psc_code, limit=10)
-    comparable_amounts = [float(point.amount) for point in award_comps if point.amount is not None]
-    historical_median = float(median(comparable_amounts)) if comparable_amounts else None
 
     comp_summary = competitor_summary(session, opportunity_id, limit=5)
     competitor_bucket_count = len(comp_summary.buckets) if comp_summary else 0
@@ -155,22 +182,49 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
     )
 
     missing_information = []
+    if summary_stale:
+        missing_information.append("solicitation analysis is stale: the source changed after it ran")
+    elif latest_summary is None:
+        missing_information.append("solicitation analysis has not run")
     for item in summary_json.get("missing_information", []) if isinstance(summary_json, dict) else []:
         if isinstance(item, dict):
             missing_information.append(item.get("field") or item.get("reason") or "unknown")
         elif isinstance(item, str):
             missing_information.append(item)
 
-    capability_score = _estimate_capability_fit(opportunity, summary_json)
-    product_score = 0.75 if summary_json.get("items") else 0.45
-
-    lead_time_days = None
+    # The buyer's required delivery period (a requirement, not supplier evidence).
+    required_delivery_days = None
     if isinstance(summary_json.get("delivery"), dict):
-        lead_time_days = summary_json["delivery"].get("delivery_days")
+        required_delivery_days = summary_json["delivery"].get("delivery_days")
 
     amendment_count = 0
     if isinstance(summary_json.get("amendment_status"), dict):
         amendment_count = int(summary_json["amendment_status"].get("amendment_count") or 0)
+
+    # Evidence-backed, three-state signals with provenance (see decision.signals).
+    profile = load_company_profile()
+    signals = Signals()
+    eligibility_signals(
+        session, opportunity, profile, summary_json, has_summary=latest_summary is not None, signals=signals
+    )
+    sourcing_signals(latest_pursuit, signals)
+    supplier_lead_time_signal(session, opportunity_id, signals)
+    capability_signal(session, opportunity, profile, signals)
+    pricing_signals(opportunity, latest_pursuit, award_comps, signals)
+    competition_signals(comp_summary, signals)
+    amendment_signal(session, opportunity_id, amendment_count, signals)
+    sig = signals.values
+    for name in ("set_aside_match", "sam_active", "mandatory_certifications_met", "product_found", "capability_fit_score"):
+        if sig.get(name) is None:
+            missing_information.append(f"{name} is unknown ({signals.provenance[name].get('detail') or 'no evidence'})")
+    stored_files = int(
+        session.scalar(
+            select(func.count())
+            .select_from(StoredFile)
+            .where(StoredFile.opportunity_id == opportunity_id, StoredFile.active.is_(True), StoredFile.sha256.is_not(None))
+        )
+        or 0
+    )
 
     state = {
         "opportunity": {
@@ -185,27 +239,33 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
             "nsn": opportunity.nsn,
             "response_deadline": opportunity.response_deadline.isoformat() if opportunity.response_deadline else None,
             "days_remaining": days_remaining,
-            "required_delivery_days": lead_time_days,
+            "required_delivery_days": required_delivery_days,
             "estimated_value_min": _as_float(opportunity.estimated_value_min),
             "estimated_value_max": _as_float(opportunity.estimated_value_max),
         },
         "eligibility": {
-            "sam_active": None,
-            "set_aside_match": None if not opportunity.set_aside_code else True,
-            "mandatory_certifications_met": None if not summary_json.get("certifications") else True,
+            "sam_active": sig["sam_active"],
+            "set_aside_match": sig["set_aside_match"],
+            "mandatory_certifications_met": sig["mandatory_certifications_met"],
         },
         "sourcing": {
-            "product_found": bool(summary_json.get("items")),
-            "supplier_count": None,
+            "product_found": sig["product_found"],
+            "supplier_count": 1 if sig["product_found"] else None,
             "best_supplier_cost": _as_float(latest_pursuit.sourcing_cost) if latest_pursuit else None,
-            "lead_time_days": lead_time_days,
+            # Verified supplier evidence only; None (unknown) when absent.
+            "lead_time_days": sig["supplier_lead_time_days"],
         },
         "pricing": {
             "proposed_price": _as_float(latest_pursuit.quote_price) if latest_pursuit else None,
             "supplier_cost": _as_float(latest_pursuit.sourcing_cost) if latest_pursuit else None,
             "margin_pct": _as_float(latest_pursuit.margin_pct) if latest_pursuit else None,
-            "historical_comparable_count": len(comparable_amounts),
-            "historical_median": historical_median,
+            # Only awards that state a unit price are comparable to a quote.
+            "historical_comparable_count": sig["historical_unit_price_count"],
+            "historical_median_unit_price": sig["historical_median_unit_price"],
+            "proposed_unit_price": sig["proposed_unit_price"],
+            "unit_cost": sig["unit_cost"],
+            # Whole-contract totals are context only, never a price benchmark.
+            "historical_median_award_total": sig["historical_median_award_total"],
         },
         "compliance": {
             "mandatory_total": mandatory_total,
@@ -228,20 +288,25 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
         },
         "amendment": {
             "count": amendment_count,
-            "material": amendment_count > 0,
+            "material": sig["amendment_material"] is True,
+            "material_known": sig["amendment_material"] is not None,
         },
         "outcome": {"evidence_count": 0, "no_bid_reason": None, "loss_reason": None},
         "scores": {
-            "capability_fit_score": capability_score,
-            "product_fit_score": product_score,
+            "capability_fit_score": sig["capability_fit_score"],
+            "product_fit_score": 0.75 if sig["product_found"] else None,
         },
         "signals": {
-            "has_attachments": bool(summary_json),
-            "requires_deep_analysis": bool(summary_json),
+            "has_attachments": stored_files > 0,
+            "requires_deep_analysis": stored_files > 0,
             "competitor_bucket_count": competitor_bucket_count,
-            "incumbent_signal": competitor_bucket_count >= 2,
+            "distinct_awardee_count": sig["distinct_awardee_count"],
+            # Heuristic: an awardee with 2+ comparable awards. Not a verified incumbent.
+            "repeat_awardee_signal": sig["repeat_awardee_signal"],
         },
+        "provenance": signals.provenance,
         "source_snapshot_ids": source_snapshot_ids,
+        SOURCE_REVISION_KEY: source_revision,
         "evidence_refs": _build_evidence_refs(opportunity, latest_summary, award_comps, source_snapshot_ids),
         "bundle_results": {},
     }
@@ -261,6 +326,10 @@ def run_decision_bundle(
     settings = settings or get_settings()
     definition = bundle_definition(bundle_name)
     state = state or build_decision_state(session, opportunity_id)
+    from govcon.security.classification import DataClassification, opportunity_classification
+    state = dict(state)
+    state["data_classification"] = opportunity_classification(session, opportunity_id, DataClassification.PROPRIETARY).value
+    state["budget_opportunity_id"] = opportunity_id
     state_hash = canonical_content_hash(json_safe(state))
     previous_run = session.scalar(
         select(DecisionRun)
@@ -283,7 +352,7 @@ def run_decision_bundle(
     jev_error: Exception | None = None
     if primary == "jev":
         try:
-            jev_provider = JevDecisionProvider.from_settings(settings)
+            jev_provider = JevDecisionProvider.from_settings(settings, session=session)
             jev_result = jev_provider.decide(
                 bundle_name=bundle_name,
                 bundle_version=definition.version,
@@ -302,9 +371,15 @@ def run_decision_bundle(
             )
         except DecisionProviderUnavailable as exc:
             jev_error = exc
+            logger.warning(
+                "JEV unavailable for bundle=%s opportunity=%s; using the rules provider: %s",
+                bundle_name,
+                opportunity_id,
+                exc,
+            )
     elif primary == "llm":
         try:
-            llm = LLMDecisionProvider(settings=settings)
+            llm = LLMDecisionProvider(settings=settings, session=session)
             llm_result = llm.decide(
                 bundle_name=bundle_name,
                 bundle_version=definition.version,
@@ -321,7 +396,8 @@ def run_decision_bundle(
                 latency_ms=llm_result.latency_ms,
                 raw_response=llm_result.raw_response,
             )
-        except DecisionProviderUnavailable:
+        except DecisionProviderUnavailable as exc:
+            logger.warning("LLM decision provider unavailable for bundle=%s; using rules: %s", bundle_name, exc)
             active = baseline
 
     if (
@@ -330,7 +406,7 @@ def run_decision_bundle(
         and (jev_error is not None or primary == "llm")
     ):
         try:
-            llm = LLMDecisionProvider(settings=settings)
+            llm = LLMDecisionProvider(settings=settings, session=session)
             llm_result = llm.decide(
                 bundle_name=bundle_name,
                 bundle_version=definition.version,
@@ -426,6 +502,12 @@ def run_preliminary_decision_package(
         state["bundle_results"][bundle_name] = execution.result
 
     recommendation = _build_preliminary_recommendation(state, state["bundle_results"])
+    prior_bid = session.scalar(
+        select(BidDecision)
+        .where(BidDecision.opportunity_id == opportunity_id)
+        .order_by(desc(BidDecision.created_at), desc(BidDecision.id))
+        .limit(1)
+    )
     bid_bundle = state["bundle_results"]["bid_decision"]
     market_bundle = state["bundle_results"]["market_and_pricing"]
     eligibility_bundle = state["bundle_results"]["eligibility_and_execution"]
@@ -532,7 +614,7 @@ def run_preliminary_decision_package(
     }
     analysis = AIAnalysis(
         opportunity_id=opportunity_id,
-        analysis_type="decision_package",
+        analysis_type=AnalysisType.DECISION_PACKAGE,
         provider="decision_engine",
         model=runs[-1].model if runs else None,
         prompt_name="jev_decision_package",
@@ -550,6 +632,7 @@ def run_preliminary_decision_package(
             "opportunity_id": opportunity_id,
             "source_snapshot_ids": state.get("source_snapshot_ids", []),
             "decision_run_ids": [run.run.id for run in runs],
+            SOURCE_REVISION_KEY: state.get(SOURCE_REVISION_KEY),
         },
         output_json=package_output,
         source_refs={"evidence": recommendation.evidence},
@@ -575,6 +658,28 @@ def run_preliminary_decision_package(
         review_session.ai_decision_package_id = analysis.id
         if review_session.status == "pending":
             review_session.status = "ready_for_review"
+        if (
+            review_session.status == "approved_to_bid"
+            and prior_bid is not None
+            and prior_bid.recommendation != recommendation.recommendation
+        ):
+            # The approval was given against a different recommendation.
+            from govcon.compliance.matrix import upsert_open_finding
+
+            upsert_open_finding(
+                session,
+                opportunity_id=opportunity_id,
+                finding_type="review_reopen_required",
+                severity="high",
+                description=(
+                    f"The regenerated decision package recommends {recommendation.recommendation!r} "
+                    f"but the bid was approved against {prior_bid.recommendation!r}; reopen the review."
+                ),
+                detected_by="decision_engine",
+                detector_version="decision_package.v1",
+                source_refs={"prior_bid_decision_id": prior_bid.id, "bid_decision_id": bid_decision.id},
+                blocks_submission=True,
+            )
     session.flush()
 
     return DecisionPackageExecution(
@@ -704,18 +809,6 @@ def _build_evidence_refs(
         )
     return evidence
 
-
-def _estimate_capability_fit(opportunity: Opportunity, summary_json: dict[str, Any]) -> float:
-    score = 0.45
-    if opportunity.psc_code:
-        score += 0.1
-    if opportunity.naics_code:
-        score += 0.1
-    if summary_json.get("items"):
-        score += 0.15
-    if summary_json.get("evaluation_factors"):
-        score += 0.05
-    return min(score, 0.95)
 
 
 def _country_of_origin_conflict(summary_json: dict[str, Any]) -> bool:

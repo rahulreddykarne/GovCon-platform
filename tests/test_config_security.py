@@ -61,7 +61,7 @@ def test_log_handler_redacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     logging.getLogger("govcon.ai.gateway").info("api_key=%s", "supersecretvalue")
     for handler in logger.handlers:
         handler.flush()
-    text = (tmp_path / "govcon.log").read_text()
+    text = (tmp_path / "govcon.log").read_text(encoding="utf-8")
     assert "supersecretvalue" not in text
     assert "[REDACTED]" in text
 

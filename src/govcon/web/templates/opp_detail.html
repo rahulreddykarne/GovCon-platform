@@ -15,11 +15,12 @@
       <a href="/workspace/{{ workspace_id }}" class="btn btn-primary">Open Workspace</a>
     {% else %}
       <form method="post" action="/opp/{{ opp.id }}/start-workspace">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <button type="submit" class="btn btn-primary">Start Workspace</button>
       </form>
     {% endif %}
-    {% if opp.links and opp.links.get('html_url') %}
-      <a href="{{ opp.links['html_url'] }}" class="btn btn-secondary" target="_blank" rel="noopener">Source ↗</a>
+    {% if primary_source_url %}
+      <a href="{{ primary_source_url }}" class="btn btn-secondary" target="_blank" rel="noopener">Source ↗</a>
     {% endif %}
   </div>
 </div>
@@ -211,14 +212,10 @@
       </dd>
       {% endif %}
 
-      {% if opp.links %}
-        {% for key, url in opp.links.items() %}
-          {% if url and url.startswith('http') %}
-            <dt>{{ key|replace('_',' ')|title }}</dt>
-            <dd><a href="{{ url }}" target="_blank" rel="noopener" class="source-link">↗ Open</a></dd>
-          {% endif %}
-        {% endfor %}
-      {% endif %}
+      {% for link in source_links %}
+        <dt>{{ link.label }}</dt>
+        <dd><a href="{{ link.url }}" target="_blank" rel="noopener" class="source-link">↗ Open</a></dd>
+      {% endfor %}
     </dl>
 
     <!-- Contacts -->

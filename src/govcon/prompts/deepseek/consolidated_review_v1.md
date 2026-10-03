@@ -5,6 +5,7 @@ task_type: consolidated_review
 provider_family: generative_llm
 schema_version: consolidated_review.v1
 status: active
+allowed_data_classes: PUBLIC, PROPRIETARY
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1
 required_variables: AI_DECISION_PACKAGE_JSON, REVIEWER_RECOMMENDATIONS_JSON, REVIEWER_COMMENTS_JSON, AI_COMMENT_VALIDATIONS_JSON, CURRENT_STATE_JSON, REVIEW_QUORUM_STATE_JSON
 ---

@@ -1,4 +1,14 @@
-"""MCP tool operations over existing GovCon services (no new product behavior)."""
+"""MCP tool operations over existing GovCon services (no new product behavior).
+
+Write tools act as the single MCP actor pinned at server start
+(``MCP_ACTOR_EMAIL``), go through the same services as the web UI and CLI,
+check that actor's role permission, and write audit rows.
+
+Human-authority decisions are not exposed: approving a bid, completing a
+human review, recording a human bid decision, overriding a compliance status,
+moving a pursuit to ready_to_submit, and recording a submission are done by a
+person in the web UI or CLI.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +20,8 @@ from typing import Any
 from sqlalchemy import desc, func, or_, select, text
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
+from govcon.audit import record_audit
 from govcon.collaboration.ai_comment_review import (
     AICommentValidationError,
     apply_ai_validation_to_comment,
@@ -17,21 +29,15 @@ from govcon.collaboration.ai_comment_review import (
 )
 from govcon.collaboration.assignments import assign_reviewer
 from govcon.collaboration.comments import add_comment
-from govcon.collaboration.review_sessions import (
-    ReviewWorkflowError,
-    complete_assignment,
-    finalize_approval,
-)
-from govcon.collaboration.users import PermissionDenied
-from govcon.compliance.matrix import active_requirements, override_requirement
+from govcon.collaboration.users import PermissionDenied, require_permission
+from govcon.compliance.matrix import active_requirements
 from govcon.compliance.metrics import coverage_summary
-from govcon.compliance.submission_preflight import move_to_ready_to_submit
-from govcon.concurrency import StaleRecordError
+from govcon.concurrency import StaleRecordError, apply_versioned_update
 from govcon.decision.engine import list_decision_runs
 from govcon.intelligence.competitors import competitor_summary
 from govcon.intelligence.vendors import vendor_profile
 from govcon.matching.pricing import price_history, price_history_psc
-from govcon.mcp.context import actor_for_email, default_actor
+from govcon.mcp.context import current_actor
 from govcon.mcp.serialize import compact_opportunity, json_safe, success, truncate_text
 from govcon.models import (
     AIAnalysis,
@@ -49,9 +55,10 @@ from govcon.models import (
     User,
     Watchlist,
 )
-from govcon.proposals.service import get_proposal_workspace, record_submission_confirmation
+from govcon.proposals.service import get_proposal_workspace
 from govcon.proposals.versions import create_proposal_version
 from govcon.submissions.service import get_submission_workspace
+from govcon.workflow.transitions import require_transition
 
 _MATCH_STATUSES = frozenset({"new", "seen", "dismissed", "reviewing", "pursuing"})
 _PURSUIT_STAGES = frozenset(
@@ -69,7 +76,10 @@ _PURSUIT_STAGES = frozenset(
         "no_bid",
     }
 )
-_HUMAN_BID_DECISIONS = frozenset({"approve_bid", "no_bid", "defer"})
+# Stages an MCP client may set directly. Gated stages (bid_approved, no_bid,
+# ready_to_submit, submitted, won, lost) and terminal cancellation are human or
+# service-gated; see govcon.workflow.transitions.
+MCP_SETTABLE_PURSUIT_STAGES = frozenset({"evaluating", "sourcing", "drafting", "review"})
 
 
 def _require_row(session: Session, model: type, row_id: int, label: str) -> Any:
@@ -93,7 +103,7 @@ def _latest_decision_package(session: Session, opportunity_id: int) -> AIAnalysi
         select(AIAnalysis)
         .where(
             AIAnalysis.opportunity_id == opportunity_id,
-            AIAnalysis.analysis_type == "decision_package",
+            AIAnalysis.analysis_type == AnalysisType.DECISION_PACKAGE,
         )
         .order_by(desc(AIAnalysis.created_at), desc(AIAnalysis.id))
         .limit(1)
@@ -264,6 +274,8 @@ def op_list_matches(
         select(Match, Opportunity, Watchlist)
         .join(Opportunity, Match.opportunity_id == Opportunity.id)
         .join(Watchlist, Match.watchlist_id == Watchlist.id)
+        # Matches the watchlist no longer produces are history, not work.
+        .where(Match.active.is_(True))
     )
     if status:
         if status not in _MATCH_STATUSES:
@@ -355,7 +367,7 @@ def op_get_bid_analysis(session: Session, opportunity_id: int) -> dict[str, Any]
                     "id": run.id,
                     "bundle_name": run.bundle_name,
                     "provider": run.provider,
-                    "status": run.status,
+                    "status": run.result.get("status"),
                     "created_at": run.created_at,
                 }
                 for run in runs
@@ -557,12 +569,23 @@ def op_update_match(
 ) -> dict[str, Any]:
     if status not in _MATCH_STATUSES:
         raise ValueError(f"status must be one of {sorted(_MATCH_STATUSES)}")
+    actor = current_actor(session, "review")
     match = _require_row(session, Match, match_id, "match")
     if status == "dismissed" and not confirm:
         raise ValueError("set confirm=true to dismiss a match")
     old_status = match.status
     match.status = status
     session.flush()
+    record_audit(
+        session,
+        action_type="match_status_changed",
+        user_id=actor.id,
+        opportunity_id=match.opportunity_id,
+        entity_type="matches",
+        entity_id=match.id,
+        old_value={"status": old_status},
+        new_value={"status": status, "via": "mcp"},
+    )
     return success(
         {
             "match_id": match.id,
@@ -581,8 +604,9 @@ def op_add_pursuit(
     stage: str = "evaluating",
     notes: str | None = None,
 ) -> dict[str, Any]:
-    if stage not in _PURSUIT_STAGES:
-        raise ValueError(f"stage must be one of {sorted(_PURSUIT_STAGES)}")
+    if stage not in MCP_SETTABLE_PURSUIT_STAGES:
+        raise ValueError(f"stage must be one of {sorted(MCP_SETTABLE_PURSUIT_STAGES)}")
+    actor = current_actor(session, "review")
     _require_row(session, Opportunity, opportunity_id, "opportunity")
     existing = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
     if existing is not None:
@@ -590,6 +614,15 @@ def op_add_pursuit(
     pursuit = Pursuit(opportunity_id=opportunity_id, stage=stage, notes=notes)
     session.add(pursuit)
     session.flush()
+    record_audit(
+        session,
+        action_type="pursuit_created",
+        user_id=actor.id,
+        opportunity_id=opportunity_id,
+        entity_type="pursuits",
+        entity_id=pursuit.id,
+        new_value={"stage": stage, "via": "mcp"},
+    )
     return success(_pursuit_record(pursuit))
 
 
@@ -597,60 +630,66 @@ def op_update_pursuit(
     session: Session,
     opportunity_id: int,
     *,
+    expected_version: int,
     stage: str | None = None,
     quote_price: float | None = None,
     sourcing_cost: float | None = None,
     supplier: str | None = None,
     notes: str | None = None,
-    expected_version: int | None = None,
 ) -> dict[str, Any]:
-    pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
+    """Edit pre-submission working facts; edits revoke dependent decisions."""
+    actor = current_actor(session, "review")
+    from govcon.workflow.commercial import LOCKED_STAGES, invalidate_commercial_decisions, validated_commercial_changes
+    from govcon.workflow.invalidation import lock_one
+    lock_one(session, select(Opportunity).where(Opportunity.id == opportunity_id))
+    pursuit = lock_one(session, select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
     if pursuit is None:
         raise ValueError(f"no pursuit for opportunity {opportunity_id}")
-    if stage is not None and stage not in _PURSUIT_STAGES:
-        raise ValueError(f"stage must be one of {sorted(_PURSUIT_STAGES)}")
-    if stage == "cancelled" and expected_version is None:
-        raise ValueError("set expected_version when moving a pursuit to cancelled")
-    if stage is not None:
-        pursuit.stage = stage
+    if pursuit.version != expected_version:
+        raise ValueError("stale pursuit version; reload the pursuit")
+    changes: dict[str, Any] = {}
+    if stage is not None and stage != pursuit.stage:
+        if stage not in MCP_SETTABLE_PURSUIT_STAGES:
+            raise ValueError(
+                f"stage {stage!r} is gated; MCP may set only {sorted(MCP_SETTABLE_PURSUIT_STAGES)}"
+            )
+        require_transition("pursuit", pursuit.stage, stage)
+        changes["stage"] = stage
     if quote_price is not None:
-        pursuit.quote_price = Decimal(str(quote_price))
+        changes["quote_price"] = quote_price
     if sourcing_cost is not None:
-        pursuit.sourcing_cost = Decimal(str(sourcing_cost))
+        changes["sourcing_cost"] = sourcing_cost
     if supplier is not None:
-        pursuit.supplier = supplier
+        changes["supplier"] = supplier
     if notes is not None:
-        pursuit.notes = notes
-    session.flush()
-    return success(_pursuit_record(pursuit))
-
-
-def op_record_human_bid_decision(
-    session: Session,
-    opportunity_id: int,
-    *,
-    decision: str,
-    comments: str | None = None,
-    actor_email: str | None = None,
-) -> dict[str, Any]:
-    if decision not in _HUMAN_BID_DECISIONS:
-        raise ValueError(f"decision must be one of {sorted(_HUMAN_BID_DECISIONS)}")
-    actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
-    bid = _latest_bid_decision(session, opportunity_id)
-    if bid is None:
-        raise ValueError(f"no bid decision for opportunity {opportunity_id}")
-    bid.human_decision = decision
-    bid.human_comments = comments
-    session.flush()
-    return success(
-        {
-            "bid_decision_id": bid.id,
-            "opportunity_id": opportunity_id,
-            "human_decision": bid.human_decision,
-            "human_comments": bid.human_comments,
-            "actor": actor.email,
-        }
+        changes["notes"] = notes
+    commercial = {key: value for key, value in changes.items() if key != "stage"}
+    if commercial:
+        commercial = validated_commercial_changes(commercial)
+        if pursuit.stage in LOCKED_STAGES:
+            raise ValueError("commercial facts are locked in this stage; an approver must record an append-only correction for submitted facts")
+        changes.update(commercial)
+    changes = {key: value for key, value in changes.items() if getattr(pursuit, key) != value}
+    substantive = bool(set(changes) - {"stage"})
+    if not changes:
+        return success(_pursuit_record(pursuit))
+    try:
+        previous = apply_versioned_update(session, pursuit, expected_version, changes)
+    except StaleRecordError as exc:
+        raise ValueError(f"{exc}; reload the pursuit") from exc
+    record_audit(
+        session,
+        action_type="pursuit_updated",
+        user_id=actor.id,
+        opportunity_id=opportunity_id,
+        entity_type="pursuits",
+        entity_id=pursuit.id,
+        old_value={k: (str(v) if isinstance(v, Decimal) else v) for k, v in previous.items()},
+        new_value={**{k: (str(v) if isinstance(v, Decimal) else v) for k, v in changes.items()}, "via": "mcp"},
     )
+    if substantive:
+        invalidate_commercial_decisions(session, opportunity_id, actor=actor)
+    return success(_pursuit_record(pursuit))
 
 
 def op_assign_reviewer(
@@ -659,14 +698,20 @@ def op_assign_reviewer(
     *,
     user_email: str,
     assignment_role: str = "reviewer",
-    actor_email: str | None = None,
 ) -> dict[str, Any]:
-    actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
-    user = actor_for_email(session, user_email)
+    """Assign ``user_email`` (the reviewer, not the actor) to review an opportunity."""
+    actor = current_actor(session, "approve")
+    _require_row(session, Opportunity, opportunity_id, "opportunity")
+    reviewer = session.scalar(
+        select(User).where(User.email == user_email.strip().lower(), User.is_active.is_(True))
+    )
+    if reviewer is None:
+        raise ValueError(f"active user not found for email {user_email}")
+    require_permission(reviewer, "review")
     row = assign_reviewer(
         session,
         opportunity_id=opportunity_id,
-        user_id=user.id,
+        user_id=reviewer.id,
         assignment_role=assignment_role,
         actor_user_id=actor.id,
     )
@@ -677,16 +722,16 @@ def op_add_review_comment(
     session: Session,
     opportunity_id: int,
     *,
-    user_email: str,
     body: str,
     topic: str | None = None,
     validate_with_ai: bool = True,
 ) -> dict[str, Any]:
-    user = actor_for_email(session, user_email)
+    """Add a comment authored by the MCP actor (who must be an assigned reviewer)."""
+    actor = current_actor(session, "review")
     row = add_comment(
         session,
         opportunity_id=opportunity_id,
-        user_id=user.id,
+        user_id=actor.id,
         body=body,
         topic=topic,
         validate_with_ai=validate_with_ai,
@@ -694,29 +739,8 @@ def op_add_review_comment(
     return success(_comment_record(row))
 
 
-def op_complete_review(
-    session: Session,
-    opportunity_id: int,
-    *,
-    user_email: str,
-    action: str,
-    recommendation: str | None = None,
-) -> dict[str, Any]:
-    user = actor_for_email(session, user_email)
-    try:
-        row = complete_assignment(
-            session,
-            opportunity_id=opportunity_id,
-            user_id=user.id,
-            action=action,
-            recommendation=recommendation,
-        )
-    except ReviewWorkflowError as exc:
-        raise ValueError(str(exc)) from exc
-    return success(_assignment_record(row))
-
-
 def op_request_ai_comment_validation(session: Session, comment_id: int) -> dict[str, Any]:
+    actor = current_actor(session, "review")
     comment = _require_row(session, ReviewComment, comment_id, "comment")
     try:
         validation = validate_comment_with_ai(session, comment=comment)
@@ -724,76 +748,27 @@ def op_request_ai_comment_validation(session: Session, comment_id: int) -> dict[
     except AICommentValidationError as exc:
         raise ValueError(f"AI validation failed: {exc.reason}: {exc.detail}") from exc
     session.flush()
-    return success(_comment_record(comment))
-
-
-def op_approve_to_bid(
-    session: Session,
-    opportunity_id: int,
-    *,
-    action: str = "approve_to_bid",
-    actor_email: str | None = None,
-    override_reason: str | None = None,
-    expected_version: int | None = None,
-) -> dict[str, Any]:
-    actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
-    try:
-        review = finalize_approval(
-            session,
-            opportunity_id=opportunity_id,
-            actor=actor,
-            action=action,
-            expected_version=expected_version,
-            override_reason=override_reason,
-        )
-    except (ReviewWorkflowError, PermissionDenied, StaleRecordError) as exc:
-        raise ValueError(str(exc)) from exc
-    return success(
-        {
-            "review_session_id": review.id,
-            "status": review.status,
-            "final_approval_status": review.final_approval_status,
-            "override_used": review.override_used,
-        }
+    record_audit(
+        session,
+        action_type="review_comment_ai_validated",
+        user_id=actor.id,
+        opportunity_id=comment.opportunity_id,
+        entity_type="review_comments",
+        entity_id=comment.id,
+        new_value={"ai_position": comment.ai_position, "via": "mcp"},
     )
-
-
-def op_update_requirement_status(
-    session: Session,
-    requirement_id: int,
-    *,
-    status: str,
-    reason: str,
-    expected_version: int,
-    acknowledge_deterministic_failure: bool = False,
-    actor_email: str | None = None,
-) -> dict[str, Any]:
-    actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
-    try:
-        requirement = override_requirement(
-            session,
-            requirement_id=requirement_id,
-            status=status,
-            actor=actor,
-            reason=reason,
-            expected_version=expected_version,
-            acknowledge_deterministic_failure=acknowledge_deterministic_failure,
-        )
-    except Exception as exc:
-        if exc.__class__.__name__ == "ComplianceInvariantError":
-            raise ValueError(str(exc)) from exc
-        raise
-    return success(_requirement_record(requirement))
+    return success(_comment_record(comment))
 
 
 def op_create_proposal_version(
     session: Session,
     opportunity_id: int,
     *,
-    created_by: str,
     sections: list[dict[str, Any]],
     change_summary: str | None = None,
 ) -> dict[str, Any]:
+    """Save a new draft version; any prior final approval is invalidated."""
+    actor = current_actor(session, "review")
     proposal = session.scalars(
         select(Proposal).where(Proposal.opportunity_id == opportunity_id)
     ).first()
@@ -802,9 +777,10 @@ def op_create_proposal_version(
     version = create_proposal_version(
         session,
         proposal_id=proposal.id,
-        created_by=created_by,
+        created_by=actor.email,
         sections=sections,
         change_summary=change_summary,
+        actor_id=actor.id,
     )
     return success(
         {
@@ -812,54 +788,9 @@ def op_create_proposal_version(
             "version_id": version.id,
             "version_number": version.version_number,
             "current_version_id": proposal.current_version_id,
+            "proposal_status": proposal.status,
         }
     )
-
-
-def op_set_submission_ready(
-    session: Session,
-    opportunity_id: int,
-    *,
-    actor_email: str | None = None,
-    override_reason: str | None = None,
-) -> dict[str, Any]:
-    actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
-    try:
-        pursuit = move_to_ready_to_submit(
-            session,
-            opportunity_id,
-            actor=actor,
-            override_reason=override_reason,
-        )
-    except PermissionDenied as exc:
-        raise ValueError(str(exc)) from exc
-    except Exception as exc:
-        if exc.__class__.__name__ in {"ReadinessBlocked"}:
-            raise ValueError(str(exc)) from exc
-        raise
-    return success(_pursuit_record(pursuit))
-
-
-def op_record_submission_confirmation(
-    session: Session,
-    opportunity_id: int,
-    *,
-    confirmation_number: str | None = None,
-    confirmation_notes: str | None = None,
-    actor_email: str | None = None,
-) -> dict[str, Any]:
-    actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
-    try:
-        result = record_submission_confirmation(
-            session,
-            opportunity_id=opportunity_id,
-            confirmation_number=confirmation_number,
-            confirmation_notes=confirmation_notes,
-            actor=actor,
-        )
-    except PermissionDenied as exc:
-        raise ValueError(str(exc)) from exc
-    return success(result)
 
 
 def op_record_outcome(
@@ -867,7 +798,6 @@ def op_record_outcome(
     opportunity_id: int,
     *,
     outcome: str,
-    actor_email: str | None = None,
     # No-bid fields
     no_bid_reason: str | None = None,
     no_bid_category: str | None = None,
@@ -898,11 +828,12 @@ def op_record_outcome(
             f"no_bid_category must be one of {sorted(NO_BID_CATEGORIES)} or None"
         )
 
-    actor = actor_for_email(session, actor_email) if actor_email else default_actor(session)
+    actor = current_actor(session, "approve")
     row = record_outcome(
         session,
         opportunity_id=opportunity_id,
         outcome=outcome,
+        actor=actor,
         no_bid_reason=no_bid_reason,
         no_bid_category=no_bid_category,
         loss_reason=loss_reason,

@@ -19,6 +19,7 @@
     <a href="/vendors"   {% if active_page == 'vendors'   %}class="active"{% endif %}>Vendors</a>
     <a href="/ops"       {% if active_page == 'ops'       %}class="active"{% endif %}>Ops</a>
     <a href="/learning"  {% if active_page == 'learning'  %}class="active"{% endif %}>Learning</a>
+    <a href="/notifications" {% if active_page == 'notifications' %}class="active"{% endif %}>Notifications</a>
   </nav>
   <span class="spacer"></span>
   <div class="user-badge">
@@ -30,6 +31,7 @@
       <a href="/notifications" style="color:#fff; font-size:12px;">[{{ notif_count }}]</a>
       {% endif %}
       <form method="post" action="/logout" style="margin:0;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <button type="submit" class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.7);">Logout</button>
       </form>
     {% endif %}
@@ -37,6 +39,12 @@
 </header>
 
 <main class="main-content">
+  {% if request is defined and request %}
+    {% set flash_error = request.query_params.get('error') %}
+    {% set flash_notice = request.query_params.get('notice') %}
+    {% if flash_error %}<div class="alert alert-error" role="alert">{{ flash_error }}</div>{% endif %}
+    {% if flash_notice %}<div class="alert alert-success" role="status">{{ flash_notice }}</div>{% endif %}
+  {% endif %}
   {% with messages = get_flashed_messages() if get_flashed_messages is defined else [] %}
     {% if messages %}
       {% for msg in messages %}

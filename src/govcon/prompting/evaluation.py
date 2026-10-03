@@ -1,10 +1,8 @@
 """Prompt activation gate (§43.8, §25 prompt-library tests).
 
-Safety-critical prompts must pass template, variable, schema, secret-scan,
-injection, and task-regression checks before a registry activation. The
-compliance regression check replays the compliance benchmark
-(``govcon.compliance.regression``); a live-model evaluation still requires
-provider keys and is run with ``govcon compliance benchmark --live``.
+Safety-critical activation requires structural checks, recorded-output replay,
+and evidence from an evaluation of the exact candidate's model behavior.
+Message placement is a structural check; it does not certify model resistance.
 """
 
 from __future__ import annotations
@@ -135,4 +133,12 @@ def run_activation_gate(asset: PromptAsset, prompt_root: Path, *, settings=None,
 
         suite = run_benchmark_suite(default_fixture_root())
         result.add("compliance_regression_suite", suite.gate.passed, "; ".join(suite.gate.failures))
+        from govcon.config import get_settings
+        from govcon.prompting.behavioral import verify_evidence
+        configured = settings or get_settings()
+        if configured.prompt_require_behavioral_evaluation:
+            passed, detail = verify_evidence(asset, prompt_root, configured)
+            result.add("candidate_model_behavior", passed, detail)
+        else:
+            result.add("behavioral_evaluation_disabled", True, "Explicit offline bootstrap: structural checks and recorded-output replay only; model behavior is unevaluated.")
     return result

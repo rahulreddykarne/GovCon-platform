@@ -34,6 +34,7 @@ from tenacity import wait_exponential
 from tenacity.wait import wait_base
 
 from govcon.config import Settings, get_settings
+from govcon.enrich.attachment_refs import resource_link_urls
 from govcon.http import RETRYABLE_STATUS, build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
 from govcon.ingest.snapshots import (
@@ -53,9 +54,12 @@ SAM_PAGE_LIMIT = 1000
 SAM_RETRY_ATTEMPTS = 5
 SAM_RETRY_WAIT = wait_exponential(multiplier=1, min=1, max=32)
 
+# After an NSN label the groups may be dashed, spaced, or run together
+# (5340012345678). Without a label only the dashed form counts, so phone
+# numbers and other 13-digit identifiers are not mistaken for NSNs.
 _NSN_LABELED = re.compile(
     r"\b(?:NSN|National\s+Stock\s+Number)\b[:\s#-]*"
-    r"(\d{4})\s*[- ]\s*(\d{2})\s*[- ]\s*(\d{3})\s*[- ]\s*(\d{4})\b",
+    r"(\d{4})\s*[- ]?\s*(\d{2})\s*[- ]?\s*(\d{3})\s*[- ]?\s*(\d{4})\b",
     re.IGNORECASE,
 )
 _NSN_DASHED = re.compile(r"\b(\d{4})-(\d{2})-(\d{3})-(\d{4})\b")
@@ -191,7 +195,7 @@ def _search_text(title: str | None, description: str | None) -> str:
 
 
 def parse_nsn_candidates(title: str | None, description: str | None) -> tuple[str, ...]:
-    """Return full 13-digit NSNs written with dashes or an NSN label."""
+    """Return full 13-digit NSNs: dashed anywhere, or in any grouping after an NSN label."""
     text = _search_text(title, description)
     found: list[str] = []
     for pattern in (_NSN_LABELED, _NSN_DASHED):
@@ -277,17 +281,9 @@ def _agency_path(raw: dict) -> str | None:
 
 
 def _links(raw: dict) -> dict:
-    attachments: list[str] = []
+    # resourceLinks may be strings or objects; both normalise to URL strings.
     resource_links = raw.get("resourceLinks")
-    if isinstance(resource_links, list):
-        for item in resource_links:
-            text = _text(item)
-            if text and text.startswith(("http://", "https://")):
-                attachments.append(text)
-    elif isinstance(resource_links, str):
-        text = _text(resource_links)
-        if text and text.startswith(("http://", "https://")):
-            attachments.append(text)
+    attachments: list[str] = resource_link_urls(resource_links) if resource_links is not None else []
 
     self_links: list[dict] = []
     links = raw.get("links")

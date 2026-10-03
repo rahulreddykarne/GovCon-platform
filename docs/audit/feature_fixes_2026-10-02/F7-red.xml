@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="2.695" timestamp="2026-10-02T23:09:49.957731-05:00" hostname="RahulROG"><testcase classname="tests.test_feature_audit_fixes" name="test_f7_empty_compliance_command_is_accepted_by_cli" time="1.810"><failure message="typer._click.exceptions.NoSuchOption: No such option: --opp-id">tests\test_feature_audit_fixes.py:479: in test_f7_empty_compliance_command_is_accepted_by_cli
+    with compliance_run_command().make_context("run", words[3:]) as context:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\typer\_click\core.py:708: in make_context
+    self.parse_args(ctx, args)
+.venv\Lib\site-packages\typer\_click\core.py:716: in parse_args
+    opts, args, param_order = parser.parse_args(args=args)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\typer\_click\parser.py:286: in parse_args
+    self._process_args_for_options(state)
+.venv\Lib\site-packages\typer\_click\parser.py:313: in _process_args_for_options
+    self._process_opts(arg, state)
+.venv\Lib\site-packages\typer\_click\parser.py:444: in _process_opts
+    self._match_long_opt(norm_long_opt, explicit_value, state)
+.venv\Lib\site-packages\typer\_click\parser.py:347: in _match_long_opt
+    raise NoSuchOption(opt, possibilities=possibilities, ctx=self.ctx)
+E   typer._click.exceptions.NoSuchOption: No such option: --opp-id</failure></testcase></testsuite></testsuites>

@@ -8,6 +8,7 @@ from typing import Any
 
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
+from govcon.ai.budget import complete_with_budget
 from govcon.config import Settings, get_settings
 from govcon.decision.provider import DecisionProviderUnavailable, ProviderDecision
 from govcon.security.classification import DataClassification
@@ -22,8 +23,9 @@ class LLMDecisionProvider:
 
     name = "llm"
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(self, settings: Settings | None = None, *, session=None) -> None:
         self._settings = settings or get_settings()
+        self._session = session
 
     def decide(
         self,
@@ -57,12 +59,13 @@ class LLMDecisionProvider:
             default=str,
         )
         try:
-            result = provider.complete(
+            result, reservation = complete_with_budget(provider, self._session,
+                opportunity_id=state.get("budget_opportunity_id"), settings=self._settings,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 temperature=0.0,
                 json_mode=True,
-                classification=DataClassification.PROPRIETARY,
+                classification=DataClassification(state.get("data_classification", "PROPRIETARY")),
                 purpose="decision_llm_fallback",
             )
         except Exception as exc:  # pragma: no cover - network/provider dependent

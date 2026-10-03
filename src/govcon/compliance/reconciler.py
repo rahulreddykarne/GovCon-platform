@@ -70,8 +70,19 @@ def candidate_similarity(a: Candidate, b: Candidate) -> float:
     return similarity(a.requirement_text, a.supporting_quote, b.requirement_text, b.supporting_quote)
 
 
-def reconcile(candidates: list[Candidate], *, merge_threshold: float, duplicate_threshold: float) -> list[CanonicalRequirement]:
-    """Pure: cluster candidates into canonical requirements without losing any."""
+def reconcile(
+    candidates: list[Candidate],
+    *,
+    merge_threshold: float,
+    duplicate_threshold: float,
+    ab_independent: bool = True,
+) -> list[CanonicalRequirement]:
+    """Pure: cluster candidates into canonical requirements without losing any.
+
+    ``ab_independent`` is False when passes A and B ran on the same provider
+    and model: their agreement is then one extraction, not two independent
+    confirmations.
+    """
     groups: list[list[Candidate]] = []
     possible: dict[int, set[int]] = {}
     ambiguous: set[int] = set()
@@ -106,7 +117,7 @@ def reconcile(candidates: list[Candidate], *, merge_threshold: float, duplicate_
             possible.setdefault(new_index, set()).add(other)
             possible.setdefault(other, set()).add(new_index)
 
-    canonicals = [_canonical(group) for group in groups]
+    canonicals = [_canonical(group, ab_independent=ab_independent) for group in groups]
     for index, canonical in enumerate(canonicals):
         for other in sorted(possible.get(index, ())):
             canonical.possible_duplicate_of.append(canonicals[other].key)
@@ -122,7 +133,7 @@ def _key(primary: Candidate) -> str:
     return hashlib.sha256(basis.encode()).hexdigest()[:16]
 
 
-def _canonical(group: list[Candidate]) -> CanonicalRequirement:
+def _canonical(group: list[Candidate], *, ab_independent: bool = True) -> CanonicalRequirement:
     ai = [c for c in group if c.pass_label in {"A", "B"}]
     ranked = sorted(group, key=lambda c: (0 if c.citation_verified else 1, _PASS_PRIORITY.get(c.pass_label, 9)))
     primary = sorted(ai or group, key=lambda c: (0 if c.citation_verified else 1, _PASS_PRIORITY.get(c.pass_label, 9)))[0]
@@ -168,10 +179,13 @@ def _canonical(group: list[Candidate]) -> CanonicalRequirement:
             key_values.setdefault(k, v)
     confidences = [c.confidence for c in ai if c.confidence is not None]
 
-    independently_confirmed = {"A", "B"} <= set(found_by)
-    if not independently_confirmed:
+    both_passes = {"A", "B"} <= set(found_by)
+    independently_confirmed = both_passes and ab_independent
+    if not both_passes:
         flags.append("single_pass")
         flags.append(f"found_only_by_{'_'.join(found_by)}")
+    elif not ab_independent:
+        flags.append("ab_same_model")
     if any(c.supporting_quote for c in group) and located is None:
         flags.append("citation_unverified")
 
@@ -355,8 +369,12 @@ def _merge_into(req: Requirement, canonical: CanonicalRequirement) -> None:
     for flag in canonical.flags:
         if flag not in flags:
             flags.append(flag)
+    # Passes A and B confirm independently only when they ran on different models.
+    independent = bool(req.independently_confirmed or canonical.independently_confirmed)
     if {"A", "B"} <= set(found_by):
         flags = [f for f in flags if f != "single_pass" and not f.startswith("found_only_by_")]
+    if independent:
+        flags = [f for f in flags if f != "ab_same_model"]
     reconciliation.update({"found_by": found_by, "flags": flags, "disagreements": {**(reconciliation.get("disagreements") or {}), **canonical.disagreements}, "last_matched_at": datetime.now(UTC).isoformat()})
     req.reconciliation = reconciliation
     refs = list(req.source_refs or [])
@@ -365,7 +383,7 @@ def _merge_into(req: Requirement, canonical: CanonicalRequirement) -> None:
         if (ref.get("candidate_id"), ref.get("pass"), ref.get("quote")) not in known:
             refs.append(ref)
     req.source_refs = refs
-    req.independently_confirmed = req.independently_confirmed or {"A", "B"} <= set(found_by)
+    req.independently_confirmed = independent
     req.extraction_pass = "+".join(found_by)
     key_values = dict(req.key_values or {})
     for k, v in canonical.key_values.items():

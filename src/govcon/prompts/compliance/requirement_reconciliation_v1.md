@@ -5,6 +5,7 @@ task_type: requirement_reconciliation
 provider_family: generative_llm
 schema_version: requirement_reconciliation.v1
 status: active
+allowed_data_classes: PUBLIC
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1
 required_variables: REQUIREMENTS_JSON, DOCUMENT_INVENTORY_JSON
 regression_suite: compliance_requirement_reconciliation

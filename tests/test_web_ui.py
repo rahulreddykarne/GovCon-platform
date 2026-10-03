@@ -22,7 +22,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
+from web_client import CsrfTestClient as TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -113,6 +113,64 @@ def _make_watchlist(session: Session) -> Watchlist:
     session.flush()
     session.commit()
     return wl
+
+
+def _fresh_opp(session: Session, tag: str) -> Opportunity:
+    opp = Opportunity(
+        source="test",
+        source_id=f"WEB-UI-{tag}-{secrets.token_hex(6)}",
+        title=f"Web gate test {tag}",
+        psc_code="9999",
+        agency_path="Test Agency",
+        status="open",
+        response_deadline=datetime.now(UTC) + timedelta(days=30),
+        raw={},
+    )
+    session.add(opp)
+    session.flush()
+    session.commit()
+    return opp
+
+
+def _assign(session: Session, opp_id: int, user: User) -> None:
+    from govcon.collaboration.assignments import assign_reviewer
+    from govcon.collaboration.review_sessions import ensure_review_session
+
+    ensure_review_session(session, opportunity_id=opp_id)
+    assign_reviewer(session, opportunity_id=opp_id, user_id=user.id)
+    session.commit()
+
+
+def _complete_review(session: Session, opp_id: int, tag: str) -> User:
+    """A real reviewer completes a real assignment through the quorum service."""
+    from govcon.collaboration.comments import add_comment
+    from govcon.collaboration.review_sessions import complete_assignment
+
+    reviewer, _ = _make_user(session, f"rev_{tag}_{secrets.token_hex(4)}@example.com", "reviewer")
+    _assign(session, opp_id, reviewer)
+    add_comment(
+        session,
+        opportunity_id=opp_id,
+        user_id=reviewer.id,
+        body="Pricing and delivery reviewed against the solicitation; acceptable to proceed.",
+        validate_with_ai=False,
+    )
+    complete_assignment(
+        session,
+        opportunity_id=opp_id,
+        user_id=reviewer.id,
+        action="approve_continue",
+        recommendation="bid",
+    )
+    session.commit()
+    return reviewer
+
+
+def _review_session(session: Session, opp_id: int) -> ReviewSession:
+    rs = session.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp_id))
+    assert rs is not None
+    session.refresh(rs)
+    return rs
 
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
@@ -302,6 +360,7 @@ class TestConcurrentAccess:
     def test_reviewer_identity_visible_on_comments(self, client, db_session):
         user1, token1 = _make_user(db_session, "ident_u1@example.com", "reviewer")
         opp = _make_opp(db_session)
+        _assign(db_session, opp.id, user1)
         # Post a comment
         resp = client.post(
             f"/workspace/{opp.id}/comment",
@@ -342,7 +401,7 @@ class TestApprovalPermissions:
         # Reviewer tries to approve — should be redirected (not crash, not approve)
         resp = client.post(
             f"/workspace/{opp.id}/approve",
-            data={"decision": "approve_to_bid"},
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
         # Either redirect or 303 — should not change status to approved
@@ -352,24 +411,14 @@ class TestApprovalPermissions:
 
     def test_approver_can_approve(self, client, db_session):
         approver, token = _make_user(db_session, "perm_approver@example.com", "approver")
-        opp = _make_opp(db_session)
-        rs = db_session.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp.id))
-        if not rs:
-            rs = ReviewSession(
-                opportunity_id=opp.id,
-                status="approval_pending",
-                review_policy="conditional",
-                required_review_count=1,
-                completed_review_count=1,
-            )
-            db_session.add(rs)
-        else:
-            rs.status = "approval_pending"
-        db_session.commit()
+        opp = _fresh_opp(db_session, "PERM")
+        _complete_review(db_session, opp.id, "perm")
+        rs = _review_session(db_session, opp.id)
+        assert rs.status == "approval_pending"
 
         resp = client.post(
             f"/workspace/{opp.id}/approve",
-            data={"decision": "approve_to_bid"},
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
         assert resp.status_code in (200, 303)
@@ -405,16 +454,10 @@ class TestApproveToGenerates:
         db_session.flush()
         pursuit = Pursuit(opportunity_id=opp.id, stage="evaluating")
         db_session.add(pursuit)
-        db_session.flush()
-        rs = ReviewSession(
-            opportunity_id=opp.id,
-            status="approval_pending",
-            review_policy="conditional",
-            required_review_count=1,
-            completed_review_count=1,
-        )
-        db_session.add(rs)
         db_session.commit()
+        _complete_review(db_session, opp.id, f"gen{suffix}")
+        rs = _review_session(db_session, opp.id)
+        assert rs.status == "approval_pending"
         return opp, pursuit, rs, approver, token
 
     def test_approve_to_bid_creates_proposal(self, client, db_session):
@@ -424,7 +467,7 @@ class TestApproveToGenerates:
 
         resp = client.post(
             f"/workspace/{opp.id}/approve",
-            data={"decision": "approve_to_bid"},
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
         assert resp.status_code in (200, 303)
@@ -443,7 +486,7 @@ class TestApproveToGenerates:
 
         client.post(
             f"/workspace/{opp.id}/approve",
-            data={"decision": "approve_to_bid"},
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
 
@@ -458,7 +501,7 @@ class TestApproveToGenerates:
 
         client.post(
             f"/workspace/{opp.id}/approve",
-            data={"decision": "approve_to_bid"},
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
 
@@ -476,7 +519,7 @@ class TestApproveToGenerates:
 
         client.post(
             f"/workspace/{opp.id}/approve",
-            data={"decision": "approve_to_bid"},
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
 
@@ -488,7 +531,7 @@ class TestApproveToGenerates:
         assert b"Submission package available after proposal is approved" not in resp.content, \
             "Submission tab should show real package state after Approve to Bid"
 
-    def test_full_workflow_approve_then_record_outcome(self, client, db_session):
+    def test_full_workflow_approve_then_record_outcome(self, client, db_session, tmp_path):
         """Full workflow: approve_to_bid → proposal final-approve → authorize submission → record won."""
         from govcon.models import Proposal, Submission, Pursuit
         opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A05")
@@ -496,39 +539,69 @@ class TestApproveToGenerates:
         # Step 1: Approve to bid (auto-generates proposal + submission)
         client.post(
             f"/workspace/{opp.id}/approve",
-            data={"decision": "approve_to_bid"},
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
         )
 
         proposal = db_session.scalar(select(Proposal).where(Proposal.opportunity_id == opp.id))
         assert proposal is not None
+        db_session.refresh(proposal)
+        assert proposal.status == "ai_generated"
 
-        # Step 2: Set proposal to red_teamed so final-approve is allowed
-        proposal.status = "red_teamed"
-        db_session.commit()
-
-        # Step 3: Final-approve proposal
-        client.post(
+        # Step 2: Final approval goes through the compliance gate. No pre-flight
+        # has run, so it is refused unless the approver gives their own reason.
+        resp = client.post(
             f"/workspace/{opp.id}/proposal/approve",
-            data={"decision": "APPROVE_FOR_SUBMISSION"},
+            data={"decision": "APPROVE_FOR_SUBMISSION", "expected_version": proposal.version},
             cookies={"govcon_session": token},
         )
+        assert "error=" in resp.headers["location"]
+        db_session.expire(proposal)
+        assert proposal.status == "ai_generated"
+
+        from govcon.compliance.deterministic import PackageFile, SubmissionPackage
+        from govcon.compliance.submission_preflight import run_submission_preflight
+        from govcon.proposals.export import export_proposal_docx
+        from govcon.submissions.manifest import assemble_package
+        sub = db_session.scalar(select(Submission).where(Submission.opportunity_id == opp.id))
+        opp.response_deadline = sub.submission_deadline = datetime.now(UTC) + timedelta(days=7)
+        db_session.flush()
+        artifact = tmp_path / "proposal.docx"
+        artifact.write_bytes(export_proposal_docx(db_session, proposal_version_id=proposal.current_version_id))
+        package = SubmissionPackage(files=[PackageFile("proposal.docx", role="proposal", local_path=str(artifact))], proposal_version_id=proposal.current_version_id)
+        assemble_package(db_session, opportunity_id=opp.id, package=package, actor=approver)
+        run_submission_preflight(db_session, opp.id, package)
+        db_session.commit()
+
+        response = client.post(
+            f"/workspace/{opp.id}/proposal/approve",
+            data={
+                "decision": "APPROVE_FOR_SUBMISSION",
+                "expected_version": proposal.version,
+                "override_reason": "Pre-flight reviewed manually; package verified by the approver.",
+            },
+            cookies={"govcon_session": token},
+        )
+        assert "error=" not in response.headers.get("location", ""), response.headers.get("location")
         db_session.expire(proposal)
         assert proposal.status == "final_approved"
+        assert proposal.approved_version_id == proposal.current_version_id
 
-        # Step 4: Set submission to ready, authorize
+        # Step 3: The submission is ready; the human records the manual submission.
         sub = db_session.scalar(select(Submission).where(Submission.opportunity_id == opp.id))
         assert sub is not None
-        sub.status = "ready"
-        db_session.commit()
+        db_session.refresh(sub)
+        assert sub.status == "ready"
 
         client.post(
             f"/workspace/{opp.id}/submission/approve",
-            data={"decision": "approve"},
+            data={"expected_version": sub.version, "confirmation_number": "E2E-CONF-1"},
             cookies={"govcon_session": token},
         )
         db_session.expire(sub)
         assert sub.status == "submitted"
+        db_session.expire(pursuit)
+        assert pursuit.stage == "submitted"
 
         # Step 5: Record outcome (Phase 15 structured capture — use lessons_learned)
         client.post(
@@ -541,12 +614,175 @@ class TestApproveToGenerates:
         assert pursuit.outcome_notes == "E2E test win"
 
 
+class TestWorkflowGates:
+    """C1: every mutating route goes through its service gate."""
+
+    def test_read_only_user_cannot_complete_review(self, client, db_session):
+        viewer, token = _make_user(db_session, f"ro_{secrets.token_hex(4)}@example.com", "read_only")
+        opp = _fresh_opp(db_session, "RO")
+        from govcon.collaboration.review_sessions import ensure_review_session
+
+        ensure_review_session(db_session, opportunity_id=opp.id)
+        db_session.commit()
+        resp = client.post(
+            f"/workspace/{opp.id}/complete-review",
+            data={"recommendation": "bid", "agree_with_ai_assessment": "on"},
+            cookies={"govcon_session": token},
+        )
+        assert resp.status_code == 303
+        assert "error=" in resp.headers["location"]
+        rs = _review_session(db_session, opp.id)
+        assert rs.completed_review_count == 0
+
+    def test_unassigned_reviewer_cannot_complete_review(self, client, db_session):
+        reviewer, token = _make_user(db_session, f"na_{secrets.token_hex(4)}@example.com", "reviewer")
+        opp = _fresh_opp(db_session, "NA")
+        from govcon.collaboration.review_sessions import ensure_review_session
+
+        ensure_review_session(db_session, opportunity_id=opp.id)
+        db_session.commit()
+        for _ in range(2):
+            resp = client.post(
+                f"/workspace/{opp.id}/complete-review",
+                data={"recommendation": "bid", "agree_with_ai_assessment": "on"},
+                cookies={"govcon_session": token},
+            )
+            assert "error=" in resp.headers["location"]
+        rs = _review_session(db_session, opp.id)
+        assert rs.completed_review_count == 0
+        assert rs.status != "approval_pending"
+
+    def test_repeated_complete_review_counts_once(self, client, db_session):
+        from govcon.collaboration.review_sessions import set_review_policy
+
+        approver, _ = _make_user(db_session, f"ap_{secrets.token_hex(4)}@example.com", "approver")
+        reviewer, token = _make_user(db_session, f"rp_{secrets.token_hex(4)}@example.com", "reviewer")
+        opp = _fresh_opp(db_session, "REP")
+        _assign(db_session, opp.id, reviewer)
+        set_review_policy(db_session, opportunity_id=opp.id, review_policy="dual", actor=approver)
+        db_session.commit()
+        for _ in range(3):
+            client.post(
+                f"/workspace/{opp.id}/complete-review",
+                data={"recommendation": "bid", "agree_with_ai_assessment": "on"},
+                cookies={"govcon_session": token},
+            )
+        rs = _review_session(db_session, opp.id)
+        assert rs.completed_review_count == 1
+        assert rs.required_review_count == 2
+        assert rs.status not in {"approval_pending", "review_complete", "approved_to_bid"}
+
+    def test_approval_with_unmet_quorum_is_refused(self, client, db_session):
+        approver, token = _make_user(db_session, f"uq_{secrets.token_hex(4)}@example.com", "approver")
+        opp = _fresh_opp(db_session, "UQ")
+        from govcon.collaboration.review_sessions import ensure_review_session
+
+        rs = ensure_review_session(db_session, opportunity_id=opp.id)
+        db_session.commit()
+        resp = client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
+            cookies={"govcon_session": token},
+        )
+        assert "error=" in resp.headers["location"]
+        rs = _review_session(db_session, opp.id)
+        assert rs.status != "approved_to_bid"
+        assert rs.final_approval_status is None
+
+    def test_stale_version_is_refused(self, client, db_session):
+        approver, token = _make_user(db_session, f"sv_{secrets.token_hex(4)}@example.com", "approver")
+        opp = _fresh_opp(db_session, "SV")
+        _complete_review(db_session, opp.id, "sv")
+        rs = _review_session(db_session, opp.id)
+        resp = client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid", "expected_version": rs.version - 1},
+            cookies={"govcon_session": token},
+        )
+        assert "error=" in resp.headers["location"]
+        rs = _review_session(db_session, opp.id)
+        assert rs.status == "approval_pending"
+
+    def test_approval_is_audited(self, client, db_session):
+        from govcon.models import AuditEvent
+
+        approver, token = _make_user(db_session, f"au_{secrets.token_hex(4)}@example.com", "approver")
+        opp = _fresh_opp(db_session, "AU")
+        _complete_review(db_session, opp.id, "au")
+        rs = _review_session(db_session, opp.id)
+        client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
+            cookies={"govcon_session": token},
+        )
+        events = db_session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.opportunity_id == opp.id,
+                AuditEvent.action_type == "review_final_approval_set",
+            )
+        ).all()
+        assert events and events[-1].user_id == approver.id
+
+    def test_submission_cannot_be_recorded_without_final_approval(self, client, db_session):
+        from govcon.models import Pursuit, Submission
+
+        approver, token = _make_user(db_session, f"sb_{secrets.token_hex(4)}@example.com", "approver")
+        opp = _fresh_opp(db_session, "SB")
+        db_session.add(Pursuit(opportunity_id=opp.id, stage="evaluating"))
+        db_session.commit()
+        _complete_review(db_session, opp.id, "sb")
+        rs = _review_session(db_session, opp.id)
+        client.post(
+            f"/workspace/{opp.id}/approve",
+            data={"decision": "approve_to_bid", "expected_version": rs.version},
+            cookies={"govcon_session": token},
+        )
+        sub = db_session.scalar(select(Submission).where(Submission.opportunity_id == opp.id))
+        assert sub is not None
+        db_session.refresh(sub)
+        resp = client.post(
+            f"/workspace/{opp.id}/submission/approve",
+            data={"expected_version": sub.version, "confirmation_number": "SHOULD-NOT-RECORD"},
+            cookies={"govcon_session": token},
+        )
+        assert "error=" in resp.headers["location"]
+        db_session.expire(sub)
+        assert sub.status != "submitted"
+
+    def test_read_only_user_cannot_record_outcome_or_triage(self, client, db_session):
+        from govcon.models import OutcomeFeedback
+
+        viewer, token = _make_user(db_session, f"rv_{secrets.token_hex(4)}@example.com", "read_only")
+        opp = _fresh_opp(db_session, "RV")
+        resp = client.post(
+            f"/workspace/{opp.id}/record-outcome",
+            data={"outcome": "no_bid", "no_bid_category": "margin"},
+            cookies={"govcon_session": token},
+        )
+        assert "error=" in resp.headers["location"]
+        assert db_session.scalar(select(OutcomeFeedback).where(OutcomeFeedback.opportunity_id == opp.id)) is None
+
+        wl = _make_watchlist(db_session)
+        m = Match(opportunity_id=opp.id, watchlist_id=wl.id, status="new")
+        db_session.add(m)
+        db_session.commit()
+        resp = client.post("/inbox/action", data={"match_id": m.id, "action": "dismissed"}, cookies={"govcon_session": token})
+        assert resp.status_code == 403
+        db_session.expire(m)
+        assert m.status == "new"
+
+        resp = client.post("/watchlists/new", data={"name": "RO watchlist"}, cookies={"govcon_session": token})
+        assert "error=" in resp.headers["location"]
+        assert db_session.scalar(select(Watchlist).where(Watchlist.name == "RO watchlist")) is None
+
+
 class TestAuditTrail:
     """AC: Audit history shows who changed what and when."""
 
     def test_comment_stored_with_user_id(self, client, db_session):
         user, token = _make_user(db_session, "audit_user@example.com", "reviewer")
         opp = _make_opp(db_session)
+        _assign(db_session, opp.id, user)
         body = f"Audit trail test {secrets.token_hex(4)}"
         client.post(
             f"/workspace/{opp.id}/comment",
@@ -616,3 +852,95 @@ class TestSecurityRequirements:
                 database_url="postgresql+psycopg://x:x@localhost/x",
                 web_bind_host="0.0.0.0",
             )
+
+
+class TestRealSourceLinks:
+    """H5: detail and workspace pages render real normalised SAM links."""
+
+    def _sam_opp(self, db_session) -> Opportunity:
+        import json
+        from pathlib import Path
+
+        from govcon.ingest.sam_opportunities import normalize_opportunity
+        from govcon.ingest.snapshots import upsert_opportunity
+
+        fixture = Path(__file__).parent / "fixtures" / "sam_opportunities_search.json"
+        record = dict(json.loads(fixture.read_text(encoding="utf-8"))["opportunitiesData"][0])
+        record["noticeId"] = f"web-links-{secrets.token_hex(6)}"
+        record["resourceLinks"] = [
+            "https://api.sam.gov/prod/opportunities/v3/resources/files/aaa/download",
+            {"url": "https://api.sam.gov/prod/opportunities/v3/resources/files/bbb/download", "name": "SOW.docx"},
+        ]
+        upsert_opportunity(db_session, normalize_opportunity(record))
+        db_session.commit()
+        opp = db_session.scalar(select(Opportunity).where(Opportunity.source_id == record["noticeId"]))
+        assert isinstance(opp.links.get("attachments"), list)  # list-valued links reach the template
+        return opp
+
+    def test_detail_page_renders_list_valued_links(self, client, db_session):
+        user, token = _make_user(db_session, "links_viewer@example.com", "read_only")
+        opp = self._sam_opp(db_session)
+        resp = client.get(f"/opp/{opp.id}", cookies={"govcon_session": token})
+        assert resp.status_code == 200
+        body = resp.text
+        assert "Attachment 1" in body and "Attachment 2" in body
+        assert "/resources/files/bbb/download" in body
+        if opp.links.get("ui"):
+            assert opp.links["ui"] in body  # the Source button uses the real notice link
+
+    def test_workspace_renders_source_button(self, client, db_session):
+        user, token = _make_user(db_session, "links_viewer2@example.com", "read_only")
+        opp = self._sam_opp(db_session)
+        resp = client.get(f"/workspace/{opp.id}?tab=overview", cookies={"govcon_session": token})
+        assert resp.status_code == 200
+        if opp.links.get("ui"):
+            assert opp.links["ui"] in resp.text
+
+
+def test_source_links_helper_tolerates_every_shape():
+    from govcon.web.helpers import primary_source_url, source_links
+
+    links = {
+        "self": [{"rel": "self", "href": "https://api.sam.gov/opp/1"}],
+        "ui": "https://sam.gov/opp/1/view",
+        "attachments": ["https://files.example.test/a.pdf", "not a url", None],
+        "document_name": "PR-123.PDF",
+        "package": "https://dibbs2.bsm.dla.mil/Downloads/RFQ/Archive/ca260925.zip",
+        "weird": {"href": "javascript:alert(1)"},
+    }
+    entries = source_links(links)
+    urls = [e["url"] for e in entries]
+    assert urls[0] == "https://sam.gov/opp/1/view"
+    assert "https://files.example.test/a.pdf" in urls
+    assert all(u.startswith("https://") for u in urls)
+    assert primary_source_url(links) == "https://sam.gov/opp/1/view"
+    assert source_links(None) == [] and source_links(["x"]) == []
+    assert primary_source_url({"attachments": ["https://files.example.test/a.pdf"]}) == "https://files.example.test/a.pdf"
+
+
+def test_alerted_match_stays_in_inbox_with_marker(client, db_session, tmp_path):
+    """H6: sending the digest must not empty the inbox."""
+    from govcon.alerts.digest import run_digest
+    from govcon.config import Settings
+
+    user, token = _make_user(db_session, f"inbox_alert_{secrets.token_hex(4)}@example.com", "reviewer")
+    wl = Watchlist(name=f"Inbox alert WL {secrets.token_hex(4)}", enabled=True, psc_codes=["71"])
+    db_session.add(wl)
+    opp = _fresh_opp(db_session, "ALERT")
+    opp.title = f"Alerted inbox item {secrets.token_hex(3)}"
+    db_session.flush()
+    match = Match(opportunity_id=opp.id, watchlist_id=wl.id, status="new")
+    db_session.add(match)
+    db_session.commit()
+
+    settings = Settings(outbox_dir=tmp_path, smtp_host=None, alert_email_to=None)
+    result = run_digest(db_session, settings=settings)
+    db_session.commit()
+    assert match.id in result.match_ids
+    db_session.refresh(match)
+    assert match.status == "new" and match.alerted_at is not None
+
+    resp = client.get("/", cookies={"govcon_session": token})
+    assert resp.status_code == 200
+    assert opp.title in resp.text
+    assert "Alerted" in resp.text

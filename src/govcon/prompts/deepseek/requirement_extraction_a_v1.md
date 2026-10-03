@@ -5,6 +5,7 @@ task_type: compliance_extraction
 provider_family: generative_llm
 schema_version: requirement_extraction.v1
 status: active
+allowed_data_classes: PUBLIC
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1
 required_variables: OPPORTUNITY_JSON, DOCUMENT_INVENTORY_JSON, SOURCE_CHUNKS, AMENDMENT_JSON
 regression_suite: compliance_requirement_extraction

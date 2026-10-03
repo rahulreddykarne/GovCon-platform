@@ -22,7 +22,7 @@ Sequence (§17, Appendix B):
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -36,8 +36,9 @@ from govcon.compliance.proposal_coverage import check_proposal_coverage
 from govcon.compliance.submission_preflight import (
     ReadinessBlocked,
     move_to_ready_to_submit,
+    readiness_blockers,
 )
-from govcon.concurrency import apply_versioned_update
+from govcon.concurrency import StaleRecordError, apply_versioned_update
 from govcon.config import Settings, get_settings
 from govcon.models import (
     Notification,
@@ -52,11 +53,19 @@ from govcon.models import (
 from govcon.proposals.ai_review import run_proposal_red_team
 from govcon.proposals.drafting import draft_proposal
 from govcon.proposals.versions import (
+    ProposalWorkflowError,
     create_proposal_version,
     get_sections_for_version,
     latest_proposal_version,
 )
 from govcon.submissions.service import generate_submission_package
+from govcon.workflow.invalidation import invalidate_submission_readiness, lock_one, lock_opportunity
+from govcon.workflow.source_revision import current_source_revision, is_stale, stamp_of
+from govcon.workflow.transitions import (
+    APPROVABLE_PROPOSAL_STATUSES,
+    InvalidTransition,
+    require_transition,
+)
 
 logger = logging.getLogger("govcon.proposals.service")
 
@@ -127,6 +136,8 @@ def generate_proposal(
     proposal = get_or_create_proposal(
         session, opportunity_id=opportunity_id, pursuit_id=pursuit.id
     )
+    if proposal.status == "cancelled":
+        raise ProposalWorkflowError(f"proposal for opportunity {opportunity_id} was cancelled")
 
     if skip_ai:
         draft_result = _build_placeholder_draft(session, opportunity_id)
@@ -141,8 +152,8 @@ def generate_proposal(
                 company_facts=company_facts,
                 settings=settings,
             )
-            provider = "deepseek"
-            model = None
+            provider = draft_result.get("provider")
+            model = draft_result.get("model")
         except StructuredCallError as exc:
             logger.warning("AI drafting failed (%s); using placeholder draft: %s", exc.reason, exc.detail)
             draft_result = _build_placeholder_draft(session, opportunity_id)
@@ -169,9 +180,9 @@ def generate_proposal(
             "draft_notes": draft_result.get("draft_notes", []),
             "source_fact_ids_used": draft_result.get("source_fact_ids_used", []),
         },
+        status_after="ai_generated",
+        actor_id=actor.id if actor else None,
     )
-
-    proposal.status = "ai_generated"
     session.flush()
 
     # Run coverage validation (deterministic pass only in this step)
@@ -376,6 +387,10 @@ def get_proposal_workspace(
         "review_approval_status": review.final_approval_status if review else None,
         "pursuit_stage": pursuit.stage if pursuit else None,
         "actions_available": ["APPROVE_FOR_SUBMISSION", "RETURN_FOR_FIX", "CANCEL_BID"],
+        # What the compliance gate would refuse; final approval shows these to the approver.
+        "readiness_blockers": readiness_blockers(session, opportunity_id),
+        "proposal_version": proposal.version if proposal else None,
+        "approved_version_id": proposal.approved_version_id if proposal else None,
     }
 
 
@@ -385,93 +400,138 @@ def finalize_proposal(
     opportunity_id: int,
     action: str,
     actor: User,
+    expected_version: int,
     override_reason: str | None = None,
 ) -> dict[str, Any]:
     """Human final approval action: APPROVE_FOR_SUBMISSION | RETURN_FOR_FIX | CANCEL_BID.
 
+    The caller must hold ``approve`` and pass the proposal version it read.
+
     APPROVE_FOR_SUBMISSION:
-      - sets Proposal.status = 'final_approved'
-      - records approver and timestamp
-      - calls move_to_ready_to_submit() on the pursuit
-      - sets Submission.readiness_status = 'ready'
+      - allowed only from ``ai_generated`` or ``red_teamed`` on a bid that is
+        still ``approved_to_bid``, for a version written against the current
+        source revision;
+      - runs ``move_to_ready_to_submit`` first. Blockers refuse the approval
+        unless the caller passes their own override reason (and holds
+        ``override_compliance``); nothing changes when the gate refuses;
+      - then pins ``approved_version_id``, sets ``final_approved``, and marks
+        the submission ``ready``.
 
-    RETURN_FOR_FIX:
-      - sets Proposal.status = 'returned_for_fix'
-      - records in audit
+    RETURN_FOR_FIX: ``returned_for_fix``; a prior approval's readiness lapses.
 
-    CANCEL_BID:
-      - sets Proposal.status = 'cancelled'
-      - sets Pursuit.stage = 'cancelled'
+    CANCEL_BID: proposal ``cancelled``, pursuit ``cancelled``, an unsubmitted
+    submission ``withdrawn``.
     """
     require_permission(actor, "approve")
+    action_upper = action.upper()
+    if action_upper not in {"APPROVE_FOR_SUBMISSION", "RETURN_FOR_FIX", "CANCEL_BID"}:
+        raise ValueError(f"Unknown action: {action!r}. Expected APPROVE_FOR_SUBMISSION | RETURN_FOR_FIX | CANCEL_BID")
+    if expected_version is None:
+        raise ProposalWorkflowError("expected_version is required for final proposal decisions")
 
-    proposal = session.scalars(
-        select(Proposal).where(Proposal.opportunity_id == opportunity_id)
-    ).first()
+    lock_opportunity(session, opportunity_id)  # opportunity first, then proposal, pursuit, submission
+    proposal = lock_one(session, select(Proposal).where(Proposal.opportunity_id == opportunity_id))
     if proposal is None:
         raise ValueError(f"No proposal for opportunity {opportunity_id}")
-
-    pursuit = session.scalars(
-        select(Pursuit).where(Pursuit.opportunity_id == opportunity_id)
-    ).first()
-
+    if proposal.version != expected_version:
+        raise ProposalWorkflowError(
+            f"{StaleRecordError(proposal.version, expected_version)}; reload the proposal before deciding"
+        )
+    pursuit = lock_one(session, select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
     now = datetime.now(UTC)
-    action_upper = action.upper()
+    old_status = proposal.status
 
     if action_upper == "APPROVE_FOR_SUBMISSION":
-        proposal.status = "final_approved"
-        proposal.final_approved_by_user_id = actor.id
-        proposal.final_approved_at = now
-        session.flush()
-
-        # Move pursuit to ready_to_submit.
-        # The human final approval itself serves as an authorized override for
-        # non-hard blockers (e.g. missing pre-flight run). Hard blockers like a
-        # passed deadline are never overridable.
-        effective_override = override_reason or "human_final_approval_gate"
-        try:
-            move_to_ready_to_submit(
-                session,
-                opportunity_id=opportunity_id,
-                actor=actor,
-                override_reason=effective_override,
+        if proposal.status not in APPROVABLE_PROPOSAL_STATUSES:
+            raise ProposalWorkflowError(
+                f"a {proposal.status!r} proposal cannot be approved; "
+                f"approval requires one of {sorted(APPROVABLE_PROPOSAL_STATUSES)}"
             )
-        except ReadinessBlocked as exc:
-            # Only hard/non-overridable blockers should propagate
-            logger.warning(
-                "Final approval blocked by %d hard blocker(s): %s",
-                len(exc.blockers), exc.blockers,
+        if proposal.current_version_id is None:
+            raise ProposalWorkflowError("the proposal has no version to approve")
+        review = session.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opportunity_id))
+        if review is None or review.final_approval_status != "approved_to_bid":
+            raise ProposalWorkflowError("the bid is not approved_to_bid; the review must approve it first")
+        current = session.get(ProposalVersion, proposal.current_version_id)
+        if current is not None and is_stale(
+            stamp_of(current.version_metadata), current_source_revision(session, opportunity_id)
+        ):
+            raise ProposalWorkflowError(
+                f"proposal version {current.version_number} was written against a superseded "
+                "source revision; create a new version before approving"
             )
-            raise
-
-        # Mark submission ready
-        submission = session.scalars(
-            select(Submission).where(Submission.opportunity_id == opportunity_id)
-        ).first()
+        # Gate first. ReadinessBlocked propagates and nothing below runs.
+        move_to_ready_to_submit(
+            session,
+            opportunity_id=opportunity_id,
+            actor=actor,
+            override_reason=override_reason,
+        )
+        apply_versioned_update(
+            session,
+            proposal,
+            expected_version,
+            {
+                "status": "final_approved",
+                "final_approved_by_user_id": actor.id,
+                "final_approved_at": now,
+                "approved_version_id": proposal.current_version_id,
+            },
+        )
+        submission = _latest_submission(session, opportunity_id)
+        if submission is None:
+            generate_submission_package(session, opportunity_id=opportunity_id, actor=actor)
+            submission = _latest_submission(session, opportunity_id)
         if submission is not None:
+            if submission.status in {"failed"}:
+                require_transition("submission", submission.status, "ready")
+            if submission.status in {"preparing", "failed"}:
+                submission.status = "ready"
             submission.readiness_status = "ready"
+            submission.version = (submission.version or 1) + 1
             session.flush()
-
         _send_notification(
             session,
             opportunity_id=opportunity_id,
             actor=actor,
             notification_type="submission_ready",
-            payload={"proposal_id": proposal.id, "action": action_upper},
+            payload={"proposal_id": proposal.id, "action": action_upper, "approved_version_id": proposal.approved_version_id},
         )
 
     elif action_upper == "RETURN_FOR_FIX":
-        proposal.status = "returned_for_fix"
-        session.flush()
+        try:
+            require_transition("proposal", proposal.status, "returned_for_fix")
+        except InvalidTransition as exc:
+            raise ProposalWorkflowError(str(exc)) from exc
+        if proposal.status == "final_approved":
+            invalidate_submission_readiness(
+                session, opportunity_id, reason="proposal returned for fix", actor_id=actor.id
+            )
+        apply_versioned_update(
+            session,
+            proposal,
+            expected_version,
+            {
+                "status": "returned_for_fix",
+                "approved_version_id": None,
+                "final_approved_by_user_id": None,
+                "final_approved_at": None,
+            },
+        )
 
-    elif action_upper == "CANCEL_BID":
-        proposal.status = "cancelled"
-        if pursuit is not None:
-            pursuit.stage = "cancelled"
-            session.flush()
-
-    else:
-        raise ValueError(f"Unknown action: {action!r}. Expected APPROVE_FOR_SUBMISSION | RETURN_FOR_FIX | CANCEL_BID")
+    else:  # CANCEL_BID
+        try:
+            require_transition("proposal", proposal.status, "cancelled")
+            if pursuit is not None:
+                require_transition("pursuit", pursuit.stage, "cancelled")
+        except InvalidTransition as exc:
+            raise ProposalWorkflowError(str(exc)) from exc
+        apply_versioned_update(session, proposal, expected_version, {"status": "cancelled"})
+        if pursuit is not None and pursuit.stage != "cancelled":
+            apply_versioned_update(session, pursuit, pursuit.version, {"stage": "cancelled"})
+        submission = _latest_submission(session, opportunity_id)
+        if submission is not None and submission.status in {"preparing", "ready", "failed"}:
+            apply_versioned_update(session, submission, submission.version, {"status": "withdrawn"})
 
     record_audit(
         session,
@@ -480,7 +540,13 @@ def finalize_proposal(
         action_type=f"proposal_{action_upper.lower()}",
         entity_type="proposal",
         entity_id=proposal.id,
-        new_value={"action": action_upper, "override_reason": override_reason},
+        old_value={"status": old_status, "version": expected_version},
+        new_value={
+            "action": action_upper,
+            "status": proposal.status,
+            "override_reason": override_reason,
+            "approved_version_id": proposal.approved_version_id,
+        },
     )
 
     return {
@@ -490,6 +556,8 @@ def finalize_proposal(
         "actor": actor.email,
         "at": now.isoformat(),
         "pursuit_stage": pursuit.stage if pursuit else None,
+        "approved_version_id": proposal.approved_version_id,
+        "version": proposal.version,
     }
 
 
@@ -497,36 +565,120 @@ def record_submission_confirmation(
     session: Session,
     *,
     opportunity_id: int,
+    actor: User,
+    expected_version: int,
     confirmation_number: str | None = None,
     confirmation_notes: str | None = None,
-    actor: User,
+    submitted_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Record that the human has manually submitted and has a confirmation."""
-    require_permission(actor, "approve")
+    """Record that a human manually submitted the approved package.
 
-    submission = session.scalars(
-        select(Submission).where(Submission.opportunity_id == opportunity_id)
-    ).first()
+    Requires ``approve``, the submission version the caller read, a
+    final-approved proposal pinned to the current version, a pursuit in
+    ``ready_to_submit`` (reached only through the compliance gate), a submission
+    in ``ready``, confirmation evidence (a confirmation number, or notes of at
+    least 10 characters), and a submission time not after the deadline.
+    Repeating the call after it succeeded changes nothing.
+    """
+    require_permission(actor, "approve")
+    lock_opportunity(session, opportunity_id)
+    submission = lock_one(
+        session,
+        select(Submission)
+        .where(Submission.opportunity_id == opportunity_id)
+        .order_by(Submission.id.desc())
+        .limit(1),
+    )
     if submission is None:
         raise ValueError(f"No submission record for opportunity {opportunity_id}")
+    if submission.status in {"submitted", "confirmed"}:
+        return {
+            "submission_id": submission.id,
+            "status": submission.status,
+            "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+            "confirmation_number": submission.confirmation_number,
+            "already_recorded": True,
+        }
+    if expected_version is None:
+        raise ProposalWorkflowError("expected_version is required to record a submission")
+    if submission.version != expected_version:
+        raise ProposalWorkflowError(
+            f"{StaleRecordError(submission.version, expected_version)}; reload the submission"
+        )
 
-    pursuit = session.scalars(
-        select(Pursuit).where(Pursuit.opportunity_id == opportunity_id)
-    ).first()
-
+    proposal = session.scalar(select(Proposal).where(Proposal.opportunity_id == opportunity_id))
+    if proposal is None or proposal.status != "final_approved":
+        raise ProposalWorkflowError("the proposal must be final_approved before a submission is recorded")
+    if proposal.approved_version_id is None or proposal.approved_version_id != proposal.current_version_id:
+        raise ProposalWorkflowError("the approved proposal version is not the current version; re-approve it")
+    pursuit = lock_one(session, select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
+    if pursuit is None or pursuit.stage != "ready_to_submit":
+        raise ProposalWorkflowError(
+            f"pursuit must be ready_to_submit (currently {pursuit.stage if pursuit else None!r}); "
+            "run final approval and the compliance gate first"
+        )
+    if submission.status != "ready":
+        raise ProposalWorkflowError(f"submission is {submission.status!r}, not ready")
+    number = (confirmation_number or "").strip() or None
+    notes = (confirmation_notes or "").strip() or None
+    if number is None and (notes is None or len(notes) < 10):
+        raise ProposalWorkflowError(
+            "confirmation evidence is required: a portal/email confirmation number, "
+            "or notes (10+ characters) describing the proof of submission"
+        )
     now = datetime.now(UTC)
-    submission.status = "submitted"
-    submission.submitted_at = now
-    if confirmation_number:
-        submission.confirmation_number = confirmation_number
-    if confirmation_notes:
-        submission.notes = confirmation_notes
-    session.flush()
+    when = submitted_at or now
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    if when > now + timedelta(minutes=5):
+        raise ProposalWorkflowError("submission time cannot be in the future")
+    opportunity = session.get(Opportunity, opportunity_id)
+    deadline = submission.submission_deadline or (opportunity.response_deadline if opportunity else None)
+    if deadline is not None:
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=UTC)
+        if when > deadline:
+            raise ProposalWorkflowError(
+                f"the recorded submission time {when.isoformat()} is after the response deadline {deadline.isoformat()}"
+            )
 
-    if pursuit is not None:
-        pursuit.stage = "submitted"
-        pursuit.submitted_at = now
-        session.flush()
+    from govcon.submissions.manifest import current_package, manifest_hash, proposal_artifact_problems, verify_package
+    from govcon.compliance.matrix import latest_run
+    package = current_package(session, submission)
+    if package is None or verify_package(package):
+        raise ProposalWorkflowError("the assembled submission package is missing or changed; re-run pre-flight")
+    artifact_problems = proposal_artifact_problems(session, opportunity_id, package)
+    if artifact_problems:
+        raise ProposalWorkflowError("; ".join(artifact_problems))
+    preflight = latest_run(session, opportunity_id, "submission_preflight")
+    if preflight is None or manifest_hash(preflight.output_json.get("package") or {}) != submission.package_manifest_hash:
+        raise ProposalWorkflowError("the assembled package is not the package checked by pre-flight")
+    if package.proposal_version_id != proposal.approved_version_id:
+        raise ProposalWorkflowError("the assembled package does not contain the approved proposal version")
+    from govcon.compliance.submission_preflight import readiness_blockers
+    from govcon.models import AuditEvent
+    blockers = readiness_blockers(session, opportunity_id)
+    if blockers:
+        overrides = session.scalars(select(AuditEvent).where(AuditEvent.opportunity_id == opportunity_id, AuditEvent.action_type == "compliance_readiness_override").order_by(AuditEvent.id.desc())).all()
+        if not any(
+            (event.new_value or {}).get("package_manifest_sha256") == submission.package_manifest_hash
+            and (event.new_value or {}).get("preflight_run_id") == preflight.id
+            and (event.old_value or {}).get("blockers") == blockers
+            for event in overrides
+        ):
+            raise ProposalWorkflowError("submission readiness changed after approval; re-run pre-flight and approval")
+    try:
+        require_transition("submission", submission.status, "submitted")
+        require_transition("pursuit", pursuit.stage, "submitted")
+    except InvalidTransition as exc:
+        raise ProposalWorkflowError(str(exc)) from exc
+    updates: dict[str, Any] = {"status": "submitted", "submitted_at": when, "submitted_files": package.manifest()}
+    if number:
+        updates["confirmation_number"] = number
+    if notes:
+        updates["notes"] = notes
+    apply_versioned_update(session, submission, expected_version, updates)
+    apply_versioned_update(session, pursuit, pursuit.version, {"stage": "submitted", "submitted_at": when})
 
     record_audit(
         session,
@@ -536,16 +688,19 @@ def record_submission_confirmation(
         entity_type="submission",
         entity_id=submission.id,
         new_value={
-            "confirmation_number": confirmation_number,
-            "notes": confirmation_notes,
+            "confirmation_number": number,
+            "notes": notes,
+            "submitted_at": when.isoformat(),
+            "approved_version_id": proposal.approved_version_id,
         },
     )
 
     return {
         "submission_id": submission.id,
         "status": submission.status,
-        "submitted_at": now.isoformat(),
-        "confirmation_number": confirmation_number,
+        "submitted_at": when.isoformat(),
+        "confirmation_number": number,
+        "already_recorded": False,
     }
 
 
@@ -557,14 +712,32 @@ def _send_notification(
     notification_type: str,
     payload: dict[str, Any],
 ) -> None:
-    """Send an in-app notification to the actor (best-effort)."""
-    if actor is None:
-        return
-    notif = Notification(
-        user_id=actor.id,
-        opportunity_id=opportunity_id,
-        notification_type=notification_type,
-        payload=payload,
-    )
-    session.add(notif)
+    """Notify the acting user plus every active owner/approver (once each)."""
+    recipients: dict[int, None] = {}
+    if actor is not None:
+        recipients[actor.id] = None
+    for user in session.scalars(
+        select(User).where(User.is_active.is_(True), User.role.in_(["owner", "approver"]))
+    ).all():
+        recipients[user.id] = None
+    for user_id in recipients:
+        session.add(
+            Notification(
+                user_id=user_id,
+                opportunity_id=opportunity_id,
+                notification_type=notification_type,
+                payload=payload,
+            )
+        )
     session.flush()
+
+
+def _latest_submission(session: Session, opportunity_id: int) -> Submission | None:
+    return session.scalar(
+        select(Submission)
+        .where(Submission.opportunity_id == opportunity_id)
+        .order_by(Submission.id.desc())
+        .limit(1)
+    )
+
+

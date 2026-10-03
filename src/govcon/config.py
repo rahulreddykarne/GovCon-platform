@@ -7,12 +7,13 @@ command needs them, not when this module is imported.
 from __future__ import annotations
 
 from functools import lru_cache
+from contextvars import ContextVar
 from pathlib import Path
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from govcon.paths import repo_root
+from govcon.paths import package_root, repo_root
 
 _PUBLIC_BIND_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})
 
@@ -36,6 +37,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     deepseek_model: str | None = None
+    anthropic_model: str | None = None
+    openai_model: str | None = None
+    # Opt Claude models with safety classifiers into server-side refusal fallback.
+    anthropic_refusal_fallback: bool = True
     ai_primary_provider: str = "deepseek"
     ai_review_provider: str | None = None
     ai_secondary_review_provider: str | None = None
@@ -45,9 +50,13 @@ class Settings(BaseSettings):
     ai_external_allowed_for_cui: bool = False
 
     prompt_root: Path = Path("./src/govcon/prompts")
+    # Explicit bootstrap mode permits disk prompts only when no registry entry exists.
+    prompt_allow_disk_fallback: bool = False
     prompt_strict_json: bool = True
     prompt_fail_on_schema_error: bool = True
     prompt_enable_regression_gate: bool = True
+    prompt_require_behavioral_evaluation: bool = True
+    prompt_behavioral_evidence_dir: Path | None = None
     prompt_max_retries_on_invalid_json: int = 1
 
     jev_enabled: bool = True
@@ -75,17 +84,29 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str | None = None
     smtp_pass: str | None = None
+    # Delivery requires TLS (port 465 or STARTTLS, certificate verified). This
+    # permits a plaintext session only to a relay on localhost/loopback.
+    smtp_allow_plaintext_local_relay: bool = False
     alert_email_to: str | None = None
     alert_on_material_deadline_change: bool = True
 
     embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model_revision: str | None = None
     data_dir: Path = Path("./data")
     outbox_dir: Path = Path("./outbox")
     log_dir: Path = Path("./logs")
 
-    ai_max_input_tokens_per_opportunity: int = 120_000
-    ai_max_cost_usd_per_opportunity: float | None = None
+    ai_max_input_tokens_per_opportunity: int = Field(default=120_000, ge=1)
+    ai_max_input_tokens_per_call: int = Field(default=48_000, ge=1)
+    ai_max_output_tokens_per_call: int = Field(default=8_192, ge=1)
+    ai_max_provider_retries: int = Field(default=2, ge=0, le=5)
+    ai_max_cost_usd_per_opportunity: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    # Operator-supplied upper rate covering input/output, caching, and fallback
+    # models. A configured dollar cap fails closed until this rate is supplied.
+    ai_budget_usd_per_million_tokens: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     attachment_max_mb: int = 100
+    # Attachment downloads are HTTPS-only unless this is set deliberately.
+    attachment_allow_http: bool = False
     http_user_agent: str = "govcon-platform/2.0"
     dibbs_request_interval_seconds: float = Field(default=2.0, ge=0)
     sam_vendor_cache_hours: int = Field(default=24, ge=1)
@@ -93,6 +114,11 @@ class Settings(BaseSettings):
     web_bind_host: str = "127.0.0.1"
     web_bind_allow_public: bool = False
     session_ttl_hours: int = Field(default=12, ge=1)
+    web_public_origin: str | None = None
+    web_secure_cookies: bool = False
+    web_csrf_secret: str | None = None
+    login_attempt_limit: int = Field(default=10, ge=1)
+    login_attempt_window_seconds: int = Field(default=300, ge=1)
     review_conditional_triggers: str = (
         "critical_compliance_risk,low_jev_confidence,reviewer_ai_disagreement,"
         "reviewer_requested_second_review,material_amendment"
@@ -109,6 +135,8 @@ class Settings(BaseSettings):
         "anthropic_api_key",
         "openai_api_key",
         "deepseek_model",
+        "anthropic_model",
+        "openai_model",
         "ai_review_provider",
         "ai_secondary_review_provider",
         "jev_api_key",
@@ -118,6 +146,7 @@ class Settings(BaseSettings):
         "compliance_escalation_provider",
         "compliance_escalation_model",
         "company_facts_path",
+        "embedding_model_revision",
         "smtp_host",
         "smtp_user",
         "smtp_pass",
@@ -176,6 +205,8 @@ class Settings(BaseSettings):
         return self.sam_api_key
 
     def resolved_prompt_root(self) -> Path:
+        if self.prompt_root == Path("./src/govcon/prompts"):
+            return package_root() / "prompts"
         if self.prompt_root.is_absolute():
             return self.prompt_root
         try:
@@ -198,12 +229,25 @@ class Settings(BaseSettings):
             self.jev_api_key,
             self.smtp_pass,
             self.smtp_user,
+            self.web_csrf_secret,
         ):
             if value and len(value) >= 8:
                 values.append(value)
         return values
 
 
+settings_context: ContextVar[Settings | None] = ContextVar("app_settings", default=None)
+
+
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
+def _default_settings() -> Settings:
     return Settings()
+
+
+def get_settings() -> Settings:
+    return settings_context.get() or _default_settings()
+
+
+# Preserve the public cache management interface used by CLI/tests.
+get_settings.cache_clear = _default_settings.cache_clear
+get_settings.cache_info = _default_settings.cache_info

@@ -352,7 +352,7 @@ def test_is_eligible_for_pursuit():
     opp_closed = Opportunity(source="s", source_id="y", status="cancelled", raw={})
     opp_archived = Opportunity(source="s", source_id="z", status="archived", raw={})
 
-    assert is_eligible_for_pursuit(opp_open) is True
+    assert is_eligible_for_pursuit(opp_open) is False  # Unknown deadline requires confirmation.
     assert is_eligible_for_pursuit(opp_closed) is False
     assert is_eligible_for_pursuit(opp_archived) is False
 

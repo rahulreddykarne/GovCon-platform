@@ -61,7 +61,9 @@ def draft_submission_email(
         pv = session.get(ProposalVersion, proposal.current_version_id)
         if pv:
             current_version_num = str(pv.version_number)
-    attachments.append(f"proposal_v{current_version_num}.docx")
+            attachments.append(f"proposal_v{current_version_num}.docx")
+    if not attachments:
+        notes.append("[[REVIEW: Generate a proposal before sending this draft]]")
 
     if submission and submission.required_files:
         rf = submission.required_files
@@ -86,7 +88,7 @@ def draft_submission_email(
         body_lines.append(f"  - {att}")
 
     if submission and submission.required_actions:
-        acks = (submission.required_actions or {}).get("amendment_acknowledgments", [])
+        acks = (submission.completed_actions or {}).get("amendment_acknowledgments", [])
         if acks:
             body_lines.append("")
             body_lines.append(f"We acknowledge Amendment(s): {', '.join(acks)}.")

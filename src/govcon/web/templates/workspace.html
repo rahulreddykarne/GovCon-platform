@@ -12,8 +12,8 @@
   </div>
   <div class="d-flex gap-1 flex-wrap">
     <a href="/opp/{{ opp.id }}" class="btn btn-secondary btn-sm">← Opportunity</a>
-    {% if opp.links and opp.links.get('html_url') %}
-    <a href="{{ opp.links['html_url'] }}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">Source ↗</a>
+    {% if primary_source_url %}
+    <a href="{{ primary_source_url }}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">Source ↗</a>
     {% endif %}
   </div>
 </div>

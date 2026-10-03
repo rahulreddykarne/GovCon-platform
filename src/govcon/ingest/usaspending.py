@@ -97,6 +97,15 @@ class PullPlan:
     date_type: str
     start: date
     end: date
+    # Codes from enabled watchlists when the plan was made (recorded on the run).
+    psc_codes: tuple[str, ...] = ()
+    naics_codes: tuple[str, ...] = ()
+    # Incremental pulls only: codes no earlier pull covered. They get the
+    # 3-year action-date lookback in addition to the incremental window.
+    backfill_psc_codes: tuple[str, ...] = ()
+    backfill_naics_codes: tuple[str, ...] = ()
+    backfill_start: date | None = None
+    backfill_end: date | None = None
 
 
 @dataclass(frozen=True)
@@ -394,6 +403,64 @@ def last_completed_window_end(session: Session) -> date | None:
     return _parse_date(details.get("window_end"))
 
 
+# Run modes whose recorded codes have their full lookback history.
+HISTORY_MODES = ("backfill", "incremental")
+
+
+def covered_codes(session: Session, current: tuple[list[str], list[str]]) -> tuple[set[str], set[str]]:
+    """PSC and NAICS codes whose history earlier pulls already fetched.
+
+    Each completed backfill or incremental run records every code it pulled,
+    after backfilling any new ones, so the latest such run's codes are the
+    covered set. A run from before codes were recorded counts as covering the
+    codes enabled now, so upgrading does not re-pull history.
+    """
+    run = session.scalar(
+        select(IngestionRun)
+        .where(
+            IngestionRun.job == JOB_NAME,
+            IngestionRun.status.in_(COMPLETED_STATUSES),
+            IngestionRun.errors["details"]["mode"].astext.in_(HISTORY_MODES),
+        )
+        .order_by(IngestionRun.id.desc())
+        .limit(1)
+    )
+    details = run.errors.get("details") if run is not None and isinstance(run.errors, dict) else None
+    if not isinstance(details, dict):
+        return set(), set()
+    if "psc_codes" not in details and "naics_codes" not in details:
+        return set(current[0]), set(current[1])
+    return (
+        {str(code) for code in details.get("psc_codes") or []},
+        {str(code) for code in details.get("naics_codes") or []},
+    )
+
+
+def _uncovered(codes: list[str], covered: set[str]) -> tuple[str, ...]:
+    """Codes not already fetched. Search codes match prefixes, so a code under
+    a covered prefix (R425 under R4) is covered."""
+    return tuple(code for code in codes if not any(code.startswith(prefix) for prefix in covered))
+
+
+def plan_details(plan: PullPlan, *, trigger: str | None = None) -> dict:
+    """Run details for a network pull; ``last_completed_window_end`` and
+    ``covered_codes`` read them back."""
+    details: dict = {
+        "mode": plan.mode,
+        "date_type": plan.date_type,
+        "window_start": plan.start.isoformat(),
+        "window_end": plan.end.isoformat(),
+        "psc_codes": list(plan.psc_codes),
+        "naics_codes": list(plan.naics_codes),
+    }
+    if plan.backfill_psc_codes or plan.backfill_naics_codes:
+        details["backfilled_psc_codes"] = list(plan.backfill_psc_codes)
+        details["backfilled_naics_codes"] = list(plan.backfill_naics_codes)
+    if trigger:
+        details["trigger"] = trigger
+    return details
+
+
 def plan_pull(
     session: Session,
     *,
@@ -403,8 +470,14 @@ def plan_pull(
     end: date | None = None,
     date_type: str | None = None,
 ) -> PullPlan:
-    """Choose the 3-year backfill or the incremental last-modified window."""
+    """Choose the 3-year backfill or the incremental last-modified window.
+
+    An incremental plan also lists codes added since the last history pull;
+    those get the 3-year lookback so a new watchlist has award history.
+    """
     today = today or datetime.now(timezone.utc).date()
+    psc_now, naics_now = collect_watchlist_codes(session)
+    codes = {"psc_codes": tuple(psc_now), "naics_codes": tuple(naics_now)}
     if start is not None or end is not None:
         if start is None or end is None:
             raise ValueError("window start and end must be provided together")
@@ -413,23 +486,32 @@ def plan_pull(
         chosen = date_type or "action_date"
         if chosen not in {"action_date", "last_modified_date"}:
             raise ValueError("date_type must be action_date or last_modified_date")
-        return PullPlan(mode="explicit", date_type=chosen, start=start, end=end)
+        return PullPlan(mode="explicit", date_type=chosen, start=start, end=end, **codes)
     if force_backfill:
         window_start, window_end = default_lookback(today)
-        return PullPlan(mode="backfill", date_type="action_date", start=window_start, end=window_end)
+        return PullPlan(mode="backfill", date_type="action_date", start=window_start, end=window_end, **codes)
     previous_end = last_completed_window_end(session)
     if previous_end is None:
         window_start, window_end = default_lookback(today)
-        return PullPlan(mode="backfill", date_type="action_date", start=window_start, end=window_end)
+        return PullPlan(mode="backfill", date_type="action_date", start=window_start, end=window_end, **codes)
     window_end = today
     window_start = previous_end - timedelta(days=1)
     if window_start > window_end:
         window_start = window_end
+    covered_psc, covered_naics = covered_codes(session, (psc_now, naics_now))
+    new_psc = _uncovered(psc_now, covered_psc)
+    new_naics = _uncovered(naics_now, covered_naics)
+    lookback_start, lookback_end = default_lookback(today)
     return PullPlan(
         mode="incremental",
         date_type="last_modified_date",
         start=window_start,
         end=window_end,
+        backfill_psc_codes=new_psc,
+        backfill_naics_codes=new_naics,
+        backfill_start=lookback_start if new_psc or new_naics else None,
+        backfill_end=lookback_end if new_psc or new_naics else None,
+        **codes,
     )
 
 
@@ -566,17 +648,30 @@ def ingest_award_records(session: Session, records: list[dict]) -> IngestStats:
 
 
 def _filters(plan: PullPlan, extra: dict) -> dict:
+    return _window_filters(plan.start, plan.end, plan.date_type, extra)
+
+
+def _window_filters(start: date, end: date, date_type: str, extra: dict) -> dict:
     return {
         "award_type_codes": list(CONTRACT_AWARD_TYPES),
         "time_period": [
             {
-                "start_date": plan.start.isoformat(),
-                "end_date": plan.end.isoformat(),
-                "date_type": plan.date_type,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "date_type": date_type,
             }
         ],
         **extra,
     }
+
+
+def _code_families(psc_codes: list[str] | tuple[str, ...], naics_codes: list[str] | tuple[str, ...]) -> list[dict]:
+    families: list[dict] = []
+    if psc_codes:
+        families.append({"psc_codes": list(psc_codes)})
+    if naics_codes:
+        families.append({"naics_codes": {"require": list(naics_codes)}})
+    return families
 
 
 def pull_usaspending(
@@ -599,18 +694,19 @@ def pull_usaspending(
     if not psc_codes and not naics_codes:
         logger.info("usaspending_pull skipped=no_codes mode=%s", plan.mode)
         return IngestStats()
-    families: list[dict] = []
-    if psc_codes:
-        families.append({"psc_codes": psc_codes})
-    if naics_codes:
-        families.append({"naics_codes": {"require": naics_codes}})
+    searches = [_filters(plan, extra) for extra in _code_families(psc_codes, naics_codes)]
+    if plan.backfill_start is not None and plan.backfill_end is not None:
+        # Codes added since the last history pull get the full action-date lookback.
+        searches += [
+            _window_filters(plan.backfill_start, plan.backfill_end, "action_date", extra)
+            for extra in _code_families(plan.backfill_psc_codes, plan.backfill_naics_codes)
+        ]
     owns_client = client is None
     client = client or build_client(settings, timeout=60.0)
     stats = IngestStats()
     seen: set[str] = set()
     try:
-        for extra in families:
-            filters = _filters(plan, extra)
+        for filters in searches:
             for page in iter_search_pages(client, filters, limit=limit, attempts=attempts, wait=wait):
                 fresh = []
                 for row in page:
@@ -645,3 +741,52 @@ def pull_usaspending(
         stats.unchanged,
     )
     return stats
+
+
+@dataclass
+class ScheduledPullResult:
+    run_id: int
+    status: str
+    stats: IngestStats
+    details: dict
+
+
+def ingest_usaspending_awards(
+    session: Session,
+    *,
+    settings: Settings | None = None,
+    client: httpx.Client | None = None,
+    today: date | None = None,
+    attempts: int = 5,
+    wait: wait_base | None = None,
+) -> ScheduledPullResult:
+    """Scheduled delta pull: plan the window, pull, and record the run.
+
+    The run is recorded under ``JOB_NAME`` with ``details.mode`` and
+    ``details.window_end`` so ``last_completed_window_end`` advances the
+    incremental watermark exactly as the CLI does. Errors on individual
+    records give ``completed_with_errors``; a failed search gives ``failed``.
+    """
+    from govcon.ingest.runs import finish_run, start_run
+
+    settings = settings or get_settings()
+    run = start_run(session, JOB_NAME)
+    stats = IngestStats()
+    details: dict = {}
+    status = "succeeded"
+    try:
+        plan = plan_pull(session, today=today)
+        details = plan_details(plan, trigger="scheduler")
+        stats = pull_usaspending(session, plan, client=client, settings=settings, attempts=attempts, wait=wait)
+    except (UsaSpendingError, OSError, ValueError) as exc:
+        attached = getattr(exc, "stats", None)
+        stats = attached if isinstance(attached, IngestStats) else stats
+        message = redact(str(exc))
+        if message not in stats.errors:
+            stats.errors.append(message)
+        status = "failed"
+    if status != "failed" and stats.errors:
+        status = "completed_with_errors"
+    finish_run(run, stats, status=status, details=details or None)
+    session.flush()
+    return ScheduledPullResult(run_id=run.id, status=status, stats=stats, details=details)

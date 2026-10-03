@@ -8,12 +8,22 @@ nothing.
 Phase 5 adds recent award comps when a stored award matches the opportunity
 NSN, or the PSC when no NSN history exists. Unit price is shown only when the
 award row has one. Competitors and bid recommendations stay in later phases.
+
+New-match alerts cover only active matches on open opportunities whose
+deadline has not passed. Amendment alerts go to matches already alerted and
+not dismissed, for the changes in ``AMENDMENT_EVENT_LABELS`` detected since
+the last alert: a deadline change (gated by
+``ALERT_ON_MATERIAL_DEADLINE_CHANGE``), a cancellation, newly posted files, or
+a set-aside change. A cancellation is reported even though it closes the
+opportunity; other changes to a closed opportunity are not.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import smtplib
+import ssl
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -21,7 +31,7 @@ from email.message import EmailMessage
 from html import escape
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
@@ -31,6 +41,16 @@ from govcon.matching.pricing import PricePoint, recent_award_comps
 from govcon.models import Match, Opportunity, OpportunityEvent, Watchlist
 
 logger = logging.getLogger("govcon.alerts.digest")
+
+DEADLINE_CHANGED = "deadline_changed"
+CANCELLED = "cancelled"
+# Source events that re-alert an already-alerted match, with their digest label.
+AMENDMENT_EVENT_LABELS = {
+    DEADLINE_CHANGED: "material deadline change",
+    CANCELLED: "opportunity cancelled",
+    "files_added": "new files posted",
+    "set_aside_changed": "set-aside changed",
+}
 
 
 class DigestDeliveryError(RuntimeError):
@@ -67,6 +87,7 @@ class _Item:
     event_detected_at: datetime | None
     match_status: str
     award_comps: list[PricePoint]
+    changes: tuple[str, ...] = ()
 
 
 def run_digest(
@@ -210,18 +231,43 @@ def send_smtp(settings: Settings, *, subject: str, html: str, plain: str) -> Non
     message["To"] = settings.alert_email_to
     message.set_content(plain)
     message.add_alternative(html, subtype="html")
+    plaintext_allowed = settings.smtp_allow_plaintext_local_relay and is_loopback_host(settings.smtp_host)
     try:
-        client_factory = smtplib.SMTP_SSL if settings.smtp_port == 465 else smtplib.SMTP
-        with client_factory(settings.smtp_host, settings.smtp_port, timeout=30) as client:
+        # Certificate and host name are verified for both implicit TLS and STARTTLS.
+        context = ssl.create_default_context()
+        if settings.smtp_port == 465:
+            client_cm = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=30, context=context)
+        else:
+            client_cm = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30)
+        with client_cm as client:
             client.ehlo()
-            if settings.smtp_port != 465 and client.has_extn("starttls"):
-                client.starttls()
-                client.ehlo()
+            if settings.smtp_port != 465:
+                if client.has_extn("starttls"):
+                    client.starttls(context=context)
+                    client.ehlo()
+                elif not plaintext_allowed:
+                    # Nothing (credentials or bid data) is sent over an unencrypted session.
+                    raise DigestDeliveryError(
+                        "SMTP server did not offer STARTTLS; refusing to authenticate or send without TLS "
+                        "(use port 465, enable STARTTLS on the server, or set SMTP_ALLOW_PLAINTEXT_LOCAL_RELAY "
+                        "for a relay on localhost)"
+                    )
             if settings.smtp_user and settings.smtp_pass:
                 client.login(settings.smtp_user, settings.smtp_pass)
             client.send_message(message)
     except (OSError, smtplib.SMTPException) as exc:
         raise DigestDeliveryError(f"SMTP delivery failed: {_safe_error(exc, settings)}") from exc
+
+
+def is_loopback_host(host: str | None) -> bool:
+    """True only for this machine: ``localhost`` or a loopback IP literal."""
+    value = (host or "").strip().strip("[]").lower()
+    if value == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
 
 
 def source_link(links: dict | None) -> str | None:
@@ -277,7 +323,11 @@ def _collect_new(session: Session, now: datetime) -> list[_Item]:
         .where(
             Match.status == "new",
             Match.alerted_at.is_(None),
+            Match.active.is_(True),
             Watchlist.enabled.is_(True),
+            # Never alert on a closed or expired opportunity.
+            Opportunity.status == "open",
+            or_(Opportunity.response_deadline.is_(None), Opportunity.response_deadline >= now),
         )
         .order_by(Match.id)
         .with_for_update(of=Match)
@@ -300,54 +350,63 @@ def _collect_new(session: Session, now: datetime) -> list[_Item]:
     return items
 
 
+def _opportunity_open(opportunity: Opportunity, now: datetime) -> bool:
+    if opportunity.status != "open":
+        return False
+    return opportunity.response_deadline is None or _aware(opportunity.response_deadline) >= now
+
+
 def _collect_amendments(session: Session, *, enabled: bool, now: datetime) -> list[_Item]:
-    if not enabled:
-        return []
-    ranked = (
-        select(
-            OpportunityEvent.opportunity_id.label("opportunity_id"),
-            OpportunityEvent.old_value.label("old_value"),
-            OpportunityEvent.detected_at.label("detected_at"),
-            func.row_number()
-            .over(
-                partition_by=OpportunityEvent.opportunity_id,
-                order_by=(OpportunityEvent.detected_at.desc(), OpportunityEvent.id.desc()),
-            )
-            .label("rn"),
-        )
-        .where(OpportunityEvent.event_type == "deadline_changed")
-        .subquery()
-    )
+    """Already-alerted matches with an alertable source change since that alert.
+
+    ``enabled`` gates deadline-change re-alerts only (ALERT_ON_MATERIAL_DEADLINE_CHANGE).
+    """
+    event_types = [t for t in AMENDMENT_EVENT_LABELS if enabled or t != DEADLINE_CHANGED]
     rows = session.execute(
-        select(Match, Watchlist, Opportunity, ranked.c.old_value, ranked.c.detected_at)
+        select(Match, Watchlist, Opportunity, OpportunityEvent)
         .join(Watchlist, Match.watchlist_id == Watchlist.id)
         .join(Opportunity, Match.opportunity_id == Opportunity.id)
-        .join(ranked, ranked.c.opportunity_id == Opportunity.id)
+        .join(OpportunityEvent, OpportunityEvent.opportunity_id == Opportunity.id)
         .where(
             Match.alerted_at.is_not(None),
+            Match.status != "dismissed",
             Watchlist.enabled.is_(True),
-            ranked.c.rn == 1,
-            ranked.c.detected_at > Match.alerted_at,
+            # A match that stopped matching is not followed; one closed by a
+            # cancellation still hears about the cancellation.
+            or_(Match.active.is_(True), Match.inactive_reason == "opportunity_closed"),
+            OpportunityEvent.event_type.in_(event_types),
+            OpportunityEvent.detected_at > Match.alerted_at,
         )
-        .order_by(Match.id)
+        .order_by(Match.id, OpportunityEvent.detected_at, OpportunityEvent.id)
         .with_for_update(of=Match)
     ).all()
-    items: list[_Item] = []
-    for match, watchlist, opportunity, old_value, detected_at in rows:
-        if match.alerted_at is None or detected_at <= match.alerted_at:
+
+    grouped: dict[int, tuple[Match, Watchlist, Opportunity, list[OpportunityEvent]]] = {}
+    for match, watchlist, opportunity, event in rows:
+        if match.alerted_at is None or event.detected_at <= match.alerted_at:
             continue
-        items.append(
-            _item_from_row(
-                session,
-                match,
-                watchlist,
-                opportunity,
-                kind="amendment",
-                now=now,
-                previous=_event_scalar(old_value),
-                detected_at=detected_at,
-            )
+        grouped.setdefault(match.id, (match, watchlist, opportunity, []))[3].append(event)
+
+    items: list[_Item] = []
+    for match, watchlist, opportunity, events in grouped.values():
+        is_open = _opportunity_open(opportunity, now)
+        relevant = [e for e in events if e.event_type == CANCELLED or is_open]
+        if not relevant:
+            continue
+        changes = tuple(dict.fromkeys(AMENDMENT_EVENT_LABELS[e.event_type] for e in relevant))
+        deadline_events = [e for e in relevant if e.event_type == DEADLINE_CHANGED]
+        item = _item_from_row(
+            session,
+            match,
+            watchlist,
+            opportunity,
+            kind="amendment",
+            now=now,
+            previous=_event_scalar(deadline_events[-1].old_value) if deadline_events else None,
+            detected_at=max(e.detected_at for e in relevant),
         )
+        item.changes = changes
+        items.append(item)
     items.sort(key=lambda item: (item.watchlist_id, item.match.id))
     return items
 
@@ -390,9 +449,10 @@ def _mark_alerted(item: _Item, now: datetime) -> None:
     stamped = now
     if item.event_detected_at is not None and item.event_detected_at > stamped:
         stamped = item.event_detected_at
+    # Alerting is not triage: ``status`` stays ``new`` until a person acts on
+    # the match, so it remains in the inbox. ``alerted_at`` alone prevents
+    # a repeat alert.
     item.match.alerted_at = stamped
-    if item.kind == "new" and item.match.status == "new":
-        item.match.status = "seen"
 
 
 def _render_groups(items: list[_Item], *, kind: str) -> list[str]:
@@ -419,8 +479,9 @@ def _render_groups(items: list[_Item], *, kind: str) -> list[str]:
             else:
                 html.extend(_row("Source link", "not stated"))
             if kind == "amendment":
-                html.extend(_row("Previous deadline", item.previous_deadline_text or "not stated"))
-                html.extend(_row("Change", "material deadline change"))
+                if AMENDMENT_EVENT_LABELS[DEADLINE_CHANGED] in item.changes:
+                    html.extend(_row("Previous deadline", item.previous_deadline_text or "not stated"))
+                html.extend(_row("Change", "; ".join(item.changes) or "not stated"))
                 html.extend(_row("Match status", item.match_status))
             html.append("</dl>")
             html.extend(_award_comp_html(item.award_comps))
@@ -445,8 +506,9 @@ def _plain_groups(items: list[_Item]) -> list[str]:
             lines.append(f"Estimated value: {item.estimated_value_text}")
             lines.append(f"Source link: {item.source_link or 'not stated'}")
             if item.kind == "amendment":
-                lines.append(f"Previous deadline: {item.previous_deadline_text or 'not stated'}")
-                lines.append("Change: material deadline change")
+                if AMENDMENT_EVENT_LABELS[DEADLINE_CHANGED] in item.changes:
+                    lines.append(f"Previous deadline: {item.previous_deadline_text or 'not stated'}")
+                lines.append(f"Change: {'; '.join(item.changes) or 'not stated'}")
                 lines.append(f"Match status: {item.match_status}")
             lines.extend(_award_comp_plain(item.award_comps))
             lines.append("")

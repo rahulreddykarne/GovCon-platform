@@ -5,6 +5,7 @@ task_type: proposal_drafting
 provider_family: generative_llm
 schema_version: proposal_draft.v1
 status: active
+allowed_data_classes: PUBLIC, PROPRIETARY
 includes: shared/no_fabrication_rules_v1, shared/evidence_rules_v1, shared/source_security_rules_v1, shared/company_facts_policy_v1
 required_variables: REQUIREMENTS_JSON, SECTIONS_REQUESTED, APPROVED_FACTS_JSON
 regression_suite: proposal_drafting

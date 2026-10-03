@@ -8,12 +8,14 @@ from typing import Any
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.schemas import ReviewerCommentValidationV1
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.metrics import coverage_counts
 from govcon.compliance.matrix import active_requirements, open_findings
 from govcon.matching.pricing import recent_award_comps
 from govcon.models import AIAnalysis, Pursuit, ReviewComment, ReviewSession
+from govcon.security.classification import DataClassification
 
 
 @dataclass(frozen=True)
@@ -55,9 +57,10 @@ def validate_comment_with_ai(
     try:
         result = run_structured_prompt(
             session,
+            classification=DataClassification.PROPRIETARY,
             opportunity_id=comment.opportunity_id,
             prompt_name="reviewer_comment_validation",
-            analysis_type="reviewer_comment_validation",
+            analysis_type=AnalysisType.REVIEWER_COMMENT_VALIDATION,
             variables=variables,
             context_manifest={
                 "opportunity_id": comment.opportunity_id,
@@ -98,7 +101,7 @@ def _decision_package_payload(session: Session, *, opportunity_id: int) -> dict[
             select(AIAnalysis)
             .where(
                 AIAnalysis.opportunity_id == opportunity_id,
-                AIAnalysis.analysis_type == "decision_package",
+                AIAnalysis.analysis_type == AnalysisType.DECISION_PACKAGE,
             )
             .order_by(desc(AIAnalysis.created_at), desc(AIAnalysis.id))
             .limit(1)
@@ -111,7 +114,7 @@ def _solicitation_payload(session: Session, *, opportunity_id: int) -> dict[str,
         select(AIAnalysis)
         .where(
             AIAnalysis.opportunity_id == opportunity_id,
-            AIAnalysis.analysis_type == "solicitation_summary",
+            AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY,
         )
         .order_by(desc(AIAnalysis.created_at), desc(AIAnalysis.id))
         .limit(1)
@@ -162,7 +165,7 @@ def _award_payload(session: Session, *, opportunity_id: int) -> dict[str, Any]:
         "comparables": [
             {
                 "award_id": item.award_id,
-                "vendor": item.vendor,
+                "vendor": item.vendor_name,
                 "amount": float(item.amount) if item.amount is not None else None,
                 "unit_price": float(item.unit_price)
                 if item.unit_price is not None

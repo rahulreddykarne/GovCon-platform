@@ -5,6 +5,7 @@ task_type: submission_preflight
 provider_family: generative_llm
 schema_version: submission_preflight_ai.v1
 status: active
+allowed_data_classes: PUBLIC, PROPRIETARY
 includes: shared/source_security_rules_v1, shared/no_fabrication_rules_v1, shared/evidence_rules_v1, shared/company_facts_policy_v1
 required_variables: REQUIREMENTS_JSON, SUBMISSION_INSTRUCTIONS_JSON, EVIDENCE_JSON
 regression_suite: compliance_submission_preflight

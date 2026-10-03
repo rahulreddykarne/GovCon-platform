@@ -9,7 +9,11 @@ enforces the Phase 9 invariants:
 - a deterministic failure cannot become ``satisfied`` except by an explicit,
   audited human override that acknowledges the failure;
 - ``unknown`` never collapses into ``missing`` or ``satisfied``;
-- critical requirements need two independent validation methods;
+- critical requirements need two independent validation methods; two AI
+  validations count as two only when they ran on different, known
+  provider/model pairs;
+- proposal evidence counts only for the proposal version being assessed, and
+  ambiguous coverage of that version blocks automatic satisfaction;
 - stale conclusions are never green;
 - a requirement without an established source location is ``needs_review``.
 """
@@ -361,6 +365,24 @@ class StatusDecision:
     blocked_ai_claims: list[str] = field(default_factory=list)
 
 
+def validator_identity(provider: Any, model: Any) -> tuple[str, str] | None:
+    """Normalised ``(provider, model)`` of an AI validator; None when unknown."""
+    if not provider or not model:
+        return None
+    return str(provider).strip().lower(), str(model).strip().lower()
+
+
+def independent_validators(first: dict[str, Any] | None, second: dict[str, Any] | None) -> bool:
+    """True only when both AI results carry a known, different provider/model.
+
+    Repeated calls to one model share its blind spots, so they count as one
+    validation method; unknown provenance cannot establish independence.
+    """
+    a = validator_identity((first or {}).get("provider"), (first or {}).get("model"))
+    b = validator_identity((second or {}).get("provider"), (second or {}).get("model"))
+    return a is not None and b is not None and a != b
+
+
 def _ai_supported(ai: dict[str, Any] | None, verified_ids: set[int], threshold: float | None, *, require_threshold: bool) -> bool:
     if not ai or ai.get("status") != "SATISFIED":
         return False
@@ -415,14 +437,26 @@ def decide_status(inputs: ValidationInputs) -> StatusDecision:
     if inputs.jev_human_interpretation and "human" not in inputs.fresh_verified_methods:
         return done("needs_review", "decision layer requires human interpretation")
 
+    coverage_open = [d for d in unknowns if d.get("validator") == "proposal_coverage"]
+    if coverage_open and "human" not in inputs.fresh_verified_methods:
+        # The current proposal version does not clearly address the requirement;
+        # evidence from elsewhere must not satisfy it automatically.
+        return done("needs_review", "; ".join(f"proposal coverage: {d.get('reason')}" for d in coverage_open))
+
     methods: set[str] = set()
     if passes and not unknowns:
         methods.add("deterministic")
     methods |= inputs.fresh_verified_methods & {"human", "proposal_scan"}
-    if _ai_supported(inputs.ai_primary, inputs.verified_evidence_ids, None, require_threshold=False):
+    same_ai_validator = False
+    primary_supported = _ai_supported(inputs.ai_primary, inputs.verified_evidence_ids, None, require_threshold=False)
+    if primary_supported:
         methods.add("ai_validation")
     if _ai_supported(inputs.ai_secondary, inputs.verified_evidence_ids, None, require_threshold=False):
-        methods.add("ai_validation_secondary")
+        if primary_supported and not independent_validators(inputs.ai_primary, inputs.ai_secondary):
+            # The same (or an unidentified) model asked twice is one method.
+            same_ai_validator = True
+        else:
+            methods.add("ai_validation_secondary")
 
     for ai in (inputs.ai_primary, inputs.ai_secondary):
         if ai and ai.get("status") == "SATISFIED" and "ai_validation" not in methods and "ai_validation_secondary" not in methods:
@@ -437,7 +471,8 @@ def decide_status(inputs: ValidationInputs) -> StatusDecision:
         if critical and len(methods) < 2:
             return done(
                 "needs_review",
-                f"critical requirement requires redundant validation; have {', '.join(sorted(methods))}",
+                f"critical requirement requires redundant validation; have {', '.join(sorted(methods))}"
+                + ("; the secondary AI validation is not independent of the primary (same or unknown provider/model)" if same_ai_validator else ""),
                 sorted(methods),
             )
         if methods == {"ai_validation"}:
@@ -458,10 +493,33 @@ def decide_status(inputs: ValidationInputs) -> StatusDecision:
     return done("unknown", "no evidence establishes whether this requirement is satisfied")
 
 
-def fresh_evidence(requirement: Requirement, evidence: list[RequirementEvidence]) -> list[RequirementEvidence]:
-    """Evidence recorded after the latest amendment change is the only evidence that counts."""
+def assessed_proposal_version_id(requirement: Requirement) -> int | None:
+    """The proposal version the latest coverage check assessed for this requirement."""
+    coverage = (requirement.validation or {}).get("proposal_coverage") or {}
+    value = coverage.get("proposal_version_id")
+    return int(value) if value is not None else None
+
+
+def fresh_evidence(
+    requirement: Requirement,
+    evidence: list[RequirementEvidence],
+    *,
+    proposal_version_id: int | None = None,
+) -> list[RequirementEvidence]:
+    """Evidence that still counts for ``requirement``.
+
+    Only evidence recorded after the latest amendment change counts. Evidence
+    tied to a proposal version counts only for the version currently assessed
+    (``proposal_version_id``, default: the latest coverage check's version): a
+    superseded draft's content says nothing about the current one.
+    """
     cutoff = requirement.amendment_changed_at
-    return [e for e in evidence if cutoff is None or (e.created_at and e.created_at >= cutoff)]
+    target = proposal_version_id if proposal_version_id is not None else assessed_proposal_version_id(requirement)
+    return [
+        e for e in evidence
+        if (cutoff is None or (e.created_at and e.created_at >= cutoff))
+        and (e.proposal_version_id is None or target is None or e.proposal_version_id == target)
+    ]
 
 
 def inputs_for(
@@ -472,10 +530,14 @@ def inputs_for(
     ai_secondary: dict[str, Any] | None = None,
     settings=None,
     jev_human_interpretation: bool = False,
+    proposal_version_id: int | None = None,
 ) -> ValidationInputs:
     validation = requirement.validation or {}
     reconciliation = requirement.reconciliation or {}
-    fresh = [e for e in fresh_evidence(requirement, evidence) if e.verification_status == "verified"]
+    fresh = [
+        e for e in fresh_evidence(requirement, evidence, proposal_version_id=proposal_version_id)
+        if e.verification_status == "verified"
+    ]
     override = validation.get("override")
     if override and requirement.amendment_changed_at and override.get("at"):
         if datetime.fromisoformat(override["at"]) < requirement.amendment_changed_at:
@@ -503,10 +565,11 @@ def inputs_for(
 
 
 def apply_decision(requirement: Requirement, decision: StatusDecision, *, run_id: int | None = None) -> bool:
-    """Write the gate's decision to the row. Returns True when the status changed."""
+    """Write the gate's decision, versioning any status or blocker change."""
     if decision.status == "satisfied" and not decision.methods:
         raise ComplianceInvariantError("satisfied requires evidence or validator output")
     changed = requirement.status != decision.status
+    old_blocks = requirement.blocks_submission
     validation = dict(requirement.validation or {})
     validation.update(
         {
@@ -523,7 +586,11 @@ def apply_decision(requirement: Requirement, decision: StatusDecision, *, run_id
     requirement.status_reason = decision.reason
     if decision.status != "stale":
         requirement.stale_due_to_amendment = False
+    if decision.status in RESOLVED_STATUSES:
+        validation.pop("jev_blocks_submission", None)
+        requirement.validation = validation
     requirement.blocks_submission = decision.blocks_submission or bool(validation.get("jev_blocks_submission"))
+    changed = changed or old_blocks != requirement.blocks_submission
     if changed:
         requirement.version = (requirement.version or 1) + 1
     return changed

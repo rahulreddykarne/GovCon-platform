@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.matrix import (
     active_requirements,
@@ -31,6 +32,7 @@ from govcon.compliance.matrix import (
 from govcon.compliance.records import Inventory, RESOLVED_STATUSES
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement
+from govcon.security.classification import DataClassification
 
 RED_TEAM_VERSION = "compliance_red_team.v1"
 
@@ -111,9 +113,10 @@ def run_red_team(
         try:
             result = run_structured_prompt(
                 session,
+                classification=DataClassification.PROPRIETARY,
                 opportunity_id=opportunity_id,
                 prompt_name="compliance_red_team",
-                analysis_type="red_team_review",
+                analysis_type=AnalysisType.RED_TEAM_REVIEW,
                 variables={
                     "REQUIREMENTS_JSON": [
                         {"requirement_id": r.id, "text": r.requirement_text, "type": r.requirement_type, "mandatory": r.mandatory, "severity": r.severity, "status": r.status, "status_reason": r.status_reason, "source": {"file_id": r.source_file_id, "page": r.source_page, "quote": r.source_quote}, "deterministic": (r.validation or {}).get("deterministic")}

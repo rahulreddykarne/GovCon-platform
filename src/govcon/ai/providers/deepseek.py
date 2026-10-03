@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from govcon.ai.gateway import authorize_external_call
+from govcon.config import Settings, get_settings
 from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.ai.providers.deepseek")
@@ -37,6 +38,14 @@ class DeepSeekResult:
     finish_reason: str | None = None
 
 
+class DeepSeekAPIError(RuntimeError):
+    """DeepSeek returned a non-200 status. The body is deliberately not kept."""
+
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        super().__init__(f"DeepSeek API returned HTTP {status_code}")
+
+
 class DeepSeekProvider:
     name = "deepseek"
 
@@ -46,10 +55,13 @@ class DeepSeekProvider:
         *,
         model: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
+        settings: Settings | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model or DEFAULT_MODEL
         self._base_url = base_url.rstrip("/")
+        # The same settings object the factory used drives the gateway policy.
+        self._settings = settings or get_settings()
 
     def complete(
         self,
@@ -60,8 +72,8 @@ class DeepSeekProvider:
         temperature: float | None = None,
         max_tokens: int | None = None,
         json_mode: bool = True,
-        classification: DataClassification = DataClassification.PUBLIC,
-        purpose: str = "solicitation_analysis",
+        classification: DataClassification,
+        purpose: str,
     ) -> DeepSeekResult:
         """Call the DeepSeek chat completions endpoint.
 
@@ -74,6 +86,7 @@ class DeepSeekProvider:
             provider=self.name,
             model=use_model,
             purpose=purpose,
+            settings=self._settings,
         )
 
         messages = [
@@ -107,12 +120,9 @@ class DeepSeekProvider:
         latency_ms = int((time.monotonic() - start) * 1000)
 
         if resp.status_code != 200:
-            logger.error(
-                "deepseek api error status=%d body=%s",
-                resp.status_code,
-                resp.text[:500],
-            )
-            resp.raise_for_status()
+            # The response body can echo prompt content; log the status only.
+            logger.error("deepseek api error status=%d purpose=%s", resp.status_code, purpose)
+            raise DeepSeekAPIError(resp.status_code)
 
         data = resp.json()
         choices = data.get("choices", [])

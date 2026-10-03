@@ -15,7 +15,7 @@ from govcon.collaboration.users import invite_user
 from govcon.mcp import operations as mcp_ops
 from govcon.mcp.serialize import compact_opportunity, failure, success, truncate_text
 from govcon.mcp.server import mcp, update_match
-from govcon.models import Award, BidDecision, Match, Opportunity, Watchlist
+from govcon.models import Award, BidDecision, Match, Opportunity, Pursuit, Watchlist
 
 
 @pytest.fixture()
@@ -34,6 +34,17 @@ def owner(session: Session):
         password="correct horse battery",
         role="owner",
     )
+
+
+@pytest.fixture()
+def mcp_actor(owner, monkeypatch):
+    """Write tools act as the single user in MCP_ACTOR_EMAIL."""
+    from govcon.mcp.context import reset_server_actor
+
+    reset_server_actor()
+    monkeypatch.setenv("MCP_ACTOR_EMAIL", owner.email)
+    yield owner
+    reset_server_actor()
 
 
 def _opp(
@@ -88,19 +99,23 @@ def test_mcp_registers_all_phase12_tools():
         "update_match",
         "add_pursuit",
         "update_pursuit",
-        "record_human_bid_decision",
         "assign_reviewer",
         "add_review_comment",
-        "complete_review",
         "request_ai_comment_validation",
-        "approve_to_bid",
-        "update_requirement_status",
         "create_proposal_version",
-        "set_submission_ready",
-        "record_submission_confirmation",
         "record_outcome",
     }
     assert expected <= tool_names
+    # Human-authority decisions are not available to an MCP client.
+    human_only = {
+        "approve_to_bid",
+        "complete_review",
+        "record_human_bid_decision",
+        "update_requirement_status",
+        "set_submission_ready",
+        "record_submission_confirmation",
+    }
+    assert not (human_only & tool_names)
 
 
 def test_compact_opportunity_truncates_description_and_scrubs_secrets():
@@ -140,7 +155,7 @@ def test_truncate_text_and_failure_shape():
     assert err["error"]["code"] == "validation_error"
 
 
-def test_dismiss_match_requires_confirm(session: Session, owner):
+def test_dismiss_match_requires_confirm(session: Session, mcp_actor):
     opp = _opp(session)
     watchlist = _watchlist(session)
     match = Match(opportunity_id=opp.id, watchlist_id=watchlist.id, status="new", score=Decimal("1.0"))
@@ -159,14 +174,19 @@ def test_dismiss_match_requires_confirm(session: Session, owner):
     assert ok["data"]["status"] == "dismissed"
 
 
-def test_record_outcome_persists_feedback(session: Session, owner):
+def test_record_outcome_persists_feedback(session: Session, mcp_actor):
     opp = _opp(session)
     mcp_ops.op_add_pursuit(session, opp.id)
+    pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp.id))
+    pursuit.stage = "submitted"  # fixture: a recorded submission exists
+    pursuit.submitted_at = datetime.now(UTC)
+    from govcon.models import Submission
+    session.add(Submission(opportunity_id=opp.id, pursuit_id=pursuit.id, status="submitted", submitted_at=pursuit.submitted_at))
+    session.flush()
     result = mcp_ops.op_record_outcome(
         session,
         opp.id,
         outcome="lost",
-        actor_email=owner.email,
         loss_reason="Price not competitive",
         lessons_learned="Need earlier supplier quote",
     )
@@ -175,7 +195,7 @@ def test_record_outcome_persists_feedback(session: Session, owner):
     assert result["data"]["pursuit_stage"] == "lost"
 
 
-def test_acceptance_e2e_mcp_workflow(session: Session, owner):
+def test_acceptance_e2e_mcp_workflow(session: Session, mcp_actor):
     """Phase 12 acceptance: matches closing soon → prices → bid analysis → reviewing → gaps."""
     opp = _opp(session, title="Top bid candidate fixture", days=5)
     watchlist = _watchlist(session)

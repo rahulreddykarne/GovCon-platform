@@ -1,0 +1,9 @@
+......                                                                   [100%]
+============================== warnings summary ===============================
+tests/test_feature_audit_fixes.py: 1 warning
+tests/test_web_ui.py: 12 warnings
+  C:\Users\karne\OneDrive\Desktop\GovCon\.venv\Lib\site-packages\starlette\testclient.py:463: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+6 passed, 13 warnings in 6.93s

@@ -1,0 +1,10 @@
+{
+  "test_exit": 1,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 0,
+  "failures": [
+    "tests.test_feature_audit_fixes.test_f4_matrix_survives_other_runs_and_failed_preflight_is_visible",
+    "tests.test_feature_audit_fixes.test_f4_current_preflight_pass_and_stale_requirements"
+  ]
+}

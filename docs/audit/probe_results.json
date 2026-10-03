@@ -1,0 +1,138 @@
+{
+  "audit_date": "2026-10-02",
+  "mocked_boundaries": "database, external provider, SMTP; installed wheel startup executes in isolated subprocess",
+  "passed": 26,
+  "total": 26,
+  "results": [
+    {
+      "id": "F01",
+      "reproduced": true,
+      "detail": "Failure produced a handled marker; approval invalidation was never called."
+    },
+    {
+      "id": "F02",
+      "reproduced": true,
+      "detail": "When current fetch returns existing A, reconciliation still activates higher-ID B."
+    },
+    {
+      "id": "F03",
+      "reproduced": true,
+      "detail": "A failed download for new snapshot 2 returned successful snapshot-1 data without a failure row."
+    },
+    {
+      "id": "F04",
+      "reproduced": true,
+      "detail": "A made-up hash/size with no file path passes the same verifier used by pre-flight and confirmation."
+    },
+    {
+      "id": "F05",
+      "reproduced": true,
+      "detail": "An empty section with matching heading and an explicit denial both produce COVERED."
+    },
+    {
+      "id": "F06",
+      "reproduced": true,
+      "detail": "Verified evidence for proposal v1 still yields SATISFIED when v2 coverage is unknown."
+    },
+    {
+      "id": "F07",
+      "reproduced": true,
+      "detail": "The same provider/model/evidence counted twice and satisfied a critical requirement."
+    },
+    {
+      "id": "F08",
+      "reproduced": true,
+      "detail": "A prior incomplete extraction with unchanged inventory skipped both AI passes despite use_ai=True."
+    },
+    {
+      "id": "F09",
+      "reproduced": true,
+      "detail": "New extracted recipient/deadline did not replace prior inferred values; removed file remained required."
+    },
+    {
+      "id": "F10",
+      "reproduced": true,
+      "detail": "PDF and XLSX constraints intersect to empty, causing file_types=NOT_APPLICABLE even for .exe."
+    },
+    {
+      "id": "F11",
+      "reproduced": true,
+      "detail": "An open listing whose deadline passed 30 days ago is eligible_for_pursuit=True."
+    },
+    {
+      "id": "F12",
+      "reproduced": true,
+      "detail": "A pursuit at won is rendered in Approved to Bid because the old review remains approved_to_bid."
+    },
+    {
+      "id": "F13",
+      "reproduced": true,
+      "detail": "The actual outcome route discarded a won award value when the later hidden lost input was empty."
+    },
+    {
+      "id": "F14",
+      "reproduced": true,
+      "detail": "Removing all active registry versions does not disable use: disk-active prompt is returned."
+    },
+    {
+      "id": "F15",
+      "reproduced": true,
+      "detail": "A configured Anthropic primary provider still received skip_ai=True in approve-to-bid generation."
+    },
+    {
+      "id": "F16",
+      "reproduced": true,
+      "detail": "Source time 25:99 raises ValueError instead of producing an unknown validation result."
+    },
+    {
+      "id": "F17",
+      "reproduced": true,
+      "detail": "A reviewer changed a submitted bid's quote_price to 999 without a correction or invalidation workflow."
+    },
+    {
+      "id": "F18",
+      "reproduced": true,
+      "detail": "Cross-origin login POST sets an HttpOnly/Lax session cookie without CSRF rejection or Secure."
+    },
+    {
+      "id": "F19",
+      "reproduced": true,
+      "detail": "Actual built wheel contains no web assets; isolated create_app() fails with missing static directory."
+    },
+    {
+      "id": "F20",
+      "reproduced": true,
+      "detail": "With top 50 already rule-matched, candidate 51 exists but no semantic recommendation is returned."
+    },
+    {
+      "id": "F21",
+      "reproduced": true,
+      "detail": "SMTP login and digest delivery proceed when the server does not advertise STARTTLS."
+    },
+    {
+      "id": "F22",
+      "reproduced": true,
+      "detail": "Registry sync upsert activates safety-critical disk-active prompt without running its activation gate."
+    },
+    {
+      "id": "F23",
+      "reproduced": true,
+      "detail": "HTTP-200 non-JSON response escapes as JSONDecodeError; engine catches only DecisionProviderUnavailable."
+    },
+    {
+      "id": "F24",
+      "reproduced": true,
+      "detail": "Summary query has no active filter and old removed attachment text reached the provider prompt."
+    },
+    {
+      "id": "F25",
+      "reproduced": true,
+      "detail": "With no supplier/pursuit evidence, buyer's 30-day requirement became supplier lead time and feasibility=yes."
+    },
+    {
+      "id": "F27",
+      "reproduced": true,
+      "detail": "Coverage for opportunity 1 accepted version 99 of another proposal without loading/verifying its owner."
+    }
+  ]
+}

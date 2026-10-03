@@ -23,6 +23,73 @@ pytest
 
 `docker-compose.yml` runs PostgreSQL 16 with pgvector and publishes it on `127.0.0.1:5432` only. The database name, user, and password match the local URL in `.env.example`. Do not commit `.env`.
 
+## Installed deployment
+
+Wheels include the web templates, static assets, prompts, Alembic migrations,
+and compliance benchmark resources. Install the wheel, configure
+`DATABASE_URL`, run `govcon db upgrade`, then `govcon prompts sync` before
+starting `govcon web serve`. Runtime resources resolve inside the installed
+package; a source checkout is not required.
+
+The prompt registry is authoritative by default. An inactive or unreadable
+registry prompt stops AI execution. `govcon prompts sync` records versions
+inactive and activates a disk-active version only through the audited
+activation gate (first sync or a new version); it never undoes an operator's
+activation or rollback. A prompt version's content is immutable: a file edited
+in place (including a shared include) is refused at load time until it is
+re-versioned or re-approved with `govcon prompts sync --reapprove-changed`. `PROMPT_ALLOW_DISK_FALLBACK=true` is an
+explicit development/bootstrap option for prompts that have never been synced;
+it does not bypass registry denials or errors.
+
+Safety-critical activation also requires a model evaluation of the exact
+candidate: run `govcon prompts eval NAME@VERSION --live`, then activate or sync
+it. Receipts bind the prompt, shared rules, schemas, synthetic task and injection
+fixtures, and configured provider/model. Changed inputs require a fresh
+evaluation. `PROMPT_REQUIRE_BEHAVIORAL_EVALUATION=false` is an explicit offline
+bootstrap option; its audit record states that model behavior is unevaluated.
+Recorded-output compliance replay remains a separate deterministic regression
+check. Existing active versions retain their registry state during upgrade.
+
+`govcon enrich ingest-file --opportunity-id ID --file PATH --classification CUI
+--source-origin "internal engineering"` requires an explicit classification and
+origin. Supported classes are PUBLIC, PROPRIETARY, FCI, CUI and SECRET_CREDENTIAL.
+The strictest retained source class applies to derived external calls. Legacy
+local imports are UNKNOWN and remain blocked even with proprietary opt-in until
+explicitly re-ingested; government-feed downloads carry public source
+metadata. Changing a source classification invalidates cached source revisions.
+
+AI calls reserve opportunity input and dollar budgets in `ai_call_usage` before
+sending. Reservations survive rollback and provider failures; valid usage can
+settle them downward. Missing usage retains the full reservation. Inputs use a
+conservative UTF-8 byte bound, and every generative call has an output cap. Transient
+provider retries use the same accounting (`AI_MAX_PROVIDER_RETRIES`, default 2). Set
+`AI_BUDGET_USD_PER_MILLION_TOKENS` to a verified upper rate for all enabled models
+when enabling `AI_MAX_COST_USD_PER_OPPORTUNITY`; a dollar cap without that rate
+refuses calls. Truncated summaries record omitted sources and an incomplete-review
+warning. Database pools are reused per URL/process and disposed on shutdown.
+
+The authenticated `/notifications` inbox shows only the recipient's records and
+supports CSRF-protected mark-read actions. `pytest` creates and removes a fresh
+temporary PostgreSQL database; the configured database needs CREATE DATABASE
+permission. `scripts/smoke.sh` runs the complete service lifecycle, recovery and
+concurrency checks with real proposal/pricing artifacts, plus an installed-wheel
+lifecycle outside the checkout. No external submission occurs in these tests.
+
+For HTTPS behind a reverse proxy, set `WEB_PUBLIC_ORIGIN` to the browser's exact
+origin, including any nondefault port, and configure a random `WEB_CSRF_SECRET`
+shared by all workers. HTTPS origins enable Secure cookies automatically;
+`WEB_SECURE_COOKIES=true` can also require them. Session and CSRF cookie lifetimes
+follow `SESSION_TTL_HOURS`. Every form mutation, including login, requires a CSRF
+token. Login throttling is bounded per process and client address; deployments
+with multiple workers can also enforce an aggregate limit at their proxy.
+
+Commercial facts on submitted or terminal pursuits are locked. Before submission,
+changes reopen dependent reviews and drafts. Approvers can append corrections to
+submitted facts with `govcon submission correct-commercial --opportunity-id ID
+--actor-email EMAIL --expected-version VERSION --reason REASON --quote-price VALUE`.
+Corrections retain the original facts and reference the submitted package in the
+audit history.
+
 ## Phase 0 commands
 
 | Command | Purpose |

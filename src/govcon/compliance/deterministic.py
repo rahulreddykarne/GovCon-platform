@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
 
@@ -31,8 +31,10 @@ _TZ = {
     "PST": "America/Los_Angeles", "PDT": "America/Los_Angeles", "PT": "America/Los_Angeles", "Pacific": "America/Los_Angeles",
     "UTC": "UTC", "GMT": "UTC", "Z": "UTC",
 }
+# SAM typeOfSetAside codes and DIBBS index codes (Y/H/R/L/A/E).
 SET_ASIDE_STATUS = {
     "SBA": "small_business", "SBP": "small_business", "Y": "small_business",
+    "H": "hubzone", "R": "sdvosb", "L": "wosb", "A": "8a", "E": "edwosb",
     "8A": "8a", "8AN": "8a", "HZC": "hubzone", "HZS": "hubzone",
     "SDVOSBC": "sdvosb", "SDVOSBS": "sdvosb", "WOSB": "wosb", "WOSBSS": "wosb",
     "EDWOSB": "edwosb", "EDWOSBSS": "edwosb", "VSA": "vosb", "VSS": "vosb",
@@ -67,6 +69,7 @@ class PackageFile:
     signed: bool | None = None
     page_count: int | None = None
     sha256: str | None = None
+    local_path: str | None = None
 
     @property
     def extension(self) -> str:
@@ -104,7 +107,7 @@ class SubmissionPackage:
 
     def manifest(self) -> dict[str, Any]:
         return {
-            "files": [f.__dict__ for f in self.files],
+            "files": [dict(f.__dict__) for f in self.files],
             "submission_method": self.submission_method,
             "recipient_email": self.recipient_email,
             "portal": self.portal,
@@ -132,7 +135,7 @@ class ValidationContext:
 
 
 def parse_source_deadline(date_text: str | None, time_text: str | None, tz_text: str | None) -> datetime | None:
-    if not date_text or not time_text or not tz_text:
+    if not all(isinstance(value, str) and value.strip() for value in (date_text, time_text, tz_text)):
         return None
     zone = _TZ.get(tz_text) or _TZ.get(tz_text.upper()) or _TZ.get(tz_text.title())
     if zone is None:
@@ -153,17 +156,27 @@ def parse_source_deadline(date_text: str | None, time_text: str | None, tz_text:
         return None
     hour, minute = int(match.group(1)), int(match.group(2) or 0)
     suffix = match.group(3) if match.lastindex and match.lastindex >= 3 else None
+    if minute > 59 or (suffix and not 1 <= hour <= 12) or (not suffix and hour > 23):
+        return None
     if suffix == "pm" and hour != 12:
         hour += 12
     if suffix == "am" and hour == 12:
         hour = 0
-    return parsed_date.replace(hour=hour, minute=minute, tzinfo=ZoneInfo(zone))
+    try:
+        return parsed_date.replace(hour=hour, minute=minute, tzinfo=ZoneInfo(zone))
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+
+
+def _aware(value: datetime) -> datetime:
+    """Database/listing naive timestamps use UTC consistently with ingestion."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def deadline_not_passed(deadline: datetime | None, now: datetime) -> ValidatorResult:
     if deadline is None:
         return _result("deadline_not_passed", "unknown", "response deadline is not known", deadline=None, now=now)
-    remaining = (deadline - now).total_seconds() / 3600
+    remaining = (_aware(deadline) - _aware(now)).total_seconds() / 3600
     if remaining <= 0:
         return _result("deadline_not_passed", "fail", "response deadline has passed", deadline=deadline, now=now, hours_remaining=round(remaining, 2))
     return _result("deadline_not_passed", "pass", "response deadline is in the future", deadline=deadline, now=now, hours_remaining=round(remaining, 2))
@@ -178,7 +191,7 @@ def deadline_timezone_consistent(key_values: dict[str, Any], opportunity_deadlin
         return _result("deadline_timezone", "unknown", f"could not resolve source deadline with timezone {tz}", source=key_values)
     if opportunity_deadline is None:
         return _result("deadline_timezone", "pass", "source deadline and timezone parsed; no listing deadline to compare", source_deadline=parsed)
-    delta = abs((parsed - opportunity_deadline).total_seconds())
+    delta = abs((parsed - _aware(opportunity_deadline)).total_seconds())
     if delta > 60:
         return _result(
             "deadline_timezone", "fail",
@@ -191,7 +204,7 @@ def deadline_timezone_consistent(key_values: dict[str, Any], opportunity_deadlin
 def submission_before_deadline(package: SubmissionPackage | None, deadline: datetime | None) -> ValidatorResult:
     if package is None or package.planned_submission_at is None or deadline is None:
         return _result("submission_before_deadline", "unknown", "planned submission time or deadline not known")
-    if package.planned_submission_at >= deadline:
+    if _aware(package.planned_submission_at) >= _aware(deadline):
         return _result("submission_before_deadline", "fail", "planned submission is at or after the deadline", planned=package.planned_submission_at, deadline=deadline)
     return _result("submission_before_deadline", "pass", "planned submission precedes the deadline", planned=package.planned_submission_at, deadline=deadline)
 
@@ -379,8 +392,11 @@ def sam_registration_known(facts: dict[str, Any], deadline: datetime | None) -> 
     return _result("sam_registration_known", "pass", "SAM registration active", status=status, expires=expires)
 
 
+UNRESTRICTED_SET_ASIDE_CODES = frozenset({"N", "NONE", "UNRESTRICTED"})
+
+
 def set_aside_matches(set_aside_code: str | None, facts: dict[str, Any]) -> ValidatorResult:
-    if not set_aside_code:
+    if not set_aside_code or set_aside_code.strip().upper() in UNRESTRICTED_SET_ASIDE_CODES:
         return _result("set_aside_matches", "pass", "no set-aside on this opportunity")
     required = SET_ASIDE_STATUS.get(set_aside_code.strip().upper())
     if required is None:

@@ -244,7 +244,7 @@ class TestSnapshots:
         from govcon.ingest.snapshots import upsert_opportunity
         from govcon.models import Opportunity, OpportunitySnapshot
 
-        raw = json.loads((REPO_ROOT / "tests" / "fixtures" / "sam_opportunities_search.json").read_text())
+        raw = json.loads((REPO_ROOT / "tests" / "fixtures" / "sam_opportunities_search.json").read_text(encoding="utf-8"))
         raw_opp = dict(raw["opportunitiesData"][0])
         raw_opp["noticeId"] = raw_opp["noticeId"] + f"-snap1-{_uid()}"
         normalized = normalize_opportunity(raw_opp)
@@ -270,7 +270,7 @@ class TestSnapshots:
         from govcon.ingest.snapshots import upsert_opportunity
         from govcon.models import Opportunity, OpportunitySnapshot
 
-        raw = json.loads((REPO_ROOT / "tests" / "fixtures" / "sam_opportunities_search.json").read_text())
+        raw = json.loads((REPO_ROOT / "tests" / "fixtures" / "sam_opportunities_search.json").read_text(encoding="utf-8"))
         raw_opp = dict(raw["opportunitiesData"][0])
         raw_opp["noticeId"] = raw_opp["noticeId"] + f"-snap2-{_uid()}"
         normalized = normalize_opportunity(raw_opp)
@@ -678,7 +678,7 @@ class TestPromptLibrary:
 
         fixture = {"OUTCOME_JSON": {"outcome": "lost"}, "EVIDENCE_JSON": {"debrief": "price was too high"}}
         fixture_file = tmp_path / "fixture.json"
-        fixture_file.write_text(_json.dumps(fixture))
+        fixture_file.write_text(_json.dumps(fixture), encoding="utf-8")
 
         runner = CliRunner()
         result = runner.invoke(app, ["prompts", "render", "outcome_analysis", "--fixture", str(fixture_file)])
@@ -806,7 +806,7 @@ class TestJEVDecision:
         """obvious_bid fixture must produce bid recommendation."""
         from govcon.decision.providers.rule_fallback import RuleDecisionProvider
 
-        payload = json.loads((FIXTURE_DECISIONS / "obvious_bid.json").read_text())
+        payload = json.loads((FIXTURE_DECISIONS / "obvious_bid.json").read_text(encoding="utf-8"))
         provider = RuleDecisionProvider()
         decision = provider.decide(bundle_name="bid_decision", bundle_version="v1", state=payload["state"])
         assert decision.result["recommendation"] in payload["expected_allowed_decisions"], (
@@ -817,7 +817,7 @@ class TestJEVDecision:
         """obvious_no_bid fixture must not produce bid recommendation."""
         from govcon.decision.providers.rule_fallback import RuleDecisionProvider
 
-        payload = json.loads((FIXTURE_DECISIONS / "obvious_no_bid.json").read_text())
+        payload = json.loads((FIXTURE_DECISIONS / "obvious_no_bid.json").read_text(encoding="utf-8"))
         provider = RuleDecisionProvider()
         decision = provider.decide(bundle_name="bid_decision", bundle_version="v1", state=payload["state"])
         assert decision.result["recommendation"] in payload["expected_allowed_decisions"], (
@@ -828,7 +828,7 @@ class TestJEVDecision:
         """missing_mandatory_submission_item fixture must require escalation."""
         from govcon.decision.providers.rule_fallback import RuleDecisionProvider
 
-        payload = json.loads((FIXTURE_DECISIONS / "missing_mandatory_submission_item.json").read_text())
+        payload = json.loads((FIXTURE_DECISIONS / "missing_mandatory_submission_item.json").read_text(encoding="utf-8"))
         provider = RuleDecisionProvider()
         decision = provider.decide(bundle_name="bid_decision", bundle_version="v1", state=payload["state"])
         if payload["must_escalate"]:
@@ -1727,7 +1727,7 @@ class TestSubmissionPhase19:
             )
             session.add(opp)
             session.flush()
-            pursuit = Pursuit(opportunity_id=opp.id, stage="review", sourcing_cost=0, quote_price=0)
+            pursuit = Pursuit(opportunity_id=opp.id, stage="review", sourcing_cost=0, quote_price=0, approved_to_bid_at=datetime.now(UTC))  # bid approved
             session.add(pursuit)
             owner = User(email=f"owner-{_uid()}@test.com", display_name="Owner", role="owner", password_hash="x")
             session.add(owner)
@@ -1824,7 +1824,7 @@ class TestSubmissionPhase19:
             )
             session.add(opp)
             session.flush()
-            pursuit = Pursuit(opportunity_id=opp.id, stage="review", sourcing_cost=0, quote_price=0)
+            pursuit = Pursuit(opportunity_id=opp.id, stage="review", sourcing_cost=0, quote_price=0, approved_to_bid_at=datetime.now(UTC))  # bid approved
             session.add(pursuit)
             owner = User(
                 email=f"owner-override-{uid}@test.com",

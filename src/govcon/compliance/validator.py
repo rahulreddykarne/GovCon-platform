@@ -9,7 +9,9 @@ SATISFIED without citing verified evidence rows.
 Critical requirements get redundant validation regardless of confidence: a
 second AI validation runs on ``AI_SECONDARY_REVIEW_PROVIDER`` (or
 ``AI_REVIEW_PROVIDER``) when configured, and the gate requires two
-independent methods before a critical requirement is satisfied.
+independent methods before a critical requirement is satisfied. Each AI result
+carries the provider and model that produced it; a secondary validation on the
+same provider/model counts as the same method as the primary.
 
 JEV routing runs the Phase 8 ``compliance_and_amendment`` bundle on the
 structured matrix state. JEV can add blockers or route to human review; it
@@ -22,7 +24,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
+from govcon.compliance.extractor import independence_warnings
 from govcon.compliance.matrix import (
     active_requirements,
     apply_decision,
@@ -36,6 +40,7 @@ from govcon.compliance.matrix import (
 from govcon.compliance.records import RESOLVED_STATUSES
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement, RequirementEvidence
+from govcon.security.classification import DataClassification
 
 VALIDATION_VERSION = "compliance_validation.v1"
 ROUTING_VERSION = "jev_routing.v1"
@@ -94,9 +99,10 @@ def _ai_validate(
     try:
         result = run_structured_prompt(
             session,
+            classification=DataClassification.PROPRIETARY,
             opportunity_id=opportunity_id,
             prompt_name="compliance_validator",
-            analysis_type="compliance_review",
+            analysis_type=AnalysisType.COMPLIANCE_REVIEW,
             variables={"REQUIREMENTS_JSON": [_requirement_payload(r) for r in requirements], "EVIDENCE_JSON": _evidence_payload(rows)},
             context_manifest={"validator": label, "requirement_ids": sorted(by_id), "evidence_ids": [e.id for e in rows]},
             settings=settings,
@@ -153,6 +159,9 @@ def run_validation(
             )
         ]
         if redundant and second_provider:
+            warnings += independence_warnings(
+                settings, second_provider, None, code="secondary_validator_not_independent", what="The secondary validator"
+            )
             secondary = _ai_validate(session, opportunity_id, redundant, evidence, settings=settings, provider_name=second_provider, label="ai_validation_secondary", warnings=warnings)
         elif redundant:
             warnings.append({
@@ -240,6 +249,13 @@ def run_jev_routing(
 
     settings = settings or get_settings()
     requirements = active_requirements(session, opportunity_id)
+    prior_blocks = {req.id: req.blocks_submission for req in requirements}
+    for req in requirements:
+        validation = dict(req.validation or {})
+        if validation.pop("jev_blocks_submission", False):
+            req.blocks_submission = req.status not in RESOLVED_STATUSES and (req.mandatory is not False or req.severity == "critical")
+        validation.pop("jev_human_interpretation", None)
+        req.validation = validation
     counts = coverage_counts(requirements, [])
     state = build_decision_state(session, opportunity_id)
     state["compliance"] = compliance_state(requirements, counts)
@@ -267,6 +283,9 @@ def run_jev_routing(
                 req.version = (req.version or 1) + 1
                 routed_review.append(req.id)
         req.validation = validation
+    for req in requirements:
+        if req.blocks_submission != prior_blocks[req.id]:
+            req.version = (req.version or 1) + 1
     output = {
         "decision_run_id": execution.run.id,
         "provider": execution.provider,
@@ -275,7 +294,7 @@ def run_jev_routing(
         "added_blocks": added_blocks,
         "routed_to_review": routed_review,
         "second_validation_required": execution.result.get("second_validation_required"),
-        "note": "JEV routing may add blockers or require review; it never clears a blocker.",
+        "note": "JEV blockers are recomputed on each routing run; matrix blockers remain in force.",
     }
     run = record_run(session, opportunity_id=opportunity_id, run_type="jev_routing", run_version=ROUTING_VERSION, output=output, source_snapshot_ids=state.get("source_snapshot_ids"))
     return {"run_id": run.id, **output}

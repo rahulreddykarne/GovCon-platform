@@ -41,6 +41,38 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
+      - name: Verify installed wheel startup and database bootstrap
+        run: python -m pytest tests/test_installed_artifact.py -q
+
+      - name: Verify isolated release lifecycle and recovery
+        run: python -m pytest tests/test_release_lifecycle.py tests/test_f29_f33_regressions.py -q
+
       - name: Run tests
+        run: |
+          python -m pytest -q
+
+  # Windows: no pgvector service container is available on Windows runners,
+  # so database-backed tests skip and everything else runs (prompt loading,
+  # line endings, encodings, extraction, safe fetch, transition tables).
+  test-windows:
+    runs-on: windows-latest
+    env:
+      GOVCON_TEST_NO_DB: "1"
+      DATABASE_URL: postgresql+psycopg://govcon:govcon@127.0.0.1:5432/govcon
+      PYTHONUTF8: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run tests (database tests skipped)
         run: |
           python -m pytest -q

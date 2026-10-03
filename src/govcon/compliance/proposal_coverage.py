@@ -2,14 +2,18 @@
 
 Checks a selected ``proposal_versions`` row against the matrix. It does not
 draft proposals. The deterministic scan requires substantive term overlap in
-the section content; a section's ``requirement_ids`` claim (the writer
-model's mapping) is never enough. Stated counts ("provide three
-past-performance references") are counted in the text. Requirements that
-call for external forms/attachments are deferred to submission pre-flight.
+the section content; a section's heading or its ``requirement_ids`` claim (the
+writer model's mapping) is never enough. Term overlap only locates the
+passage: a negated or qualified passage ("we do not have ...") or one that
+omits a figure the requirement states is routed to NEEDS_REVIEW. Stated
+counts ("provide three past-performance references") are counted in the
+text. Requirements that call for external forms/attachments are deferred to
+submission pre-flight.
 
 The optional ``proposal_coverage`` prompt can downgrade coverage freely. It
-can only report COVERED when its excerpt is found verbatim in the proposal,
-and even then the requirement still needs a verified validation method.
+can only report COVERED when its excerpt is found verbatim in the proposal
+and passes the same content check, and even then the requirement still needs
+a verified validation method.
 Critical/mandatory NOT_FOUND is a blocking finding.
 """
 
@@ -22,6 +26,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.matrix import (
     active_requirements,
@@ -30,9 +35,10 @@ from govcon.compliance.matrix import (
     record_run,
     upsert_open_finding,
 )
-from govcon.compliance.text import containment, quote_in_text, split_sentences, tokens
+from govcon.compliance.text import containment, numbers, quote_in_text, split_sentences, tokens
 from govcon.config import Settings, get_settings
 from govcon.models import ProposalSection, ProposalVersion, Requirement, RequirementEvidence
+from govcon.security.classification import DataClassification
 
 COVERAGE_VERSION = "proposal_coverage.v1"
 RESPONSE_TYPES = frozenset({"technical", "past_performance", "pricing", "delivery", "cybersecurity", "country_of_origin", "certification", "representation", "set_aside", "other"})
@@ -84,23 +90,77 @@ def count_items(noun: str, text: str) -> int:
     return max(len(labels), len(lines))
 
 
+# Affirmative idioms that contain a negation word ("no later than", "take no
+# exception") and the "No. 3" numbering abbreviation.
+_AFFIRMATIVE_IDIOMS = re.compile(
+    r"\b(?:no|not)\s+(?:later|more|less|fewer|greater)\s+than\b|\bnot\s+to\s+exceed\b|"
+    r"\bwithout\s+(?:any\s+)?exceptions?\b|\b(?:takes?|taking|with)\s+no\s+exceptions?\b|\bno\s+exceptions?\s+(?:is|are)\s+taken\b|"
+    r"\bno\.?\s*(?=[#\d])",
+    re.I,
+)
+_NEGATION = re.compile(
+    r"\b(?:not|no|never|none|nor|neither|cannot|unable|without|lacks?|lacking|decline[sd]?|"
+    r"exceptions?\s+to|\w+n['’]t|non-?compliant|noncompliance)\b",
+    re.I,
+)
+_DIGITS = re.compile(r"\b\d+(?:\.\d+)?\b")
+
+
+def negated(passage: str) -> bool:
+    """True when ``passage`` denies or qualifies something (affirmative limit idioms excluded)."""
+    return bool(_NEGATION.search(_AFFIRMATIVE_IDIOMS.sub(" ", passage or "")))
+
+
+def content_issue(text: str, key_values: dict[str, Any], content: str, passages: list[str]) -> str | None:
+    """Why matching terms in ``content`` do not establish the obligation, or None.
+
+    Term overlap only locates a candidate passage. COVERED additionally needs
+    supporting passages that do not deny or qualify the requirement, and every
+    figure the requirement states (quantities, days, dates) restated in the
+    content. Anything else is routed to human review.
+    """
+    if not content.strip():
+        return "section has no content"
+    if any(negated(p) for p in passages):
+        return "supporting passage contains a negation or exception; confirm the proposal commits to the requirement"
+    stated = set(_DIGITS.findall(text.replace(",", "")))
+    if key_values.get("required_count") and key_values.get("count_noun"):
+        stated.discard(str(key_values["required_count"]))
+    missing = sorted(stated - numbers(content))
+    if missing:
+        return f"proposal does not restate required value(s) {', '.join(missing)}"
+    return None
+
+
 def scan_coverage(req_id: Any, text: str, key_values: dict[str, Any], sections: list[SectionView], *, full: float, partial: float) -> CoverageResult:
-    """Pure deterministic coverage of one requirement."""
+    """Pure deterministic coverage of one requirement.
+
+    Coverage is scored on section content. A heading only helps locate the
+    section: a matching heading over content that does not address the
+    requirement is never COVERED.
+    """
     wanted = tokens(text) - _GENERIC
     if not wanted:
         return CoverageResult(req_id, "NEEDS_REVIEW", issue="requirement has no distinctive terms to locate")
-    scored: list[tuple[float, bool, SectionView]] = []
+    scored: list[tuple[float, float, bool, SectionView]] = []
     for section in sections:
-        overlap = containment(wanted, tokens(f"{section.heading or ''} {section.content}"))
-        scored.append((overlap, req_id in section.requirement_ids, section))
+        overlap = containment(wanted, tokens(section.content))
+        located = containment(wanted, tokens(f"{section.heading or ''} {section.content}"))
+        scored.append((overlap, located, req_id in section.requirement_ids, section))
     if not scored:
         return CoverageResult(req_id, "NOT_FOUND", issue="proposal version has no sections")
-    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    overlap, mapped, best = scored[0]
-    claimed = [s for o, m, s in scored if m]
-    excerpt = max(split_sentences(best.content) or [best.content[:300]], key=lambda s: containment(wanted, tokens(s)))[:500]
+    scored.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    overlap, _, mapped, best = scored[0]
+    claimed = [s for _, _, m, s in scored if m]
+    sentences = split_sentences(best.content) or ([best.content[:300]] if best.content.strip() else [])
+    excerpt = max(sentences, key=lambda s: containment(wanted, tokens(s)))[:500] if sentences else None
     base = dict(section_id=best.section_id, section_key=best.section_key, excerpt=excerpt)
     if overlap >= full:
+        # Idioms are neutralised before splitting so "No. 3" is not cut into a bare "No.".
+        passages = [s for s in split_sentences(_AFFIRMATIVE_IDIOMS.sub(" ", best.content)) if wanted & tokens(s)]
+        issue = content_issue(text, key_values, best.content, passages)
+        if issue:
+            return CoverageResult(req_id, "NEEDS_REVIEW", issue=issue, **base)
         required = key_values.get("required_count")
         noun = key_values.get("count_noun")
         if required and noun:
@@ -111,6 +171,16 @@ def scan_coverage(req_id: Any, text: str, key_values: dict[str, Any], sections: 
         return CoverageResult(req_id, "COVERED", **base)
     if overlap >= partial:
         return CoverageResult(req_id, "NEEDS_REVIEW" if mapped else "PARTIAL", issue=f"only {overlap:.0%} of requirement terms addressed", **base)
+    headed = max(scored, key=lambda item: (item[1], item[2]))
+    if headed[1] >= partial:
+        section = headed[3]
+        return CoverageResult(
+            req_id,
+            "NEEDS_REVIEW" if headed[2] else "PARTIAL",
+            section_id=section.section_id,
+            section_key=section.section_key,
+            issue="section heading matches the requirement but its content does not address it",
+        )
     if claimed:
         section = claimed[0]
         return CoverageResult(req_id, "NEEDS_REVIEW", section_id=section.section_id, section_key=section.section_key, issue="section is mapped to this requirement but its content does not address it")
@@ -134,10 +204,11 @@ def check_proposal_coverage(
     use_ai: bool = False,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
+    from govcon.proposals.versions import version_for_opportunity
+
     settings = settings or get_settings()
-    version = session.get(ProposalVersion, proposal_version_id)
-    if version is None:
-        raise ValueError(f"proposal version not found: {proposal_version_id}")
+    # Ownership first: evidence and findings must never come from another opportunity's proposal.
+    _, version = version_for_opportunity(session, opportunity_id, proposal_version_id)
     sections = _sections(session, version)
     proposal_text = "\n\n".join(f"## [{s.section_key}] {s.heading or ''}\n{s.content}" for s in sections)
     requirements = [r for r in active_requirements(session, opportunity_id) if needs_response(r)]
@@ -152,9 +223,10 @@ def check_proposal_coverage(
         try:
             ai = run_structured_prompt(
                 session,
+                classification=DataClassification.PROPRIETARY,
                 opportunity_id=opportunity_id,
                 prompt_name="proposal_coverage",
-                analysis_type="proposal_coverage",
+                analysis_type=AnalysisType.PROPOSAL_COVERAGE,
                 variables={
                     "REQUIREMENTS_JSON": [{"requirement_id": r.id, "text": r.requirement_text, "type": r.requirement_type, "severity": r.severity, "source_quote": r.source_quote, "deterministic_scan": results[r.id].as_dict()} for r in requirements],
                     "PROPOSAL_TEXT": proposal_text,
@@ -171,7 +243,16 @@ def check_proposal_coverage(
                     current.issue = f"AI auditor: {item.issue or item.coverage_status}"
                     current.method = "proposal_scan+ai"
                 elif item.coverage_status == "COVERED" and current.coverage_status != "COVERED":
-                    if item.supporting_excerpt and quote_in_text(item.supporting_excerpt, proposal_text):
+                    req = next(r for r in requirements if r.id == item.requirement_id)
+                    excerpt_issue = (
+                        content_issue(req.requirement_text, req.key_values or {}, item.supporting_excerpt, [item.supporting_excerpt])
+                        if item.supporting_excerpt
+                        else None
+                    )
+                    if excerpt_issue:
+                        current.issue = f"AI auditor claimed coverage, but its excerpt does not establish it: {excerpt_issue}"
+                        current.coverage_status = "NEEDS_REVIEW"
+                    elif item.supporting_excerpt and quote_in_text(item.supporting_excerpt, proposal_text):
                         current.coverage_status = "COVERED"
                         current.excerpt = item.supporting_excerpt
                         current.method = "ai_excerpt_verified"

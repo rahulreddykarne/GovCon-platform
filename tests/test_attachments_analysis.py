@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.models import AIAnalysis, Opportunity, StoredFile
+from govcon.security.classification import DataClassification
 
 FIXTURE_PDF = Path(__file__).parent / "fixtures" / "solicitation_fixture.pdf"
 
@@ -59,7 +60,7 @@ def _make_stored_file(session: Session, opp: Opportunity) -> StoredFile:
     from govcon.enrich.extract import extract_text
 
     result = extract_text(data, "application/pdf", "solicitation_fixture.pdf")
-    sf = StoredFile(
+    sf = StoredFile(classification="PUBLIC", source_origin="synthetic_test_fixture",
         opportunity_id=opp.id,
         filename="solicitation_fixture.pdf",
         url=None,
@@ -166,7 +167,7 @@ class TestAttachmentIngestion:
 
         with Session(upgraded_engine) as session:
             opp = _make_opportunity(session, source_id=f"attach-local-{_uid()}")
-            sf = process_local_file(session, opp, FIXTURE_PDF)
+            sf = process_local_file(session, opp, FIXTURE_PDF, classification=DataClassification.PUBLIC, source_origin="synthetic_test_fixture")
             session.commit()
 
             assert sf.id is not None
@@ -181,8 +182,8 @@ class TestAttachmentIngestion:
 
         with Session(upgraded_engine) as session:
             opp = _make_opportunity(session, source_id=f"attach-dedup-{_uid()}")
-            sf1 = process_local_file(session, opp, FIXTURE_PDF)
-            sf2 = process_local_file(session, opp, FIXTURE_PDF)
+            sf1 = process_local_file(session, opp, FIXTURE_PDF, classification=DataClassification.PUBLIC, source_origin="synthetic_test_fixture")
+            sf2 = process_local_file(session, opp, FIXTURE_PDF, classification=DataClassification.PUBLIC, source_origin="synthetic_test_fixture")
             session.commit()
             assert sf1.id == sf2.id
 
@@ -191,7 +192,7 @@ class TestAttachmentIngestion:
 
         with Session(upgraded_engine) as session:
             opp = _make_opportunity(session, source_id=f"attach-sha-{_uid()}")
-            sf = process_local_file(session, opp, FIXTURE_PDF)
+            sf = process_local_file(session, opp, FIXTURE_PDF, classification=DataClassification.PUBLIC, source_origin="synthetic_test_fixture")
             session.commit()
 
             expected_sha = hashlib.sha256(FIXTURE_PDF.read_bytes()).hexdigest()
@@ -202,7 +203,7 @@ class TestAttachmentIngestion:
 
         with Session(upgraded_engine) as session:
             opp = _make_opportunity(session, source_id=f"attach-status-{_uid()}")
-            sf = process_local_file(session, opp, FIXTURE_PDF)
+            sf = process_local_file(session, opp, FIXTURE_PDF, classification=DataClassification.PUBLIC, source_origin="synthetic_test_fixture")
             session.commit()
             assert sf.extraction_status in ("success", "partial")
 
@@ -369,7 +370,7 @@ class TestPromptSystem:
         ]
         for sdir in service_dirs:
             for py_file in sdir.rglob("*.py"):
-                source = py_file.read_text()
+                source = py_file.read_text(encoding="utf-8")
                 tree = ast.parse(source, str(py_file))
                 for node in ast.walk(tree):
                     if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -536,7 +537,7 @@ class TestSolicitationAnalysis:
             _make_stored_file(session, opp)
             session.flush()
 
-            with patch("govcon.enrich.summarize.get_provider") as mock_get:
+            with patch("govcon.ai.structured.get_provider") as mock_get:
                 mock_provider = MagicMock()
                 mock_provider.complete.return_value = mock_result
                 mock_provider.name = "deepseek"
@@ -571,7 +572,7 @@ class TestSolicitationAnalysis:
             _make_stored_file(session, opp)
             session.flush()
 
-            with patch("govcon.enrich.summarize.get_provider") as mock_get:
+            with patch("govcon.ai.structured.get_provider") as mock_get:
                 mock_provider = MagicMock()
                 mock_provider.complete.return_value = mock_result
                 mock_provider.name = "deepseek"
@@ -612,7 +613,7 @@ class TestSolicitationAnalysis:
             original_description = opp.description
             session.flush()
 
-            with patch("govcon.enrich.summarize.get_provider") as mock_get:
+            with patch("govcon.ai.structured.get_provider") as mock_get:
                 mock_provider = MagicMock()
                 mock_provider.complete.return_value = mock_result
                 mock_provider.name = "deepseek"
@@ -655,7 +656,7 @@ class TestSolicitationAnalysis:
             _make_stored_file(session, opp)
             session.flush()
 
-            with patch("govcon.enrich.summarize.get_provider") as mock_get:
+            with patch("govcon.ai.structured.get_provider") as mock_get:
                 mock_provider = MagicMock()
                 mock_provider.complete.return_value = mock_result
                 mock_provider.name = "deepseek"
@@ -694,7 +695,7 @@ class TestSolicitationAnalysis:
             _make_stored_file(session, opp)
             session.flush()
 
-            with patch("govcon.enrich.summarize.get_provider") as mock_get:
+            with patch("govcon.ai.structured.get_provider") as mock_get:
                 mock_provider = MagicMock()
                 mock_provider.complete.return_value = mock_result
                 mock_provider.name = "deepseek"
@@ -722,7 +723,7 @@ class TestSolicitationAnalysis:
             _make_stored_file(session, opp)
             session.flush()
 
-            with patch("govcon.enrich.summarize.get_provider") as mock_get:
+            with patch("govcon.ai.structured.get_provider") as mock_get:
                 mock_provider = MagicMock()
                 mock_provider.complete.return_value = mock_result
                 mock_provider.name = "deepseek"

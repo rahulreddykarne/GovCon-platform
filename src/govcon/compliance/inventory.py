@@ -98,24 +98,38 @@ def _table_status(doc_mime: str | None, filename: str | None, text: str | None) 
     return "not_applicable"
 
 
-def document_from_file(row: StoredFile, *, latest_snapshot_id: int | None) -> SourceDocument:
-    """Build one inventory entry, re-reading the retained original when available."""
+def document_from_file(row: StoredFile, *, latest_snapshot_id: int | None = None) -> SourceDocument:
+    """Build one inventory entry, re-reading the retained original when it is intact.
+
+    The file keeps its own ``snapshot_id`` (the source version it was
+    downloaded for); it is never re-dated to the latest snapshot. Retained
+    bytes are used only when their SHA-256 matches the stored hash.
+    ``latest_snapshot_id`` is accepted for backward compatibility and unused.
+    """
     from govcon.enrich.extract import extract_pdf_pages, extract_text
 
     text = row.extracted_text
     page_texts: list[str] | None = None
     page_count: int | None = None
+    integrity_error: str | None = None
     local = Path(row.local_path) if row.local_path else None
     if local is not None and local.is_file():
         data = local.read_bytes()
-        name = (row.filename or local.name).lower()
-        if name.endswith(".pdf") or (row.mime_type or "") == "application/pdf":
-            page_texts = extract_pdf_pages(data)
-            page_count = len(page_texts) if page_texts is not None else None
-        elif name.endswith(".docx"):
-            fresh = extract_text(data, row.mime_type or "", row.filename)
-            if fresh.text:
-                text = fresh.text
+        actual = hashlib.sha256(data).hexdigest()
+        if row.sha256 and actual != row.sha256:
+            integrity_error = (
+                f"retained file for {row.filename or row.id} no longer matches its stored SHA-256 "
+                f"({row.sha256[:12]}… expected, {actual[:12]}… found)"
+            )
+        else:
+            name = (row.filename or local.name).lower()
+            if name.endswith(".pdf") or (row.mime_type or "") == "application/pdf":
+                page_texts = extract_pdf_pages(data)
+                page_count = len(page_texts) if page_texts is not None else None
+            elif name.endswith(".docx"):
+                fresh = extract_text(data, row.mime_type or "", row.filename)
+                if fresh.text:
+                    text = fresh.text
     status = row.extraction_status
     unreadable = [i + 1 for i, page in enumerate(page_texts or []) if not page.strip()]
     ocr_needed = bool(unreadable) or (status == "partial" and "ocr" in (row.extraction_error or "").lower())
@@ -123,11 +137,13 @@ def document_from_file(row: StoredFile, *, latest_snapshot_id: int | None) -> So
     rank = 10 + (amendment_number or 0) if doc_type == "amendment" else _PRECEDENCE.get(doc_type, 0)
     return SourceDocument(
         file_id=row.id,
+        classification=row.classification,
+        source_origin=row.source_origin,
         filename=row.filename,
         url=row.url,
         sha256=row.sha256,
         downloaded_at=row.downloaded_at,
-        snapshot_id=row.snapshot_id or latest_snapshot_id,
+        snapshot_id=row.snapshot_id,
         document_type=doc_type,
         mime_type=row.mime_type,
         text=text,
@@ -140,6 +156,7 @@ def document_from_file(row: StoredFile, *, latest_snapshot_id: int | None) -> So
         document_date=_document_date(text),
         precedence_rank=rank,
         extraction_error=row.extraction_error if not unreadable else f"unreadable pages: {unreadable}",
+        integrity_error=integrity_error,
     )
 
 
@@ -157,6 +174,23 @@ def analyze_inventory(
 
     for doc in documents:
         status = doc.text_extraction_status
+        if status == "download_failed":
+            warnings.append(InventoryWarning(
+                "download_failed", "high",
+                f"Listed attachment {doc.filename or doc.url} could not be downloaded ({doc.extraction_error or 'unknown error'}).",
+                [doc.file_id], True,
+            ))
+            continue
+        if doc.integrity_error:
+            warnings.append(InventoryWarning(
+                "file_integrity_mismatch", "high", doc.integrity_error, [doc.file_id], True,
+            ))
+        if doc.snapshot_id is None and doc.url:
+            warnings.append(InventoryWarning(
+                "file_provenance_unknown", "info",
+                f"{doc.filename or doc.file_id} has no recorded source snapshot (downloaded before provenance was tracked).",
+                [doc.file_id], False,
+            ))
         if status in {"error", "unsupported", None} or (status == "partial" and not doc.ocr_needed):
             warnings.append(InventoryWarning(
                 "extraction_failed", "high",
@@ -181,7 +215,7 @@ def analyze_inventory(
     for doc in documents:
         if doc.sha256:
             by_hash.setdefault(doc.sha256, []).append(doc)
-        if doc.filename:
+        if doc.filename and doc.sha256:
             by_name.setdefault(doc.filename.strip().lower(), []).append(doc)
     for sha, docs in by_hash.items():
         if len(docs) > 1:
@@ -197,7 +231,8 @@ def analyze_inventory(
             warnings.append(InventoryWarning(
                 "same_filename_different_hash", "high",
                 f"{name} exists in {len(hashes)} versions with different SHA-256; latest download is file {latest.file_id}. Confirm which version controls.",
-                [d.file_id for d in docs], False,
+                # Two current versions of one document: which controls is unknown, so it blocks.
+                [d.file_id for d in docs], True,
             ))
 
     amendments = sorted((d for d in documents if d.document_type == "amendment"), key=lambda d: d.amendment_number or 0)
@@ -226,7 +261,7 @@ def analyze_inventory(
         ))
 
     names_lower = " ".join((d.filename or "").lower() for d in documents)
-    urls_present = {d.url for d in documents if d.url}
+    urls_present = {d.url for d in documents if d.url and d.sha256}
     for url, name in expected_urls or []:
         entry = {"kind": "source_link", "url": url, "name": name, "present": url in urls_present}
         expected.append(entry)
@@ -262,16 +297,19 @@ def inventory_hash(inventory: Inventory) -> str:
 
 
 def load_inventory(session: Session, opportunity: Opportunity) -> Inventory:
-    from govcon.enrich.attachments import _collect_attachment_urls
+    """Inventory of the attachment versions the current source lists.
 
-    latest_snapshot_id = session.scalar(
-        select(OpportunitySnapshot.id)
-        .where(OpportunitySnapshot.opportunity_id == opportunity.id)
-        .order_by(desc(OpportunitySnapshot.fetched_at), desc(OpportunitySnapshot.id))
-        .limit(1)
-    )
-    rows = session.scalars(select(StoredFile).where(StoredFile.opportunity_id == opportunity.id).order_by(StoredFile.id)).all()
-    documents = [document_from_file(row, latest_snapshot_id=latest_snapshot_id) for row in rows]
+    Inactive versions (removed or replaced attachments) are excluded; local
+    files without a URL are always included.
+    """
+    from govcon.enrich.attachment_refs import attachment_refs_for
+
+    rows = session.scalars(
+        select(StoredFile)
+        .where(StoredFile.opportunity_id == opportunity.id, StoredFile.active.is_(True))
+        .order_by(StoredFile.id)
+    ).all()
+    documents = [document_from_file(row) for row in rows]
     latest_download = max((r.downloaded_at for r in rows if r.downloaded_at), default=None)
     changed_after = False
     if latest_download is not None:
@@ -286,7 +324,8 @@ def load_inventory(session: Session, opportunity: Opportunity) -> Inventory:
                 )
             )
         )
-    return analyze_inventory(documents, expected_urls=_collect_attachment_urls(opportunity), source_changed_after_download=changed_after)
+    expected = [(ref.url, ref.filename or "") for ref in attachment_refs_for(opportunity)]
+    return analyze_inventory(documents, expected_urls=expected, source_changed_after_download=changed_after)
 
 
 def build_document_inventory(session: Session, opportunity_id: int) -> tuple[Inventory, ComplianceRun]:
@@ -294,6 +333,8 @@ def build_document_inventory(session: Session, opportunity_id: int) -> tuple[Inv
     opportunity = session.get(Opportunity, opportunity_id)
     if opportunity is None:
         raise ValueError(f"opportunity not found: {opportunity_id}")
+    # Versions are reconciled when attachments are downloaded (the source's
+    # current list is authoritative there); the inventory reads ``active``.
     inventory = load_inventory(session, opportunity)
     warnings = [w.as_dict() for w in inventory.warnings]
     snapshot_ids = sorted({d.snapshot_id for d in inventory.documents if d.snapshot_id})

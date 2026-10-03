@@ -15,6 +15,14 @@ class DecisionProviderUnavailable(DecisionProviderError):
     """Raised when a provider cannot process a request in this environment."""
 
 
+class DecisionProviderInvalidResponse(DecisionProviderUnavailable):
+    """The provider answered, but not with a usable decision (bad JSON, shape, or values).
+
+    A subclass of ``DecisionProviderUnavailable`` so the engine falls back to
+    the rules provider. The message never echoes the response body.
+    """
+
+
 @dataclass(frozen=True)
 class ProviderDecision:
     """Structured provider output used by the decision engine."""

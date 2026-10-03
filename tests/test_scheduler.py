@@ -39,7 +39,10 @@ runner = CliRunner()
 
 
 def _invoke(*args: str, env: dict | None = None):
-    default_env = {"DATABASE_URL": "postgresql+psycopg://govcon:govcon@localhost:5432/govcon"}
+    import os
+
+    # Honor the suite's DATABASE_URL so the CLI never touches another database.
+    default_env = {"DATABASE_URL": os.environ.get("DATABASE_URL", "postgresql+psycopg://govcon:govcon@localhost:5432/govcon")}
     if env:
         default_env.update(env)
     return runner.invoke(app, list(args), env=default_env)
@@ -73,7 +76,7 @@ class TestChainDefinitions:
 
     def test_morning_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["morning_ingest"]
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "match", "alerts"]
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"]
 
     def test_usaspending_steps(self):
         chain = CHAIN_DEFINITIONS["usaspending"]
@@ -90,7 +93,7 @@ class TestChainDefinitions:
 
     def test_evening_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["evening_ingest"]
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "match", "alerts"]
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"]
 
     def test_sunday_sweep_steps(self):
         chain = CHAIN_DEFINITIONS["sunday_sweep"]
@@ -107,6 +110,7 @@ class TestChainDefinitions:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestStatusCommand:
     def test_status_shows_connectivity(self):
         result = _invoke("status")
@@ -117,7 +121,12 @@ class TestStatusCommand:
         result = _invoke("status")
         assert result.exit_code == 0
         assert "schema_revision:" in result.output
-        assert "b1c2d3e4f5a6" in result.output
+        from alembic.script import ScriptDirectory
+
+        from govcon.cli import alembic_config
+
+        head = ScriptDirectory.from_config(alembic_config()).get_current_head()
+        assert head in result.output
 
     def test_status_shows_row_counts(self):
         result = _invoke("status")
@@ -147,6 +156,7 @@ class TestStatusCommand:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestJobsList:
     def test_lists_all_six_chains(self):
         result = _invoke("jobs", "list")
@@ -179,6 +189,7 @@ class TestJobsList:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestJobsRun:
     def test_run_midday_check_succeeds(self):
         result = _invoke("jobs", "run", "midday_check")
@@ -235,6 +246,7 @@ class TestJobsRun:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestChainAbortOnFailure:
     def test_first_step_failure_aborts_remaining_steps(self):
         settings = _settings()
@@ -327,6 +339,7 @@ class TestChainAbortOnFailure:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestIndependentChains:
     def test_failure_in_one_chain_does_not_affect_another(self):
         """Two chains run independently; one failing does not prevent the other."""
@@ -355,6 +368,7 @@ class TestIndependentChains:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestRunVisibility:
     def test_completed_run_persisted_to_db(self):
         settings = _settings()
@@ -417,6 +431,7 @@ class TestRunVisibility:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestNoSilentFailures:
     def test_exception_in_step_is_recorded_not_swallowed(self):
         settings = _settings()
@@ -487,6 +502,7 @@ class TestStepResult:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestIngestStepPersistence:
     def test_midday_step_writes_ingestion_run(self):
         settings = _settings()
@@ -540,6 +556,7 @@ class TestSchedulerRunner:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("upgraded_engine")  # migrated schema; skipped without a DB
 class TestSundaySweep:
     def test_sunday_sweep_includes_vacuum(self):
         chain = CHAIN_DEFINITIONS["sunday_sweep"]
@@ -554,3 +571,83 @@ class TestSundaySweep:
         assert "cache_refresh" in result.output
         assert "analytics_refresh" in result.output
         assert "vacuum_analyze" in result.output
+
+
+# ---------------------------------------------------------------------------
+# H11. Ingest failures do not stop matching and alerts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("upgraded_engine")
+class TestSoftIngestSteps:
+    def _patched(self, calls: list[str], **overrides):
+        from govcon.scheduler.chains import _STEP_FUNCTIONS
+
+        def make(name: str, status: str = "succeeded", error: str | None = None):
+            def step(session, settings=None):
+                calls.append(name)
+                return StepResult(step=name, status=status, error=error)
+
+            return step
+
+        patched = dict(_STEP_FUNCTIONS)
+        for name in ("sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"):
+            patched[name] = overrides.get(name) or make(name)
+        return patched, make
+
+    def test_failed_sam_ingest_still_runs_match_and_alerts(self):
+        calls: list[str] = []
+        patched, make = self._patched(calls)
+        patched["sam_ingest"] = make("sam_ingest", "failed", "SAM HTTP 503")
+        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
+            result = run_chain("morning_ingest", _settings(), trigger="test_soft")
+        assert calls == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "alerts"]
+        assert result.status == "completed_with_errors"
+        assert not result.failed
+        assert "match" in result.steps_completed and "alerts" in result.steps_completed
+        assert "SAM HTTP 503" in (result.error or "")
+
+    def test_partial_dibbs_errors_are_not_a_failure(self):
+        calls: list[str] = []
+        patched, make = self._patched(calls)
+        patched["dibbs_ingest"] = make("dibbs_ingest", "completed_with_errors", "line 17: expected 140 characters")
+        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
+            result = run_chain("morning_ingest", _settings(), trigger="test_soft")
+        assert result.status == "completed_with_errors"
+        assert "alerts" in result.steps_completed
+
+    def test_match_failure_still_stops_alerts(self):
+        calls: list[str] = []
+        patched, make = self._patched(calls)
+        patched["match"] = make("match", "failed", "matching crashed")
+        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
+            result = run_chain("morning_ingest", _settings(), trigger="test_soft")
+        assert result.failed and result.failed_step == "match"
+        assert "alerts" not in calls
+
+    def test_dibbs_step_reports_bad_lines_as_completed_with_errors(self):
+        from govcon.ingest.dibbs import DibbsCoverage, DibbsIngestResult
+        from govcon.ingest.runs import IngestStats
+        from govcon.scheduler.jobs import step_dibbs_ingest
+
+        fake = DibbsIngestResult(
+            stats=IngestStats(fetched=10, inserted=9, errors=["line 4: expected 140 characters, got 12"]),
+            coverage=DibbsCoverage(records=10, nsn=9, quantity=10),
+            index_name="in260925.txt",
+        )
+        with session_scope(_settings()) as db:
+            with patch("govcon.ingest.dibbs.pull_dibbs_index", return_value=fake):
+                result = step_dibbs_ingest(db, _settings())
+        assert result.status == "completed_with_errors"
+        assert not result.failed
+
+    def test_cli_exits_zero_for_completed_with_errors(self):
+        from govcon.scheduler.chains import _STEP_FUNCTIONS
+
+        def partial(session, settings=None):
+            return StepResult(step="midday_deadline_check", status="completed_with_errors", error="1 row skipped")
+
+        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", {**_STEP_FUNCTIONS, "midday_deadline_check": partial}):
+            result = _invoke("jobs", "run", "midday_check")
+        assert result.exit_code == 0
+        assert "completed_with_errors" in result.output

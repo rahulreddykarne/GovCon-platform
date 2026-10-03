@@ -313,7 +313,144 @@ def test_match_rebuild_removes_stale_matches(session: Session) -> None:
     stats = run_matching(session, watchlist_id=watchlist.id, now=NOW, rebuild=True)
     session.commit()
     assert stats.removed >= 1
-    remaining_ids = session.scalars(
-        select(Match.opportunity_id).where(Match.watchlist_id == watchlist.id)
+    active_ids = session.scalars(
+        select(Match.opportunity_id).where(Match.watchlist_id == watchlist.id, Match.active.is_(True))
     ).all()
-    assert remaining_ids == [stale.id]
+    assert active_ids == [stale.id]
+    # The stale match is kept as history, not deleted.
+    old = _match_for(session, watchlist, matching)
+    assert old.active is False and old.inactive_reason == "no_longer_matches" and old.deactivated_at == NOW
+
+
+def _match_for(session: Session, watchlist: Watchlist, opportunity: Opportunity) -> Match:
+    row = session.scalar(
+        select(Match).where(Match.watchlist_id == watchlist.id, Match.opportunity_id == opportunity.id)
+    )
+    assert row is not None
+    session.refresh(row)
+    return row
+
+
+def test_criteria_change_deactivates_then_reactivates_with_history(session: Session) -> None:
+    _purge_test_matches(session)
+    watchlist = _make_watchlist(session, psc_codes=["R4"])
+    opportunity = _make_opportunity(session, psc_code="R425")
+    run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    match = _match_for(session, watchlist, opportunity)
+    match.status = "seen"
+    match.alerted_at = NOW
+    session.flush()
+
+    watchlist.psc_codes = ["D3"]
+    session.flush()
+    stats = run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    assert stats.removed == 1
+    match = _match_for(session, watchlist, opportunity)
+    assert match.active is False and match.inactive_reason == "no_longer_matches"
+
+    watchlist.psc_codes = ["R4"]
+    session.flush()
+    stats = run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    assert stats.reactivated == 1 and stats.inserted == 0
+    match = _match_for(session, watchlist, opportunity)
+    assert match.active is True and match.inactive_reason is None and match.deactivated_at is None
+    assert match.status == "seen" and match.alerted_at == NOW  # triage and alert history kept
+    session.rollback()
+
+
+def test_closed_or_expired_opportunities_are_not_matched(session: Session) -> None:
+    _purge_test_matches(session)
+    watchlist = _make_watchlist(session, psc_codes=["R4"])
+    archived = _make_opportunity(session, psc_code="R425", response_deadline=NOW + timedelta(days=5))
+    expired = _make_opportunity(session, psc_code="R426", response_deadline=NOW + timedelta(days=5))
+    still_open = _make_opportunity(session, psc_code="R427", response_deadline=NOW + timedelta(days=5))
+    stats = run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    assert stats.inserted >= 3
+
+    archived.status = "archived"
+    expired.response_deadline = NOW - timedelta(hours=1)
+    session.flush()
+    run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    for closed in (archived, expired):
+        row = _match_for(session, watchlist, closed)
+        assert row.active is False and row.inactive_reason == "opportunity_closed"
+    assert _match_for(session, watchlist, still_open).active is True
+
+    # A closed opportunity never gets a fresh match row either.
+    fresh = _make_watchlist(session, psc_codes=["R425"])
+    run_matching(session, watchlist_id=fresh.id, now=NOW)
+    assert session.scalar(select(Match).where(Match.watchlist_id == fresh.id, Match.opportunity_id == archived.id)) is None
+    session.rollback()
+
+
+def test_disabling_a_watchlist_deactivates_its_matches(session: Session) -> None:
+    _purge_test_matches(session)
+    watchlist = _make_watchlist(session, psc_codes=["R4"])
+    opportunity = _make_opportunity(session, psc_code="R425")
+    run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    watchlist.enabled = False
+    session.flush()
+    stats = run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    assert stats.removed == 1 and stats.evaluated == 0
+    row = _match_for(session, watchlist, opportunity)
+    assert row.active is False and row.inactive_reason == "watchlist_disabled"
+    session.rollback()
+
+
+def test_scheduled_run_reconciles_every_watchlist(session: Session) -> None:
+    _purge_test_matches(session)
+    watchlist = _make_watchlist(session, psc_codes=["R4"])
+    opportunity = _make_opportunity(session, psc_code="R425")
+    run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    opportunity.psc_code = "D399"
+    session.flush()
+    run_matching(session, now=NOW)  # the scheduled path: no watchlist id, no rebuild flag
+    row = _match_for(session, watchlist, opportunity)
+    assert row.active is False and row.inactive_reason == "no_longer_matches"
+    session.rollback()
+
+
+def test_dismissed_match_stays_dismissed_when_rematched(session: Session) -> None:
+    _purge_test_matches(session)
+    watchlist = _make_watchlist(session, psc_codes=["R4"])
+    opportunity = _make_opportunity(session, psc_code="R425")
+    run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    match = _match_for(session, watchlist, opportunity)
+    match.status = "dismissed"
+    session.flush()
+    stats = run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    assert stats.inserted == 0
+    assert _match_for(session, watchlist, opportunity).status == "dismissed"
+    session.rollback()
+
+
+def test_nsn_matching_normalizes_and_checks_every_candidate(session: Session) -> None:
+    _purge_test_matches(session)
+    watchlist = _make_watchlist(session)
+    watchlist.nsn_list = ["5305001234567"]
+    session.flush()
+    first = _make_opportunity(session, nsn="5305-00-123-4567")
+    second = _make_opportunity(session, nsn="1111-22-333-4444")
+    second.nsn_candidates = ["1111-22-333-4444", "5305-00-123-4567"]
+    other = _make_opportunity(session, nsn="5305-00-999-0000")
+    session.flush()
+
+    matched_first, evidence, _ = evaluate_match(watchlist, first, now=NOW)
+    matched_second, evidence_second, _ = evaluate_match(watchlist, second, now=NOW)
+    matched_other, _, _ = evaluate_match(watchlist, other, now=NOW)
+    assert matched_first and matched_second and not matched_other
+    assert evidence["groups"]["nsn"]["matched"] == ["5305-00-123-4567"]
+    assert evidence_second["groups"]["nsn"]["candidates"] == ["1111-22-333-4444", "5305-00-123-4567"]
+    session.rollback()
+
+
+def test_time_passing_alone_does_not_update_a_match(session: Session) -> None:
+    _purge_test_matches(session)
+    watchlist = _make_watchlist(session, psc_codes=["R4"])
+    watchlist.min_deadline_days = 1
+    _make_opportunity(session, psc_code="R425", response_deadline=NOW + timedelta(days=10))
+    first = run_matching(session, watchlist_id=watchlist.id, now=NOW)
+    assert first.inserted == 1
+    later = run_matching(session, watchlist_id=watchlist.id, now=NOW + timedelta(hours=7))
+    assert later.updated == 0 and later.unchanged == 1
+    session.rollback()

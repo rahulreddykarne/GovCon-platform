@@ -30,6 +30,7 @@
     <div style="flex:1; min-width:0;">
       <div class="title truncate">
         <a href="/opp/{{ m.opp_id }}">{{ m.title or "(no title)" }}</a>
+        {% if m.alerted %}<span class="badge badge-secondary" title="Included in an alert digest">Alerted</span>{% endif %}
       </div>
       <div class="match-meta">
         {% if m.deadline_label %}
@@ -48,6 +49,7 @@
             hx-post="/inbox/action"
             hx-target="#match-{{ m.match_id }}"
             hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="match_id" value="{{ m.match_id }}">
         <input type="hidden" name="action" value="seen">
         <button type="submit" class="btn btn-secondary btn-sm">Seen</button>
@@ -56,6 +58,7 @@
             hx-post="/inbox/action"
             hx-target="#match-{{ m.match_id }}"
             hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="match_id" value="{{ m.match_id }}">
         <input type="hidden" name="action" value="dismissed">
         <button type="submit" class="btn btn-secondary btn-sm">Dismiss</button>
@@ -65,6 +68,7 @@
             hx-post="/inbox/action"
             hx-target="#match-{{ m.match_id }}"
             hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="match_id" value="{{ m.match_id }}">
         <input type="hidden" name="action" value="pursuing">
         <button type="submit" class="btn btn-primary btn-sm">Pursue</button>

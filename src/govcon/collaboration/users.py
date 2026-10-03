@@ -21,8 +21,12 @@ from govcon.models import User, UserSession
 
 ROLES = ("owner", "approver", "reviewer", "read_only")
 _PERMISSIONS: dict[str, frozenset[str]] = {
-    "owner": frozenset({"read", "review", "approve", "manage_users", "override_review", "override_compliance"}),
-    "approver": frozenset({"read", "review", "approve", "override_review", "override_compliance"}),
+    "owner": frozenset(
+        {"read", "review", "approve", "manage_users", "manage_watchlists", "override_review", "override_compliance"}
+    ),
+    "approver": frozenset(
+        {"read", "review", "approve", "manage_watchlists", "override_review", "override_compliance"}
+    ),
     "reviewer": frozenset({"read", "review"}),
     "read_only": frozenset({"read"}),
 }

@@ -53,7 +53,7 @@
         <tr>
           <td>{{ a.action_date or "—" }}</td>
           <td>{{ a.awarding_agency or "—" }}</td>
-          <td>{{ "$%,.0f"|format(a.total_obligation|float) if a.total_obligation else "—" }}</td>
+          <td>{{ a.total_obligation|money(0) if a.total_obligation else "—" }}</td>
           <td>{{ a.psc_code or "—" }}</td>
           <td class="truncate" style="max-width:200px;">{{ a.description or "—" }}</td>
         </tr>

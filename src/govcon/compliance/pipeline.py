@@ -8,6 +8,8 @@ selected proposal version and assembled package.
 
 A run is ``incomplete`` (never silently complete) when source ingestion has
 blocking warnings, an AI extraction pass failed, or AI passes were not run.
+Extraction is cached only when complete: an incomplete extraction for an
+unchanged inventory is retried on the next AI-enabled run.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
 from govcon.compliance.amendments import diff_inventory, inventory_files, run_amendment_revalidation
 from govcon.compliance.clauses import run_clause_validation
@@ -27,13 +30,14 @@ from govcon.compliance.conflicts import run_conflict_scan
 from govcon.compliance.deterministic import SubmissionPackage, build_context, run_deterministic_validation
 from govcon.compliance.extractor import run_ai_pass, run_scanner_pass
 from govcon.compliance.inventory import build_document_inventory, inventory_hash
-from govcon.compliance.matrix import active_requirements, latest_run
+from govcon.compliance.matrix import active_requirements, latest_run, validator_identity
 from govcon.compliance.metrics import record_matrix_run
 from govcon.compliance.reconciler import apply_ai_hints, persist_reconciliation, reconcile
 from govcon.compliance.red_team import run_red_team
 from govcon.compliance.validator import run_jev_routing, run_validation
 from govcon.config import Settings, get_settings
 from govcon.models import Opportunity
+from govcon.security.classification import DataClassification, strictest_classification
 
 logger = logging.getLogger("govcon.compliance.pipeline")
 
@@ -50,13 +54,22 @@ def load_company_facts(settings: Settings) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def passes_independent(ai_outcomes: list[Any]) -> bool:
+    """True when extraction passes A and B ran on different, known provider/model pairs."""
+    identities = [(o.provider, o.model) for o in ai_outcomes if o.pass_label in {"A", "B"}]
+    if len(identities) != 2 or any(provider is None or model is None for provider, model in identities):
+        return False
+    return validator_identity(*identities[0]) != validator_identity(*identities[1])
+
+
 def _ai_reconciliation_hints(session, opportunity_id, candidates, canonicals, inventory, settings, warnings) -> dict[str, Any]:
     try:
         result = run_structured_prompt(
             session,
+            classification=strictest_classification(*(d.classification for d in inventory.documents)),
             opportunity_id=opportunity_id,
             prompt_name="requirement_reconciliation",
-            analysis_type="compliance_review",
+            analysis_type=AnalysisType.COMPLIANCE_REVIEW,
             variables={
                 "REQUIREMENTS_JSON": [
                     {"candidate_id": c.candidate_id, "pass": c.pass_label, "text": c.requirement_text, "mandatory": c.mandatory, "severity": c.severity, "source_file_id": c.source_file_id, "page": c.source_page, "quote": c.supporting_quote}
@@ -99,7 +112,14 @@ def run_compliance_pipeline(
     prior_files = (prior.output_json or {}).get("inventory_files", []) if prior else []
     prior_requirement_ids = {r.id for r in active_requirements(session, opportunity_id)}
     current_hash = inventory_hash(inventory)
-    extraction_needed = prior is None or force or prior.input_hash != current_hash
+    # Only a complete extraction is reused for an unchanged inventory; an
+    # incomplete one (provider outage, missing key, policy block) is retried.
+    extraction_needed = (
+        prior is None
+        or force
+        or prior.input_hash != current_hash
+        or (use_ai and prior.status != "complete")
+    )
     diff = diff_inventory(prior_files, inventory) if prior is not None else None
 
     extraction: dict[str, Any] = {"status": "skipped", "reason": "inventory unchanged since last reconciliation"}
@@ -115,7 +135,12 @@ def run_compliance_pipeline(
         if not use_ai:
             warnings.append({"code": "ai_passes_not_run", "severity": "high", "message": "Independent AI extraction passes were not run; only the deterministic scanner extracted requirements."})
         candidates = [c for o in outcomes for c in o.candidates]
-        canonicals = reconcile(candidates, merge_threshold=settings.compliance_merge_similarity, duplicate_threshold=settings.compliance_possible_duplicate_similarity)
+        canonicals = reconcile(
+            candidates,
+            merge_threshold=settings.compliance_merge_similarity,
+            duplicate_threshold=settings.compliance_possible_duplicate_similarity,
+            ab_independent=passes_independent(ai_outcomes),
+        )
         hints = {"status": "not_run"}
         if use_ai and sum(1 for o in ai_outcomes if o.candidates) == 2:
             hints = _ai_reconciliation_hints(session, opportunity_id, candidates, canonicals, inventory, settings, warnings)
@@ -158,6 +183,13 @@ def run_compliance_pipeline(
     warnings += validation["warnings"]
     red_team = run_red_team(session, opportunity_id, inventory, use_ai=use_ai, settings=settings)
     routing = run_jev_routing(session, opportunity_id, amendment=amendment, settings=settings)
+    review_reopened = False
+    if amendment and amendment["impact"]["review_reopen_required"]:
+        # Consume the flag here so an amendment after approval always reopens
+        # review and invalidates the proposal approval and submission readiness.
+        from govcon.collaboration.review_sessions import apply_material_amendment_reopen
+
+        review_reopened = apply_material_amendment_reopen(session, opportunity_id=opportunity_id)
     bid_rerun = None
     if amendment and amendment["impact"]["rerun_jev_bid_decision"]:
         from govcon.decision.engine import run_decision_bundle
@@ -186,6 +218,7 @@ def run_compliance_pipeline(
         "red_team": {"run_id": red_team["run_id"], "findings": len(red_team["finding_ids"]), "ai": red_team["ai"]},
         "jev_routing": {"run_id": routing["run_id"], "decision_run_id": routing["decision_run_id"], "provider": routing["provider"]},
         "bid_decision_rerun_id": bid_rerun,
+        "review_reopened": review_reopened,
         "counts": counts,
         "warnings": warnings,
     }
