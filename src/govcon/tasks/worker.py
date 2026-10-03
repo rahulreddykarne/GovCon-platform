@@ -15,13 +15,13 @@ import socket
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from govcon.config import Settings, get_settings
 from govcon.db import session_scope
 from govcon.models import Task
 from govcon.tasks import queue
-from govcon.tasks.errors import TaskFailedPermanently, classify
+from govcon.tasks.errors import TaskFailedPermanently, TaskSuperseded, classify
 from govcon.tasks.registry import StepContext, get_handler
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class _Heartbeat(threading.Thread):
         self.lost = False
 
     def set_deadline(self, seconds: int) -> None:
-        self._deadline = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+        self._deadline = datetime.now(UTC) + timedelta(seconds=seconds)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -52,7 +52,7 @@ class _Heartbeat(threading.Thread):
         lease = self._settings.task_lease_seconds
         interval = max(0.2, lease / 3)
         while not self._stop_event.wait(interval):
-            if self._deadline is not None and datetime.now(timezone.utc) > self._deadline:
+            if self._deadline is not None and datetime.now(UTC) > self._deadline:
                 logger.warning("task %s: step exceeded its timeout; lease will lapse", self._claim.task_id)
                 return
             try:
@@ -84,24 +84,33 @@ def _record_outcome(settings: Settings, claim: queue.Claim, exc: BaseException) 
         with session_scope(settings) as db:
             task = queue.guard_publish(db, claim)
             if outcome.kind == "block":
-                queue.block(db, task, status=outcome.status, reason=str(exc),
-                            owner_role=outcome.owner_role, next_action=outcome.next_action,
+                status = outcome.status
+                owner_role = outcome.owner_role
+                next_action = outcome.next_action
+                if status is None or owner_role is None or next_action is None:
+                    raise RuntimeError("blocked task outcome is missing status, owner, or next action")
+                queue.block(db, task, status=status, reason=str(exc),
+                            owner_role=owner_role, next_action=next_action,
                             resume_at=outcome.resume_at, settings=settings)
             elif outcome.kind == "cancel":
                 queue.cancel(db, task, reason=str(exc), superseded_by=outcome.superseded_by)
             elif outcome.kind == "supersede":
+                if not isinstance(exc, TaskSuperseded):
+                    raise RuntimeError("superseded task outcome is missing replacement inputs")
                 # Cancel first: the replacement may share no key, but the
                 # active-task index must never see both as active.
                 queue.cancel(db, task, reason=str(exc))
+                replacement_payload = exc.payload if exc.payload is not None else dict(task.payload or {})
                 replacement, _ = queue.enqueue(
                     db, task_type=task.task_type, opportunity_id=task.opportunity_id,
                     input_revision=exc.input_revision,
-                    payload=exc.payload if exc.payload is not None else dict(task.payload or {}),
+                    payload=replacement_payload,
                     actor_user_id=task.created_by_user_id, settings=settings,
                 )
                 task.superseded_by_task_id = replacement.id
             elif outcome.kind == "fail":
-                queue.fail_terminal(db, task, exc, owner_role=outcome.owner_role,
+                owner_role = outcome.owner_role if outcome.owner_role is not None else "owner"
+                queue.fail_terminal(db, task, exc, owner_role=owner_role,
                                     next_action=outcome.next_action, settings=settings)
             else:
                 queue.retry_later(db, task, exc, settings=settings)
@@ -127,7 +136,7 @@ def run_claimed(settings: Settings, claim: queue.Claim) -> str:
             except queue.LeaseLost as exc:
                 logger.warning("%s; discarding this worker's result", exc)
                 return "lease_lost"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  boundary must record any failure
                 logger.warning("task %s failed: %s", claim.task_id, type(exc).__name__)
                 return _record_outcome(settings, claim, exc)
         for index, step in enumerate(handler.steps):
@@ -160,7 +169,7 @@ def run_claimed(settings: Settings, claim: queue.Claim) -> str:
             except queue.LeaseLost as exc:
                 logger.warning("%s; discarding this worker's result", exc)
                 return "lease_lost"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  boundary must record any failure
                 logger.warning("task %s step %s failed: %s", claim.task_id, step.name, type(exc).__name__)
                 return _record_outcome(settings, claim, exc)
         # Every step was already checkpointed (resumed after the final publish).

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 import atexit
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from threading import RLock
 
 from sqlalchemy import create_engine, text
@@ -107,5 +107,5 @@ def check_connectivity(engine: Engine) -> tuple[bool, str | None]:
             connection.execute(text("SELECT 1"))
             context = MigrationContext.configure(connection)
             return True, context.get_current_revision()
-    except Exception:
+    except Exception:  # noqa: BLE001  boundary must record any failure
         return False, None

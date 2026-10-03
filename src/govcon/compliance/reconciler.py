@@ -25,7 +25,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.compliance.matrix import active_requirements, record_run
-from govcon.compliance.records import CanonicalRequirement, Candidate, max_severity
+from govcon.compliance.records import Candidate, CanonicalRequirement, max_severity
 from govcon.compliance.text import containment, jaccard, normalize_ws, numbers, tokens
 from govcon.models import Requirement
 
@@ -48,9 +48,7 @@ def values_compatible(a_values: dict, b_values: dict, a_text: str, b_text: str) 
         if a_clins[clin] != b_clins[clin]:
             return False
     a_nums, b_nums = numbers(a_text), numbers(b_text)
-    if a_nums and b_nums and a_nums != b_nums and not (a_nums <= b_nums or b_nums <= a_nums):
-        return False
-    return True
+    return not (a_nums and b_nums and a_nums != b_nums and not (a_nums <= b_nums or b_nums <= a_nums))
 
 
 def similarity(a_text: str, a_quote: str | None, b_text: str, b_quote: str | None) -> float:
@@ -136,7 +134,7 @@ def _key(primary: Candidate) -> str:
 def _canonical(group: list[Candidate], *, ab_independent: bool = True) -> CanonicalRequirement:
     ai = [c for c in group if c.pass_label in {"A", "B"}]
     ranked = sorted(group, key=lambda c: (0 if c.citation_verified else 1, _PASS_PRIORITY.get(c.pass_label, 9)))
-    primary = sorted(ai or group, key=lambda c: (0 if c.citation_verified else 1, _PASS_PRIORITY.get(c.pass_label, 9)))[0]
+    primary = min(ai or group, key=lambda c: (0 if c.citation_verified else 1, _PASS_PRIORITY.get(c.pass_label, 9)))
     located = next((c for c in ranked if c.citation_verified and c.source_file_id is not None), None)
     found_by = sorted({c.pass_label for c in group}, key=lambda p: _PASS_PRIORITY.get(p, 9))
     flags: list[str] = []
@@ -231,6 +229,8 @@ def apply_ai_hints(canonicals: list[CanonicalRequirement], groups: list[dict[str
         if len(members) < 2:
             continue
         relationship = group.get("relationship")
+        if not isinstance(relationship, str):
+            continue
         flag = {"duplicate": "ai_possible_duplicate", "conflicting": "ai_possible_conflict", "possible_supersession": "ai_possible_supersession", "uncertain": "ai_uncertain_relationship"}.get(relationship)
         if not flag:
             continue

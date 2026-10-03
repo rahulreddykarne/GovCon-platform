@@ -545,7 +545,7 @@ def test_comment_validation_award_context_includes_vendor_names(session) -> None
             award_id=f"phase10-award-{uuid4().hex}",
             psc_code=opp.psc_code,
             recipient_name="Comparable Vendor LLC",
-            total_obligation=Decimal("1500"),
+            total_obligation=Decimal(1500),
             raw={"fixture": True},
         )
     )

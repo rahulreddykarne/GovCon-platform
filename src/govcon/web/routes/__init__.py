@@ -4,20 +4,23 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import Cookie, Form, HTTPException, Query, Request, status
+from fastapi import Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from starlette.concurrency import run_in_threadpool
-from sqlalchemy import desc, func, select, text, or_
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session as OrmSession
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.audit import record_audit
 from govcon.collaboration.assignments import assign_reviewer
 from govcon.collaboration.comments import add_comment, list_comments
+from govcon.collaboration.notifications import ACTION_REQUIRED_TYPES
 from govcon.collaboration.review_sessions import (
     ReviewWorkflowError,
     approval_context,
@@ -40,12 +43,18 @@ from govcon.collaboration.users import (
 from govcon.compliance.submission_preflight import ReadinessBlocked
 from govcon.concurrency import StaleRecordError
 from govcon.db import session_scope
+from govcon.intelligence.analysis_tasks import latest_analysis_tasks
+from govcon.learning.analytics import (
+    WIN_PROFILE_MINIMUM,
+    outcome_analytics,
+)
+from govcon.learning.outcomes import NO_BID_CATEGORIES, record_outcome
 from govcon.models import (
     AIAnalysis,
     AuditEvent,
     Award,
     BidDecision,
-    ComplianceRun,
+    CompanyRegistration,
     Contact,
     IngestionRun,
     Match,
@@ -58,40 +67,41 @@ from govcon.models import (
     Pursuit,
     Requirement,
     ReviewAssignment,
-    ReviewComment,
     ReviewSession,
     SchedulerJobRun,
-    Task,
-    CompanyRegistration,
     StoredFile,
     Submission,
+    Task,
     User,
-    UserSession,
     Vendor,
     Watchlist,
 )
-from govcon.learning.analytics import WIN_PROFILE_MINIMUM, outcome_analytics, similar_past_outcomes
-from govcon.learning.outcomes import NO_BID_CATEGORIES, record_outcome
 from govcon.proposals.service import (
     finalize_proposal,
     get_proposal_workspace,
     record_submission_confirmation,
 )
-from govcon.web.helpers import deadline_info, format_value, primary_source_url, source_links
-from govcon.web.security import secure_cookies
-from govcon.collaboration.notifications import ACTION_REQUIRED_TYPES
-from govcon.intelligence.analysis_tasks import latest_analysis_tasks
-from govcon.workflow.preparation import PREPARATION_TASK, preparation_view
 from govcon.tasks.queue import active_task, latest_task, requeue
 from govcon.tasks.queue import cancel as cancel_task
+from govcon.web.helpers import (
+    deadline_info,
+    format_value,
+    primary_source_url,
+    source_links,
+)
+from govcon.web.security import secure_cookies
 from govcon.workflow.invalidation import lock_one, lock_opportunity
+from govcon.workflow.preparation import PREPARATION_TASK, preparation_view
 from govcon.workflow.proposal_generation import (
     PROPOSAL_TASK,
     GenerationNotAllowed,
     artifacts_exist,
     queue_proposal_generation,
 )
-from govcon.workflow.transitions import APPROVABLE_PROPOSAL_STATUSES, TERMINAL_PURSUIT_STAGES
+from govcon.workflow.transitions import (
+    APPROVABLE_PROPOSAL_STATUSES,
+    TERMINAL_PURSUIT_STAGES,
+)
 
 # Errors a workflow service raises to refuse an action. They become a message
 # for the user; the request's transaction is rolled back.
@@ -188,6 +198,27 @@ def _actor(db: OrmSession, user: User, permission: str) -> User:
     return actor
 
 
+def _form_text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _form_upload(value: object) -> UploadFile | None:
+    if isinstance(value, UploadFile) and value.filename:
+        return value
+    return None
+
+
+def _column_view(row: Any, kind: str, **extra: Any) -> Any:
+    """Copy column values onto a plain object and add template-only fields."""
+    values: dict[str, Any] = {}
+    for column in row.__class__.__table__.columns:
+        name = column.key
+        if isinstance(name, str):
+            values[name] = getattr(row, name)
+    values.update(extra)
+    return type(kind, (), values)()
+
+
 def _form_int(value: str | None) -> int | None:
     try:
         return int(value) if value is not None and str(value).strip() else None
@@ -195,16 +226,16 @@ def _form_int(value: str | None) -> int | None:
         return None
 
 
-def _render(request: Request, template: str, ctx: dict[str, Any], user: User) -> HTMLResponse:
+def _render(request: Request, template: str, ctx: dict[str, Any], user: User, status_code: int = 200) -> HTMLResponse:
     ctx["current_user"] = user
     ctx["unread_notification_count"] = _unread_count(user)
-    return _templates.TemplateResponse(request, template, ctx)
+    return _templates.TemplateResponse(request, template, ctx, status_code=status_code)
 
 
 # ── Login / logout ────────────────────────────────────────────────────────────
 
 
-def login_get(request: Request) -> HTMLResponse:
+def login_get(request: Request) -> Response:
     if _current_user(request):
         return RedirectResponse("/", status_code=303)
     return _templates.TemplateResponse(request, "login.html", {"error": None})
@@ -214,7 +245,7 @@ def login_post(
     request: Request,
     email: Annotated[str, Form()],
     password: Annotated[str, Form()],
-) -> HTMLResponse:
+) -> Response:
     with session_scope() as db:
         user = authenticate(db, email, password)
         if user is None:
@@ -237,7 +268,7 @@ def login_post(
     return resp
 
 
-def logout_post(request: Request) -> HTMLResponse:
+def logout_post(request: Request) -> Response:
     raw = request.cookies.get(_COOKIE_NAME)
     if raw:
         with session_scope() as db:
@@ -247,7 +278,7 @@ def logout_post(request: Request) -> HTMLResponse:
     return resp
 
 
-def notifications(request: Request, before: Annotated[int | None, Query(ge=1)] = None) -> HTMLResponse:
+def notifications(request: Request, before: Annotated[int | None, Query(ge=1)] = None) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -292,7 +323,10 @@ def notification_acknowledge(request: Request, notification_id: int) -> Redirect
         return RedirectResponse("/login", status_code=303)
     try:
         with session_scope() as db:
-            acknowledge(db, notification_id=notification_id, user=db.get(User, user.id))
+            account = db.get(User, user.id)
+            if account is None:
+                raise ValueError("notification not found")
+            acknowledge(db, notification_id=notification_id, user=account)
     except ValueError:
         raise HTTPException(status_code=404, detail="Notification not found")
     return _redirect("/notifications", notice="Acknowledged.")
@@ -301,7 +335,7 @@ def notification_acknowledge(request: Request, notification_id: int) -> Redirect
 # ── Inbox ─────────────────────────────────────────────────────────────────────
 
 
-def inbox(request: Request) -> HTMLResponse:
+def inbox(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -369,7 +403,7 @@ def inbox_action(
     request: Request,
     match_id: Annotated[int, Form()],
     action: Annotated[str, Form()],
-) -> HTMLResponse:
+) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -417,7 +451,7 @@ def search(
     psc: str | None = None,
     naics: str | None = None,
     status_filter: str | None = Query(None, alias="status"),
-) -> HTMLResponse:
+) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -477,7 +511,7 @@ def search(
 # ── Opportunity detail ────────────────────────────────────────────────────────
 
 
-def opp_detail(request: Request, opp_id: int) -> HTMLResponse:
+def opp_detail(request: Request, opp_id: int) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -585,7 +619,7 @@ def _get_competitors(db: OrmSession, opp: Opportunity) -> list[Any]:
     ]
 
 
-def opp_start_workspace(request: Request, opp_id: int) -> HTMLResponse:
+def opp_start_workspace(request: Request, opp_id: int) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -608,7 +642,7 @@ def opp_start_workspace(request: Request, opp_id: int) -> HTMLResponse:
 # ── Workspace ─────────────────────────────────────────────────────────────────
 
 
-def workspace(request: Request, opp_id: int) -> HTMLResponse:
+def workspace(request: Request, opp_id: int) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -688,10 +722,7 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             comments_raw = list_comments(db, opportunity_id=opp_id)
             user_map = _user_display_map(db)
             tab_ctx["comments"] = [
-                type("C", (), {
-                    **{k: getattr(c, k) for k in c.__class__.__table__.columns.keys()},
-                    "user_display_name": user_map.get(c.user_id, "?"),
-                })()
+                _column_view(c, "C", user_display_name=user_map.get(c.user_id, "?"))
                 for c in comments_raw
             ]
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
@@ -752,7 +783,10 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             tab_ctx["submission"] = sub
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
             if sub is not None:
-                from govcon.submissions.checklist import generate_final_checklist, generate_step_by_step_instructions
+                from govcon.submissions.checklist import (
+                    generate_final_checklist,
+                    generate_step_by_step_instructions,
+                )
 
                 tab_ctx["submission_checklist"] = generate_final_checklist(db, opportunity_id=opp_id)
                 tab_ctx["submission_instructions"] = generate_step_by_step_instructions(db, opportunity_id=opp_id)
@@ -764,10 +798,10 @@ def workspace(request: Request, opp_id: int) -> HTMLResponse:
             ).scalars().all()
             user_map = _user_display_map(db)
             tab_ctx["audit_events"] = [
-                type("E", (), {
-                    **{k: getattr(e, k) for k in e.__class__.__table__.columns.keys()},
-                    "user_display_name": user_map.get(e.user_id, "system") if e.user_id else "system",
-                })()
+                _column_view(
+                    e, "E",
+                    user_display_name=user_map.get(e.user_id, "system") if e.user_id else "system",
+                )
                 for e in evts
             ]
 
@@ -823,13 +857,7 @@ def _get_assignments_with_names(db: OrmSession, opp_id: int) -> list[Any]:
         .join(User, ReviewAssignment.user_id == User.id)
         .where(ReviewAssignment.opportunity_id == opp_id)
     ).all()
-    return [
-        type("A", (), {
-            **{k: getattr(a, k) for k in a.__class__.__table__.columns.keys()},
-            "user_display_name": u.display_name,
-        })()
-        for a, u in rows
-    ]
+    return [_column_view(a, "A", user_display_name=u.display_name) for a, u in rows]
 
 
 def _user_display_map(db: OrmSession) -> dict[int, str]:
@@ -843,7 +871,7 @@ def workspace_comment(
     body: Annotated[str, Form()] = "",
     user_recommendation: Annotated[str | None, Form()] = None,
     topic: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     """Add a comment through the comment service (assignment, AI side-opinion, audit, notifications)."""
     try:
         user = _require_login(request)
@@ -870,7 +898,7 @@ def workspace_comment(
 _ANALYSIS_TABS = {"market": "market", "supplier": "products", "pricing": "pricing"}
 
 
-def workspace_run_analysis(request: Request, opp_id: int, kind: str) -> HTMLResponse:
+def workspace_run_analysis(request: Request, opp_id: int, kind: str) -> Response:
     """Queue the market / supplier / pricing AI analysis from its workspace tab (ADR-064).
 
     Inputs and data-classification policy are checked in the request, so a
@@ -917,7 +945,7 @@ def workspace_assign_reviewer(
     opp_id: int,
     user_id: Annotated[int, Form()],
     assignment_role: Annotated[str, Form()] = "reviewer",
-) -> HTMLResponse:
+) -> Response:
     """Assign a reviewer (owner/approver only)."""
     try:
         user = _require_login(request)
@@ -954,7 +982,7 @@ def workspace_complete_review(
     action: Annotated[str, Form()] = "approve_continue",
     agree_with_ai_assessment: Annotated[str | None, Form()] = None,
     second_review_reason: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     """Complete the caller's own review assignment through the quorum service."""
     try:
         user = _require_login(request)
@@ -985,7 +1013,7 @@ def workspace_approve(
     decision: Annotated[str, Form()],
     expected_version: Annotated[str | None, Form()] = None,
     override_reason: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     """Final bid decision through ``finalize_approval`` (quorum, override, version, audit).
 
     Approving to bid also queues proposal generation in the same transaction
@@ -1026,7 +1054,7 @@ def _generation_status(db: OrmSession, opp_id: int) -> dict[str, Any]:
     return {"task": task, "active": task.status in ("queued", "running", "retrying")}
 
 
-def workspace_proposal_status(request: Request, opp_id: int) -> HTMLResponse:
+def workspace_proposal_status(request: Request, opp_id: int) -> Response:
     """HTMX fragment: generation progress, polled while a task is active."""
     try:
         user = _require_login(request)
@@ -1048,7 +1076,7 @@ def workspace_proposal_retry(
     opp_id: int,
     expected_version: Annotated[str | None, Form()] = None,
     without_ai: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     """Queue proposal and submission-package generation again for a current bid approval.
 
     Under the opportunity lock it requires ``approve``, the review version the
@@ -1127,7 +1155,7 @@ def workspace_proposal_approve(
     decision: Annotated[str, Form()],
     expected_version: Annotated[str | None, Form()] = None,
     override_reason: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     """Final proposal decision through ``finalize_proposal`` and the compliance gate."""
     try:
         user = _require_login(request)
@@ -1160,7 +1188,7 @@ def workspace_submission_approve(
     confirmation_number: Annotated[str | None, Form()] = None,
     confirmation_notes: Annotated[str | None, Form()] = None,
     submitted_at: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     """Record the human's manual submission with confirmation evidence."""
     try:
         user = _require_login(request)
@@ -1218,7 +1246,7 @@ async def workspace_record_outcome(
     government_feedback: Annotated[str | None, Form()] = None,
     debrief_notes: Annotated[str | None, Form()] = None,
     lessons_learned: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     # Async only to read the raw form; database work runs in the thread pool.
     try:
         user = await run_in_threadpool(_require_login, request)
@@ -1304,7 +1332,7 @@ _PIPELINE_COLUMNS = [
 ]
 
 
-def pipeline(request: Request) -> HTMLResponse:
+def pipeline(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1314,7 +1342,7 @@ def pipeline(request: Request) -> HTMLResponse:
         # Build a map: opp_id -> pursuit stage (or "ingested" for no pursuit)
         pursuits = db.execute(select(Pursuit, Opportunity).join(Opportunity, Pursuit.opportunity_id == Opportunity.id)).all()
         # Also include recently-matched opps with no pursuit
-        matched_opp_ids = set(p.opportunity_id for p, _ in pursuits)
+        matched_opp_ids = {p.opportunity_id for p, _ in pursuits}
         new_matches = db.execute(
             select(Match, Opportunity)
             .join(Opportunity, Match.opportunity_id == Opportunity.id)
@@ -1377,7 +1405,7 @@ def pipeline(request: Request) -> HTMLResponse:
 # ── Watchlists ────────────────────────────────────────────────────────────────
 
 
-def watchlists(request: Request) -> HTMLResponse:
+def watchlists(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1388,7 +1416,7 @@ def watchlists(request: Request) -> HTMLResponse:
         return _render(request, "watchlists.html", {"watchlists": list(wls), "active_page": "watchlists"}, user)
 
 
-def watchlist_new_get(request: Request) -> HTMLResponse:
+def watchlist_new_get(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1408,7 +1436,7 @@ async def watchlist_new_post(request: Request) -> Response:
     return await _watchlist_save(request, user, wl_id=None)
 
 
-def watchlist_edit_get(request: Request, wl_id: int) -> HTMLResponse:
+def watchlist_edit_get(request: Request, wl_id: int) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1438,22 +1466,95 @@ async def _watchlist_save(request: Request, user: User, wl_id: int | None) -> Re
     return await run_in_threadpool(_watchlist_save_sync, request, user, wl_id, form)
 
 
-def _watchlist_save_sync(request: Request, user: User, wl_id: int | None, form: Any) -> Response:
-    name = (form.get("name") or "").strip()
-    if not name:
-        ctx = {"editing": wl_id is not None, "wl": None, "error": "Name is required.", "active_page": "watchlists"}
-        return _render(request, "watchlist_edit.html", ctx, user)
+def _watchlist_text(form: Any, name: str) -> str:
+    value = form.get(name)
+    return value.strip() if isinstance(value, str) else ""
 
-    def parse_list(val: str | None) -> list[str] | None:
-        if not val or not val.strip():
+
+def _parse_watchlist_fields(form: Any) -> tuple[dict[str, Any], dict[str, str]]:
+    """Validated watchlist constraints. Invalid input is returned, not dropped."""
+
+    def parse_list(name: str) -> list[str] | None:
+        raw = _watchlist_text(form, name)
+        if not raw:
             return None
-        return [x.strip() for x in val.split(",") if x.strip()]
+        return [part.strip() for part in raw.split(",") if part.strip()]
 
-    def parse_num(val: str | None):
+    errors: dict[str, str] = {}
+
+    def parse_money(name: str) -> Decimal | None:
+        raw = _watchlist_text(form, name).replace(",", "").replace("$", "")
+        if not raw:
+            return None
         try:
-            return float(val) if val and val.strip() else None
-        except ValueError:
+            value = Decimal(raw)
+        except InvalidOperation:
+            errors[name] = "Enter a finite dollar amount."
             return None
+        if not value.is_finite() or value < 0:
+            errors[name] = "Enter a non-negative dollar amount."
+            return None
+        return value
+
+    def parse_days(name: str) -> int | None:
+        raw = _watchlist_text(form, name)
+        if not raw:
+            return None
+        if not raw.isascii() or not raw.isdigit():
+            errors[name] = "Enter a whole number of days."
+            return None
+        value = int(raw)
+        if value > 3650:
+            errors[name] = "Enter a deadline window of at most 3650 days."
+            return None
+        return value
+
+    minimum = parse_money("min_value")
+    maximum = parse_money("max_value")
+    parsed: dict[str, Any] = {
+        "psc_codes": parse_list("psc_codes"),
+        "naics_codes": parse_list("naics_codes"),
+        "keywords": parse_list("keywords"),
+        "exclude_keywords": parse_list("exclude_keywords"),
+        "nsn_list": parse_list("nsn_list"),
+        "set_asides": parse_list("set_asides"),
+        "sources": parse_list("sources"),
+        "min_value": minimum,
+        "max_value": maximum,
+        "min_deadline_days": parse_days("min_deadline_days"),
+        "notes": _watchlist_text(form, "notes") or None,
+    }
+    if minimum is not None and maximum is not None and minimum > maximum:
+        errors["max_value"] = "Maximum value must be greater than or equal to the minimum."
+    return parsed, errors
+
+
+def _watchlist_form_context(form: Any, wl: Any, wl_id: int | None, errors: dict[str, str]) -> dict[str, Any]:
+    submitted = {name: _watchlist_text(form, name) for name in (
+        "name", "psc_codes", "naics_codes", "keywords", "exclude_keywords", "nsn_list",
+        "set_asides", "min_value", "max_value", "min_deadline_days", "sources", "notes",
+    )}
+    return {
+        "editing": wl_id is not None,
+        "wl": wl,
+        "submitted": submitted,
+        "field_errors": errors,
+        "error": " ".join(errors.values()) if errors else None,
+        "active_page": "watchlists",
+    }
+
+
+def _watchlist_save_sync(request: Request, user: User, wl_id: int | None, form: Any) -> Response:
+    name = _watchlist_text(form, "name")
+    if not name:
+        ctx = _watchlist_form_context(form, None, wl_id, {"name": "Name is required."})
+        return _render(request, "watchlist_edit.html", ctx, user, status_code=400)
+    parsed, errors = _parse_watchlist_fields(form)
+    if errors:
+        with session_scope() as db:
+            wl = db.get(Watchlist, wl_id) if wl_id else None
+            ctx = _watchlist_form_context(form, wl, wl_id, errors)
+        return _render(request, "watchlist_edit.html", ctx, user, status_code=400)
 
     with session_scope() as db:
         actor = _actor(db, user, "manage_watchlists")
@@ -1477,17 +1578,17 @@ def _watchlist_save_sync(request: Request, user: User, wl_id: int | None, form: 
             old_value = None
 
         wl.name = name
-        wl.psc_codes = parse_list(form.get("psc_codes"))
-        wl.naics_codes = parse_list(form.get("naics_codes"))
-        wl.keywords = parse_list(form.get("keywords"))
-        wl.exclude_keywords = parse_list(form.get("exclude_keywords"))
-        wl.nsn_list = parse_list(form.get("nsn_list"))
-        wl.set_asides = parse_list(form.get("set_asides"))
-        wl.min_value = parse_num(form.get("min_value"))
-        wl.max_value = parse_num(form.get("max_value"))
-        wl.min_deadline_days = int(form.get("min_deadline_days")) if form.get("min_deadline_days") and form.get("min_deadline_days").strip() else None
-        wl.sources = parse_list(form.get("sources"))
-        wl.notes = (form.get("notes") or "").strip() or None
+        wl.psc_codes = parsed["psc_codes"]
+        wl.naics_codes = parsed["naics_codes"]
+        wl.keywords = parsed["keywords"]
+        wl.exclude_keywords = parsed["exclude_keywords"]
+        wl.nsn_list = parsed["nsn_list"]
+        wl.set_asides = parsed["set_asides"]
+        wl.min_value = parsed["min_value"]
+        wl.max_value = parsed["max_value"]
+        wl.min_deadline_days = parsed["min_deadline_days"]
+        wl.sources = parsed["sources"]
+        wl.notes = parsed["notes"]
         db.flush()
         record_audit(
             db,
@@ -1515,7 +1616,7 @@ def watchlist_toggle(
     request: Request,
     wl_id: int,
     enabled: Annotated[str, Form()],
-) -> HTMLResponse:
+) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1542,7 +1643,7 @@ def watchlist_toggle(
     return RedirectResponse("/watchlists", status_code=303)
 
 
-def watchlist_rebuild(request: Request, wl_id: int) -> HTMLResponse:
+def watchlist_rebuild(request: Request, wl_id: int) -> Response:
     """Re-evaluate one watchlist and drop matches it no longer produces."""
     try:
         user = _require_login(request)
@@ -1579,7 +1680,7 @@ def watchlist_rebuild(request: Request, wl_id: int) -> HTMLResponse:
 # ── Vendors ───────────────────────────────────────────────────────────────────
 
 
-def vendors(request: Request) -> HTMLResponse:
+def vendors(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1620,7 +1721,7 @@ def vendors(request: Request) -> HTMLResponse:
 # ── Operations ────────────────────────────────────────────────────────────────
 
 
-def ops(request: Request) -> HTMLResponse:
+def ops(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1719,7 +1820,7 @@ def ops(request: Request) -> HTMLResponse:
     }, user)
 
 
-def ops_task_action(request: Request, task_id: int, action: str) -> HTMLResponse:
+def ops_task_action(request: Request, task_id: int, action: str) -> Response:
     """Re-queue a failed or waiting task, or cancel an active one (owner/approver)."""
     from govcon.tasks.queue import ACTIVE_STATUSES
 
@@ -1749,7 +1850,7 @@ def ops_task_action(request: Request, task_id: int, action: str) -> HTMLResponse
 # ── Learning ──────────────────────────────────────────────────────────────────
 
 
-def learning(request: Request) -> HTMLResponse:
+def learning(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1794,7 +1895,7 @@ def learning(request: Request) -> HTMLResponse:
 # ── Admin / users ─────────────────────────────────────────────────────────────
 
 
-def admin_invite_get(request: Request) -> HTMLResponse:
+def admin_invite_get(request: Request) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
@@ -1806,7 +1907,7 @@ def admin_invite_get(request: Request) -> HTMLResponse:
     return _render(request, "invite_user.html", {"active_page": "ops"}, user)
 
 
-async def admin_invite_post(request: Request) -> HTMLResponse:
+async def admin_invite_post(request: Request) -> Response:
     try:
         user = await run_in_threadpool(_require_login, request)
     except _NeedsLogin:
@@ -1817,10 +1918,10 @@ async def admin_invite_post(request: Request) -> HTMLResponse:
         return RedirectResponse("/ops", status_code=303)
 
     form = await request.form()
-    email = (form.get("email") or "").strip()
-    display_name = (form.get("display_name") or "").strip()
-    password = (form.get("password") or "")
-    role = (form.get("role") or "reviewer").strip()
+    email = _form_text(form.get("email")).strip()
+    display_name = _form_text(form.get("display_name")).strip()
+    password = _form_text(form.get("password"))
+    role = (_form_text(form.get("role")) or "reviewer").strip()
 
     def _invite() -> HTMLResponse:  # password hashing and database work stay off the event loop
         try:
@@ -1837,7 +1938,7 @@ async def admin_invite_post(request: Request) -> HTMLResponse:
 # ── Settings (ADR-067) ────────────────────────────────────────────────────────
 
 
-def settings_page(request: Request) -> HTMLResponse:
+def settings_page(request: Request) -> Response:
     """Owner-editable workflow settings; other roles see them read-only."""
     from govcon.db import current_settings as get_settings
     from govcon.workflow.app_settings import (
@@ -1904,7 +2005,7 @@ def settings_save(
     auto_pursue_min_days: Annotated[str | None, Form()] = None,
     auto_pursue_max_per_day: Annotated[str | None, Form()] = None,
     deadline_exception: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     from govcon.workflow.app_settings import (
         AUTO_PREPARE,
         AUTO_PURSUE,
@@ -1937,7 +2038,7 @@ def settings_save(
     return _redirect("/settings", notice="Settings saved.")
 
 
-def workspace_prepare(request: Request, opp_id: int) -> HTMLResponse:
+def workspace_prepare(request: Request, opp_id: int) -> Response:
     """Queue (or re-run) automatic preparation for a pursued opportunity."""
     from govcon.workflow.preparation import queue_preparation
 
@@ -1969,15 +2070,15 @@ def _sourcing_context(db: OrmSession, opp_id: int) -> dict[str, Any]:
     from govcon.sourcing.records import is_current
 
     quotes = []
-    for quote, supplier in db.execute(
+    for quote_row, supplier in db.execute(
         select(SupplierQuote, Supplier).join(Supplier, Supplier.id == SupplierQuote.supplier_id)
         .where(SupplierQuote.opportunity_id == opp_id).order_by(SupplierQuote.id.desc())
     ):
         quotes.append({
-            "supplier": supplier.name, "total_price": quote.total_price, "valid_until": quote.valid_until,
-            "lines": db.scalar(select(func.count()).select_from(SupplierQuoteLine).where(SupplierQuoteLine.quote_id == quote.id)),
-            "method": quote.extraction_method, "filename": quote.source_filename, "current": is_current(quote),
-            "notes": quote.notes,
+            "supplier": supplier.name, "total_price": quote_row.total_price, "valid_until": quote_row.valid_until,
+            "lines": db.scalar(select(func.count()).select_from(SupplierQuoteLine).where(SupplierQuoteLine.quote_id == quote_row.id)),
+            "method": quote_row.extraction_method, "filename": quote_row.source_filename, "current": is_current(quote_row),
+            "notes": quote_row.notes,
         })
     quote_tasks = db.scalars(
         select(Task).where(Task.opportunity_id == opp_id, Task.task_type == "quote_extraction",
@@ -2000,8 +2101,8 @@ async def workspace_add_quote(request: Request, opp_id: int) -> Response:
         return RedirectResponse("/login", status_code=303)
     target = f"/workspace/{opp_id}?tab=products"
     form = await request.form()
-    upload = form.get("quote_file")
-    data = await upload.read() if upload is not None and getattr(upload, "filename", "") else b""
+    upload = _form_upload(form.get("quote_file"))
+    data = await upload.read() if upload is not None else b""
     # File storage (fsync), spreadsheet parsing and database work run in the thread pool.
     return await run_in_threadpool(_add_quote_sync, user, opp_id, target, form, upload, data)
 
@@ -2084,7 +2185,7 @@ def workspace_pursuit_facts(
 
 def workspace_draft_rfq(
     request: Request, opp_id: int, supplier_id: Annotated[str | None, Form()] = None
-) -> HTMLResponse:
+) -> Response:
     from govcon.sourcing.records import draft_rfq
 
     try:
@@ -2101,7 +2202,7 @@ def workspace_draft_rfq(
     return _redirect(target, notice="RFQ drafted below; copy it to send it yourself.")
 
 
-def suppliers_page(request: Request) -> HTMLResponse:
+def suppliers_page(request: Request) -> Response:
     from govcon.models import CatalogImport, Supplier, SupplierProduct
 
     try:
@@ -2130,8 +2231,8 @@ async def suppliers_save(request: Request) -> Response:
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
     form = await request.form()
-    upload = form.get("catalog_file")
-    data = await upload.read() if upload is not None and getattr(upload, "filename", "") else b""
+    upload = _form_upload(form.get("catalog_file"))
+    data = await upload.read() if upload is not None else b""
     # Catalog parsing and database work run in the thread pool.
     return await run_in_threadpool(_suppliers_save_sync, user, form, upload, data)
 
@@ -2164,7 +2265,7 @@ def ai_sharing_save(
     days: Annotated[str | None, Form()] = None,
     reason: Annotated[str | None, Form()] = None,
     authorization_id: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
+) -> Response:
     """Owner: grant or revoke AI reading of supplier quotes for one provider (roadmap §6.4)."""
     from govcon.sourcing.records import grant_authorization, revoke_authorization
 
@@ -2189,7 +2290,7 @@ def ai_sharing_save(
     return _redirect("/settings", notice=notice)
 
 
-def workspace_outcome_suggestion(request: Request, opp_id: int, suggestion_id: int, action: str) -> HTMLResponse:
+def workspace_outcome_suggestion(request: Request, opp_id: int, suggestion_id: int, action: str) -> Response:
     """Confirm a suggested outcome through ``record_outcome``, or dismiss it (ADR-073)."""
     from govcon.learning.outcomes import record_outcome
     from govcon.models import OutcomeSuggestion

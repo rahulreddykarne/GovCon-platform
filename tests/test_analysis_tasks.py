@@ -8,13 +8,13 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
+from test_intelligence_analyses import FakeProvider, _opp, _token
+from web_client import CsrfTestClient
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.models import AIAnalysis, Pursuit, Task
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
-from test_intelligence_analyses import FakeProvider, _opp, _token
-from web_client import CsrfTestClient
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +24,7 @@ def synced_prompts(upgraded_engine):
     Per test, so it runs after conftest relaxes the behavioral-evaluation gate.
     """
     from pathlib import Path
+
     from govcon.prompting.registry import sync_prompts
     with Session(upgraded_engine) as session:
         sync_prompts(session, Path(__file__).parent.parent / "src" / "govcon" / "prompts")
@@ -86,12 +87,12 @@ def test_missing_inputs_are_refused_before_queueing(db, client):
 
 def test_inputs_removed_after_queueing_wait_for_the_approver(allow_proprietary_ai, db, client):
     opp = _opp(db)
-    db.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal("150")))
+    db.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal(150)))
     db.commit()
     token = _token(db, "reviewer")
     with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()):
         client.post(f"/workspace/{opp.id}/analyze/supplier", cookies={"govcon_session": token})
-        [task] = tasks_for(db, opp.id)
+        [_task] = tasks_for(db, opp.id)
         # The facts the task was queued for change, then disappear.
         db.execute(update(Pursuit).where(Pursuit.opportunity_id == opp.id).values(supplier=None, sourcing_cost=None))
         db.commit()
@@ -107,7 +108,7 @@ def test_inputs_removed_after_queueing_wait_for_the_approver(allow_proprietary_a
 
 def test_policy_block_is_reported_at_once(db, client):
     opp = _opp(db)
-    db.add(Pursuit(opportunity_id=opp.id, stage="sourcing", quote_price=Decimal("200"), sourcing_cost=Decimal("150")))
+    db.add(Pursuit(opportunity_id=opp.id, stage="sourcing", quote_price=Decimal(200), sourcing_cost=Decimal(150)))
     db.commit()
     token = _token(db, "reviewer")
     response = client.post(f"/workspace/{opp.id}/analyze/pricing", cookies={"govcon_session": token})
@@ -117,6 +118,7 @@ def test_policy_block_is_reported_at_once(db, client):
 
 def test_cli_queues_and_runs_the_analysis(db):
     from typer.testing import CliRunner
+
     from govcon.cli import app
     opp = _opp(db)
     db.commit()

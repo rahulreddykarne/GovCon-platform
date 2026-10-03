@@ -11,7 +11,11 @@ from govcon.intelligence.awards import (
     recompete_candidates,
     top_awardees,
 )
-from govcon.intelligence.competitors import CompetitorBucket, CompetitorSummary, competitor_summary
+from govcon.intelligence.competitors import (
+    CompetitorBucket,
+    CompetitorSummary,
+    competitor_summary,
+)
 from govcon.intelligence.contacts import ContactRecord, search_contacts
 from govcon.intelligence.vendors import VendorAwardStats, VendorProfile, vendor_profile
 

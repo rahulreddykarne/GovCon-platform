@@ -76,5 +76,7 @@ def latest_analysis_tasks(session: Session, opportunity_id: int) -> dict[str, Ta
         .limit(50)
     )
     for task in rows:
-        latest.setdefault((task.payload or {}).get("kind"), task)
+        kind = (task.payload or {}).get("kind")
+        if isinstance(kind, str):
+            latest.setdefault(kind, task)
     return latest

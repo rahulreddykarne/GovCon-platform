@@ -11,8 +11,16 @@ import httpx2
 import pytest
 
 from govcon.ai.gateway import AIGatewayBlocked
-from govcon.ai.providers import NoProviderConfigured, get_provider, resolve_provider_model
-from govcon.ai.providers.anthropic import FALLBACK_BETA, JSON_INSTRUCTION, AnthropicProvider
+from govcon.ai.providers import (
+    NoProviderConfigured,
+    get_provider,
+    resolve_provider_model,
+)
+from govcon.ai.providers.anthropic import (
+    FALLBACK_BETA,
+    JSON_INSTRUCTION,
+    AnthropicProvider,
+)
 from govcon.ai.providers.base import CompletionResult, ProviderAPIError, ProviderRefusal
 from govcon.ai.providers.deepseek import DeepSeekProvider, parse_json_response
 from govcon.ai.providers.openai import OpenAIProvider

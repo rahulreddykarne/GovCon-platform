@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from govcon.collaboration.users import invite_user
 from govcon.mcp import operations as mcp_ops
-from govcon.mcp.serialize import compact_opportunity, failure, success, truncate_text
+from govcon.mcp.serialize import compact_opportunity, failure, truncate_text
 from govcon.mcp.server import mcp, update_match
 from govcon.models import Award, BidDecision, Match, Opportunity, Pursuit, Watchlist
 
@@ -139,7 +140,7 @@ def test_compact_opportunity_truncates_description_and_scrubs_secrets():
         posted_date = None
         response_deadline = None
         status = "open"
-        links = {"api_key": "secret-value"}
+        links: ClassVar[dict[str, str]] = {"api_key": "secret-value"}
 
     payload = compact_opportunity(_Row(), include_full_description=False, description_limit=100)
     assert payload["description_truncated"] is True
@@ -215,9 +216,9 @@ def test_acceptance_e2e_mcp_workflow(session: Session, mcp_actor):
             recipient_name="Fixture Vendor LLC",
             recipient_uei="ZJEUBM5FYLQ2",
             action_date=datetime.now(UTC).date(),
-            total_obligation=Decimal("12000"),
+            total_obligation=Decimal(12000),
             unit_price=Decimal("24.50"),
-            quantity=Decimal("500"),
+            quantity=Decimal(500),
             raw={"fixture": True},
         )
     )

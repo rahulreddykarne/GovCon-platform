@@ -52,7 +52,12 @@ class FetchResult:
 
 def system_resolver(host: str) -> list[str]:
     infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    return sorted({info[4][0] for info in infos})
+    addresses: set[str] = set()
+    for info in infos:
+        hostaddr = info[4][0]
+        if isinstance(hostaddr, str):
+            addresses.add(hostaddr)
+    return sorted(addresses)
 
 
 def _address_allowed(address: str) -> bool:

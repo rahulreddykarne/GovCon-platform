@@ -8,6 +8,7 @@ to its on-disk body and prepends them before the task prompt body.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 
 from govcon.prompting.loader import PromptAsset, load_markdown_prompt
@@ -30,8 +31,12 @@ def render_system_prompt(asset: PromptAsset, prompt_root: Path) -> str:
     parts: list[str] = []
     for name in include_names:
         fragment = _resolve_include(name, prompt_root)
-        if fragment:
-            parts.append(fragment.body.strip())
+        if fragment is None:
+            raise PromptRenderError(
+                f"prompt {asset.name}@{asset.version} requires shared include {name!r}, "
+                "which is missing or unreadable"
+            )
+        parts.append(fragment.body.strip())
     parts.append(asset.body.strip())
     return "\n\n".join(parts)
 
@@ -45,7 +50,7 @@ def required_variables(asset: PromptAsset) -> list[str]:
     return _parse_includes(asset.metadata.get("required_variables", ""))
 
 
-def render_user_context(asset: PromptAsset, variables: dict[str, object]) -> str:
+def render_user_context(asset: PromptAsset, variables: Mapping[str, object]) -> str:
     """Render bounded structured context as the user message.
 
     Source content is untrusted data, so it is delivered in delimited data
@@ -92,7 +97,7 @@ def _resolve_include(name: str, prompt_root: Path) -> PromptAsset | None:
     if candidate.exists():
         try:
             return load_markdown_prompt(candidate)
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             logger.warning("failed to load include %s from %s", name, candidate)
             return None
 
@@ -100,7 +105,8 @@ def _resolve_include(name: str, prompt_root: Path) -> PromptAsset | None:
     for path in prompt_root.rglob(f"{base}.md"):
         try:
             return load_markdown_prompt(path)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001  boundary must record any failure
+            logger.warning("failed to load include %s from %s: %s", name, path, exc)
             continue
     logger.warning("include %s not found under %s", name, prompt_root)
     return None

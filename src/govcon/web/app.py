@@ -10,8 +10,8 @@ import pathlib
 import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from govcon.config import Settings, get_settings
@@ -21,8 +21,12 @@ _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    from govcon.web.security import LoginThrottle, csrf_cookie_middleware, protect_mutation
     from govcon.db import dispose_engines, settings_scope
+    from govcon.web.security import (
+        LoginThrottle,
+        csrf_cookie_middleware,
+        protect_mutation,
+    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -46,35 +50,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Static files
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
+    @app.get("/health")
+    def health() -> JSONResponse:
+        """Liveness and database connectivity. The body never includes secrets or rows."""
+        from sqlalchemy import text as sql_text
+
+        from govcon.db import session_scope
+
+        try:
+            with session_scope(settings) as db:
+                db.execute(sql_text("SELECT 1"))
+        except Exception:  # noqa: BLE001  boundary must record any failure
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        return JSONResponse({"status": "ok"})
+
     # Import routes (late import to avoid circular deps at module load time)
     from govcon.web.routes import (
         admin_invite_get,
         admin_invite_post,
+        ai_sharing_save,
         inbox,
         inbox_action,
         learning,
         login_get,
         login_post,
         logout_post,
-        notifications,
         notification_acknowledge,
         notification_read,
+        notifications,
         opp_detail,
         opp_start_workspace,
         ops,
-        workspace_outcome_suggestion,
-        ai_sharing_save,
-        suppliers_page,
-        suppliers_save,
-        workspace_add_quote,
-        workspace_pursuit_facts,
-        workspace_draft_rfq,
-        settings_page,
-        settings_save,
-        workspace_prepare,
         ops_task_action,
         pipeline,
         search,
+        settings_page,
+        settings_save,
+        suppliers_page,
+        suppliers_save,
         vendors,
         watchlist_edit_get,
         watchlist_edit_post,
@@ -84,13 +97,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         watchlist_toggle,
         watchlists,
         workspace,
+        workspace_add_quote,
         workspace_approve,
         workspace_assign_reviewer,
         workspace_comment,
         workspace_complete_review,
+        workspace_draft_rfq,
+        workspace_outcome_suggestion,
+        workspace_prepare,
         workspace_proposal_approve,
         workspace_proposal_retry,
         workspace_proposal_status,
+        workspace_pursuit_facts,
         workspace_record_outcome,
         workspace_run_analysis,
         workspace_submission_approve,

@@ -6,12 +6,11 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 from tenacity import wait_exponential
 from typer.testing import CliRunner
@@ -20,14 +19,17 @@ from govcon.cli import app
 from govcon.config import Settings
 from govcon.ingest.sam_entities import (
     SAM_ENTITY_URL,
-    SamEntityError,
     ensure_vendor,
     fetch_entity_payload,
     parse_entity_record,
 )
-from govcon.intelligence.competitors import competitor_summary, opportunity_office, top_awardees_for_office
+from govcon.intelligence.competitors import (
+    competitor_summary,
+    opportunity_office,
+    top_awardees_for_office,
+)
 from govcon.intelligence.contacts import search_contacts
-from govcon.intelligence.vendors import award_stats_for_uei, vendor_profile
+from govcon.intelligence.vendors import vendor_profile
 from govcon.models import Award, Contact, Opportunity, Vendor
 from govcon.paths import repo_root
 
@@ -89,7 +91,7 @@ def _award(session: Session, **overrides) -> Award:
         awarding_agency=overrides.pop(
             "awarding_agency", "Department of Defense / Defense Logistics Agency"
         ),
-        action_date=overrides.pop("action_date", datetime(2026, 6, 11).date()),
+        action_date=overrides.pop("action_date", datetime(2026, 6, 11, tzinfo=UTC).date()),
         total_obligation=overrides.pop("total_obligation", Decimal("96870.96")),
         raw=overrides.pop(
             "raw",
@@ -145,12 +147,12 @@ def test_parse_entity_record_maps_public_fields() -> None:
 
 
 def test_vendor_profile_combines_sam_data_and_award_stats(session: Session, tmp_path) -> None:
-    _award(session, total_obligation=Decimal("100"))
+    _award(session, total_obligation=Decimal(100))
     _award(
         session,
         awarding_agency="Department of Defense / Defense Logistics Agency",
         psc_code="6515",
-        total_obligation=Decimal("200"),
+        total_obligation=Decimal(200),
     )
     _award(
         session,
@@ -158,7 +160,7 @@ def test_vendor_profile_combines_sam_data_and_award_stats(session: Session, tmp_
         recipient_name="Other Vendor",
         awarding_agency="Department of Veterans Affairs",
         psc_code="R425",
-        total_obligation=Decimal("50"),
+        total_obligation=Decimal(50),
     )
     session.commit()
 
@@ -168,7 +170,7 @@ def test_vendor_profile_combines_sam_data_and_award_stats(session: Session, tmp_
     assert profile.registration_status == "Active"
     assert profile.from_cache is False
     assert profile.award_stats.award_count == 2
-    assert profile.award_stats.total_obligation == Decimal("300")
+    assert profile.award_stats.total_obligation == Decimal(300)
     assert profile.award_stats.top_agencies[0].label.endswith("Defense Logistics Agency")
     assert profile.award_stats.top_pscs[0].label == "6515"
 
@@ -227,12 +229,12 @@ def test_refresh_bypasses_cache(session: Session, tmp_path) -> None:
 
 def test_competitor_summary_groups_by_nsn_psc_agency_and_office(session: Session) -> None:
     opportunity = _opportunity(session)
-    _award(session, recipient_uei=UEI, recipient_name="Cardinal", total_obligation=Decimal("900"))
+    _award(session, recipient_uei=UEI, recipient_name="Cardinal", total_obligation=Decimal(900))
     _award(
         session,
         recipient_uei="OTHERUEI1234",
         recipient_name="Other Vendor",
-        total_obligation=Decimal("100"),
+        total_obligation=Decimal(100),
     )
     _award(
         session,
@@ -240,7 +242,7 @@ def test_competitor_summary_groups_by_nsn_psc_agency_and_office(session: Session
         recipient_name="Third Vendor",
         awarding_agency="Department of Veterans Affairs / PBS R5",
         raw={"Awarding Agency": "Department of Veterans Affairs", "Awarding Sub Agency": "PBS R5"},
-        total_obligation=Decimal("75"),
+        total_obligation=Decimal(75),
     )
     _award(
         session,
@@ -251,7 +253,7 @@ def test_competitor_summary_groups_by_nsn_psc_agency_and_office(session: Session
             "Awarding Agency": "General Services Administration",
             "Awarding Sub Agency": "Public Buildings Service",
         },
-        total_obligation=Decimal("40"),
+        total_obligation=Decimal(40),
     )
     session.commit()
 

@@ -29,7 +29,8 @@ from govcon.compliance.matrix import (
     record_run,
     upsert_open_finding,
 )
-from govcon.compliance.records import Inventory, RESOLVED_STATUSES
+from govcon.compliance.records import RESOLVED_STATUSES, Inventory
+from govcon.compliance.schemas import ComplianceRedTeamV1, parse_model
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement
 from govcon.security.classification import DataClassification
@@ -131,25 +132,27 @@ def run_red_team(
                 context_manifest={"requirement_ids": sorted(by_id), "files": [d.file_id for d in inventory.documents]},
                 settings=settings,
             )
+            output = parse_model(result.output, ComplianceRedTeamV1)
+            analysis = result.analysis
             version = f"{result.prompt.name}@{result.prompt.version}:{result.prompt.content_hash[:12]}"
-            for item in result.output.findings:
-                rid = item.requirement_id if item.requirement_id in by_id else None
+            for ai_finding in output.findings:
+                rid = ai_finding.requirement_id if ai_finding.requirement_id in by_id else None
                 finding = upsert_open_finding(
                     session,
                     opportunity_id=opportunity_id,
                     requirement_id=rid,
-                    finding_type=item.finding_type,
-                    severity=item.severity,
-                    description=item.description,
+                    finding_type=ai_finding.finding_type,
+                    severity=ai_finding.severity,
+                    description=ai_finding.description,
                     detected_by="compliance_red_team_ai",
                     detector_version=version,
-                    source_refs={"evidence": [e.model_dump() for e in item.evidence], "missing_evidence": item.missing_evidence, "ai_analysis_id": result.analysis.id},
-                    blocks_submission=item.certainty == "confirmed" and item.severity in {"critical", "high"},
-                    certainty=item.certainty,
+                    source_refs={"evidence": [e.model_dump() for e in ai_finding.evidence], "missing_evidence": ai_finding.missing_evidence, "ai_analysis_id": analysis.id if analysis is not None else None},
+                    blocks_submission=ai_finding.certainty == "confirmed" and ai_finding.severity in {"critical", "high"},
+                    certainty=ai_finding.certainty,
                     compliance_run_id=run.id,
                 )
                 persisted.append(finding.id)
-            ai_summary = {"status": "complete", "ai_analysis_id": result.analysis.id, "findings": len(result.output.findings)}
+            ai_summary = {"status": "complete", "ai_analysis_id": analysis.id if analysis is not None else None, "findings": len(output.findings)}
         except StructuredCallError as exc:
             warnings.append({"code": f"red_team_ai_{exc.reason}", "severity": "medium", "message": exc.detail})
             ai_summary = {"status": "failed", "reason": exc.reason}

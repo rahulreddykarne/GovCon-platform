@@ -270,7 +270,7 @@ class TestAnalytics:
     def test_win_profile_available_after_minimum(self, session: Session):
         self._seed_outcomes(session, prefix=uuid4().hex[:4])
         count = anl.win_count(session)
-        available, note = anl.win_profile_note(session)
+        available, _note = anl.win_profile_note(session)
         if count >= anl.WIN_PROFILE_MINIMUM:
             assert available
 
@@ -419,7 +419,7 @@ class TestMCPOutcome:
 
     def test_mcp_learning_summary_global(self, session: Session):
         # Seed some data first
-        prefix = uuid4().hex[:4]
+        uuid4().hex[:4]
         for _ in range(3):
             opp = _opp(session, psc="6515")
             _pursuit(session, opp.id)

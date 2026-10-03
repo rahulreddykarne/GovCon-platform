@@ -20,11 +20,20 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import PreparedCall, execute_prepared_call, persist_structured_result, prepare_structured_call
+from govcon.ai.structured import (
+    PreparedCall,
+    execute_prepared_call,
+    persist_structured_result,
+    prepare_structured_call,
+)
 from govcon.db import shared_session_factory
 from govcon.models import Task, User
 from govcon.security.classification import DataClassification
-from govcon.tasks.errors import TaskBlocked, TaskFailedPermanently
+from govcon.tasks.errors import (
+    TaskBlocked,
+    TaskFailedPermanently,
+    require_task_opportunity,
+)
 from govcon.tasks.registry import Step, StepContext, TaskHandler, register
 
 QUOTE_EXTRACTION_TASK = "quote_extraction"
@@ -101,15 +110,21 @@ def _extract_publish(session: Session, task: Task, call: _Call, ctx: StepContext
     } for line in output.lines]
     actor = session.get(User, task.created_by_user_id) if task.created_by_user_id else None
     payload = ctx.payload
+    analysis_id = analysis.id if analysis is not None else None
+    if analysis_id is None:
+        raise TaskFailedPermanently(
+            "quote extraction result was not stored",
+            next_action="Retry quote extraction, or enter the quote lines by hand.",
+        )
     quote = record_quote(
-        session, opportunity_id=task.opportunity_id, supplier_id=payload["supplier_id"], actor=actor, method="ai",
+        session, opportunity_id=require_task_opportunity(task), supplier_id=payload["supplier_id"], actor=actor, method="ai",
         lines=lines, total_price=output.total_price,
         valid_until=payload.get("valid_until") or _iso_date(output.valid_until),
         source={k: payload.get(k) for k in ("source_filename", "source_sha256", "source_key")},
         notes=("Read by AI; verify against the document. Missing: " + "; ".join(output.missing_information))
         if output.missing_information else "Read by AI; verify against the document.",
     )
-    ctx.result = {"quote_id": quote.id, "analysis_id": analysis.id, "lines": len(lines)}
+    ctx.result = {"quote_id": quote.id, "analysis_id": analysis_id, "lines": len(lines)}
 
 
 def _iso_date(value: str | None) -> str | None:

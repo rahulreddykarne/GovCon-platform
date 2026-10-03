@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 import httpx
@@ -45,6 +45,9 @@ class VendorProfile:
     fetched_at: datetime | None
     from_cache: bool
     award_stats: VendorAwardStats
+    freshness_status: str = "unknown"
+    source_updated_at: datetime | None = None
+    expires_at: datetime | date | None = None
 
 
 def _ranked(
@@ -98,20 +101,26 @@ def award_stats_for_uei(session: Session, uei: str, *, limit: int = 5) -> Vendor
 
 
 def _profile_from_vendor(vendor: Vendor, *, from_cache: bool, stats: VendorAwardStats) -> VendorProfile:
+    # Failed, stale, and unknown caches do not present the stored registration
+    # as current. An expired fetch still shows the SAM status beside freshness.
+    visible = vendor.freshness_status in {"fresh", "expired"}
     return VendorProfile(
         uei=vendor.uei,
-        cage_code=vendor.cage_code,
-        legal_name=vendor.legal_name,
-        dba_name=vendor.dba_name,
-        registration_status=vendor.registration_status,
-        business_types=vendor.business_types,
-        naics_codes=vendor.naics_codes if isinstance(vendor.naics_codes, list) else None,
-        psc_codes=vendor.psc_codes if isinstance(vendor.psc_codes, list) else None,
-        physical_address=vendor.physical_address,
-        points_of_contact=vendor.points_of_contact,
+        cage_code=vendor.cage_code if visible else None,
+        legal_name=vendor.legal_name if visible else None,
+        dba_name=vendor.dba_name if visible else None,
+        registration_status=vendor.registration_status if visible else None,
+        business_types=vendor.business_types if visible else None,
+        naics_codes=vendor.naics_codes if visible and isinstance(vendor.naics_codes, list) else None,
+        psc_codes=vendor.psc_codes if visible and isinstance(vendor.psc_codes, list) else None,
+        physical_address=vendor.physical_address if visible else None,
+        points_of_contact=vendor.points_of_contact if visible else None,
         fetched_at=vendor.fetched_at,
         from_cache=from_cache,
         award_stats=stats,
+        freshness_status=vendor.freshness_status,
+        source_updated_at=vendor.source_updated_at,
+        expires_at=vendor.expires_at,
     )
 
 
@@ -126,14 +135,23 @@ def vendor_profile(
 ) -> VendorProfile:
     """Return SAM registration data plus computed award statistics for one UEI."""
     settings = settings or get_settings()
-    vendor, fetched_live = ensure_vendor(
-        session,
-        uei,
-        refresh=refresh,
-        client=client,
-        settings=settings,
-        now=now,
-    )
+    normalized = normalize_uei(uei)
+    try:
+        vendor, fetched_live = ensure_vendor(
+            session,
+            normalized,
+            refresh=refresh,
+            client=client,
+            settings=settings,
+            now=now,
+        )
+    except SamEntityError:
+        cached = session.get(Vendor, normalized)
+        if cached is None:
+            raise
+        vendor = cached
+        session.refresh(vendor)
+        fetched_live = False
     stats = award_stats_for_uei(session, vendor.uei)
     return _profile_from_vendor(vendor, from_cache=not fetched_live, stats=stats)
 

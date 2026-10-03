@@ -20,9 +20,7 @@ from __future__ import annotations
 import ast
 import json
 import re
-import subprocess
-import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -95,9 +93,9 @@ class TestParserAndFixtures:
         """Core test modules must not open live sockets during unit testing."""
         # Verify that test files that import govcon modules do not call
         # requests/httpx directly at module import time.
-        import govcon.compliance.regression  # noqa: F401
+        import govcon.compliance.regression
+        import govcon.decision.providers.rule_fallback
         import govcon.prompting.evaluation  # noqa: F401
-        import govcon.decision.providers.rule_fallback  # noqa: F401
         # If any of these imported and tried to make network calls, they would
         # fail without a live database. This is a compile-check, not an
         # integration test.
@@ -118,6 +116,7 @@ class TestIdempotency:
     def test_sam_ingest_idempotency(self, upgraded_engine) -> None:
         from sqlalchemy import select
         from sqlalchemy.orm import Session
+
         from govcon.ingest.sam_opportunities import normalize_opportunity
         from govcon.ingest.snapshots import upsert_opportunity
         from govcon.models import Opportunity, OpportunitySnapshot
@@ -151,8 +150,8 @@ class TestIdempotency:
 
     def test_dibbs_ingest_idempotency(self, upgraded_engine) -> None:
         from sqlalchemy.orm import Session
+
         from govcon.ingest.dibbs import ingest_index_bytes
-        from govcon.models import OpportunitySnapshot
 
         # Build a single valid DIBBS index line (140 fixed chars)
         uid = _uid()[:5]
@@ -173,7 +172,7 @@ class TestIdempotency:
         payload = (line + "\n").encode("latin-1")
 
         with Session(upgraded_engine) as session:
-            result1 = ingest_index_bytes(session, payload, index_name="in261130.txt")
+            ingest_index_bytes(session, payload, index_name="in261130.txt")
             session.commit()
 
         with Session(upgraded_engine) as session:
@@ -190,6 +189,7 @@ class TestIdempotency:
         """
         from sqlalchemy import select
         from sqlalchemy.orm import Session
+
         from govcon.ingest.usaspending import upsert_award
         from govcon.models import Award
 
@@ -210,7 +210,7 @@ class TestIdempotency:
         }
 
         with Session(upgraded_engine) as session:
-            result1 = upsert_award(session, raw_payload)
+            upsert_award(session, raw_payload)
             session.commit()
 
         with Session(upgraded_engine) as session:
@@ -240,6 +240,7 @@ class TestSnapshots:
     def test_unchanged_payload_creates_no_snapshot(self, upgraded_engine) -> None:
         from sqlalchemy import select
         from sqlalchemy.orm import Session
+
         from govcon.ingest.sam_opportunities import normalize_opportunity
         from govcon.ingest.snapshots import upsert_opportunity
         from govcon.models import Opportunity, OpportunitySnapshot
@@ -266,6 +267,7 @@ class TestSnapshots:
     def test_changed_payload_creates_one_new_snapshot(self, upgraded_engine) -> None:
         from sqlalchemy import select
         from sqlalchemy.orm import Session
+
         from govcon.ingest.sam_opportunities import normalize_opportunity
         from govcon.ingest.snapshots import upsert_opportunity
         from govcon.models import Opportunity, OpportunitySnapshot
@@ -388,8 +390,9 @@ class TestAISchema:
 
     def test_missing_required_fields_handled(self) -> None:
         """Schema with required fields must reject missing data."""
-        from govcon.ai.schemas import validate_analysis_output
         import pydantic
+
+        from govcon.ai.schemas import validate_analysis_output
 
         # outcome_analysis.v1 has Literal types that reject invalid values
         with pytest.raises(pydantic.ValidationError):
@@ -415,8 +418,10 @@ class TestAISchema:
 
     def test_no_silent_fallback_into_unstructured_text(self) -> None:
         """Validation must raise; it must not silently return None for invalid output."""
+        from pydantic import ValidationError
+
         from govcon.ai.schemas import validate_analysis_output
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             validate_analysis_output("requirement_extraction.v1", "this is a plain string")
 
     def test_outcome_analysis_schema_validates_correctly(self) -> None:
@@ -432,9 +437,11 @@ class TestAISchema:
 
     def test_outcome_analysis_rejects_invalid_factor_value(self) -> None:
         """OutcomeAnalysisV1 must reject unknown literal values."""
+
+        from pydantic import ValidationError
+
         from govcon.ai.schemas import validate_analysis_output
-        import pydantic
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             validate_analysis_output("outcome_analysis.v1", {"pricing_factor": "maybe"})
 
     def test_source_refs_validated_in_solicitation_analysis(self) -> None:
@@ -457,8 +464,9 @@ class TestAISchema:
 
     def test_source_refs_type_validated(self) -> None:
         """source_refs must be a list — string value must fail validation."""
-        from govcon.ai.schemas import validate_analysis_output
         import pydantic
+
+        from govcon.ai.schemas import validate_analysis_output
         with pytest.raises((pydantic.ValidationError, Exception)):
             validate_analysis_output("solicitation_analysis.v1", {"source_refs": "not-a-list"})
 
@@ -466,8 +474,9 @@ class TestAISchema:
         """Every AI analysis row must record prompt_name, prompt_version, prompt_hash,
         generation_settings, and context_manifest per §43.2."""
         from sqlalchemy.orm import Session
-        from govcon.prompting.hashing import sha256_bytes
+
         from govcon.models import AIAnalysis, Opportunity
+        from govcon.prompting.hashing import sha256_bytes
 
         with Session(upgraded_engine) as session:
             opp = Opportunity(
@@ -610,7 +619,6 @@ class TestPromptLibrary:
 
     def test_forbidden_secret_scan_passes_all_prompts(self) -> None:
         """No prompt file should contain live API keys or secret patterns."""
-        import re
         from govcon.prompting.evaluation import _SECRET_PATTERNS
         from govcon.prompting.loader import iter_markdown_prompts
 
@@ -627,7 +635,11 @@ class TestPromptLibrary:
         """Injection text in source document must not appear in system prompt."""
         from govcon.prompting.evaluation import INJECTION_FIXTURE
         from govcon.prompting.loader import iter_markdown_prompts
-        from govcon.prompting.renderer import render_system_prompt, render_user_context, required_variables
+        from govcon.prompting.renderer import (
+            render_system_prompt,
+            render_user_context,
+            required_variables,
+        )
 
         task_assets = [
             a for a in iter_markdown_prompts(PROMPT_ROOT)
@@ -673,8 +685,9 @@ class TestPromptLibrary:
 
     def test_prompt_render_cli_with_fixture(self, tmp_path) -> None:
         """govcon prompts render renders system prompt and user context from fixture."""
-        from govcon.cli import app
         import json as _json
+
+        from govcon.cli import app
 
         fixture = {"OUTCOME_JSON": {"outcome": "lost"}, "EVIDENCE_JSON": {"debrief": "price was too high"}}
         fixture_file = tmp_path / "fixture.json"
@@ -748,7 +761,12 @@ class TestPromptLibrary:
     def test_rollback_restores_prior_version(self, upgraded_engine) -> None:
         """prompts rollback restores the version that was active before the latest activation."""
         from sqlalchemy.orm import Session
-        from govcon.prompting.registry import activate_prompt, rollback_prompt, sync_prompts
+
+        from govcon.prompting.registry import (
+            activate_prompt,
+            rollback_prompt,
+            sync_prompts,
+        )
 
         with Session(upgraded_engine) as session:
             sync_prompts(session, PROMPT_ROOT)
@@ -874,6 +892,7 @@ class TestJEVDecision:
     def test_hard_rule_override_closed_opportunity(self, upgraded_engine) -> None:
         """A closed opportunity must produce no_bid via the decision engine hard-rule override."""
         from sqlalchemy.orm import Session
+
         from govcon.decision.engine import run_decision_bundle
         from govcon.models import Opportunity
 
@@ -906,8 +925,8 @@ class TestJEVDecision:
 
     def test_jev_bundle_schemas_match_acceptance_bundle_names(self) -> None:
         """ACCEPTANCE_BUNDLE_NAMES must each map to an existing JEV spec file on disk."""
-        from govcon.decision.schemas import ACCEPTANCE_BUNDLE_NAMES
         from govcon.decision.bundles import decision_spec_path
+        from govcon.decision.schemas import ACCEPTANCE_BUNDLE_NAMES
 
         for bundle in ACCEPTANCE_BUNDLE_NAMES:
             try:
@@ -950,6 +969,7 @@ class TestJEVDecision:
     def test_bid_decision_cannot_directly_set_bid_approved(self, upgraded_engine) -> None:
         """JEV bid_decision output must not directly change pursuit stage to approved_to_bid."""
         from sqlalchemy.orm import Session
+
         from govcon.decision.engine import run_decision_bundle
         from govcon.models import Opportunity, Pursuit
 
@@ -990,6 +1010,7 @@ class TestJEVDecision:
         """Every decision run must be stored in decision_runs."""
         from sqlalchemy import select
         from sqlalchemy.orm import Session
+
         from govcon.decision.engine import run_decision_bundle
         from govcon.models import DecisionRun, Opportunity
 
@@ -1071,15 +1092,16 @@ class TestCollaborativeReview:
     def test_single_review_policy_quorum_satisfied_after_one(self, upgraded_engine) -> None:
         """Single-review policy: QuorumState.quorum_satisfied is True after one completion."""
         from sqlalchemy.orm import Session
+
+        from govcon.collaboration.assignments import assign_reviewer
         from govcon.collaboration.review_sessions import (
+            complete_assignment,
             ensure_review_session,
             recalculate_quorum,
         )
-        from govcon.collaboration.assignments import assign_reviewer
-        from govcon.collaboration.review_sessions import complete_assignment
 
         with Session(upgraded_engine) as session:
-            opp, pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
+            opp, _pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
             ensure_review_session(session, opportunity_id=opp.id)
             assign_reviewer(session, opportunity_id=opp.id, user_id=reviewer.id, actor_user_id=approver.id)
             session.commit()
@@ -1102,15 +1124,16 @@ class TestCollaborativeReview:
     def test_dual_review_policy_blocks_after_one_completion(self, upgraded_engine) -> None:
         """Dual-review policy: quorum is NOT satisfied after only one completion."""
         from sqlalchemy.orm import Session
+
+        from govcon.collaboration.assignments import assign_reviewer
         from govcon.collaboration.review_sessions import (
+            complete_assignment,
             ensure_review_session,
             recalculate_quorum,
-            complete_assignment,
         )
-        from govcon.collaboration.assignments import assign_reviewer
 
         with Session(upgraded_engine) as session:
-            opp, pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
+            opp, _pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
             rs = ensure_review_session(session, opportunity_id=opp.id)
             rs.review_policy = "dual"
             assign_reviewer(session, opportunity_id=opp.id, user_id=reviewer.id, actor_user_id=approver.id)
@@ -1132,27 +1155,37 @@ class TestCollaborativeReview:
         assert quorum.quorum_satisfied is False, "Dual-review policy must NOT satisfy after one completion"
 
     def test_approver_override_requires_reason(self, upgraded_engine) -> None:
-        """Approval override must provide a non-empty reason string."""
+        """An empty override reason cannot approve a review that has not reached quorum."""
         from sqlalchemy.orm import Session
-        from govcon.collaboration.review_sessions import finalize_approval
+
+        from govcon.collaboration.review_sessions import (
+            ReviewWorkflowError,
+            ensure_review_session,
+            finalize_approval,
+        )
+        from govcon.models import User
 
         with Session(upgraded_engine) as session:
-            opp, pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
+            opp, _pursuit, approver, _reviewer = self._create_opp_pursuit_user(session)
+            review = ensure_review_session(session, opportunity_id=opp.id)
+            review.review_policy = "dual"
             session.commit()
             opp_id = opp.id
             approver_id = approver.id
+            version = review.version
 
         with Session(upgraded_engine) as session:
-            try:
+            actor = session.get(User, approver_id)
+            assert actor is not None
+            with pytest.raises(ReviewWorkflowError, match="override reason"):
                 finalize_approval(
                     session,
                     opportunity_id=opp_id,
-                    actor_user_id=approver_id,
+                    actor=actor,
                     action="approve_to_bid",
-                    override_reason="",  # empty reason
+                    expected_version=version,
+                    override_reason="",
                 )
-            except (ValueError, RuntimeError, Exception):
-                pass  # Expected — empty reason is rejected, quorum not met, etc.
 
     def test_bid_vs_no_bid_split_never_auto_resolves(self) -> None:
         """A BID/NO BID split in the decision engine does not auto-approve."""
@@ -1177,13 +1210,16 @@ class TestCollaborativeReview:
     def test_conditional_policy_proceeds_without_triggers(self, upgraded_engine) -> None:
         """Conditional policy: when no risk trigger fires, single review is sufficient."""
         from sqlalchemy.orm import Session
-        from govcon.collaboration.review_sessions import (
-            ensure_review_session, recalculate_quorum, complete_assignment,
-        )
+
         from govcon.collaboration.assignments import assign_reviewer
+        from govcon.collaboration.review_sessions import (
+            complete_assignment,
+            ensure_review_session,
+            recalculate_quorum,
+        )
 
         with Session(upgraded_engine) as session:
-            opp, pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
+            opp, _pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
             rs = ensure_review_session(session, opportunity_id=opp.id)
             rs.review_policy = "conditional"  # conditional policy
             # No triggers configured → single review sufficient
@@ -1212,16 +1248,19 @@ class TestCollaborativeReview:
         """When a reviewer requests a second review and 'reviewer_requested_second_review'
         is a configured trigger in conditional policy, quorum requires two completions."""
         from sqlalchemy.orm import Session
-        from govcon.collaboration.review_sessions import (
-            ensure_review_session, recalculate_quorum, complete_assignment,
-        )
+
         from govcon.collaboration.assignments import assign_reviewer
+        from govcon.collaboration.review_sessions import (
+            complete_assignment,
+            ensure_review_session,
+            recalculate_quorum,
+        )
 
         # Configure the trigger so reviewer-requested second review fires
         monkeypatch.setenv("REVIEW_CONDITIONAL_TRIGGERS", "reviewer_requested_second_review")
 
         with Session(upgraded_engine) as session:
-            opp, pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
+            opp, _pursuit, approver, reviewer = self._create_opp_pursuit_user(session)
             rs = ensure_review_session(session, opportunity_id=opp.id)
             rs.review_policy = "conditional"  # conditional triggers the second-review logic
             assign_reviewer(session, opportunity_id=opp.id, user_id=reviewer.id, actor_user_id=approver.id)
@@ -1254,8 +1293,9 @@ class TestCollaborativeReview:
     def test_ai_comment_validation_failure_preserves_human_comment(self, upgraded_engine) -> None:
         """AI validation failure must never delete or alter the human reviewer's comment body."""
         from sqlalchemy.orm import Session
-        from govcon.collaboration.comments import add_comment
+
         from govcon.collaboration.assignments import assign_reviewer
+        from govcon.collaboration.comments import add_comment
         from govcon.collaboration.review_sessions import ensure_review_session
         from govcon.models import Opportunity, ReviewComment, User
 
@@ -1328,14 +1368,20 @@ class TestCompliancePhase19:
 
     def test_compliance_benchmark_passes(self) -> None:
         """Compliance benchmark gate must pass with recorded fixtures."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         result = run_benchmark_suite(default_fixture_root())
         assert result.gate.passed, f"Compliance gate failures: {result.gate.failures}"
 
     def test_mandatory_requirement_recall_is_one(self) -> None:
         """Mandatory recall must be 1.0 — no mandatory requirement may be missed."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         result = run_benchmark_suite(default_fixture_root())
         assert result.aggregate.get("mandatory_recall", 0) >= 1.0, (
@@ -1344,7 +1390,10 @@ class TestCompliancePhase19:
 
     def test_critical_requirement_recall_is_one(self) -> None:
         """Critical recall must be 1.0 — no critical requirement may be missed."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         result = run_benchmark_suite(default_fixture_root())
         assert result.aggregate.get("critical_recall", 0) >= 1.0, (
@@ -1353,7 +1402,10 @@ class TestCompliancePhase19:
 
     def test_false_satisfied_rate_is_zero(self) -> None:
         """False-satisfied rate must be 0.0."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         result = run_benchmark_suite(default_fixture_root())
         assert result.aggregate.get("false_satisfied_rate", 1.0) == 0.0, (
@@ -1362,7 +1414,10 @@ class TestCompliancePhase19:
 
     def test_scanner_regression_fails_on_disabled_scanner(self) -> None:
         """Disabling the deterministic scanner must cause the benchmark to fail."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         with patch("govcon.compliance.extractor.structural_candidates", return_value=[]):
             result = run_benchmark_suite(default_fixture_root())
@@ -1376,8 +1431,9 @@ class TestCompliancePhase19:
     def test_false_satisfied_detection_self_check(self, upgraded_engine) -> None:
         """compliance_matrix must track false_satisfied_detected on every run."""
         from sqlalchemy.orm import Session
+
         from govcon.compliance.matrix import compliance_matrix
-        from govcon.models import ComplianceRun, Opportunity, Pursuit
+        from govcon.models import Opportunity, Pursuit
 
         with Session(upgraded_engine) as session:
             opp = Opportunity(
@@ -1410,14 +1466,20 @@ class TestComplianceReleaseGate:
 
     def test_release_gate_passes_on_baseline(self) -> None:
         """Release gate passes when all metrics meet or exceed baseline."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         result = run_benchmark_suite(default_fixture_root())
         assert result.gate.passed, f"Release gate must pass on recorded fixtures: {result.gate.failures}"
 
     def test_release_gate_fails_on_missed_critical_requirement(self) -> None:
         """Disabling critical-requirement detection must fail the release gate."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         # Intercept the reconciliation to mark no requirements as critical
         with patch("govcon.compliance.extractor.scan_requirements", return_value=[]):
@@ -1437,7 +1499,10 @@ class TestComplianceReleaseGate:
 
     def test_amendment_change_detection_is_one(self) -> None:
         """Amendment change detection must be at 100% in benchmark."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         result = run_benchmark_suite(default_fixture_root())
         val = result.aggregate.get("amendment_change_detection", 0)
@@ -1445,8 +1510,12 @@ class TestComplianceReleaseGate:
 
     def test_source_citation_accuracy_above_threshold(self) -> None:
         """Source citation accuracy must be at or above the configured floor."""
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
         import json as _json
+
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         baseline = _json.loads(
             (default_fixture_root() / "baseline_metrics.json").read_text(encoding="utf-8")
@@ -1467,7 +1536,7 @@ class TestProposalPhase19:
 
     def _make_proposal_with_versions(self, session):
         """Helper to create an Opportunity, Pursuit, Proposal, and versioned ProposalVersions."""
-        from govcon.models import Opportunity, Proposal, ProposalVersion, Pursuit
+        from govcon.models import Opportunity, Proposal, Pursuit
 
         uid = _uid()
         opp = Opportunity(
@@ -1491,10 +1560,11 @@ class TestProposalPhase19:
     def test_new_version_never_overwrites_old_version(self, upgraded_engine) -> None:
         """Generating a new proposal version must not modify older versions."""
         from sqlalchemy.orm import Session
+
         from govcon.models import ProposalVersion
 
         with Session(upgraded_engine) as session:
-            opp, pursuit, proposal = self._make_proposal_with_versions(session)
+            _opp, _pursuit, proposal = self._make_proposal_with_versions(session)
 
             v1 = ProposalVersion(
                 proposal_id=proposal.id,
@@ -1521,10 +1591,11 @@ class TestProposalPhase19:
     def test_proposal_version_number_increments(self, upgraded_engine) -> None:
         """Each proposal version must have a unique, incrementing version number."""
         from sqlalchemy.orm import Session
+
         from govcon.models import ProposalVersion
 
         with Session(upgraded_engine) as session:
-            opp, pursuit, proposal = self._make_proposal_with_versions(session)
+            _opp, _pursuit, proposal = self._make_proposal_with_versions(session)
 
             versions = []
             for i in range(1, 4):
@@ -1545,11 +1616,15 @@ class TestProposalPhase19:
     def test_requirement_links_preserved_in_proposal_sections(self, upgraded_engine) -> None:
         """Proposal sections that cover a requirement must store requirement_ids links."""
         from sqlalchemy.orm import Session
-        from govcon.models import (
-            Opportunity, Proposal, ProposalSection, ProposalVersion, Pursuit, Requirement,
-            ReviewSession, User,
-        )
+
         from govcon.collaboration.review_sessions import ensure_review_session
+        from govcon.models import (
+            Opportunity,
+            ProposalSection,
+            Pursuit,
+            Requirement,
+            User,
+        )
         from govcon.proposals.service import generate_proposal
 
         uid = _uid()
@@ -1606,7 +1681,7 @@ class TestProposalPhase19:
             )
             session.commit()
 
-            proposal_id = result["proposal_id"]
+            result["proposal_id"]
             version_id = result["version_id"]
 
         with Session(upgraded_engine) as session:
@@ -1626,11 +1701,15 @@ class TestProposalPhase19:
     def test_unsupported_claim_flagging_in_placeholder_draft(self, upgraded_engine) -> None:
         """Unsatisfied mandatory requirements must be flagged with [[BLOCKER:...]] markers."""
         from sqlalchemy.orm import Session
-        from govcon.models import (
-            Opportunity, Proposal, ProposalSection, ProposalVersion, Pursuit, Requirement,
-            ReviewSession, User,
-        )
+
         from govcon.collaboration.review_sessions import ensure_review_session
+        from govcon.models import (
+            Opportunity,
+            ProposalSection,
+            Pursuit,
+            Requirement,
+            User,
+        )
         from govcon.proposals.service import generate_proposal
 
         uid = _uid()
@@ -1713,7 +1792,11 @@ class TestSubmissionPhase19:
     def test_missing_requirement_prevents_ready_state(self, upgraded_engine) -> None:
         """A pursuit with open blocking compliance findings cannot reach ready_to_submit."""
         from sqlalchemy.orm import Session
-        from govcon.compliance.submission_preflight import ReadinessBlocked, move_to_ready_to_submit
+
+        from govcon.compliance.submission_preflight import (
+            ReadinessBlocked,
+            move_to_ready_to_submit,
+        )
         from govcon.models import ComplianceFinding, Opportunity, Pursuit, User
 
         with Session(upgraded_engine) as session:
@@ -1772,6 +1855,7 @@ class TestSubmissionPhase19:
     def test_submitted_timestamp_is_recorded(self, upgraded_engine) -> None:
         """Confirming a submission must record a submitted_at timestamp."""
         from sqlalchemy.orm import Session
+
         from govcon.models import Opportunity, Pursuit, Submission
 
         with Session(upgraded_engine) as session:
@@ -1809,8 +1893,15 @@ class TestSubmissionPhase19:
         """When move_to_ready_to_submit is called with an override_reason, an audit event must be written."""
         from sqlalchemy import select
         from sqlalchemy.orm import Session
+
         from govcon.compliance.submission_preflight import move_to_ready_to_submit
-        from govcon.models import AuditEvent, ComplianceFinding, Opportunity, Pursuit, User
+        from govcon.models import (
+            AuditEvent,
+            ComplianceFinding,
+            Opportunity,
+            Pursuit,
+            User,
+        )
 
         with Session(upgraded_engine) as session:
             uid = _uid()
@@ -1862,7 +1953,7 @@ class TestSubmissionPhase19:
 
         with Session(upgraded_engine) as session:
             # An audit event for the override must have been written
-            events = session.execute(
+            session.execute(
                 select(AuditEvent).where(
                     AuditEvent.opportunity_id == opp_id,
                     AuditEvent.action_type.in_([
@@ -2069,7 +2160,10 @@ class TestPromptRuntimeAC:
 
     def test_activation_is_gated_and_rollback_supported(self) -> None:
         """§43.11 item 15: activation gate and rollback are implemented."""
-        from govcon.prompting.evaluation import run_activation_gate, SAFETY_CRITICAL_PROMPTS
+        from govcon.prompting.evaluation import (
+            SAFETY_CRITICAL_PROMPTS,
+            run_activation_gate,
+        )
         from govcon.prompting.registry import rollback_prompt
 
         # Both must be importable and callable
@@ -2080,6 +2174,7 @@ class TestPromptRuntimeAC:
     def test_prompt_model_metadata_visible_in_ai_analyses(self, upgraded_engine) -> None:
         """§43.11 item 16: prompt/model metadata visible in operations/audit views."""
         from sqlalchemy.orm import Session
+
         from govcon.models import AIAnalysis, Opportunity
 
         with Session(upgraded_engine) as session:

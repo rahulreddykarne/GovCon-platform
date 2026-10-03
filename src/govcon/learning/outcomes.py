@@ -16,8 +16,15 @@ from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
 from govcon.collaboration.users import require_permission
-from govcon.models import AIAnalysis, Opportunity, OutcomeCorrection, OutcomeFeedback, Pursuit, Submission, User
 from govcon.learning.schemas import OUTCOME_SCHEMAS
+from govcon.models import (
+    Opportunity,
+    OutcomeCorrection,
+    OutcomeFeedback,
+    Pursuit,
+    Submission,
+    User,
+)
 from govcon.workflow.invalidation import lock_one
 from govcon.workflow.transitions import InvalidTransition, require_transition
 

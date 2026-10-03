@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from govcon.models import Award, Match, Opportunity, OutcomeFeedback, Watchlist
 from govcon.matching.eligibility import ELIGIBLE_STATUSES, pursuit_eligibility
+from govcon.models import Award, Match, Opportunity, Watchlist
 
 if TYPE_CHECKING:
     from govcon.enrich.embeddings import EmbeddingProvider
@@ -296,7 +296,6 @@ def recompete_radar(
     # Recompete candidates are opportunities that share a prior award's PSC/NAICS/agency
     # and whose solicitation number looks like an amendment/follow-on.
     # Phase 5 stored recompete candidate flags in awards.recompete_candidates.
-    from govcon.models import Award
 
     limit = max(1, min(limit, _MAX_LIMIT))
     award_opps_stmt = (

@@ -6,9 +6,9 @@ import json
 from decimal import Decimal
 from typing import Any
 
+from govcon.ai.budget import complete_with_budget
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
-from govcon.ai.budget import complete_with_budget
 from govcon.config import Settings, get_settings
 from govcon.decision.provider import DecisionProviderUnavailable, ProviderDecision
 from govcon.security.classification import DataClassification
@@ -59,7 +59,7 @@ class LLMDecisionProvider:
             default=str,
         )
         try:
-            result, reservation = complete_with_budget(provider, self._session,
+            result, _reservation = complete_with_budget(provider, self._session,
                 opportunity_id=state.get("budget_opportunity_id"), settings=self._settings,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
@@ -73,7 +73,7 @@ class LLMDecisionProvider:
 
         try:
             parsed = parse_json_response(result)
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             try:
                 parsed = json.loads(getattr(result, "content", "") or "{}")
             except Exception as exc:

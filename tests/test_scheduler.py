@@ -15,10 +15,7 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from typing import Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -27,7 +24,12 @@ from typer.testing import CliRunner
 from govcon.cli import app
 from govcon.db import session_scope
 from govcon.models import IngestionRun, SchedulerJobRun
-from govcon.scheduler.chains import CHAIN_DEFINITIONS, ALL_CHAIN_NAMES, ChainDef, run_chain
+from govcon.scheduler.chains import (
+    ALL_CHAIN_NAMES,
+    CHAIN_DEFINITIONS,
+    ChainDef,
+    run_chain,
+)
 from govcon.scheduler.jobs import StepResult
 
 runner = CliRunner()
@@ -227,7 +229,7 @@ class TestJobsRun:
         assert run.steps_completed is not None
 
     def test_run_failed_chain_exits_1(self):
-        settings = _settings()
+        _settings()
         from govcon.scheduler.jobs import StepResult
 
         def always_fail(session, settings=None):
@@ -274,12 +276,11 @@ class TestChainAbortOnFailure:
         patched_fns["sam_ingest"] = step_fail
         patched_fns["dibbs_ingest"] = step_should_not_run
 
-        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched_fns):
-            with patch(
-                "govcon.scheduler.chains.CHAIN_DEFINITIONS",
-                {"morning_ingest": custom_chain},
-            ):
-                result = run_chain("morning_ingest", settings, trigger="test")
+        with (
+            patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched_fns),
+            patch("govcon.scheduler.chains.CHAIN_DEFINITIONS", {"morning_ingest": custom_chain}),
+        ):
+            result = run_chain("morning_ingest", settings, trigger="test")
 
         assert result.failed
         assert result.failed_step == "sam_ingest"
@@ -322,12 +323,11 @@ class TestChainAbortOnFailure:
         patched["cache_refresh"] = step_fail
         patched["analytics_refresh"] = step_never
 
-        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
-            with patch(
-                "govcon.scheduler.chains.CHAIN_DEFINITIONS",
-                {"sunday_sweep": custom_chain},
-            ):
-                result = run_chain("sunday_sweep", settings, trigger="test")
+        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched), patch(
+            "govcon.scheduler.chains.CHAIN_DEFINITIONS",
+            {"sunday_sweep": custom_chain},
+        ):
+            result = run_chain("sunday_sweep", settings, trigger="test")
 
         assert result.failed
         assert "archive_sweep" in result.steps_completed
@@ -373,7 +373,7 @@ class TestIndependentChains:
 class TestRunVisibility:
     def test_completed_run_persisted_to_db(self):
         settings = _settings()
-        result = run_chain("midday_check", settings, trigger="test_visibility")
+        run_chain("midday_check", settings, trigger="test_visibility")
 
         with session_scope(settings) as db:
             run = db.scalars(
@@ -636,9 +636,8 @@ class TestSoftIngestSteps:
             coverage=DibbsCoverage(records=10, nsn=9, quantity=10),
             index_name="in260925.txt",
         )
-        with session_scope(_settings()) as db:
-            with patch("govcon.ingest.dibbs.pull_dibbs_index", return_value=fake):
-                result = step_dibbs_ingest(db, _settings())
+        with session_scope(_settings()) as db, patch("govcon.ingest.dibbs.pull_dibbs_index", return_value=fake):
+            result = step_dibbs_ingest(db, _settings())
         assert result.status == "completed_with_errors"
         assert not result.failed
 

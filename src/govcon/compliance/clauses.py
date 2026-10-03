@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,11 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from govcon.compliance.matrix import active_requirements, record_run, upsert_open_finding
+from govcon.compliance.matrix import (
+    active_requirements,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory
 from govcon.compliance.text import ClauseReference, find_clause_references, normalize_ws
 from govcon.models import ClauseLibraryEntry, Requirement
@@ -55,7 +59,7 @@ def seed_clause_library(session: Session, path: Path = SEED_PATH) -> int:
         stmt = pg_insert(ClauseLibraryEntry).values(**values, active=True)
         stmt = stmt.on_conflict_do_update(
             constraint="uq_clause_library_family_number",
-            set_={k: stmt.excluded[k] for k in values if k not in {"clause_family", "clause_number"}} | {"updated_at": datetime.now()},
+            set_={k: stmt.excluded[k] for k in values if k not in {"clause_family", "clause_number"}} | {"updated_at": datetime.now(UTC)},
         )
         session.execute(stmt)
         count += 1
@@ -113,10 +117,12 @@ def match_references(references: list[tuple[ClauseReference, int | None]], libra
 
 def run_clause_validation(session: Session, opportunity_id: int, inventory: Inventory) -> dict[str, Any]:
     """Extract clause references, link/create requirements, and surface unknown/modified clauses."""
-    library = {
-        (row.clause_family, row.clause_number): row
-        for row in session.scalars(select(ClauseLibraryEntry)).all()
-    }
+    library: dict[tuple[str, str], ClauseLibraryEntry] = {}
+    for row in session.scalars(select(ClauseLibraryEntry)).all():
+        family, number = row.clause_family, row.clause_number
+        if family is None or number is None:
+            continue
+        library[(family, number)] = row
     references: list[tuple[ClauseReference, int | None]] = []
     for doc in inventory.documents:
         for ref in find_clause_references(doc.text or ""):

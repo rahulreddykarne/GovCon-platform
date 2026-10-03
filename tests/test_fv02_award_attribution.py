@@ -1,9 +1,14 @@
 """Preserve valid suggestions and reject contradictory award attribution."""
 import pytest
+from test_outcome_suggestions import (
+    award_notice,
+    run,
+    submitted_bid,
+    suggestions,
+)
 
-from govcon.scheduler.jobs import step_outcome_suggestions
 from govcon.config import get_settings
-from test_outcome_suggestions import db, our_uei, submitted_bid, award_notice, run, suggestions
+from govcon.scheduler.jobs import step_outcome_suggestions
 
 
 @pytest.mark.parametrize("agency", [None, "Department of Defense / Defense Logistics Agency"])
@@ -24,6 +29,7 @@ def test_current_valid_notice_and_scheduler_result_are_preserved(db, our_uei, ag
 @pytest.mark.parametrize("conflict", ["agency", "source", "old_award", "future_award"])
 def test_contradictory_notice_cannot_establish_an_outcome(db, our_uei, conflict):
     from datetime import timedelta
+
     from test_outcome_suggestions import SUBMITTED
     opp = submitted_bid(db)
     notice = award_notice(db, opp, awardee_uei="OTHERVENDOR1")

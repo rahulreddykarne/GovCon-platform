@@ -193,7 +193,7 @@ def generate_step_by_step_instructions(
     proposal = session.scalars(
         select(Proposal).where(Proposal.opportunity_id == opportunity_id)
     ).first()
-    opp = session.get(Opportunity, opportunity_id)
+    session.get(Opportunity, opportunity_id)
 
     steps: list[dict[str, Any]] = []
     checklist = generate_final_checklist(session, opportunity_id=opportunity_id)
@@ -217,8 +217,8 @@ def generate_step_by_step_instructions(
         "status": "complete" if all(i["status"] == "ready" for i in file_checks) else "pending",
     })
 
-    method = submission.submission_method if submission else None
-    if method and "email" in method.lower():
+    method = submission.submission_method if submission is not None else None
+    if submission is not None and method and "email" in method.lower():
         steps.append({
             "step": 3,
             "title": "Send submission email",
@@ -228,7 +228,7 @@ def generate_step_by_step_instructions(
             ),
             "status": "pending",
         })
-    elif method and "portal" in method.lower():
+    elif submission is not None and method and "portal" in method.lower():
         steps.append({
             "step": 3,
             "title": "Upload via portal",

@@ -237,6 +237,7 @@ def send_smtp(settings: Settings, *, subject: str, html: str, plain: str, to: st
     try:
         # Certificate and host name are verified for both implicit TLS and STARTTLS.
         context = ssl.create_default_context()
+        client_cm: smtplib.SMTP
         if settings.smtp_port == 465:
             client_cm = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=30, context=context)
         else:

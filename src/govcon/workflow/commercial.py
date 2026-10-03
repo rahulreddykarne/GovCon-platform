@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 from govcon.audit import record_audit
 from govcon.collaboration.users import require_permission
 from govcon.concurrency import apply_versioned_update
-from govcon.models import Opportunity, Proposal, Pursuit, ReviewSession, Submission, User
+from govcon.models import (
+    Opportunity,
+    Proposal,
+    Pursuit,
+    ReviewSession,
+    Submission,
+    User,
+)
 from govcon.workflow.invalidation import apply_source_change, lock_one, lock_opportunity
 
 COMMERCIAL_FIELDS = frozenset({"quote_price", "sourcing_cost", "supplier", "notes"})

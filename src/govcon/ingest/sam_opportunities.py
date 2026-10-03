@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Iterator
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -93,7 +93,7 @@ def parse_user_date(value: str) -> date:
     text = value.strip()
     for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
         try:
-            return datetime.strptime(text, fmt).date()
+            return datetime.strptime(text, fmt).replace(tzinfo=UTC).date()
         except ValueError:
             continue
     raise ValueError(f"Invalid date {value!r}. Use MM/dd/yyyy or YYYY-MM-DD.")
@@ -116,7 +116,7 @@ def assert_search_window(posted_from: date, posted_to: date) -> None:
 
 def default_posted_window(today: date | None = None) -> tuple[date, date]:
     """Inclusive last three UTC calendar days, including today."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or datetime.now(UTC).date()
     return today - timedelta(days=2), today
 
 
@@ -150,7 +150,7 @@ def _parse_date(value: object) -> date | None:
         return None
     for candidate, fmt in ((text[:10], "%Y-%m-%d"), (text[:10], "%m/%d/%Y")):
         try:
-            return datetime.strptime(candidate, fmt).date()
+            return datetime.strptime(candidate, fmt).replace(tzinfo=UTC).date()
         except ValueError:
             continue
     return None
@@ -161,20 +161,20 @@ def _parse_datetime(value: object) -> datetime | None:
     if text is None:
         return None
     try:
-        parsed: datetime | None = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed: datetime | None = datetime.fromisoformat(text)
     except ValueError:
         parsed = None
     if parsed is None:
         for fmt in ("%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y"):
             try:
-                parsed = datetime.strptime(text, fmt)
+                parsed = datetime.strptime(text, fmt).replace(tzinfo=UTC)
                 break
             except ValueError:
                 continue
     if parsed is None:
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return parsed.replace(tzinfo=UTC)
     return parsed
 
 
@@ -347,7 +347,7 @@ def _point_of_contact_payload(raw: dict) -> list | None:
 
 def normalize_opportunity(raw: dict) -> NormalizedOpportunity:
     if not isinstance(raw, dict):
-        raise ValueError("SAM opportunity payload must be an object")
+        raise TypeError("SAM opportunity payload must be an object")
     notice_id = _text(raw.get("noticeId"))
     if notice_id is None:
         raise ValueError("SAM opportunity is missing noticeId")
@@ -453,8 +453,8 @@ def fetch_search_page(
             "api_key": api_key,
             "postedFrom": format_sam_date(posted_from),
             "postedTo": format_sam_date(posted_to),
-            "limit": limit,
-            "offset": offset,
+            "limit": str(limit),
+            "offset": str(offset),
         },
         attempts=attempts,
         wait=wait if wait is not None else SAM_RETRY_WAIT,
@@ -524,7 +524,7 @@ def ingest_opportunity_records(session: Session, records: list[dict]) -> IngestS
         try:
             with session.begin_nested():
                 outcome = upsert_opportunity(session, normalize_opportunity(record))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  boundary must record any failure
             stats.errors.append(redact(str(exc)))
             logger.warning("SAM record skipped: %s", redact(str(exc)))
             continue
@@ -605,7 +605,7 @@ def archive_expired_sam_opportunities(session: Session, *, today: date | None = 
     This task does not call SAM.gov. It does not write a new snapshot because
     no new source payload was fetched.
     """
-    today = today or datetime.now(timezone.utc).date()
+    today = today or datetime.now(UTC).date()
     rows = session.scalars(
         select(Opportunity).where(
             Opportunity.source == SOURCE_SAM,

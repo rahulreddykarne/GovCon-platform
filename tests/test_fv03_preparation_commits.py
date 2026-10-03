@@ -3,15 +3,21 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-
 from sqlalchemy import func, select
+from test_preparation import new_opportunity
 
 from govcon.audit import record_audit
 from govcon.db import session_scope
-from govcon.models import AIAnalysis, AuditEvent, ComplianceRun, Opportunity, ReviewSession, Task
+from govcon.models import (
+    AIAnalysis,
+    AuditEvent,
+    ComplianceRun,
+    Opportunity,
+    ReviewSession,
+    Task,
+)
 from govcon.tasks.worker import run_once
 from govcon.workflow.preparation import PREPARATION_TASK, STEPS, queue_preparation
-from test_preparation import db, client, default_settings, new_opportunity
 
 
 def queued(db, opp, only=None):
@@ -41,6 +47,7 @@ def test_current_service_results_and_checkpoint_shapes_are_preserved(db):
 @pytest.mark.parametrize("loss", ["cancel", "lease", "source", "expired"])
 def test_service_writes_are_discarded_when_work_is_invalidated(db, client, monkeypatch, step, loss):
     from importlib import import_module
+
     from test_web_ui import _make_user
     opp = new_opportunity(db)
     _, token = _make_user(db, f"fence-{uuid4().hex}@example.test", "owner")

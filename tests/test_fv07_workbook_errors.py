@@ -7,12 +7,12 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 from openpyxl import Workbook
 from sqlalchemy import select
+from test_sourcing_company import opportunity, user
 from typer.testing import CliRunner
 
 from govcon.cli import app
 from govcon.models import SupplierQuote
 from govcon.sourcing.records import parse_quote_table
-from test_sourcing_company import client, db, opportunity, user
 
 
 def workbook_bytes(empty=False):
