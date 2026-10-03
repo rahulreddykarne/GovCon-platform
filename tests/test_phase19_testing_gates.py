@@ -1155,28 +1155,37 @@ class TestCollaborativeReview:
         assert quorum.quorum_satisfied is False, "Dual-review policy must NOT satisfy after one completion"
 
     def test_approver_override_requires_reason(self, upgraded_engine) -> None:
-        """Approval override must provide a non-empty reason string."""
+        """An empty override reason cannot approve a review that has not reached quorum."""
         from sqlalchemy.orm import Session
 
-        from govcon.collaboration.review_sessions import finalize_approval
+        from govcon.collaboration.review_sessions import (
+            ReviewWorkflowError,
+            ensure_review_session,
+            finalize_approval,
+        )
+        from govcon.models import User
 
         with Session(upgraded_engine) as session:
             opp, _pursuit, approver, _reviewer = self._create_opp_pursuit_user(session)
+            review = ensure_review_session(session, opportunity_id=opp.id)
+            review.review_policy = "dual"
             session.commit()
             opp_id = opp.id
             approver_id = approver.id
+            version = review.version
 
         with Session(upgraded_engine) as session:
-            try:
+            actor = session.get(User, approver_id)
+            assert actor is not None
+            with pytest.raises(ReviewWorkflowError, match="override reason"):
                 finalize_approval(
                     session,
                     opportunity_id=opp_id,
-                    actor_user_id=approver_id,
+                    actor=actor,
                     action="approve_to_bid",
-                    override_reason="",  # empty reason
+                    expected_version=version,
+                    override_reason="",
                 )
-            except (ValueError, RuntimeError) as exc:
-                assert str(exc)
 
     def test_bid_vs_no_bid_split_never_auto_resolves(self) -> None:
         """A BID/NO BID split in the decision engine does not auto-approve."""

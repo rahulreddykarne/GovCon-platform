@@ -571,6 +571,9 @@ def test_ranking_reuses_one_award_query_and_one_recommendation_query(session: Se
     from govcon.matching.ranking import rank_active_matches
 
     psc = f"P{uuid4().hex[:6]}"
+    for existing in session.scalars(select(Match).where(Match.active.is_(True))):
+        existing.active = False
+    session.flush()
     opportunities = []
     for _ in range(2):
         opp = Opportunity(

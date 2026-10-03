@@ -32,12 +32,15 @@ def build_client(
     *,
     timeout: float = 30.0,
     headers: Mapping[str, str] | None = None,
+    transport: httpx.BaseTransport | None = None,
 ) -> httpx.Client:
     settings = settings or get_settings()
     merged = {"User-Agent": settings.http_user_agent}
     if headers:
         merged.update(headers)
-    return httpx.Client(headers=merged, timeout=timeout, follow_redirects=True)
+    return httpx.Client(
+        headers=merged, timeout=timeout, follow_redirects=True, transport=transport,
+    )
 
 
 def request_with_retry(

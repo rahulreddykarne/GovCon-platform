@@ -8,12 +8,13 @@ from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import Form, HTTPException, Query, Request, UploadFile
+from fastapi import Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session as OrmSession
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.audit import record_audit
