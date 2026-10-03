@@ -12,7 +12,6 @@ No version can be added to a cancelled proposal or after submission.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select

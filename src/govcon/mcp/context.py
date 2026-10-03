@@ -80,7 +80,7 @@ def current_actor(session: Session, permission: str | None = None) -> User:
     return user
 
 
-def mcp_tool(func: F) -> F:
+def mcp_tool[F: Callable[..., Any]](func: F) -> F:
     """Run an MCP operation inside a DB transaction with structured errors."""
 
     @wraps(func)

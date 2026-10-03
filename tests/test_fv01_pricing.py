@@ -3,24 +3,24 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from test_sourcing_company import opportunity, user
 
 from govcon.config import get_settings
 from govcon.intelligence.ai_analyses import _REQUESTS
 from govcon.models import Pursuit
 from govcon.sourcing.records import get_or_create_supplier, record_quote
-from test_sourcing_company import db, opportunity, user
 
 
 def quote(db, opp, *, quantity="500", unit="PR", nsn=None, total=None):
     actor, _ = user(db)
     supplier, _ = get_or_create_supplier(db, name=uuid4().hex, actor=actor, provenance="fixture")
     lines = [] if quantity is None else [{"description": "Gloves", "quantity": Decimal(quantity),
-                                         "unit": unit, "nsn": nsn, "unit_price": Decimal("2")}]
+                                         "unit": unit, "nsn": nsn, "unit_price": Decimal(2)}]
     return record_quote(db, opportunity_id=opp.id, supplier_id=supplier.id, actor=actor,
                         method="manual" if quantity is None else "csv", lines=lines, total_price=total)
 
 
-@pytest.mark.parametrize("explicit", [None, Decimal("0"), Decimal("1250")])
+@pytest.mark.parametrize("explicit", [None, Decimal(0), Decimal(1250)])
 def test_current_full_order_quote_and_explicit_cost_are_preserved(db, explicit):
     opp = opportunity(db)
     quote(db, opp)

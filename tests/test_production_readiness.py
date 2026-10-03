@@ -20,6 +20,8 @@ import pytest
 from sqlalchemy import event, select
 from sqlalchemy.orm import Session, sessionmaker
 from tenacity import wait_exponential
+from test_web_ui import _make_user
+from web_client import CsrfTestClient
 
 from govcon.ai.replay import Recorder, active_recorder, run_recorded
 from govcon.config import Settings
@@ -29,13 +31,19 @@ from govcon.ingest.sam_entities import (
     cancel_vendor_refresh,
     ensure_vendor,
 )
-from govcon.models import Award, CompanyRegistration, Match, Opportunity, Task, Vendor, Watchlist
+from govcon.models import (
+    Award,
+    CompanyRegistration,
+    Match,
+    Opportunity,
+    Task,
+    Vendor,
+    Watchlist,
+)
 from govcon.prompting.loader import PromptAsset
 from govcon.prompting.registry import PromptRegistryDenied, _verify_includes
 from govcon.prompting.renderer import PromptRenderError, render_system_prompt
 from govcon.web.app import create_app
-from test_web_ui import _make_user
-from web_client import CsrfTestClient
 
 NOW = datetime(2026, 9, 26, 20, 30, tzinfo=UTC)
 FAST_WAIT = wait_exponential(multiplier=0.01, min=0.01, max=0.02)
@@ -357,7 +365,10 @@ def test_null_fields_in_a_new_payload_do_not_keep_old_assertions(session: Sessio
 def test_company_failed_refresh_drops_assertions_for_jobs_and_later_sessions(
     session: Session, tmp_path, fast_sam, monkeypatch,
 ) -> None:
-    from govcon.company.registration import overlay_registration, refresh_company_registration
+    from govcon.company.registration import (
+        overlay_registration,
+        refresh_company_registration,
+    )
     from govcon.scheduler.jobs import step_company_registration
 
     uei = _uei()
@@ -455,7 +466,7 @@ def test_failed_vendor_refresh_does_not_revive_sam_active(session: Session, tmp_
     opp = Opportunity(source="sam", source_id=uuid4().hex, title="failed signal", status="open", raw={})
     session.add(opp)
     session.commit()
-    failing, _ = _failing_client()
+    _failing, _ = _failing_client()
     signals = Signals()
     # The eligibility path refreshes a stale own-vendor row. Patch the client
     # by failing the payload fetch the refresh actually calls.
@@ -500,7 +511,7 @@ def test_response_older_than_the_stored_source_is_rejected() -> None:
 def test_watchlist_validation_keeps_submitted_values_and_the_saved_row(session: Session) -> None:
     owner, token = _make_user(session, f"wl-{uuid4().hex}@example.test", "owner")
     session.commit()
-    existing = Watchlist(name=f"kept-{uuid4().hex[:8]}", enabled=True, min_value=Decimal("10"), max_value=Decimal("20"))
+    existing = Watchlist(name=f"kept-{uuid4().hex[:8]}", enabled=True, min_value=Decimal(10), max_value=Decimal(20))
     session.add(existing)
     session.commit()
     with CsrfTestClient(create_app(), follow_redirects=False) as client:
@@ -526,8 +537,8 @@ def test_watchlist_validation_keeps_submitted_values_and_the_saved_row(session: 
     assert edited.status_code == 400
     assert "500" in edited.text and "soon" in edited.text
     session.refresh(existing)
-    assert existing.min_value == Decimal("10")
-    assert existing.max_value == Decimal("20")
+    assert existing.min_value == Decimal(10)
+    assert existing.max_value == Decimal(20)
     assert session.scalar(select(Watchlist).where(Watchlist.name == "Bad money")) is None
     assert owner.is_active
 
@@ -571,13 +582,13 @@ def test_ranking_reuses_one_award_query_and_one_recommendation_query(session: Se
         session.add(watchlist)
         session.flush()
         session.add(Match(
-            opportunity_id=opp.id, watchlist_id=watchlist.id, status="new", active=True, score=Decimal("1"),
+            opportunity_id=opp.id, watchlist_id=watchlist.id, status="new", active=True, score=Decimal(1),
             matched_on={"active_groups": ["g"], "passing_groups": ["g"]},
         ))
         opportunities.append(opp)
     session.add(Award(
         award_id=f"rank-{uuid4().hex}", piid="P", description="past", psc_code=psc,
-        recipient_uei="AWARDEEUEI01", recipient_name="Awardee", total_obligation=Decimal("100"),
+        recipient_uei="AWARDEEUEI01", recipient_name="Awardee", total_obligation=Decimal(100),
         action_date=NOW.date(), raw={},
     ))
     session.commit()

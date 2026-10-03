@@ -44,7 +44,7 @@ def _smtp(advertises_starttls: bool) -> tuple[MagicMock, MagicMock]:
 def _send(**overrides):
     from govcon.alerts.digest import send_smtp
 
-    values = dict(smtp_host="mail.example.test", smtp_port=587, smtp_user="alerts", smtp_pass="secret-pass", alert_email_to="ops@example.test")
+    values = {"smtp_host": "mail.example.test", "smtp_port": 587, "smtp_user": "alerts", "smtp_pass": "secret-pass", "alert_email_to": "ops@example.test"}
     values.update(overrides)
     send_smtp(_settings(**values), subject="s", html="<p>h</p>", plain="p")
 
@@ -159,7 +159,7 @@ def test_f22_sync_never_undoes_an_operator_activation_or_rollback(tmp_path) -> N
 
 
 def test_f22_failed_gate_is_reported_and_nothing_activates(tmp_path) -> None:
-    report, gate, set_active = _sync(tmp_path, created=True, current=None, blocked=True)
+    report, _gate, set_active = _sync(tmp_path, created=True, current=None, blocked=True)
     assert report.blocked == ["solicitation_analysis@v1"] and report.activated == []
     set_active.assert_not_called()
 
@@ -272,7 +272,10 @@ def test_f23_malformed_response_is_a_provider_error_the_engine_falls_back_on(kwa
 
 
 def test_f23_invalid_response_is_the_type_the_engine_handles() -> None:
-    from govcon.decision.provider import DecisionProviderInvalidResponse, DecisionProviderUnavailable
+    from govcon.decision.provider import (
+        DecisionProviderInvalidResponse,
+        DecisionProviderUnavailable,
+    )
 
     assert issubclass(DecisionProviderInvalidResponse, DecisionProviderUnavailable)
 
@@ -464,7 +467,10 @@ def test_f26_export_records_the_exact_bytes_and_approval_needs_an_approver(tmp_p
 
 
 def test_f26_preflight_fails_package_integrity_for_an_unbound_proposal() -> None:
-    from govcon.compliance.submission_preflight import collect_instructions, preflight_items
+    from govcon.compliance.submission_preflight import (
+        collect_instructions,
+        preflight_items,
+    )
 
     ins = collect_instructions(Opportunity(response_deadline=datetime.now(UTC) + timedelta(days=2)), [], None, [])
     items = preflight_items(ins, SubmissionPackage(), [], [], inventory_complete=True, coverage_ok=True, now=datetime.now(UTC),
@@ -478,9 +484,13 @@ def test_f27_coverage_rejects_another_opportunitys_version_before_writing() -> N
 
     db = MagicMock()
     db.get.side_effect = _owned(proposal_opportunity_id=2)
-    with patch.object(m, "record_run") as run, patch.object(m, "add_evidence") as evidence, patch.object(m, "upsert_open_finding") as finding:
-        with pytest.raises(ValueError, match="does not belong to opportunity 1"):
-            m.check_proposal_coverage(db, 1, 99, settings=_settings())
+    with (
+        patch.object(m, "record_run") as run,
+        patch.object(m, "add_evidence") as evidence,
+        patch.object(m, "upsert_open_finding") as finding,
+        pytest.raises(ValueError, match="does not belong to opportunity 1"),
+    ):
+        m.check_proposal_coverage(db, 1, 99, settings=_settings())
     run.assert_not_called(), evidence.assert_not_called(), finding.assert_not_called()
 
 
@@ -519,7 +529,8 @@ def _first_locks(module, call) -> list[str]:
 
 def test_f28_workflows_lock_the_opportunity_first() -> None:
     from govcon.proposals import service, versions
-    from govcon.submissions import manifest, service as submissions
+    from govcon.submissions import manifest
+    from govcon.submissions import service as submissions
     from govcon.workflow import invalidation
 
     approver = User(id=1, role="approver", is_active=True)
@@ -582,7 +593,7 @@ def test_f28_opportunity_lock_serializes_workflows_but_not_child_inserts(upgrade
                 try:
                     lock_opportunity(other, opp_id)
                     results["lock"] = "acquired"
-                except Exception as exc:  # lock_timeout: the workflow lock is held
+                except Exception as exc:  # lock_timeout: the workflow lock is held  # noqa: BLE001  boundary must record any failure
                     results["lock"] = type(exc).__name__
                 other.rollback()
 
@@ -599,7 +610,13 @@ def test_f28_opportunity_lock_serializes_workflows_but_not_child_inserts(upgrade
 
 def test_f26_assembly_rejects_a_substituted_proposal_end_to_end(session, tmp_path) -> None:
     from govcon.collaboration.users import invite_user
-    from govcon.models import Proposal, ProposalSection, ProposalVersion, Pursuit, Submission
+    from govcon.models import (
+        Proposal,
+        ProposalSection,
+        ProposalVersion,
+        Pursuit,
+        Submission,
+    )
     from govcon.proposals.export import export_proposal_docx
     from govcon.submissions.manifest import assemble_package
 

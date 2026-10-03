@@ -6,8 +6,8 @@ command needs them, not when this module is imported.
 
 from __future__ import annotations
 
-from functools import lru_cache
 from contextvars import ContextVar
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -284,10 +284,17 @@ def _default_settings() -> Settings:
     return Settings()
 
 
-def get_settings() -> Settings:
-    return settings_context.get() or _default_settings()
+class _CachedSettings:
+    """Settings lookup that still exposes the lru_cache controls tests call."""
+
+    def __call__(self) -> Settings:
+        return settings_context.get() or _default_settings()
+
+    def cache_clear(self) -> None:
+        _default_settings.cache_clear()
+
+    def cache_info(self):
+        return _default_settings.cache_info()
 
 
-# Preserve the public cache management interface used by CLI/tests.
-get_settings.cache_clear = _default_settings.cache_clear
-get_settings.cache_info = _default_settings.cache_info
+get_settings = _CachedSettings()

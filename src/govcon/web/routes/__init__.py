@@ -8,17 +8,18 @@ from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import Cookie, Form, HTTPException, Query, Request, status
+from fastapi import Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from starlette.concurrency import run_in_threadpool
-from sqlalchemy import desc, func, select, text, or_
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session as OrmSession
+from starlette.concurrency import run_in_threadpool
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.audit import record_audit
 from govcon.collaboration.assignments import assign_reviewer
 from govcon.collaboration.comments import add_comment, list_comments
+from govcon.collaboration.notifications import ACTION_REQUIRED_TYPES
 from govcon.collaboration.review_sessions import (
     ReviewWorkflowError,
     approval_context,
@@ -41,12 +42,18 @@ from govcon.collaboration.users import (
 from govcon.compliance.submission_preflight import ReadinessBlocked
 from govcon.concurrency import StaleRecordError
 from govcon.db import session_scope
+from govcon.intelligence.analysis_tasks import latest_analysis_tasks
+from govcon.learning.analytics import (
+    WIN_PROFILE_MINIMUM,
+    outcome_analytics,
+)
+from govcon.learning.outcomes import NO_BID_CATEGORIES, record_outcome
 from govcon.models import (
     AIAnalysis,
     AuditEvent,
     Award,
     BidDecision,
-    ComplianceRun,
+    CompanyRegistration,
     Contact,
     IngestionRun,
     Match,
@@ -59,40 +66,41 @@ from govcon.models import (
     Pursuit,
     Requirement,
     ReviewAssignment,
-    ReviewComment,
     ReviewSession,
     SchedulerJobRun,
-    Task,
-    CompanyRegistration,
     StoredFile,
     Submission,
+    Task,
     User,
-    UserSession,
     Vendor,
     Watchlist,
 )
-from govcon.learning.analytics import WIN_PROFILE_MINIMUM, outcome_analytics, similar_past_outcomes
-from govcon.learning.outcomes import NO_BID_CATEGORIES, record_outcome
 from govcon.proposals.service import (
     finalize_proposal,
     get_proposal_workspace,
     record_submission_confirmation,
 )
-from govcon.web.helpers import deadline_info, format_value, primary_source_url, source_links
-from govcon.web.security import secure_cookies
-from govcon.collaboration.notifications import ACTION_REQUIRED_TYPES
-from govcon.intelligence.analysis_tasks import latest_analysis_tasks
-from govcon.workflow.preparation import PREPARATION_TASK, preparation_view
 from govcon.tasks.queue import active_task, latest_task, requeue
 from govcon.tasks.queue import cancel as cancel_task
+from govcon.web.helpers import (
+    deadline_info,
+    format_value,
+    primary_source_url,
+    source_links,
+)
+from govcon.web.security import secure_cookies
 from govcon.workflow.invalidation import lock_one, lock_opportunity
+from govcon.workflow.preparation import PREPARATION_TASK, preparation_view
 from govcon.workflow.proposal_generation import (
     PROPOSAL_TASK,
     GenerationNotAllowed,
     artifacts_exist,
     queue_proposal_generation,
 )
-from govcon.workflow.transitions import APPROVABLE_PROPOSAL_STATUSES, TERMINAL_PURSUIT_STAGES
+from govcon.workflow.transitions import (
+    APPROVABLE_PROPOSAL_STATUSES,
+    TERMINAL_PURSUIT_STAGES,
+)
 
 # Errors a workflow service raises to refuse an action. They become a message
 # for the user; the request's transaction is rolled back.
@@ -187,6 +195,27 @@ def _actor(db: OrmSession, user: User, permission: str) -> User:
         raise PermissionDenied("account is inactive")
     require_permission(actor, permission)
     return actor
+
+
+def _form_text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _form_upload(value: object) -> UploadFile | None:
+    if isinstance(value, UploadFile) and value.filename:
+        return value
+    return None
+
+
+def _column_view(row: Any, kind: str, **extra: Any) -> Any:
+    """Copy column values onto a plain object and add template-only fields."""
+    values: dict[str, Any] = {}
+    for column in row.__class__.__table__.columns:
+        name = column.key
+        if isinstance(name, str):
+            values[name] = getattr(row, name)
+    values.update(extra)
+    return type(kind, (), values)()
 
 
 def _form_int(value: str | None) -> int | None:
@@ -293,7 +322,10 @@ def notification_acknowledge(request: Request, notification_id: int) -> Redirect
         return RedirectResponse("/login", status_code=303)
     try:
         with session_scope() as db:
-            acknowledge(db, notification_id=notification_id, user=db.get(User, user.id))
+            account = db.get(User, user.id)
+            if account is None:
+                raise ValueError("notification not found")
+            acknowledge(db, notification_id=notification_id, user=account)
     except ValueError:
         raise HTTPException(status_code=404, detail="Notification not found")
     return _redirect("/notifications", notice="Acknowledged.")
@@ -689,10 +721,7 @@ def workspace(request: Request, opp_id: int) -> Response:
             comments_raw = list_comments(db, opportunity_id=opp_id)
             user_map = _user_display_map(db)
             tab_ctx["comments"] = [
-                type("C", (), {
-                    **{k: getattr(c, k) for k in c.__class__.__table__.columns.keys()},
-                    "user_display_name": user_map.get(c.user_id, "?"),
-                })()
+                _column_view(c, "C", user_display_name=user_map.get(c.user_id, "?"))
                 for c in comments_raw
             ]
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
@@ -753,7 +782,10 @@ def workspace(request: Request, opp_id: int) -> Response:
             tab_ctx["submission"] = sub
             tab_ctx["can_approve"] = user.role in ("owner", "approver")
             if sub is not None:
-                from govcon.submissions.checklist import generate_final_checklist, generate_step_by_step_instructions
+                from govcon.submissions.checklist import (
+                    generate_final_checklist,
+                    generate_step_by_step_instructions,
+                )
 
                 tab_ctx["submission_checklist"] = generate_final_checklist(db, opportunity_id=opp_id)
                 tab_ctx["submission_instructions"] = generate_step_by_step_instructions(db, opportunity_id=opp_id)
@@ -765,10 +797,10 @@ def workspace(request: Request, opp_id: int) -> Response:
             ).scalars().all()
             user_map = _user_display_map(db)
             tab_ctx["audit_events"] = [
-                type("E", (), {
-                    **{k: getattr(e, k) for k in e.__class__.__table__.columns.keys()},
-                    "user_display_name": user_map.get(e.user_id, "system") if e.user_id else "system",
-                })()
+                _column_view(
+                    e, "E",
+                    user_display_name=user_map.get(e.user_id, "system") if e.user_id else "system",
+                )
                 for e in evts
             ]
 
@@ -824,13 +856,7 @@ def _get_assignments_with_names(db: OrmSession, opp_id: int) -> list[Any]:
         .join(User, ReviewAssignment.user_id == User.id)
         .where(ReviewAssignment.opportunity_id == opp_id)
     ).all()
-    return [
-        type("A", (), {
-            **{k: getattr(a, k) for k in a.__class__.__table__.columns.keys()},
-            "user_display_name": u.display_name,
-        })()
-        for a, u in rows
-    ]
+    return [_column_view(a, "A", user_display_name=u.display_name) for a, u in rows]
 
 
 def _user_display_map(db: OrmSession) -> dict[int, str]:
@@ -1315,7 +1341,7 @@ def pipeline(request: Request) -> Response:
         # Build a map: opp_id -> pursuit stage (or "ingested" for no pursuit)
         pursuits = db.execute(select(Pursuit, Opportunity).join(Opportunity, Pursuit.opportunity_id == Opportunity.id)).all()
         # Also include recently-matched opps with no pursuit
-        matched_opp_ids = set(p.opportunity_id for p, _ in pursuits)
+        matched_opp_ids = {p.opportunity_id for p, _ in pursuits}
         new_matches = db.execute(
             select(Match, Opportunity)
             .join(Opportunity, Match.opportunity_id == Opportunity.id)
@@ -1482,7 +1508,9 @@ def _parse_watchlist_fields(form: Any) -> tuple[dict[str, Any], dict[str, str]]:
             return None
         return value
 
-    parsed = {
+    minimum = parse_money("min_value")
+    maximum = parse_money("max_value")
+    parsed: dict[str, Any] = {
         "psc_codes": parse_list("psc_codes"),
         "naics_codes": parse_list("naics_codes"),
         "keywords": parse_list("keywords"),
@@ -1490,13 +1518,11 @@ def _parse_watchlist_fields(form: Any) -> tuple[dict[str, Any], dict[str, str]]:
         "nsn_list": parse_list("nsn_list"),
         "set_asides": parse_list("set_asides"),
         "sources": parse_list("sources"),
-        "min_value": parse_money("min_value"),
-        "max_value": parse_money("max_value"),
+        "min_value": minimum,
+        "max_value": maximum,
         "min_deadline_days": parse_days("min_deadline_days"),
         "notes": _watchlist_text(form, "notes") or None,
     }
-    minimum = parsed["min_value"]
-    maximum = parsed["max_value"]
     if minimum is not None and maximum is not None and minimum > maximum:
         errors["max_value"] = "Maximum value must be greater than or equal to the minimum."
     return parsed, errors
@@ -1891,10 +1917,10 @@ async def admin_invite_post(request: Request) -> Response:
         return RedirectResponse("/ops", status_code=303)
 
     form = await request.form()
-    email = (form.get("email") or "").strip()
-    display_name = (form.get("display_name") or "").strip()
-    password = (form.get("password") or "")
-    role = (form.get("role") or "reviewer").strip()
+    email = _form_text(form.get("email")).strip()
+    display_name = _form_text(form.get("display_name")).strip()
+    password = _form_text(form.get("password"))
+    role = (_form_text(form.get("role")) or "reviewer").strip()
 
     def _invite() -> HTMLResponse:  # password hashing and database work stay off the event loop
         try:
@@ -2043,15 +2069,15 @@ def _sourcing_context(db: OrmSession, opp_id: int) -> dict[str, Any]:
     from govcon.sourcing.records import is_current
 
     quotes = []
-    for quote, supplier in db.execute(
+    for quote_row, supplier in db.execute(
         select(SupplierQuote, Supplier).join(Supplier, Supplier.id == SupplierQuote.supplier_id)
         .where(SupplierQuote.opportunity_id == opp_id).order_by(SupplierQuote.id.desc())
     ):
         quotes.append({
-            "supplier": supplier.name, "total_price": quote.total_price, "valid_until": quote.valid_until,
-            "lines": db.scalar(select(func.count()).select_from(SupplierQuoteLine).where(SupplierQuoteLine.quote_id == quote.id)),
-            "method": quote.extraction_method, "filename": quote.source_filename, "current": is_current(quote),
-            "notes": quote.notes,
+            "supplier": supplier.name, "total_price": quote_row.total_price, "valid_until": quote_row.valid_until,
+            "lines": db.scalar(select(func.count()).select_from(SupplierQuoteLine).where(SupplierQuoteLine.quote_id == quote_row.id)),
+            "method": quote_row.extraction_method, "filename": quote_row.source_filename, "current": is_current(quote_row),
+            "notes": quote_row.notes,
         })
     quote_tasks = db.scalars(
         select(Task).where(Task.opportunity_id == opp_id, Task.task_type == "quote_extraction",
@@ -2074,8 +2100,8 @@ async def workspace_add_quote(request: Request, opp_id: int) -> Response:
         return RedirectResponse("/login", status_code=303)
     target = f"/workspace/{opp_id}?tab=products"
     form = await request.form()
-    upload = form.get("quote_file")
-    data = await upload.read() if upload is not None and getattr(upload, "filename", "") else b""
+    upload = _form_upload(form.get("quote_file"))
+    data = await upload.read() if upload is not None else b""
     # File storage (fsync), spreadsheet parsing and database work run in the thread pool.
     return await run_in_threadpool(_add_quote_sync, user, opp_id, target, form, upload, data)
 
@@ -2204,8 +2230,8 @@ async def suppliers_save(request: Request) -> Response:
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
     form = await request.form()
-    upload = form.get("catalog_file")
-    data = await upload.read() if upload is not None and getattr(upload, "filename", "") else b""
+    upload = _form_upload(form.get("catalog_file"))
+    data = await upload.read() if upload is not None else b""
     # Catalog parsing and database work run in the thread pool.
     return await run_in_threadpool(_suppliers_save_sync, user, form, upload, data)
 

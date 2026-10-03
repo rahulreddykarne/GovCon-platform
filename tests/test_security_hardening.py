@@ -16,7 +16,6 @@ Acceptance criteria (§24):
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -29,7 +28,7 @@ from govcon.ai.gateway import (
     authorize_external_call,
     external_call_allowed,
 )
-from govcon.audit import record_audit, scrub
+from govcon.audit import scrub
 from govcon.config import Settings
 from govcon.logging import configure_logging, redact
 from govcon.security.classification import DataClassification, classify
@@ -288,9 +287,8 @@ class TestAIGatewayBlocksDisallowedContent:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         settings = Settings()
-        with caplog.at_level(logging.INFO, logger="govcon.ai.gateway"):
-            with pytest.raises(AIGatewayBlocked):
-                authorize_external_call(
+        with caplog.at_level(logging.INFO, logger="govcon.ai.gateway"), pytest.raises(AIGatewayBlocked):
+            authorize_external_call(
                     classification=DataClassification.CUI,
                     provider="deepseek",
                     model="deepseek-flash",
@@ -424,12 +422,13 @@ class TestRepositoryContainsNoLiveCredentials:
             result = subprocess.run(
                 ["git", "ls-files"],
                 cwd=_REPO_ROOT,
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=10,
             )
             tracked = [_REPO_ROOT / p.strip() for p in result.stdout.splitlines() if p.strip()]
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             tracked = list(_REPO_ROOT.rglob("*"))
 
         files: list[Path] = []
@@ -458,7 +457,7 @@ class TestRepositoryContainsNoLiveCredentials:
                     line_end = content.find("\n", match.end())
                     line = content[line_start : line_end if line_end != -1 else None]
                     stripped = line.lstrip()
-                    if stripped.startswith("#") or stripped.startswith("//"):
+                    if stripped.startswith(("#", "//")):
                         continue
                     # Allow .example files that show placeholder syntax
                     if path.name.endswith(".example") or path.name.endswith(".env.example"):

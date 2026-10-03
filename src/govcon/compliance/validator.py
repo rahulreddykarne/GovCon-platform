@@ -38,6 +38,7 @@ from govcon.compliance.matrix import (
     upsert_open_finding,
 )
 from govcon.compliance.records import RESOLVED_STATUSES
+from govcon.compliance.schemas import ComplianceValidationV1, parse_model
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement, RequirementEvidence
 from govcon.security.classification import DataClassification
@@ -111,8 +112,10 @@ def _ai_validate(
     except StructuredCallError as exc:
         warnings.append({"code": f"{label}_{exc.reason}", "severity": "medium", "message": f"{label} unavailable: {exc.detail}"})
         return {}
+    output = parse_model(result.output, ComplianceValidationV1)
+    analysis = result.analysis
     out: dict[int, dict[str, Any]] = {}
-    for item in result.output.validations:
+    for item in output.validations:
         if item.requirement_id not in by_id:
             warnings.append({"code": f"{label}_unknown_requirement", "severity": "low", "message": f"ignored validation for unknown requirement {item.requirement_id}"})
             continue
@@ -121,9 +124,9 @@ def _ai_validate(
             "reason": item.reason,
             "confidence": item.confidence,
             "evidence_ids": [ref.evidence_id for ref in item.evidence_refs if ref.evidence_id is not None],
-            "analysis_id": result.analysis.id,
-            "provider": result.analysis.provider,
-            "model": result.analysis.model,
+            "analysis_id": analysis.id if analysis is not None else None,
+            "provider": analysis.provider if analysis is not None else None,
+            "model": analysis.model if analysis is not None else None,
         }
     return out
 
@@ -267,22 +270,22 @@ def run_jev_routing(
     routed_review: list[int] = []
     for item in execution.result.get("requirement_decisions", []):
         rid = item.get("requirement_id")
-        req = by_id.get(rid) if isinstance(rid, int) else None
-        if req is None:
+        matched = by_id.get(rid) if isinstance(rid, int) else None
+        if matched is None:
             continue
-        validation = dict(req.validation or {})
-        if item.get("blocks_submission") and req.status not in RESOLVED_STATUSES:
+        validation = dict(matched.validation or {})
+        if item.get("blocks_submission") and matched.status not in RESOLVED_STATUSES:
             validation["jev_blocks_submission"] = True
-            req.blocks_submission = True
-            added_blocks.append(req.id)
+            matched.blocks_submission = True
+            added_blocks.append(matched.id)
         if item.get("human_interpretation_required"):
             validation["jev_human_interpretation"] = True
-            if req.status == "satisfied" and not validation.get("override"):
-                req.status = "needs_review"
-                req.status_reason = "decision layer requires human interpretation"
-                req.version = (req.version or 1) + 1
-                routed_review.append(req.id)
-        req.validation = validation
+            if matched.status == "satisfied" and not validation.get("override"):
+                matched.status = "needs_review"
+                matched.status_reason = "decision layer requires human interpretation"
+                matched.version = (matched.version or 1) + 1
+                routed_review.append(matched.id)
+        matched.validation = validation
     for req in requirements:
         if req.blocks_submission != prior_blocks[req.id]:
             req.version = (req.version or 1) + 1

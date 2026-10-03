@@ -12,27 +12,37 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from govcon.compliance.matrix import close_undetected_findings, record_run, upsert_open_finding
+from govcon.compliance.matrix import (
+    close_undetected_findings,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory, InventoryWarning, SourceDocument
-from govcon.models import ComplianceRun, FilePage, Opportunity, OpportunityEvent, OpportunitySnapshot, StoredFile
+from govcon.models import (
+    ComplianceRun,
+    FilePage,
+    Opportunity,
+    OpportunityEvent,
+    StoredFile,
+)
 
 INVENTORY_VERSION = "document_inventory.v1"
 
-_AMENDMENT = re.compile(r"\b(?:amendment|amd|mod(?:ification)?)\s*(?:no\.?|number|#)?\s*0*(\d{1,4})\b|\bA0*(\d{1,4})\b(?=[._ -]|$)", re.I)
-_SF30 = re.compile(r"\bSF[- ]?30\b|amendment of solicitation", re.I)
-_QA = re.compile(r"questions?\s*(?:and|&|/)\s*answers?|\bQ\s*&\s*A\b|\bQ&A\b|\bQandA\b", re.I)
-_PRICING = re.compile(r"pric(e|ing)\s*(schedule|sheet|list|workbook)|bid\s*schedule|price\b", re.I)
-_FORM = re.compile(r"\b(SF|DD|OF)[- _]?\d{2,4}\b|\bform\b", re.I)
-_SOW = re.compile(r"statement\s+of\s+work|performance\s+work\s+statement|\bSOW\b|\bPWS\b|statement\s+of\s+objectives|\bSOO\b", re.I)
-_DRAWING = re.compile(r"\bdrawings?\b|\bdwg\b|specification|\bspecs?\b|purchase\s+description", re.I)
-_SOLICITATION = re.compile(r"solicitation|\bRFQ\b|\bRFP\b|\bIFB\b|request\s+for\s+(quot|propos)|combined\s+synopsis", re.I)
-_ATTACHMENT_REF = re.compile(r"\b(attachment|exhibit|enclosure|appendix)\s+([A-Z]?-?\d{1,3}|[A-Z])\b", re.I)
+_AMENDMENT = re.compile(r"\b(?:amendment|amd|mod(?:ification)?)\s*(?:no\.?|number|#)?\s*0*(\d{1,4})\b|\bA0*(\d{1,4})\b(?=[._ -]|$)", re.IGNORECASE)
+_SF30 = re.compile(r"\bSF[- ]?30\b|amendment of solicitation", re.IGNORECASE)
+_QA = re.compile(r"questions?\s*(?:and|&|/)\s*answers?|\bQ\s*&\s*A\b|\bQ&A\b|\bQandA\b", re.IGNORECASE)
+_PRICING = re.compile(r"pric(e|ing)\s*(schedule|sheet|list|workbook)|bid\s*schedule|price\b", re.IGNORECASE)
+_FORM = re.compile(r"\b(SF|DD|OF)[- _]?\d{2,4}\b|\bform\b", re.IGNORECASE)
+_SOW = re.compile(r"statement\s+of\s+work|performance\s+work\s+statement|\bSOW\b|\bPWS\b|statement\s+of\s+objectives|\bSOO\b", re.IGNORECASE)
+_DRAWING = re.compile(r"\bdrawings?\b|\bdwg\b|specification|\bspecs?\b|purchase\s+description", re.IGNORECASE)
+_SOLICITATION = re.compile(r"solicitation|\bRFQ\b|\bRFP\b|\bIFB\b|request\s+for\s+(quot|propos)|combined\s+synopsis", re.IGNORECASE)
+_ATTACHMENT_REF = re.compile(r"\b(attachment|exhibit|enclosure|appendix)\s+([A-Z]?-?\d{1,3}|[A-Z])\b", re.IGNORECASE)
 _DATE = re.compile(
     r"\b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})\b"
 )
@@ -48,7 +58,7 @@ def classify_document(filename: str | None, text: str | None, mime_type: str | N
     header = (text or "")[:1500]
     for source in (name, header):
         match = _AMENDMENT.search(source)
-        if (match and re.search(r"amend|amd|\bA\d", source, re.I)) or _SF30.search(source):
+        if (match and re.search(r"amend|amd|\bA\d", source, re.IGNORECASE)) or _SF30.search(source):
             number = None
             if match:
                 number = int(match.group(1) or match.group(2))
@@ -78,7 +88,7 @@ def _document_date(text: str | None) -> date | None:
     raw = match.group(1)
     for fmt in ("%B %d, %Y", "%Y-%m-%d", "%m/%d/%Y"):
         try:
-            return datetime.strptime(raw, fmt).date()
+            return datetime.strptime(raw, fmt).replace(tzinfo=UTC).date()
         except ValueError:
             continue
     return None
@@ -110,9 +120,9 @@ def document_from_file(
     files extracted before pages were stored are re-read from their bytes.
     ``latest_snapshot_id`` is accepted for backward compatibility and unused.
     """
+    from govcon.config import get_settings
     from govcon.enrich.extract import extract_pdf_pages, extract_text
     from govcon.enrich.storage import get_store
-    from govcon.config import get_settings
 
     text = row.extracted_text
     page_texts: list[str] | None = None

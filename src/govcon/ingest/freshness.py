@@ -50,7 +50,7 @@ def parse_datetime(value: Any) -> datetime | None:
     if not text:
         return None
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text)
     except ValueError:
         parsed_date = parse_date(text)
         if parsed_date is None:
@@ -153,9 +153,7 @@ def response_is_older(
     elif stored_source is not None and incoming_source_updated_at is None:
         return True
     stored_fetched = getattr(row, "fetched_at", None)
-    if stored_fetched is not None and _as_utc(incoming_fetched_at) < _as_utc(stored_fetched):
-        return True
-    return False
+    return bool(stored_fetched is not None and _as_utc(incoming_fetched_at) < _as_utc(stored_fetched))
 
 
 def release_stale_attempt(row: Any, attempt_id: str) -> None:

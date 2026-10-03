@@ -17,19 +17,17 @@ These tests use the real Postgres DB via the upgraded_engine fixture.
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from web_client import CsrfTestClient as TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from web_client import CsrfTestClient as TestClient
 
 from govcon.models import (
     Match,
     Opportunity,
-    ReviewAssignment,
     ReviewComment,
     ReviewSession,
     User,
@@ -38,7 +36,6 @@ from govcon.models import (
 )
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +61,7 @@ def client(upgraded_engine):
 
 def _make_user(session: Session, email: str, role: str = "reviewer") -> tuple[User, str]:
     """Create a user and return (user, raw_token)."""
-    from govcon.collaboration.users import hash_password, create_session
+    from govcon.collaboration.users import create_session, hash_password
     existing = session.scalar(select(User).where(User.email == email))
     if existing:
         # clean old sessions
@@ -210,7 +207,7 @@ class TestAuthentication:
         assert b"Invalid" in resp.content
 
     def test_valid_login_sets_cookie(self, client, db_session):
-        user, _ = _make_user(db_session, "web_login_test@example.com", "reviewer")
+        _user, _ = _make_user(db_session, "web_login_test@example.com", "reviewer")
         resp = client.post("/login", data={"email": "web_login_test@example.com", "password": "TestPassword123!"})
         assert resp.status_code == 303
         assert "govcon_session" in resp.cookies
@@ -349,8 +346,8 @@ class TestConcurrentAccess:
     Neither user silently overwrites the other's work."""
 
     def test_two_users_open_same_workspace(self, client, db_session):
-        user1, token1 = _make_user(db_session, "concurrent_u1@example.com", "reviewer")
-        user2, token2 = _make_user(db_session, "concurrent_u2@example.com", "reviewer")
+        _user1, token1 = _make_user(db_session, "concurrent_u1@example.com", "reviewer")
+        _user2, token2 = _make_user(db_session, "concurrent_u2@example.com", "reviewer")
         opp = _make_opp(db_session)
 
         resp1 = client.get(f"/workspace/{opp.id}?tab=overview", cookies={"govcon_session": token1})
@@ -382,7 +379,7 @@ class TestApprovalPermissions:
     """AC: Approval permissions are enforced. Reviewer cannot approve."""
 
     def test_reviewer_cannot_approve(self, client, db_session):
-        reviewer, token = _make_user(db_session, "perm_reviewer@example.com", "reviewer")
+        _reviewer, token = _make_user(db_session, "perm_reviewer@example.com", "reviewer")
         opp = _make_opp(db_session)
         # Ensure review session exists at approval_pending
         rs = db_session.scalar(select(ReviewSession).where(ReviewSession.opportunity_id == opp.id))
@@ -400,7 +397,7 @@ class TestApprovalPermissions:
         db_session.commit()
 
         # Reviewer tries to approve — should be redirected (not crash, not approve)
-        resp = client.post(
+        client.post(
             f"/workspace/{opp.id}/approve",
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
@@ -440,7 +437,7 @@ class TestApproveToGenerates:
     def _make_opp_for_generate(self, db_session, suffix: str):
         """Return (opp, pursuit, review_session, approver, token).
         Uses a random token to avoid unique constraint violations on re-runs."""
-        from govcon.models import Pursuit, ReviewSession
+        from govcon.models import Pursuit
         uid = secrets.token_hex(6)
         approver, token = _make_user(db_session, f"approve_gen_{suffix}_{uid}@example.com", "approver")
         opp = Opportunity(
@@ -464,7 +461,7 @@ class TestApproveToGenerates:
     def test_approve_to_bid_creates_proposal(self, client, db_session):
         """Approving creates a Proposal row (skip_ai=True path)."""
         from govcon.models import Proposal
-        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A01")
+        opp, _pursuit, rs, _approver, token = self._make_opp_for_generate(db_session, "A01")
 
         resp = client.post(
             f"/workspace/{opp.id}/approve",
@@ -484,7 +481,7 @@ class TestApproveToGenerates:
     def test_approve_to_bid_creates_submission_package(self, client, db_session):
         """Approving creates a Submission row."""
         from govcon.models import Submission
-        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A02")
+        opp, _pursuit, rs, _approver, token = self._make_opp_for_generate(db_session, "A02")
 
         client.post(
             f"/workspace/{opp.id}/approve",
@@ -500,7 +497,7 @@ class TestApproveToGenerates:
 
     def test_proposal_tab_shows_real_state_after_approve(self, client, db_session):
         """Proposal tab renders real content (not forever-generating) after approve."""
-        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A03")
+        opp, _pursuit, rs, _approver, token = self._make_opp_for_generate(db_session, "A03")
 
         client.post(
             f"/workspace/{opp.id}/approve",
@@ -519,7 +516,7 @@ class TestApproveToGenerates:
 
     def test_submission_tab_shows_real_state_after_approve(self, client, db_session):
         """Submission tab renders real package (not locked) after approve."""
-        opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A04")
+        opp, _pursuit, rs, _approver, token = self._make_opp_for_generate(db_session, "A04")
 
         client.post(
             f"/workspace/{opp.id}/approve",
@@ -538,7 +535,7 @@ class TestApproveToGenerates:
 
     def test_full_workflow_approve_then_record_outcome(self, client, db_session, tmp_path):
         """Full workflow: approve_to_bid → proposal final-approve → authorize submission → record won."""
-        from govcon.models import Proposal, Submission, Pursuit
+        from govcon.models import Proposal, Submission
         opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A05")
 
         # Step 1: Approve to bid (auto-generates proposal + submission)
@@ -624,7 +621,7 @@ class TestWorkflowGates:
     """C1: every mutating route goes through its service gate."""
 
     def test_read_only_user_cannot_complete_review(self, client, db_session):
-        viewer, token = _make_user(db_session, f"ro_{secrets.token_hex(4)}@example.com", "read_only")
+        _viewer, token = _make_user(db_session, f"ro_{secrets.token_hex(4)}@example.com", "read_only")
         opp = _fresh_opp(db_session, "RO")
         from govcon.collaboration.review_sessions import ensure_review_session
 
@@ -641,7 +638,7 @@ class TestWorkflowGates:
         assert rs.completed_review_count == 0
 
     def test_unassigned_reviewer_cannot_complete_review(self, client, db_session):
-        reviewer, token = _make_user(db_session, f"na_{secrets.token_hex(4)}@example.com", "reviewer")
+        _reviewer, token = _make_user(db_session, f"na_{secrets.token_hex(4)}@example.com", "reviewer")
         opp = _fresh_opp(db_session, "NA")
         from govcon.collaboration.review_sessions import ensure_review_session
 
@@ -679,7 +676,7 @@ class TestWorkflowGates:
         assert rs.status not in {"approval_pending", "review_complete", "approved_to_bid"}
 
     def test_approval_with_unmet_quorum_is_refused(self, client, db_session):
-        approver, token = _make_user(db_session, f"uq_{secrets.token_hex(4)}@example.com", "approver")
+        _approver, token = _make_user(db_session, f"uq_{secrets.token_hex(4)}@example.com", "approver")
         opp = _fresh_opp(db_session, "UQ")
         from govcon.collaboration.review_sessions import ensure_review_session
 
@@ -696,7 +693,7 @@ class TestWorkflowGates:
         assert rs.final_approval_status is None
 
     def test_stale_version_is_refused(self, client, db_session):
-        approver, token = _make_user(db_session, f"sv_{secrets.token_hex(4)}@example.com", "approver")
+        _approver, token = _make_user(db_session, f"sv_{secrets.token_hex(4)}@example.com", "approver")
         opp = _fresh_opp(db_session, "SV")
         _complete_review(db_session, opp.id, "sv")
         rs = _review_session(db_session, opp.id)
@@ -732,7 +729,7 @@ class TestWorkflowGates:
     def test_submission_cannot_be_recorded_without_final_approval(self, client, db_session):
         from govcon.models import Pursuit, Submission
 
-        approver, token = _make_user(db_session, f"sb_{secrets.token_hex(4)}@example.com", "approver")
+        _approver, token = _make_user(db_session, f"sb_{secrets.token_hex(4)}@example.com", "approver")
         opp = _fresh_opp(db_session, "SB")
         db_session.add(Pursuit(opportunity_id=opp.id, stage="evaluating"))
         db_session.commit()
@@ -759,7 +756,7 @@ class TestWorkflowGates:
     def test_read_only_user_cannot_record_outcome_or_triage(self, client, db_session):
         from govcon.models import OutcomeFeedback
 
-        viewer, token = _make_user(db_session, f"rv_{secrets.token_hex(4)}@example.com", "read_only")
+        _viewer, token = _make_user(db_session, f"rv_{secrets.token_hex(4)}@example.com", "read_only")
         opp = _fresh_opp(db_session, "RV")
         resp = client.post(
             f"/workspace/{opp.id}/record-outcome",
@@ -839,22 +836,24 @@ class TestSecurityRequirements:
     """AC: App defaults to localhost only. No secret values in rendered HTML."""
 
     def test_bind_host_defaults_to_loopback(self):
-        from govcon.web.app import bind_host
         from govcon.config import Settings
+        from govcon.web.app import bind_host
         s = Settings(database_url="postgresql+psycopg://x:x@localhost/x")
         assert bind_host(s) == "127.0.0.1"
 
     def test_no_password_hash_in_rendered_page(self, client, db_session):
-        user, token = _make_user(db_session, "security_test@example.com", "read_only")
+        _user, token = _make_user(db_session, "security_test@example.com", "read_only")
         resp = client.get("/ops", cookies={"govcon_session": token})
         assert resp.status_code == 200
         # Password hashes start with $argon2
         assert b"$argon2" not in resp.content
 
     def test_public_bind_requires_explicit_opt_in(self):
-        from govcon.config import Settings
         import pytest
-        with pytest.raises(Exception):
+        from pydantic import ValidationError
+
+        from govcon.config import Settings
+        with pytest.raises(ValidationError):
             Settings(
                 database_url="postgresql+psycopg://x:x@localhost/x",
                 web_bind_host="0.0.0.0",
@@ -885,7 +884,7 @@ class TestRealSourceLinks:
         return opp
 
     def test_detail_page_renders_list_valued_links(self, client, db_session):
-        user, token = _make_user(db_session, "links_viewer@example.com", "read_only")
+        _user, token = _make_user(db_session, "links_viewer@example.com", "read_only")
         opp = self._sam_opp(db_session)
         resp = client.get(f"/opp/{opp.id}", cookies={"govcon_session": token})
         assert resp.status_code == 200
@@ -896,7 +895,7 @@ class TestRealSourceLinks:
             assert opp.links["ui"] in body  # the Source button uses the real notice link
 
     def test_workspace_renders_source_button(self, client, db_session):
-        user, token = _make_user(db_session, "links_viewer2@example.com", "read_only")
+        _user, token = _make_user(db_session, "links_viewer2@example.com", "read_only")
         opp = self._sam_opp(db_session)
         resp = client.get(f"/workspace/{opp.id}?tab=overview", cookies={"govcon_session": token})
         assert resp.status_code == 200
@@ -930,7 +929,7 @@ def test_alerted_match_stays_in_inbox_with_marker(client, db_session, tmp_path):
     from govcon.alerts.digest import run_digest
     from govcon.config import Settings
 
-    user, token = _make_user(db_session, f"inbox_alert_{secrets.token_hex(4)}@example.com", "reviewer")
+    _user, token = _make_user(db_session, f"inbox_alert_{secrets.token_hex(4)}@example.com", "reviewer")
     wl = Watchlist(name=f"Inbox alert WL {secrets.token_hex(4)}", enabled=True, psc_codes=["71"])
     db_session.add(wl)
     opp = _fresh_opp(db_session, "ALERT")

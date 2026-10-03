@@ -10,7 +10,6 @@ arbitrary government portals.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import UTC, date, datetime, timedelta
@@ -20,18 +19,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
-from govcon.compliance.matrix import close_undetected_findings, record_run, upsert_open_finding
-from govcon.workflow.invalidation import invalidate_submission_readiness, lock_one, lock_opportunity
-from govcon.compliance.matrix import active_requirements
+from govcon.compliance.matrix import (
+    active_requirements,
+    close_undetected_findings,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.config import Settings, get_settings
 from govcon.models import (
     Opportunity,
     Proposal,
-    ProposalVersion,
     Pursuit,
     Requirement,
     Submission,
     User,
+)
+from govcon.workflow.invalidation import (
+    invalidate_submission_readiness,
+    lock_one,
+    lock_opportunity,
 )
 
 logger = logging.getLogger("govcon.submissions.service")
@@ -64,7 +70,7 @@ def _parse_date(value: str | None) -> date | None:
     for candidate in (" ".join(words[:3]), words[0]):
         for fmt in _DATE_FORMATS:
             try:
-                return datetime.strptime(candidate, fmt).date()
+                return datetime.strptime(candidate, fmt).replace(tzinfo=UTC).date()
             except ValueError:
                 continue
     return None
@@ -210,8 +216,9 @@ def generate_submission_package(
         finding = upsert_open_finding(session, opportunity_id=opportunity_id, finding_type="submission_destination_conflict", severity="critical", description="Conflicting submission destinations or methods require human resolution", detected_by="submission_destination", detector_version="v1", source_refs=info["destination_conflicts"], blocks_submission=True)
         kept.add(finding.id)
     deadline_conflicts = dict(info["deadline_conflicts"])
-    if _deadline_disagrees(opp.response_deadline, info["extracted_deadline_dates"]):
-        deadline_conflicts["opportunity_deadline"] = [opp.response_deadline.isoformat(), *info["extracted_deadline_dates"]]
+    deadline = opp.response_deadline
+    if deadline is not None and _deadline_disagrees(deadline, info["extracted_deadline_dates"]):
+        deadline_conflicts["opportunity_deadline"] = [deadline.isoformat(), *info["extracted_deadline_dates"]]
     if deadline_conflicts:
         finding = upsert_open_finding(
             session,
@@ -339,9 +346,12 @@ def _identify_missing_documents(
     """Identify mandatory documents not yet assembled."""
     missing: list[str] = []
     for req in requirements:
-        if req.requirement_type in {"signature", "amendment_acknowledgment"} and req.mandatory:
-            if req.status not in {"satisfied", "not_applicable"}:
-                missing.append(f"Requirement {req.id}: {req.requirement_text[:80]}")
+        if (
+            req.requirement_type in {"signature", "amendment_acknowledgment"}
+            and req.mandatory
+            and req.status not in {"satisfied", "not_applicable"}
+        ):
+            missing.append(f"Requirement {req.id}: {req.requirement_text[:80]}")
     if not submission.submission_method:
         missing.append("Submission method not determined")
     if not submission.submission_destination and not submission.recipient_email:
@@ -363,11 +373,13 @@ def get_submission_workspace(
     ).first()
     requirements = active_requirements(session, opportunity_id=opportunity_id)
 
-    missing = _identify_missing_documents(
-        session.get(Opportunity, opportunity_id),
-        submission,
-        requirements,
-    ) if submission else ["No submission record — run generate first"]
+    opportunity = session.get(Opportunity, opportunity_id)
+    if submission is None:
+        missing = ["No submission record — run generate first"]
+    elif opportunity is None:
+        missing = ["Opportunity not found"]
+    else:
+        missing = _identify_missing_documents(opportunity, submission, requirements)
 
     return {
         "submission_id": submission.id if submission else None,

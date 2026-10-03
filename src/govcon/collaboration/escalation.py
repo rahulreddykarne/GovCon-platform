@@ -22,7 +22,13 @@ from sqlalchemy.orm import Session
 
 from govcon.collaboration.notifications import notify
 from govcon.config import Settings, get_settings
-from govcon.models import Notification, Opportunity, ReviewAssignment, ReviewSession, User
+from govcon.models import (
+    Notification,
+    Opportunity,
+    ReviewAssignment,
+    ReviewSession,
+    User,
+)
 
 OPEN_ASSIGNMENTS = ("assigned", "in_progress", "reopened")
 DECIDED_REVIEWS = ("approved_to_bid", "no_bid")
@@ -86,7 +92,10 @@ def run_review_escalations(session: Session, *, settings: Settings | None = None
         )
         if recent is not None:
             continue
-        hours_left = int((opportunity.response_deadline - now).total_seconds() // 3600)
+        deadline = opportunity.response_deadline
+        if deadline is None:
+            continue
+        hours_left = int((deadline - now).total_seconds() // 3600)
         for user_id in approvers:
             notify(session, user_id=user_id, notification_type="deadline_escalation", opportunity_id=opportunity.id,
                    payload={"title": opportunity.title, "hours_left": hours_left, "review_status": review.status},

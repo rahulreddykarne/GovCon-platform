@@ -15,7 +15,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from govcon.models import PromptRegistryEntry
-from govcon.prompting.loader import PromptAsset, iter_markdown_prompts, load_markdown_prompt
+from govcon.prompting.loader import (
+    PromptAsset,
+    iter_markdown_prompts,
+    load_markdown_prompt,
+)
 
 logger = logging.getLogger("govcon.prompting.registry")
 

@@ -92,7 +92,7 @@ def refresh_recommendations(session: Session, provider, *, limit: int = 20, now:
     seen: set[int] = set()
     try:
         model_version = provider.model_version
-    except Exception:  # a provider that cannot report its version still persists results
+    except Exception:  # a provider that cannot report its version still persists results  # noqa: BLE001  boundary must record any failure
         model_version = None
     for watchlist in list_watchlists(session, include_disabled=False):
         stats.watchlists += 1

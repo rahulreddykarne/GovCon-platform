@@ -19,9 +19,10 @@ row via the existing bookkeeping layer.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -105,9 +106,10 @@ def _chain_lock_key(chain_name: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def run_chain(chain_name: str, settings, *, trigger: str = "manual") -> "ChainResult":
+def run_chain(chain_name: str, settings, *, trigger: str = "manual") -> ChainResult:
     """Serialize each chain across workers; crashes automatically release locks."""
     from sqlalchemy import text
+
     from govcon.db import make_engine, session_scope
     from govcon.models import SchedulerJobRun
 
@@ -128,7 +130,7 @@ def run_chain(chain_name: str, settings, *, trigger: str = "manual") -> "ChainRe
                     related = [name for name in CHAIN_DEFINITIONS if _chain_lock_key(name) == lock_key]
                     for row in db.scalars(select(SchedulerJobRun).where(SchedulerJobRun.status == "running", SchedulerJobRun.chain_name.in_(related))):
                         row.status = "failed"
-                        row.finished_at = datetime.now(timezone.utc)
+                        row.finished_at = datetime.now(UTC)
                         row.error = "worker stopped before completion; recovered after advisory lock release"
                 return _run_chain_locked(chain_name, settings, trigger=trigger, lock_connection=lock_connection)
             finally:
@@ -141,7 +143,7 @@ def run_chain(chain_name: str, settings, *, trigger: str = "manual") -> "ChainRe
         engine.dispose()
 
 
-def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connection) -> "ChainResult":
+def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connection) -> ChainResult:
     """Execute a named chain and persist the result.
 
     Each step runs in its own ``session_scope`` so that a step failure or a
@@ -156,7 +158,7 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
     if chain_def is None:
         raise ValueError(f"Unknown chain: {chain_name!r}. Available: {list(CHAIN_DEFINITIONS)}")
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     steps_completed: list[str] = []
     step_results: list[StepResult] = []
     failed_step: str | None = None
@@ -196,7 +198,7 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
         try:
             lock_connection.execute(text("SELECT 1"))
             lock_connection.commit()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  boundary must record any failure
             failed_step = step_name
             chain_error = f"chain lock connection was lost: {exc}"
             break
@@ -243,7 +245,7 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
         logger.info("chain=%s step=%s %s", chain_name, step_name, result.status)
         steps_completed.append(step_name)
 
-    finished_at = datetime.now(timezone.utc)
+    finished_at = datetime.now(UTC)
     if failed_step is not None:
         status = "failed"
     elif soft_errors:
@@ -257,17 +259,19 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
     try:
         with session_scope(settings) as db:
             from sqlalchemy import select as sa_select
-            job_run = db.scalars(
+            recorded = db.scalars(
                 sa_select(SchedulerJobRun).where(SchedulerJobRun.id == run_id)
             ).first()
-            if job_run is not None:
-                job_run.finished_at = finished_at
-                job_run.status = status
-                job_run.steps_completed = steps_completed
-                job_run.failed_step = failed_step
-                job_run.error = chain_error
-                job_run.row_counts = row_counts
-    except Exception as exc:
+            if recorded is not None:
+                recorded.finished_at = finished_at
+                recorded.status = status
+                # JSONB column is annotated as a dict; the stored value is the step-name list.
+                stored_steps: Any = steps_completed
+                recorded.steps_completed = stored_steps
+                recorded.failed_step = failed_step
+                recorded.error = chain_error
+                recorded.row_counts = row_counts
+    except Exception:
         logger.exception("chain=%s: failed to update job_run id=%s", chain_name, run_id)
 
     return ChainResult(

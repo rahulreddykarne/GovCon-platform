@@ -46,9 +46,11 @@ def database_url():
         yield configured
         return
     from uuid import uuid4
+
     import psycopg
     from psycopg import sql
     from sqlalchemy.engine import make_url
+
     from govcon.db import dispose_engines
     url = make_url(configured)
     name = "govcon_test_" + uuid4().hex
@@ -80,7 +82,6 @@ def upgraded_engine(database_url: str):
 
     get_settings.cache_clear()
     from alembic import command
-
     from govcon.cli import alembic_config
 
     command.upgrade(alembic_config(), "head")

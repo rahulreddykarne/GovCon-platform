@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from govcon.models import Task
+
 
 class TaskBlocked(Exception):
     """The task cannot continue until a person acts or budget is available."""
@@ -53,6 +55,17 @@ class TaskFailedPermanently(Exception):
         self.reason = reason
         self.owner_role = owner_role
         self.next_action = next_action
+
+
+def require_task_opportunity(task: Task) -> int:
+    """Return the opportunity id for a handler that cannot run without one."""
+    opportunity_id = task.opportunity_id
+    if opportunity_id is None:
+        raise TaskFailedPermanently(
+            "task has no opportunity id",
+            next_action="Cancel this task; it cannot run without an opportunity.",
+        )
+    return opportunity_id
 
 
 @dataclass(frozen=True)

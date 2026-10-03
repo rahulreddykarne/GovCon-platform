@@ -18,15 +18,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
+from govcon.ai.structured import run_structured_prompt
 from govcon.compliance.matrix import (
     active_requirements,
     upsert_open_finding,
 )
 from govcon.config import Settings, get_settings
 from govcon.models import (
-    AIAnalysis,
-    ComplianceFinding,
     Proposal,
     ProposalVersion,
 )

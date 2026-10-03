@@ -44,6 +44,27 @@ class SourcingError(ValueError):
     pass
 
 
+def _as_decimal(value: object) -> Decimal | None:
+    """Coerce a quote amount that is already numeric; leave unknowns unset."""
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return Decimal(value)
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return Decimal(text)
+        except InvalidOperation:
+            return None
+    return None
+
+
 def _decimal(value: Any, what: str) -> Decimal | None:
     if value is None or str(value).strip() == "":
         return None
@@ -175,9 +196,10 @@ def parse_quote_table(data: bytes, filename: str) -> list[dict[str, Any]]:
     if name.endswith(".csv"):
         rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
     elif name.endswith(".xlsx"):
+        from zipfile import BadZipFile
+
         from openpyxl import load_workbook
         from openpyxl.utils.exceptions import InvalidFileException
-        from zipfile import BadZipFile
 
         workbook = None
         try:
@@ -232,13 +254,17 @@ def record_quote(session: Session, *, opportunity_id: int, supplier_id: int, act
     lines = lines or []
     total = _decimal(total_price, "total_price")
     if total is None and lines:
-        extended = []
+        prices: list[Decimal] = []
         for line in lines:
             value = line.get("extended_price")
             if value is None and line.get("unit_price") is not None and line.get("quantity") is not None:
                 value = Decimal(str(line["unit_price"])) * Decimal(str(line["quantity"]))
-            extended.append(value)
-        total = sum(extended, Decimal(0)) if all(v is not None for v in extended) else None
+            price = _as_decimal(value)
+            if price is None:
+                break
+            prices.append(price)
+        else:
+            total = sum(prices, Decimal(0))
     validity = _date(valid_until, "valid_until")
     if source and source.get("source_sha256"):
         existing = session.scalar(select(SupplierQuote).where(
@@ -307,15 +333,27 @@ def quote_records(session: Session, opportunity_id: int) -> list[dict[str, Any]]
 
 def lowest_current_total(session: Session, opportunity_id: int) -> SupplierQuote | None:
     opportunity = session.get(Opportunity, opportunity_id)
-    priced = []
+    if opportunity is None:
+        return None
+    best: tuple[Decimal, SupplierQuote] | None = None
     for quote in current_quotes(session, opportunity_id):
-        if quote.total_price is None or opportunity is None:
+        price = quote.total_price
+        if price is None:
             continue
         lines = list(session.scalars(select(SupplierQuoteLine).where(SupplierQuoteLine.quote_id == quote.id)))
         if lines:
-            if opportunity.quantity is None or any(line.quantity is None for line in lines):
+            expected = opportunity.quantity
+            if expected is None:
                 continue
-            if sum((line.quantity for line in lines), Decimal(0)) != opportunity.quantity:
+            quantities: list[Decimal] = []
+            missing_quantity = False
+            for line in lines:
+                quantity = line.quantity
+                if quantity is None:
+                    missing_quantity = True
+                    break
+                quantities.append(quantity)
+            if missing_quantity or sum(quantities, Decimal(0)) != expected:
                 continue
             if not opportunity.unit or any((line.unit or "").strip().upper() != opportunity.unit.strip().upper()
                                            for line in lines):
@@ -325,8 +363,9 @@ def lowest_current_total(session: Session, opportunity_id: int) -> SupplierQuote
                 continue
         elif quote.extraction_method != "manual":
             continue
-        priced.append(quote)
-    return min(priced, key=lambda q: q.total_price, default=None)
+        if best is None or price < best[0]:
+            best = (price, quote)
+    return best[1] if best is not None else None
 
 
 def sourcing_revision(session: Session, opportunity_id: int) -> str:
@@ -352,8 +391,10 @@ def draft_rfq(session: Session, *, opportunity_id: int, supplier_id: int | None,
     lines = [
         f"Dear {supplier.contact_name or supplier.name}," if supplier else "Hello,",
         "",
-        f"We are preparing a quote for {opp.agency_path or 'a federal buyer'}"
-        f"{' solicitation ' + opp.solicitation_number if opp.solicitation_number else ''}: {opp.title}.",
+        (
+            f"We are preparing a quote for {opp.agency_path or 'a federal buyer'}"
+            f"{' solicitation ' + opp.solicitation_number if opp.solicitation_number else ''}: {opp.title}."
+        ),
         "Please quote the following:",
         f"- NSN: {opp.nsn or 'not stated'}",
         f"- Quantity: {opp.quantity if opp.quantity is not None else 'not stated'} {opp.unit or ''}".rstrip(),

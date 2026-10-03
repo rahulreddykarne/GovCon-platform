@@ -146,9 +146,10 @@ def vendor_profile(
             now=now,
         )
     except SamEntityError:
-        vendor = session.get(Vendor, normalized)
-        if vendor is None:
+        cached = session.get(Vendor, normalized)
+        if cached is None:
             raise
+        vendor = cached
         session.refresh(vendor)
         fetched_live = False
     stats = award_stats_for_uei(session, vendor.uei)

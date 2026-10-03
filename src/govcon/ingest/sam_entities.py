@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_attribute
 from tenacity import wait_exponential
 from tenacity.wait import wait_base
 
@@ -121,13 +122,17 @@ def parse_entity_record(record: dict) -> ParsedEntity | None:
     if _opt_out(registration.get("legalBusinessName")):
         return None
 
-    core = record.get("coreData") if isinstance(record.get("coreData"), dict) else {}
-    assertions = record.get("assertions") if isinstance(record.get("assertions"), dict) else {}
-    business_types = core.get("businessTypes") if isinstance(core.get("businessTypes"), dict) else None
+    core_data = record.get("coreData")
+    core = core_data if isinstance(core_data, dict) else {}
+    assertions_data = record.get("assertions")
+    assertions = assertions_data if isinstance(assertions_data, dict) else {}
+    business_data = core.get("businessTypes")
+    business_types = business_data if isinstance(business_data, dict) else None
 
-    naics_codes = _list_of_codes(assertions.get("naicsList"), "naicsCode", "naicsDescription")
+    naics_list = assertions.get("naicsList")
+    naics_codes = _list_of_codes(naics_list, "naicsCode", "naicsDescription")
     if naics_codes is None:
-        naics_codes = _list_of_codes(assertions.get("naicsList"), "naicsCode", "naicsName")
+        naics_codes = _list_of_codes(naics_list, "naicsCode", "naicsName")
     psc_codes = _list_of_codes(assertions.get("pscList"), "pscCode", "pscDescription")
 
     physical = core.get("physicalAddress")
@@ -219,7 +224,7 @@ def ensure_vendor(
     """
     settings = settings or get_settings()
     normalized = normalize_uei(uei)
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     existing = _load_vendor(session, normalized)
     if existing is not None and not refresh and vendor_cache_usable(
         existing, now=now, cache_hours=settings.sam_vendor_cache_hours
@@ -282,9 +287,10 @@ def _store_vendor_record(
     current.registration_status = parsed.registration_status
     current.physical_address = parsed.physical_address
     current.business_types = parsed.business_types
-    current.naics_codes = parsed.naics_codes
-    current.psc_codes = parsed.psc_codes
-    current.points_of_contact = parsed.points_of_contact
+    # JSONB columns are annotated as dict; these SAM fields are JSON arrays (or a POC object).
+    set_attribute(current, "naics_codes", parsed.naics_codes)
+    set_attribute(current, "psc_codes", parsed.psc_codes)
+    set_attribute(current, "points_of_contact", parsed.points_of_contact)
     current.raw = parsed.raw
     commit_freshness(current, now=now, source_updated=updated, expires=expiration_date(parsed.raw), kind="vendor")
     session.flush()

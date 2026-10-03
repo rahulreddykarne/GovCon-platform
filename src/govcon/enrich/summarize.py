@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import select
@@ -25,9 +26,17 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.config import Settings, get_settings
-from govcon.documents.chunking import Gap, SourceChunk, batch_chunks, chunks_for_pages, gaps_for, nbytes, render_batch
+from govcon.documents.chunking import (
+    Gap,
+    SourceChunk,
+    batch_chunks,
+    chunks_for_pages,
+    gaps_for,
+    nbytes,
+    render_batch,
+)
 from govcon.models import AIAnalysis, FilePage, Opportunity, StoredFile
-from govcon.security.classification import DataClassification, strictest_classification
+from govcon.security.classification import strictest_classification
 from govcon.workflow.source_revision import (
     SOURCE_REVISION_KEY,
     current_source_revision,
@@ -180,7 +189,7 @@ def run_solicitation_analysis(
     return analysis
 
 
-def _source_chunks(session: Session, files: list[StoredFile]) -> list[SourceChunk]:
+def _source_chunks(session: Session, files: Sequence[StoredFile]) -> list[SourceChunk]:
     """Cited chunks for every file: stored pages when present, else the whole text."""
     pages: dict[int, list[FilePage]] = {}
     for page in session.scalars(
@@ -279,7 +288,7 @@ def _merged_analysis(calls: list[tuple[Any, Any]], merged: dict[str, Any], manif
     return build_analysis(prepared, executed)
 
 
-def _metadata_block(opp: Opportunity, files: list[StoredFile]) -> str:
+def _metadata_block(opp: Opportunity, files: Sequence[StoredFile]) -> str:
     """Opportunity metadata and the document inventory, sent with every part."""
     meta = {
         "id": opp.id,
@@ -302,7 +311,7 @@ def _metadata_block(opp: Opportunity, files: list[StoredFile]) -> str:
     return "\n".join(lines)
 
 
-def _build_context_manifest(opp: Opportunity, files: list[StoredFile]) -> dict:
+def _build_context_manifest(opp: Opportunity, files: Sequence[StoredFile]) -> dict:
     """Build the context manifest for reproducibility."""
     return {
         "opportunity_id": opp.id,

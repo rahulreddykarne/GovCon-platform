@@ -9,10 +9,10 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from govcon.db import session_scope
-from govcon.mcp.serialize import failure
-from govcon.mcp import operations as ops
 from govcon.collaboration.users import PermissionDenied
+from govcon.db import session_scope
+from govcon.mcp import operations as ops
+from govcon.mcp.serialize import failure
 
 mcp = FastMCP(
     "GovCon",

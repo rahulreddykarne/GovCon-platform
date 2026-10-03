@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
+from govcon.ingest import sam_entities
 from govcon.ingest.freshness import (
     accept_payload,
     cancel_attempt,
@@ -30,7 +31,6 @@ from govcon.ingest.freshness import (
     replace_registration,
     safe_error,
 )
-from govcon.ingest import sam_entities
 from govcon.ingest.sam_entities import SamEntityError
 from govcon.models import CompanyRegistration, User, Vendor
 

@@ -10,6 +10,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from test_web_ui import _complete_review, _make_user
+from web_client import CsrfTestClient
 
 from govcon.db import session_scope
 from govcon.models import (
@@ -28,8 +30,6 @@ from govcon.models import (
 )
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
-from test_web_ui import _complete_review, _make_user
-from web_client import CsrfTestClient
 
 NOW = datetime.now(UTC)
 
@@ -55,7 +55,7 @@ def default_settings(upgraded_engine):
         s.query(AppSetting).delete()
 
 
-def opportunity(db, *, days=30, value=Decimal("250000"), deadline=True):
+def opportunity(db, *, days=30, value=Decimal(250000), deadline=True):
     opp = Opportunity(source="sam", source_id=uuid4().hex, title=f"Rank {uuid4().hex[:6]}", status="open",
                       response_deadline=NOW + timedelta(days=days) if deadline else None,
                       estimated_value_min=value, estimated_value_max=value, raw={}, links={})
@@ -87,7 +87,7 @@ def set_setting(db, key, value):
 
 def test_rank_is_explainable_and_unknown_factors_are_excluded(db):
     from govcon.matching.ranking import WEIGHTS, rank_match
-    opp = opportunity(db, days=30, value=Decimal("1000000"))
+    opp = opportunity(db, days=30, value=Decimal(1000000))
     match = rule_match(db, opp, passing=1, active=2)
     score, factors = rank_match(db, match, opp, now=NOW)
     by_name = {f["name"]: f for f in factors}
@@ -285,7 +285,7 @@ def test_action_required_notifications_can_be_acknowledged(db, client):
     db.expire_all()
     row = db.get(Notification, notification_id)
     assert row.acknowledged_at is not None and row.read_at is not None
-    other, other_token = _make_user(db, f"ack2-{uuid4().hex}@example.test", "reviewer")
+    _other, other_token = _make_user(db, f"ack2-{uuid4().hex}@example.test", "reviewer")
     client.cookies.set("govcon_session", other_token)
     assert client.post(f"/notifications/{notification_id}/acknowledge").status_code == 404
 
@@ -341,7 +341,11 @@ def dual_review(db, days):
     (3, "Owner turned the exception off.", False, False),
 ])
 def test_deadline_exception_allows_one_review_only_when_it_applies(db, monkeypatch, days, reason, enabled, approved):
-    from govcon.collaboration.review_sessions import ReviewWorkflowError, finalize_approval, recalculate_quorum
+    from govcon.collaboration.review_sessions import (
+        ReviewWorkflowError,
+        finalize_approval,
+        recalculate_quorum,
+    )
     from govcon.config import get_settings
     from govcon.models import User
     monkeypatch.setenv("REVIEW_OVERRIDE_ALLOWED", "false")

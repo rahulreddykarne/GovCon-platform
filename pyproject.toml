@@ -39,6 +39,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+    "mypy==2.4.0",
+    "ruff==0.16.10",
+    "types-openpyxl==3.1.5.20260827",
+    "types-reportlab==5.0.0.20260911",
+    "types-setuptools==84.0.0.20260812",
 ]
 
 [project.scripts]
@@ -56,3 +61,15 @@ build_py = "govcon._build.BuildPy"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --tb=short"
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer's documented API is a function call in the default. B008 stays enabled
+# for every other call.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Local stubs for installed packages that have no py.typed marker (see stubs/README.md).
+mypy_path = "stubs"

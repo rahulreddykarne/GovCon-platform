@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
-import math
 import json
+import math
 import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
+from govcon.ai.budget import AIBudgetExceeded, _engine_for_accounting, reserve
 from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
-from govcon.ai.budget import AIBudgetExceeded, reserve
 from govcon.config import Settings, get_settings
 from govcon.decision.bundles import bundle_definition
-from govcon.decision.provider import DecisionProviderInvalidResponse, DecisionProviderUnavailable, ProviderDecision
+from govcon.decision.provider import (
+    DecisionProviderInvalidResponse,
+    DecisionProviderUnavailable,
+    ProviderDecision,
+)
 from govcon.security.classification import DataClassification
 
 DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai"
@@ -52,7 +58,7 @@ class JevDecisionProvider:
         self._session = session
 
     @classmethod
-    def from_settings(cls, settings: Settings | None = None, *, session=None) -> "JevDecisionProvider":
+    def from_settings(cls, settings: Settings | None = None, *, session=None) -> JevDecisionProvider:
         settings = settings or get_settings()
         if not settings.jev_enabled:
             raise DecisionProviderUnavailable("JEV is disabled by JEV_ENABLED=false")
@@ -101,10 +107,7 @@ class JevDecisionProvider:
         recorder = active_recorder()
         if recorder is not None:
             # A recorded run: the request is sent later with no transaction open.
-            engine = None
-            if self._session is not None:
-                bind = self._session.get_bind()
-                engine = getattr(bind, "engine", bind)
+            engine = _engine_for_accounting(self._session.get_bind()) if self._session is not None else None
             response, latency_ms = recorder.call(
                 ("jev", endpoint, self._model, body),
                 lambda: self._post(endpoint, body, headers, bundle_name, budget_opportunity_id,
@@ -133,7 +136,8 @@ class JevDecisionProvider:
             raise DecisionProviderInvalidResponse("JEV response model is not a string")
         normalized = _normalize_answers(questions, answers)
         confidence = _aggregate_confidence(answers)
-        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        raw_usage = data.get("usage")
+        usage = raw_usage if isinstance(raw_usage, dict) else {}
         cost = _parse_cost(usage.get("cost_usd"))
         return ProviderDecision(
             provider=self.name,
@@ -146,7 +150,8 @@ class JevDecisionProvider:
         )
 
     def _post(self, endpoint: str, body: dict[str, Any], headers: dict[str, str], bundle_name: str,
-              budget_opportunity_id: int | None, *, session=None, engine=None) -> tuple[httpx.Response, int]:
+              budget_opportunity_id: int | None, *, session: Session | None = None,
+              engine: Engine | None = None) -> tuple[httpx.Response, int]:
         """Reserve budget and send the request; returns the response and its latency."""
         try:
             reservation = reserve(session, opportunity_id=budget_opportunity_id,

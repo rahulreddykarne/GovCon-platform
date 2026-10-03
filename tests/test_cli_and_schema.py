@@ -9,15 +9,16 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from alembic import command
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 from typer.testing import CliRunner
 
+from alembic import command
 from govcon.audit import record_audit
 from govcon.cli import alembic_config, app
 from govcon.collaboration.notifications import notify
 from govcon.collaboration.users import (
+    PermissionDenied,
     authenticate,
     create_session,
     deactivate_user,
@@ -205,7 +206,7 @@ def test_auth_sessions_roles_and_audit(upgraded_engine) -> None:
         assert user_for_token(session, token_a).id == owner_id
         assert user_for_token(session, token_b).id == reviewer_id
         require_permission(owner, "approve")
-        with pytest.raises(Exception):
+        with pytest.raises(PermissionDenied):
             require_permission(reviewer, "approve")
         assert logout(session, token_a) is True
         session.commit()
@@ -238,7 +239,7 @@ def test_auth_sessions_roles_and_audit(upgraded_engine) -> None:
         )
         notify(session, user_id=owner_id, notification_type="new_reviewer_comment", opportunity_id=opportunity.id)
         review = ReviewSession(opportunity_id=opportunity.id)
-        pursuit = Pursuit(opportunity_id=opportunity.id, sourcing_cost=Decimal("100"), quote_price=Decimal("150"))
+        pursuit = Pursuit(opportunity_id=opportunity.id, sourcing_cost=Decimal(100), quote_price=Decimal(150))
         session.add(review)
         session.add(pursuit)
         session.flush()
@@ -283,7 +284,7 @@ def test_margin_stays_null_when_cost_missing(upgraded_engine) -> None:
         opportunity = Opportunity(source="test", source_id=uuid4().hex, raw={"fixture": True})
         session.add(opportunity)
         session.flush()
-        pursuit = Pursuit(opportunity_id=opportunity.id, quote_price=Decimal("10"))
+        pursuit = Pursuit(opportunity_id=opportunity.id, quote_price=Decimal(10))
         session.add(pursuit)
         session.commit()
         session.refresh(pursuit)

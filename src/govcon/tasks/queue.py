@@ -24,12 +24,12 @@ import hashlib
 import json
 import random
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import select, text
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
@@ -59,7 +59,7 @@ class Claim:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def dedup_key(task_type: str, opportunity_id: int | None, input_revision: dict[str, Any]) -> str:
@@ -111,7 +111,10 @@ def enqueue(
     )
     new_id = session.scalar(stmt)
     if new_id is not None:
-        return session.get(Task, new_id, populate_existing=True), True
+        created = session.get(Task, new_id, populate_existing=True)
+        if created is None:
+            raise RuntimeError(f"queued task {new_id} was not readable")
+        return created, True
     existing = session.scalar(
         select(Task).where(Task.dedup_key == key, Task.status.not_in(TERMINAL_TASK_STATUSES))
     )

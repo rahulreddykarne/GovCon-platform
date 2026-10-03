@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -53,7 +52,11 @@ class StepResult:
 def step_sam_ingest(session: Session, settings) -> StepResult:
     """Pull SAM.gov opportunities for the last 3 UTC days."""
     from govcon.ingest.runs import IngestStats, finish_run, start_run
-    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, pull_sam_opportunities
+    from govcon.ingest.sam_opportunities import (
+        SamApiError,
+        assert_search_window,
+        pull_sam_opportunities,
+    )
     from govcon.logging import redact
 
     run = start_run(session, "sched:sam_ingest")
@@ -66,8 +69,8 @@ def step_sam_ingest(session: Session, settings) -> StepResult:
             finish_run(run, IngestStats(), status="skipped")
             return StepResult(step="sam_ingest", status="skipped", error=error_msg)
 
-        from datetime import date, timedelta
-        today = date.today()
+        from datetime import UTC, datetime, timedelta
+        today = datetime.now(UTC).date()
         window_from = today - timedelta(days=3)
         assert_search_window(window_from, today)
         stats = pull_sam_opportunities(
@@ -90,7 +93,7 @@ def step_sam_ingest(session: Session, settings) -> StepResult:
             unchanged=stats.unchanged,
             error="; ".join(stats.errors) if stats.errors else None,
         )
-    except (SamApiError, ValueError, Exception) as exc:
+    except (SamApiError, ValueError, Exception) as exc:  # noqa: BLE001  boundary must record any failure
         from govcon.ingest.runs import IngestStats
         err = redact(str(exc))
         finish_run(run, IngestStats(errors=[err]), status="failed")
@@ -120,7 +123,7 @@ def step_dibbs_ingest(session: Session, settings) -> StepResult:
             unchanged=stats.unchanged,
             error="; ".join(stats.errors) if stats.errors else None,
         )
-    except (DibbsError, OSError, ValueError, Exception) as exc:
+    except (DibbsError, OSError, ValueError, Exception) as exc:  # noqa: BLE001  boundary must record any failure
         from govcon.ingest.runs import IngestStats
         err = redact(str(exc))
         finish_run(run, IngestStats(errors=[err]), status="failed")
@@ -154,7 +157,7 @@ def step_source_changes(session: Session, settings) -> StepResult:
             error="; ".join(errors) if errors else None,
             extra={"opportunities": summary["opportunities"]},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         err = redact(str(exc))
         finish_run(run, IngestStats(errors=[err]), status="failed")
         logger.error("source_changes failed: %s", err)
@@ -176,7 +179,7 @@ def step_match(session: Session) -> StepResult:
             unchanged=getattr(stats, "unchanged", 0),
             extra={"matched": getattr(stats, "matched", 0)},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("match failed: %s", exc)
         return StepResult(step="match", status="failed", error=str(exc))
 
@@ -200,7 +203,7 @@ def step_alerts(session: Session, settings) -> StepResult:
     except DigestDeliveryError as exc:
         logger.error("alerts failed: %s", exc)
         return StepResult(step="alerts", status="failed", error=str(exc))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("alerts unexpected error: %s", exc)
         return StepResult(step="alerts", status="failed", error=str(exc))
 
@@ -216,7 +219,7 @@ def step_usaspending(session: Session, settings) -> StepResult:
 
     try:
         result = ingest_usaspending_awards(session, settings=settings)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         err = redact(str(exc))
         logger.error("usaspending failed: %s", err)
         return StepResult(step="usaspending", status="failed", error=err)
@@ -236,7 +239,11 @@ def step_usaspending(session: Session, settings) -> StepResult:
 def step_embeddings(session: Session, settings) -> StepResult:
     """Generate embeddings for opportunities that lack them."""
     try:
-        from govcon.enrich.embeddings import build_watchlist_profiles, get_default_provider, run_embedding_job
+        from govcon.enrich.embeddings import (
+            build_watchlist_profiles,
+            get_default_provider,
+            run_embedding_job,
+        )
 
         provider = get_default_provider(settings.embedding_model)
         stats = run_embedding_job(session, provider, only_missing=True)
@@ -248,7 +255,7 @@ def step_embeddings(session: Session, settings) -> StepResult:
             unchanged=stats.get("skipped", 0),
             extra={"watchlists_updated": wl_stats.get("updated", 0)},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("embeddings failed: %s", exc)
         return StepResult(step="embeddings", status="failed", error=str(exc))
 
@@ -273,7 +280,7 @@ def step_semantic_match(session: Session, settings) -> StepResult:
             extra={"watchlists_processed": stats.watchlists, "deactivated": stats.deactivated,
                    "seconds": stats.seconds},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("semantic_match failed: %s", exc)
         return StepResult(step="semantic_match", status="failed", error=str(exc))
 
@@ -285,7 +292,7 @@ def step_rank(session: Session) -> StepResult:
 
         ranked = rank_active_matches(session)
         return StepResult(step="rank", status="succeeded", updated=ranked)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("rank failed: %s", exc)
         return StepResult(step="rank", status="failed", error=str(exc))
 
@@ -304,7 +311,7 @@ def step_auto_pursue(session: Session) -> StepResult:
                    "needs_eligibility_decision": len(result.needs_eligibility_decision),
                    "skipped_daily_cap": result.skipped_daily_cap},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("auto_pursue failed: %s", exc)
         return StepResult(step="auto_pursue", status="failed", error=str(exc))
 
@@ -328,7 +335,7 @@ def step_company_registration(session: Session, settings) -> StepResult:
         if result.status == "discarded":
             return StepResult(step="company_registration", status="skipped", extra=extra)
         return StepResult(step="company_registration", status="succeeded", updated=1, extra=extra)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("company_registration failed: %s", exc)
         return StepResult(step="company_registration", status="failed", error=str(exc))
 
@@ -342,7 +349,7 @@ def step_review_escalations(session: Session, settings) -> StepResult:
         return StepResult(step="review_escalations", status="succeeded",
                           inserted=counts.reminders + counts.overdue + counts.deadline,
                           extra={"reminders": counts.reminders, "overdue": counts.overdue, "deadline": counts.deadline})
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("review_escalations failed: %s", exc)
         return StepResult(step="review_escalations", status="failed", error=str(exc))
 
@@ -366,7 +373,7 @@ def step_midday_deadline_check(session: Session, settings) -> StepResult:
             updated=stats.updated,
             extra={"archived": archived, "closed": closed.updated},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         from govcon.ingest.runs import IngestStats
         err = str(exc)
         finish_run(run, IngestStats(errors=[err]), status="failed")
@@ -393,7 +400,7 @@ def step_archive_sweep(session: Session) -> StepResult:
             updated=stats.updated,
             extra={"archived": archived, "closed": closed.updated},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         from govcon.ingest.runs import IngestStats
         err = str(exc)
         finish_run(run, IngestStats(errors=[err]), status="failed")
@@ -404,7 +411,10 @@ def step_archive_sweep(session: Session) -> StepResult:
 def step_cache_refresh(session: Session, settings) -> StepResult:
     """Refresh watchlist profile embeddings (cache refresh)."""
     try:
-        from govcon.enrich.embeddings import build_watchlist_profiles, get_default_provider
+        from govcon.enrich.embeddings import (
+            build_watchlist_profiles,
+            get_default_provider,
+        )
 
         provider = get_default_provider(settings.embedding_model)
         stats = build_watchlist_profiles(session, provider)
@@ -413,7 +423,7 @@ def step_cache_refresh(session: Session, settings) -> StepResult:
             status="succeeded",
             extra={"watchlists_updated": stats.get("updated", 0)},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("cache_refresh failed: %s", exc)
         return StepResult(step="cache_refresh", status="failed", error=str(exc))
 
@@ -442,7 +452,7 @@ def step_analytics_refresh(session: Session) -> StepResult:
         return StepResult(step="analytics_refresh", status="succeeded", inserted=1,
                           extra={"outcomes": total, "won": analytics.total_won, "lost": analytics.total_lost,
                                  "no_bid": analytics.total_no_bid})
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("analytics_refresh failed: %s", exc)
         return StepResult(step="analytics_refresh", status="failed", error=str(exc))
 
@@ -455,7 +465,7 @@ def step_outcome_suggestions(session: Session, settings) -> StepResult:
         counts = suggest_outcomes(session, settings=settings)
         return StepResult(step="outcome_suggestions", status="succeeded", inserted=counts.created,
                           extra={"pursuits_checked": counts.pursuits_checked, "strong": counts.strong})
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("outcome_suggestions failed: %s", exc)
         return StepResult(step="outcome_suggestions", status="failed", error=str(exc))
 
@@ -477,6 +487,6 @@ def step_vacuum_analyze(session: Session, settings) -> StepResult:
             conn.execute(text("VACUUM ANALYZE"))
         engine.dispose()
         return StepResult(step="vacuum_analyze", status="succeeded")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.error("vacuum_analyze failed: %s", exc)
         return StepResult(step="vacuum_analyze", status="failed", error=str(exc))

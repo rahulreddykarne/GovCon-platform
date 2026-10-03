@@ -1,26 +1,34 @@
 """Preservation and regression checks for the executed feature audit findings."""
 
-from datetime import UTC, datetime, timedelta
-from html.parser import HTMLParser
-import json
 import asyncio
+import json
 import os
-import shutil
-import subprocess
 import re
 import shlex
+import shutil
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from html.parser import HTMLParser
 from threading import Barrier
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-
-from govcon.models import AuditEvent, Match, Opportunity, Pursuit, ReviewAssignment, ReviewSession, Watchlist
-from govcon.web.app import create_app
 from test_web_ui import _make_user
 from web_client import CsrfTestClient
+
+from govcon.models import (
+    AuditEvent,
+    Match,
+    Opportunity,
+    Pursuit,
+    ReviewAssignment,
+    ReviewSession,
+    Watchlist,
+)
+from govcon.web.app import create_app
 
 
 @pytest.fixture()
@@ -118,8 +126,8 @@ def test_f2_preserves_review_start_permissions_and_read_only_get(db, client, rol
 
 def test_f2_preserves_existing_assignment_and_review_controls(db, client):
     opp, _, actor, _ = matched_opportunity(db, client, role="approver", stage="evaluating")
-    from govcon.collaboration.review_sessions import ensure_review_session
     from govcon.collaboration.assignments import assign_reviewer
+    from govcon.collaboration.review_sessions import ensure_review_session
     ensure_review_session(db, opportunity_id=opp.id)
     assign_reviewer(db, opportunity_id=opp.id, user_id=actor.id)
     db.commit()
@@ -161,6 +169,7 @@ def test_f2_empty_review_can_assign_first_reviewer(db, client):
 
 def ready_submission(db, client, tmp_path):
     from test_release_lifecycle import prepared_lifecycle
+
     from govcon.collaboration.users import create_session
     from govcon.compliance.submission_preflight import run_submission_preflight
     from govcon.models import Proposal, Submission, User
@@ -243,6 +252,7 @@ def test_f6_browser_local_time_records_correct_instant(db, client, tmp_path, loc
 
 def bid_tool(opportunity_id):
     from fastmcp import Client
+
     from govcon.mcp.server import mcp
     async def call():
         async with Client(mcp) as protocol:
@@ -270,7 +280,7 @@ def test_f8_preserves_analysis_without_runs_and_missing_errors(db, client):
 
 def test_f8_protocol_reads_real_decision_history(db, client):
     from govcon.config import Settings
-    from govcon.decision.engine import run_decision_bundle, list_decision_runs
+    from govcon.decision.engine import list_decision_runs, run_decision_bundle
     from govcon.models import BidDecision, DecisionRun
     opp, _, _, _ = matched_opportunity(db, client)
     db.add(BidDecision(opportunity_id=opp.id, recommendation="review", rules_result={}))
@@ -298,8 +308,8 @@ def stat_value(text, label):
 
 
 def matrix_fixture(db, client):
-    from govcon.models import Requirement
     from govcon.compliance.metrics import record_matrix_run
+    from govcon.models import Requirement
     opp, _, _, _ = matched_opportunity(db, client)
     for status in ("missing", "unknown", "needs_review"):
         db.add(Requirement(opportunity_id=opp.id, requirement_text=f"Synthetic {status} requirement",
@@ -314,7 +324,7 @@ def test_f4_preserves_empty_requirements_and_matrix_counts(db, client):
     empty, _, _, _ = matched_opportunity(db, client)
     assert "No compliance run yet" in client.get(f"/workspace/{empty.id}?tab=compliance").text
     assert "No requirements extracted yet" in client.get(f"/workspace/{empty.id}?tab=requirements").text
-    opp, counts, _ = matrix_fixture(db, client)
+    opp, _counts, _ = matrix_fixture(db, client)
     page = client.get(f"/workspace/{opp.id}?tab=compliance")
     assert page.status_code == 200
     assert stat_value(page.text, "Mandatory Total") == 3
@@ -381,7 +391,11 @@ def test_f5_preserves_unapproved_submission_gate(db, client):
 
 def test_f5_submission_renders_real_checklist_and_instructions(db, client, tmp_path):
     from markupsafe import escape
-    from govcon.submissions.checklist import generate_final_checklist, generate_step_by_step_instructions
+
+    from govcon.submissions.checklist import (
+        generate_final_checklist,
+        generate_step_by_step_instructions,
+    )
     opp, _, sub = ready_submission(db, client, tmp_path)
     page = client.get(f"/workspace/{opp.id}?tab=submission")
     assert "Submission Instructions" in page.text, "Render instructions from the existing instruction service"
@@ -424,6 +438,7 @@ def test_f5_portal_unknown_and_unsafe_instructions_are_visible_and_escaped(db, c
 def compliance_run_command():
     import click
     from typer.main import get_command
+
     from govcon.cli import compliance_app
     group = get_command(compliance_app)
     return group.get_command(click.Context(group), "run")

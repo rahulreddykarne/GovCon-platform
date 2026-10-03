@@ -2,13 +2,13 @@
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
+from test_sourcing_company import opportunity, user
 
 from govcon.collaboration.escalation import run_review_escalations
 from govcon.collaboration.review_sessions import ensure_review_session
 from govcon.config import Settings
 from govcon.models import Notification, ReviewAssignment
 from govcon.workflow.invalidation import reopen_review
-from test_sourcing_company import db, opportunity, user
 
 
 def review_fixture(db, status="assigned"):
@@ -35,7 +35,7 @@ def notices(db, opp, recipient, kind):
 
 
 def test_current_initial_cycle_reminds_and_escalates_once(db):
-    opp, owner, reviewer, assignment, now, settings = review_fixture(db)
+    opp, owner, reviewer, _assignment, now, settings = review_fixture(db)
     run_review_escalations(db, settings=settings, now=now)
     assert notices(db, opp, reviewer, "review_reminder") == 1
     assert notices(db, opp, owner, "review_overdue_escalation") == 1
@@ -49,7 +49,7 @@ def test_current_initial_cycle_reminds_and_escalates_once(db):
 
 
 def test_current_uncompleted_assignment_is_not_reopened_or_reset(db):
-    opp, owner, reviewer, assignment, now, settings = review_fixture(db)
+    opp, _owner, _reviewer, assignment, now, _settings = review_fixture(db)
     assignment.last_reminded_at = assignment.escalated_at = now
     db.flush()
     assert reopen_review(db, opp.id, reason="material source change") is False
@@ -59,7 +59,7 @@ def test_current_uncompleted_assignment_is_not_reopened_or_reset(db):
 
 
 def test_reopened_cycle_does_not_immediately_use_original_assignment_age(db):
-    opp, owner, reviewer, assignment, now, settings = review_fixture(db, "complete")
+    opp, owner, reviewer, assignment, _now, settings = review_fixture(db, "complete")
     original_assigned = assignment.assigned_at
     assert reopen_review(db, opp.id, reason="material amendment") is True
     assert assignment.assigned_at == original_assigned

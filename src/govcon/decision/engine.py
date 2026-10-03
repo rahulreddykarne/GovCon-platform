@@ -18,7 +18,11 @@ from govcon.decision.provider import (
     DecisionProviderUnavailable,
     ProviderDecision,
 )
-from govcon.decision.providers import JevDecisionProvider, LLMDecisionProvider, RuleDecisionProvider
+from govcon.decision.providers import (
+    JevDecisionProvider,
+    LLMDecisionProvider,
+    RuleDecisionProvider,
+)
 from govcon.decision.rules import (
     apply_hard_rule_override,
     confidence_to_score,
@@ -26,6 +30,17 @@ from govcon.decision.rules import (
     evaluate_hard_rules,
 )
 from govcon.decision.schemas import PreliminaryRecommendation, validate_bundle_result
+from govcon.decision.signals import (
+    Signals,
+    amendment_signal,
+    capability_signal,
+    competition_signals,
+    eligibility_signals,
+    load_company_profile,
+    pricing_signals,
+    sourcing_signals,
+    supplier_lead_time_signal,
+)
 from govcon.ingest.snapshots import canonical_content_hash, json_safe
 from govcon.intelligence.competitors import competitor_summary
 from govcon.matching.pricing import recent_award_comps
@@ -40,24 +55,12 @@ from govcon.models import (
     ReviewSession,
     StoredFile,
 )
-from govcon.decision.signals import (
-    Signals,
-    amendment_signal,
-    capability_signal,
-    competition_signals,
-    eligibility_signals,
-    load_company_profile,
-    pricing_signals,
-    supplier_lead_time_signal,
-    sourcing_signals,
-)
 from govcon.workflow.source_revision import (
     SOURCE_REVISION_KEY,
     current_source_revision,
     is_stale,
     stamp_of,
 )
-
 
 logger = logging.getLogger("govcon.decision.engine")
 
@@ -326,7 +329,10 @@ def run_decision_bundle(
     settings = settings or get_settings()
     definition = bundle_definition(bundle_name)
     state = state or build_decision_state(session, opportunity_id)
-    from govcon.security.classification import DataClassification, opportunity_classification
+    from govcon.security.classification import (
+        DataClassification,
+        opportunity_classification,
+    )
     state = dict(state)
     state["data_classification"] = opportunity_classification(session, opportunity_id, DataClassification.PROPRIETARY).value
     state["budget_opportunity_id"] = opportunity_id
@@ -714,7 +720,8 @@ def _build_preliminary_recommendation(
     compliance = bundle_results["compliance_and_amendment"]
     strengths: list[str] = []
     risks: list[str] = []
-    missing = list(state.get("analysis", {}).get("missing_information", []))
+    missing_information = state.get("analysis", {}).get("missing_information") or []
+    missing = missing_information.copy() if isinstance(missing_information, list) else list(missing_information)
     if eligibility.get("capability_match") in {"high", "very_high"}:
         strengths.append("Capability fit is strong.")
     if market.get("margin_quality") in {"good", "strong"}:
@@ -725,14 +732,14 @@ def _build_preliminary_recommendation(
         risks.append("Execution risk is elevated.")
     if bid.get("compliance_risk") in {"high", "critical"}:
         risks.append("Compliance risk remains high.")
-    for blocker in bid.get("hard_rule_blockers", []):
-        risks.append(blocker)
+    risks.extend(bid.get("hard_rule_blockers") or [])
     if not strengths:
         strengths.append("No strong automated strengths identified.")
     if not risks:
         risks.append("No decisive blocking risk identified.")
 
-    evidence = list(state.get("evidence_refs", []))
+    evidence_refs = state.get("evidence_refs") or []
+    evidence = evidence_refs.copy() if isinstance(evidence_refs, list) else list(evidence_refs)
     factor_scores = {
         "capability_fit": state.get("scores", {}).get("capability_fit_score"),
         "product_source_availability": 1.0 if state.get("sourcing", {}).get("product_found") else 0.0,

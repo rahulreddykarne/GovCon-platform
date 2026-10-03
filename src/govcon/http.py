@@ -6,7 +6,12 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from tenacity.wait import wait_base
 
 from govcon.config import Settings, get_settings

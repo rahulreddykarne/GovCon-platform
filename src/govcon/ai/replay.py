@@ -79,7 +79,7 @@ class CallNeeded(BaseException):
 @dataclass
 class _Outcome:
     value: Any = None
-    error: Exception | None = None
+    error: BaseException | None = None
 
 
 class Recorder:
@@ -392,6 +392,6 @@ def _thaw_error(payload: dict[str, Any]) -> BaseException:
             if class_name == "ProviderAPIError":
                 return cls(str(payload.get("provider") or "provider"), payload.get("status_code"))
             return cls(message)
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             logger.warning("could not restore recorded error %s", qualname)
     return RuntimeError(message)

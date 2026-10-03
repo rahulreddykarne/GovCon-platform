@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call, external_call_allowed
+from govcon.ai.gateway import (
+    AIGatewayBlocked,
+    authorize_external_call,
+    external_call_allowed,
+)
 from govcon.config import Settings, get_settings
 from govcon.logging import configure_logging, redact
 from govcon.security.classification import DataClassification, classify

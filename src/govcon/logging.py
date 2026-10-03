@@ -33,11 +33,11 @@ class RedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             extra = get_settings().secret_values()
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             extra = []
         try:
             rendered = record.getMessage()
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             rendered = str(record.msg)
         record.msg = redact(rendered, extra)
         record.args = ()

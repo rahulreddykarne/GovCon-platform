@@ -129,7 +129,10 @@ def run_activation_gate(asset: PromptAsset, prompt_root: Path, *, settings=None,
     result.add("forbidden_secret_scan", not leaked, ", ".join(leaked))
 
     if run_regression and asset.name in COMPLIANCE_SUITE_PROMPTS:
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         suite = run_benchmark_suite(default_fixture_root())
         result.add("compliance_regression_suite", suite.gate.passed, "; ".join(suite.gate.failures))

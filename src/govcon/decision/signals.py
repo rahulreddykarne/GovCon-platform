@@ -20,6 +20,7 @@ The company eligibility profile is the approved company-facts file
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from statistics import median
@@ -213,7 +214,12 @@ def supplier_lead_time_signal(session: Session, opportunity_id: int, signals: Si
     ).scalars().all()
     for row in rows:
         value = (row.evidence_value or {}).get("lead_time_days") if isinstance(row.evidence_value, dict) else None
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or value != value:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or value < 0
+            or (isinstance(value, float) and math.isnan(value))
+        ):
             continue
         signals.set(
             "supplier_lead_time_days",

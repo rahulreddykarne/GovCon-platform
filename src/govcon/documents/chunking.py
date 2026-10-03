@@ -10,8 +10,8 @@ records every chunk it did not send as a coverage gap.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 # Long pages are split at paragraph, then line, boundaries into pieces of at
 # most this many bytes, so one dense page never overflows a call on its own.

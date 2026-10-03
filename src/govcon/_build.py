@@ -1,7 +1,7 @@
 """Include checkout-owned deployment resources in wheels and sdists."""
 
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 from setuptools.command.build_py import build_py
 

@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from govcon.compliance.inventory import build_document_inventory
 from govcon.config import Settings
-from govcon.enrich.attachment_refs import AttachmentRef, attachment_refs_for, resource_link_urls
+from govcon.enrich.attachment_refs import (
+    AttachmentRef,
+    attachment_refs_for,
+    resource_link_urls,
+)
 from govcon.enrich.attachments import (
     DOWNLOAD_FAILED,
     choose_filename,
@@ -23,7 +27,12 @@ from govcon.enrich.attachments import (
     sanitize_filename,
     store_bytes,
 )
-from govcon.enrich.extract import ExtractionLimits, check_zip_container, extract_text, ExtractionLimitExceeded
+from govcon.enrich.extract import (
+    ExtractionLimitExceeded,
+    ExtractionLimits,
+    check_zip_container,
+    extract_text,
+)
 from govcon.enrich.safe_fetch import FetchBlocked, FetchTooLarge, check_url, safe_fetch
 from govcon.ingest.sam_opportunities import ingest_opportunity_records
 from govcon.models import Opportunity, OpportunitySnapshot, Requirement, StoredFile
