@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, text
@@ -84,11 +84,11 @@ def _start_run(settings: Settings, claim: queue.Claim, chain_name: str, trigger:
             SchedulerJobRun.id != (task.scheduler_job_run_id or -1),
         )):
             row.status = "failed"
-            row.finished_at = datetime.now(timezone.utc)
+            row.finished_at = datetime.now(UTC)
             row.error = "worker stopped before completion; recovered after advisory lock release"
         if task.scheduler_job_run_id is None:
             run = SchedulerJobRun(chain_name=chain_name, trigger=trigger,
-                                  started_at=datetime.now(timezone.utc), status="running", steps_completed=[])
+                                  started_at=datetime.now(UTC), status="running", steps_completed=[])
             db.add(run)
             db.flush()
             task.scheduler_job_run_id = run.id
@@ -116,11 +116,14 @@ def _record_step(db: Session, claim: queue.Claim, result: StepResult, *, done: b
 def run_chain_task(settings: Settings, claim: queue.Claim, heartbeat) -> str:
     with session_scope(settings) as db:
         task = queue.guard_publish(db, claim)
-        chain_name = (task.payload or {}).get("chain_name")
-        trigger = (task.payload or {}).get("trigger") or "scheduler"
+        payload = task.payload or {}
+        raw_name = payload.get("chain_name")
+        chain_name = raw_name if isinstance(raw_name, str) else None
+        raw_trigger = payload.get("trigger")
+        trigger = raw_trigger if isinstance(raw_trigger, str) and raw_trigger else "scheduler"
         completed = list((task.checkpoint or {}).get("completed_steps") or [])
-    chain_def = chains.CHAIN_DEFINITIONS.get(chain_name)
-    if chain_def is None:
+    chain_def = chains.CHAIN_DEFINITIONS.get(chain_name) if chain_name is not None else None
+    if chain_name is None or chain_def is None:
         with session_scope(settings) as db:
             queue.fail_terminal(db, queue.guard_publish(db, claim), f"unknown chain {chain_name!r}",
                                 next_action="Remove the task; the chain no longer exists.", settings=settings)
@@ -204,9 +207,11 @@ def _finish(settings, claim, chain_def, run_id, failed_step, chain_error) -> str
             status = "succeeded"
         run = db.get(SchedulerJobRun, run_id)
         if run is not None:
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             run.status = status
-            run.steps_completed = steps_completed
+            # JSONB column is annotated as a dict; the stored value is the step-name list.
+            stored_steps: Any = steps_completed
+            run.steps_completed = stored_steps
             run.failed_step = failed_step
             run.error = chain_error
             run.row_counts = {r.step: r.row_counts() for r in ordered}

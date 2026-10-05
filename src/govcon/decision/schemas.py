@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 ConfidenceLevel = Literal["low", "medium", "high"]
 RiskLevel = Literal["low", "medium", "high", "critical"]
 FitLevel = Literal["very_low", "low", "medium", "high", "very_high"]

@@ -43,6 +43,8 @@ def _prepare(session: Session, task: Task, ctx: StepContext) -> _Message:
     if delivery is None or delivery.status == "sent":
         raise TaskCancelled("the notification was already delivered or removed")
     notification = session.get(Notification, delivery.notification_id)
+    if notification is None:
+        raise TaskCancelled("the notification was removed before it could be emailed")
     delivery.attempts += 1
     opportunity = session.get(Opportunity, notification.opportunity_id) if notification.opportunity_id else None
     kind = notification.notification_type
@@ -68,6 +70,8 @@ def _execute(message: _Message, ctx: StepContext) -> _Message:
 
 def _publish(session: Session, task: Task, message: _Message, ctx: StepContext) -> None:
     delivery = session.get(NotificationDelivery, message.delivery_id)
+    if delivery is None:
+        raise TaskCancelled("the notification delivery was removed before it could be recorded")
     delivery.status = "sent"
     delivery.sent_at = datetime.now(UTC)
     delivery.error = None

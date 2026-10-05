@@ -6,13 +6,17 @@ All analytics are descriptive; small samples are labeled; no causal overstatemen
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
-from govcon.models import OutcomeFeedback, Opportunity, Pursuit
+from govcon.models import Opportunity, OutcomeFeedback, Pursuit
+
+logger = logging.getLogger("govcon.learning.analytics")
 
 # Minimum wins required before a win profile is built or win-pattern claims are made
 WIN_PROFILE_MINIMUM = 3
@@ -248,7 +252,12 @@ def common_competitors(session: Session, limit: int = 10) -> list[ReasonCount]:
         .order_by(desc("cnt"))
         .limit(limit)
     ).all()
-    return [ReasonCount(reason=name, count=cnt) for name, cnt in rows]
+    counted: list[ReasonCount] = []
+    for name, count in rows:
+        if not isinstance(name, str):
+            continue
+        counted.append(ReasonCount(reason=name, count=count))
+    return counted
 
 
 def reliable_suppliers(session: Session, limit: int = 10) -> list[SupplierRow]:
@@ -287,7 +296,7 @@ def avg_cycle_times(session: Session) -> dict[str, float | None]:
     Joins pursuits with opportunities to compute cycle times.
     Returns None for each metric when insufficient data exists.
     """
-    from datetime import date, datetime, timezone
+    from datetime import datetime
 
     pursuits = session.execute(
         select(Pursuit, Opportunity)
@@ -300,20 +309,19 @@ def avg_cycle_times(session: Session) -> dict[str, float | None]:
     for pursuit, opp in pursuits:
         try:
             posted = opp.posted_date
-            if isinstance(posted, date) and not isinstance(posted, datetime):
-                posted_dt = datetime(posted.year, posted.month, posted.day, tzinfo=timezone.utc)
-            else:
-                posted_dt = posted
-            if posted_dt is None:
-                continue
-            if posted_dt.tzinfo is None:
-                posted_dt = posted_dt.replace(tzinfo=timezone.utc)
             submitted = pursuit.submitted_at
+            if posted is None or submitted is None:
+                continue
+            if isinstance(posted, datetime):
+                posted_dt = posted if posted.tzinfo is not None else posted.replace(tzinfo=UTC)
+            else:
+                posted_dt = datetime(posted.year, posted.month, posted.day, tzinfo=UTC)
             if submitted.tzinfo is None:
-                submitted = submitted.replace(tzinfo=timezone.utc)
+                submitted = submitted.replace(tzinfo=UTC)
             delta = submitted - posted_dt
             cycle_days.append(delta.days)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001  boundary must record any failure
+            logger.warning("skipped a pursuit while measuring cycle time: %s", exc)
             continue
     avg_days = (sum(cycle_days) / len(cycle_days)) if cycle_days else None
     from govcon.compliance.inventory import load_inventory
@@ -343,9 +351,11 @@ def win_profile_note(session: Session) -> tuple[bool, str]:
     if count < WIN_PROFILE_MINIMUM:
         return (
             False,
-            f"Win profile not available: {count} win(s) recorded "
-            f"(minimum {WIN_PROFILE_MINIMUM} required). "
-            "Small-sample win patterns are not shown to avoid misleading recommendations.",
+            (
+                f"Win profile not available: {count} win(s) recorded "
+                f"(minimum {WIN_PROFILE_MINIMUM} required). "
+                "Small-sample win patterns are not shown to avoid misleading recommendations."
+            ),
         )
     return (True, f"Win profile based on {count} wins.")
 

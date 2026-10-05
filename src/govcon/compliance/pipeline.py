@@ -24,20 +24,33 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
-from govcon.compliance.amendments import diff_inventory, inventory_files, run_amendment_revalidation
+from govcon.compliance.amendments import (
+    diff_inventory,
+    inventory_files,
+    run_amendment_revalidation,
+)
 from govcon.compliance.clauses import run_clause_validation
 from govcon.compliance.conflicts import run_conflict_scan
-from govcon.compliance.deterministic import SubmissionPackage, build_context, run_deterministic_validation
+from govcon.compliance.deterministic import (
+    SubmissionPackage,
+    build_context,
+    run_deterministic_validation,
+)
 from govcon.compliance.extractor import run_ai_pass, run_scanner_pass
 from govcon.compliance.inventory import build_document_inventory, inventory_hash
 from govcon.compliance.matrix import active_requirements, latest_run, validator_identity
 from govcon.compliance.metrics import record_matrix_run
-from govcon.compliance.reconciler import apply_ai_hints, persist_reconciliation, reconcile
+from govcon.compliance.reconciler import (
+    apply_ai_hints,
+    persist_reconciliation,
+    reconcile,
+)
 from govcon.compliance.red_team import run_red_team
+from govcon.compliance.schemas import RequirementReconciliationV1, parse_model
 from govcon.compliance.validator import run_jev_routing, run_validation
 from govcon.config import Settings, get_settings
 from govcon.models import Opportunity
-from govcon.security.classification import DataClassification, strictest_classification
+from govcon.security.classification import strictest_classification
 
 logger = logging.getLogger("govcon.compliance.pipeline")
 
@@ -107,8 +120,14 @@ def _ai_reconciliation_hints(session, opportunity_id, candidates, canonicals, in
     except StructuredCallError as exc:
         warnings.append({"code": f"reconciliation_ai_{exc.reason}", "severity": "low", "message": exc.detail})
         return {"status": "failed", "reason": exc.reason}
-    apply_ai_hints(canonicals, [g.model_dump() for g in result.output.groups])
-    return {"status": "complete", "ai_analysis_id": result.analysis.id if result.analysis else None, "groups": len(result.output.groups)}
+    output = parse_model(result.output, RequirementReconciliationV1)
+    apply_ai_hints(canonicals, [group.model_dump() for group in output.groups])
+    analysis = result.analysis
+    return {
+        "status": "complete",
+        "ai_analysis_id": analysis.id if analysis is not None else None,
+        "groups": len(output.groups),
+    }
 
 
 def run_compliance_pipeline(
@@ -182,7 +201,8 @@ def run_compliance_pipeline(
         )
         if not ai_passes_ok:
             latest = latest_run(session, opportunity_id, "requirement_reconciliation")
-            latest.status = "incomplete"
+            if latest is not None:
+                latest.status = "incomplete"
         extraction["ai_reconciliation"] = hints
         extraction["passes"] = {o.pass_label: {"status": o.status, "candidates": len(o.candidates), "provider": o.provider, "model": o.model} for o in outcomes}
 

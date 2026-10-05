@@ -63,7 +63,7 @@ def check_zip_container(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS) 
             raise ExtractionLimitExceeded(f"archive expands to {total} bytes, over the limit")
 
 
-def _cap_text(result: "ExtractionResult", limits: ExtractionLimits) -> "ExtractionResult":
+def _cap_text(result: ExtractionResult, limits: ExtractionLimits) -> ExtractionResult:
     if result.text is not None and len(result.text) > limits.max_text_chars:
         note = f"text truncated at {limits.max_text_chars} characters"
         return ExtractionResult(
@@ -90,7 +90,7 @@ class PageText:
 
 
 class ExtractionResult:
-    __slots__ = ("text", "status", "error", "page_count", "pages", "ocr_pages", "ocr_failed_pages")
+    __slots__ = ("error", "ocr_failed_pages", "ocr_pages", "page_count", "pages", "status", "text")
 
     def __init__(
         self,
@@ -116,7 +116,7 @@ def extract_text(
     mime_type: str,
     filename: str | None = None,
     limits: ExtractionLimits = DEFAULT_LIMITS,
-    ocr: "OcrConfig | None" = None,
+    ocr: OcrConfig | None = None,
 ) -> ExtractionResult:
     """Extract text from file bytes based on MIME type.
 
@@ -140,7 +140,7 @@ def extract_text(
         "application/vnd.ms-excel",
     ) or fname.endswith(".xlsx"):
         return _cap_text(_sheet_pages(_extract_xlsx(data, limits)), limits)
-    if mime.startswith("text/") or fname.endswith(".txt") or fname.endswith(".csv"):
+    if mime.startswith("text/") or fname.endswith((".txt", ".csv")):
         return _cap_text(_whole_document(_extract_plain(data)), limits)
 
     return ExtractionResult(None, "unsupported", f"unsupported mime type: {mime}")
@@ -167,7 +167,7 @@ def _sheet_pages(result: ExtractionResult) -> ExtractionResult:
 
 
 def _extract_pdf(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS,
-                 ocr: "OcrConfig | None" = None) -> ExtractionResult:
+                 ocr: OcrConfig | None = None) -> ExtractionResult:
     try:
         from pypdf import PdfReader
 
@@ -178,7 +178,7 @@ def _extract_pdf(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS,
             if index >= limits.max_pdf_pages:
                 break
             native.append(page.extract_text() or "")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.warning("PDF extraction failed: %s", exc)
         return ExtractionResult(None, "error", str(exc))
 
@@ -190,23 +190,44 @@ def _extract_pdf(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS,
 
         candidates = [p.page_no for p in pages if len(p.text.strip()) < ocr.min_native_chars]
         read, failed = ocr_pdf_pages(data, candidates, ocr)
-        for page_no, page in read.items():
-            pages[page_no - 1] = PageText(page_no, page.text, "ocr", page.confidence)
+        for page_no, ocr_page in read.items():
+            pages[page_no - 1] = PageText(page_no, ocr_page.text, "ocr", ocr_page.confidence)
             ocr_pages.append(page_no)
         # A page that keeps some native text is readable; only blank pages count as failed.
         ocr_failed = [{"page": page_no, "reason": reason} for page_no, reason in sorted(failed.items())
                       if not pages[page_no - 1].text.strip()]
 
     full_text = "\n\n".join(p.text for p in pages)
-    extras = {"page_count": total_pages, "pages": pages, "ocr_pages": sorted(ocr_pages), "ocr_failed_pages": ocr_failed}
+    ocr_page_numbers = sorted(ocr_pages)
     if not full_text.strip():
         reason = f"; OCR: {ocr_failed[0]['reason']}" if ocr_failed else ""
-        return ExtractionResult(None, "partial", f"PDF contained no extractable text (may need OCR){reason}", **extras)
+        return ExtractionResult(
+            None,
+            "partial",
+            f"PDF contained no extractable text (may need OCR){reason}",
+            page_count=total_pages,
+            pages=pages,
+            ocr_pages=ocr_page_numbers,
+            ocr_failed_pages=ocr_failed,
+        )
     if total_pages > limits.max_pdf_pages:
         return ExtractionResult(
-            full_text, "partial", f"PDF truncated at {limits.max_pdf_pages} of {total_pages} pages", **extras
+            full_text,
+            "partial",
+            f"PDF truncated at {limits.max_pdf_pages} of {total_pages} pages",
+            page_count=total_pages,
+            pages=pages,
+            ocr_pages=ocr_page_numbers,
+            ocr_failed_pages=ocr_failed,
         )
-    return ExtractionResult(full_text, "success", **extras)
+    return ExtractionResult(
+        full_text,
+        "success",
+        page_count=total_pages,
+        pages=pages,
+        ocr_pages=ocr_page_numbers,
+        ocr_failed_pages=ocr_failed,
+    )
 
 
 def extract_pdf_pages(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS) -> list[str] | None:
@@ -216,7 +237,7 @@ def extract_pdf_pages(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS) ->
 
         reader = PdfReader(io.BytesIO(data))
         return [page.extract_text() or "" for _, page in zip(range(limits.max_pdf_pages), reader.pages)]
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.warning("PDF page extraction failed: %s", exc)
         return None
 
@@ -245,7 +266,7 @@ def _extract_docx(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS) -> Ext
         if not paragraphs and not tables:
             return ExtractionResult(None, "partial", "DOCX contained no text paragraphs or tables")
         return ExtractionResult("\n\n".join(paragraphs + tables), "success")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.warning("DOCX extraction failed: %s", exc)
         return ExtractionResult(None, "error", str(exc))
 
@@ -287,7 +308,7 @@ def _extract_xlsx(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS) -> Ext
         if notes:
             return ExtractionResult("\n\n".join(parts), "partial", "; ".join(notes))
         return ExtractionResult("\n\n".join(parts), "success")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         logger.warning("XLSX extraction failed: %s", exc)
         return ExtractionResult(None, "error", str(exc))
 
@@ -301,7 +322,7 @@ def _extract_plain(data: bytes) -> ExtractionResult:
             except UnicodeDecodeError:
                 continue
         return ExtractionResult(None, "error", "unable to decode text file")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         return ExtractionResult(None, "error", str(exc))
 
 

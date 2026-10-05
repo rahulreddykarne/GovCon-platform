@@ -163,6 +163,16 @@ class Award(TimestampMixin, Base):
 
 class Vendor(TimestampMixin, Base):
     __tablename__ = "vendors"
+    __table_args__ = (
+        CheckConstraint(
+            "freshness_status IN ('fresh', 'stale', 'expired', 'failed', 'unknown')",
+            name="ck_vendors_freshness_status",
+        ),
+        CheckConstraint(
+            "attempt_state IS NULL OR attempt_state IN ('in_progress', 'cancelled', 'applied', 'failed')",
+            name="ck_vendors_attempt_state",
+        ),
+    )
 
     uei: Mapped[str] = mapped_column(Text, primary_key=True)
     cage_code: Mapped[str | None] = mapped_column(Text)
@@ -176,6 +186,17 @@ class Vendor(TimestampMixin, Base):
     points_of_contact: Mapped[dict | None] = mapped_column(JSONB)
     raw: Mapped[dict | None] = mapped_column(JSONB)
     fetched_at: Mapped[datetime | None] = mapped_column(_ts())
+    source_updated_at: Mapped[datetime | None] = mapped_column(_ts())
+    expires_at: Mapped[date | None] = mapped_column(Date)
+    freshness_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'unknown'"), default="unknown"
+    )
+    last_refresh_error: Mapped[str | None] = mapped_column(Text)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(_ts())
+    refresh_generation: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"), default=0)
+    attempt_id: Mapped[str | None] = mapped_column(Text)
+    attempt_state: Mapped[str | None] = mapped_column(Text)
+    registration_key: Mapped[str | None] = mapped_column(Text)
 
 
 class Contact(TimestampMixin, Base):
@@ -1240,6 +1261,16 @@ class CompanyRegistration(TimestampMixin, Base):
     """Our own SAM registration, refreshed daily from the SAM entity API (ADR-072)."""
 
     __tablename__ = "company_registration"
+    __table_args__ = (
+        CheckConstraint(
+            "freshness_status IN ('fresh', 'stale', 'expired', 'failed', 'unknown')",
+            name="ck_company_registration_freshness_status",
+        ),
+        CheckConstraint(
+            "attempt_state IS NULL OR attempt_state IN ('in_progress', 'cancelled', 'applied', 'failed')",
+            name="ck_company_registration_attempt_state",
+        ),
+    )
 
     uei: Mapped[str] = mapped_column(Text, primary_key=True)
     legal_name: Mapped[str | None] = mapped_column(Text)
@@ -1248,6 +1279,18 @@ class CompanyRegistration(TimestampMixin, Base):
     expiration_date: Mapped[date | None] = mapped_column(Date)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'sam_entity_api'"))
     refreshed_at: Mapped[datetime] = mapped_column(_ts(), nullable=False)
+    fetched_at: Mapped[datetime | None] = mapped_column(_ts())
+    source_updated_at: Mapped[datetime | None] = mapped_column(_ts())
+    expires_at: Mapped[date | None] = mapped_column(Date)
+    freshness_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'unknown'"), default="unknown"
+    )
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(_ts())
+    refresh_generation: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"), default=0)
+    attempt_id: Mapped[str | None] = mapped_column(Text)
+    attempt_state: Mapped[str | None] = mapped_column(Text)
+    registration_key: Mapped[str | None] = mapped_column(Text)
     raw: Mapped[dict | None] = mapped_column(JSONB)
     last_expiry_alert_at: Mapped[datetime | None] = mapped_column(_ts())
 

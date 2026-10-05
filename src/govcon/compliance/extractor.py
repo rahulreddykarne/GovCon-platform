@@ -28,9 +28,23 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.providers import resolve_provider_model
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
+from govcon.ai.structured import (
+    StructuredCallError,
+    StructuredCallResult,
+    run_structured_prompt,
+)
 from govcon.compliance.matrix import record_run
-from govcon.compliance.records import REQUIREMENT_TYPES, Candidate, Inventory, SourceDocument
+from govcon.compliance.records import (
+    REQUIREMENT_TYPES,
+    Candidate,
+    Inventory,
+    SourceDocument,
+)
+from govcon.compliance.schemas import (
+    ExtractedRequirement,
+    RequirementExtractionV1,
+    parse_model,
+)
 from govcon.compliance.text import (
     classify_type,
     estimate_severity,
@@ -44,7 +58,6 @@ from govcon.compliance.text import (
 )
 from govcon.config import Settings, get_settings
 from govcon.models import Opportunity
-from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.compliance.extractor")
 
@@ -130,7 +143,7 @@ def _amendment_json(inventory: Inventory) -> dict[str, Any]:
 # ── candidate mapping and citation checks ──
 
 
-def candidates_from_output(pass_label: str, requirements: list[Any], inventory: Inventory) -> list[Candidate]:
+def candidates_from_output(pass_label: str, requirements: list[ExtractedRequirement], inventory: Inventory) -> list[Candidate]:
     candidates: list[Candidate] = []
     known_files = inventory.by_file_id()
     for index, item in enumerate(requirements, start=1):
@@ -234,7 +247,7 @@ def structural_candidates(inventory: Inventory) -> list[Candidate]:
         quote = None
         for page, text in doc.pages():
             for line in (text or "").splitlines():
-                if re.search(r"amendment", line, re.I) and len(line.strip()) >= 8:
+                if re.search(r"amendment", line, re.IGNORECASE) and len(line.strip()) >= 8:
                     quote = normalize_ws(line)[:300]
                     source_page = page
                     break
@@ -387,17 +400,20 @@ def run_ai_pass(
             "set_aside_code": opportunity.set_aside_code,
             "response_deadline": opportunity.response_deadline.isoformat() if opportunity.response_deadline else None,
         }
+    source_snapshot_ids: list[int] = sorted(
+        {snapshot_id for doc in inventory.documents if (snapshot_id := doc.snapshot_id) is not None}
+    )
     base_manifest = {
         "opportunity_id": opportunity.id,
         "strategy": pass_label,
-        "source_snapshots": sorted({d.snapshot_id for d in inventory.documents if d.snapshot_id}),
+        "source_snapshots": source_snapshot_ids,
         "files": [{"file_id": d.file_id, "sha256": d.sha256, "pages": d.page_count, "classification": d.classification, "source_origin": d.source_origin} for d in inventory.documents],
     }
     run_type = f"extraction_pass_{pass_label.lower()}"
     from govcon.security.classification import strictest_classification
 
     classification = strictest_classification(*(d.classification for d in inventory.documents))
-    results = []
+    results: list[StructuredCallResult] = []
     gaps: list[dict[str, Any]] = []
     for index, batch in enumerate(batches):
         manifest = {
@@ -432,7 +448,7 @@ def run_ai_pass(
                                          "gaps": _gaps(chunks, inventory, exc.reason)}},
                     status="failed",
                     warnings=warnings,
-                    source_snapshot_ids=base_manifest["source_snapshots"],
+                    source_snapshot_ids=source_snapshot_ids,
                 )
                 return PassOutcome(pass_label, [], "failed", run.id, warnings=warnings)
             reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
@@ -444,32 +460,48 @@ def run_ai_pass(
             f"Pass {pass_label} could not read part of the source set ({gaps[0]['reason']}): "
             + "; ".join(f"{g['filename'] or g['file_id']} pages {', '.join(str(p) for p in g['pages'])}" for g in gaps)
             + ". Requirements there are not extracted.")})
-    candidates = [c for result in results for c in candidates_from_output(pass_label, result.output.requirements, inventory)]
+    outputs = [parse_model(result.output, RequirementExtractionV1) for result in results]
+    candidates = [c for output in outputs for c in candidates_from_output(pass_label, output.requirements, inventory)]
     first = results[0]
+    first_analysis = first.analysis
     sent = sum(len(batch) for batch in batches[: len(results)])
+    if len(results) == 1:
+        input_hash = first_analysis.input_snapshot_hash if first_analysis is not None else None
+    else:
+        input_hash = hashlib.sha256(
+            "".join(
+                (result.analysis.input_snapshot_hash or "") if result.analysis is not None else ""
+                for result in results
+            ).encode()
+        ).hexdigest()
     run = record_run(
         session,
         opportunity_id=opportunity.id,
         run_type=run_type,
         run_version=EXTRACTOR_VERSION,
         output={
-            "ai_analysis_id": first.analysis.id,
-            "ai_analysis_ids": [r.analysis.id for r in results],
+            "ai_analysis_id": first_analysis.id if first_analysis is not None else None,
+            "ai_analysis_ids": [result.analysis.id if result.analysis is not None else None for result in results],
             "prompt": {"name": first.prompt.name, "version": first.prompt.version, "hash": first.prompt.content_hash},
             "candidates": [c.__dict__ for c in candidates],
-            "extraction_notes": [note for r in results for note in r.output.extraction_notes],
+            "extraction_notes": [note for output in outputs for note in output.extraction_notes],
             "coverage": {"chunks_total": len(chunks), "chunks_sent": sent, "parts": len(batches),
                          "parts_sent": len(results), "gaps": gaps},
         },
         status="incomplete" if gaps else "complete",
         warnings=warnings or None,
-        source_snapshot_ids=base_manifest["source_snapshots"],
-        input_hash=first.analysis.input_snapshot_hash if len(results) == 1 else hashlib.sha256(
-            "".join(r.analysis.input_snapshot_hash or "" for r in results).encode()).hexdigest(),
+        source_snapshot_ids=source_snapshot_ids,
+        input_hash=input_hash,
     )
     return PassOutcome(
-        pass_label, candidates, "incomplete" if gaps else "complete", run.id, first.analysis.id,
-        first.analysis.provider, first.analysis.model, warnings,
+        pass_label,
+        candidates,
+        "incomplete" if gaps else "complete",
+        run.id,
+        first_analysis.id if first_analysis is not None else None,
+        first_analysis.provider if first_analysis is not None else None,
+        first_analysis.model if first_analysis is not None else None,
+        warnings,
     )
 
 

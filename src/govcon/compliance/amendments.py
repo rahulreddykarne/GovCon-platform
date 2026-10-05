@@ -27,26 +27,31 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
-from govcon.compliance.matrix import active_requirements, record_run, upsert_open_finding
+from govcon.compliance.matrix import (
+    active_requirements,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory, SourceDocument
+from govcon.compliance.schemas import AmendmentAnalysisV1, parse_model
 from govcon.compliance.text import split_sentences
 from govcon.config import Settings, get_settings
 from govcon.models import OpportunityEvent, ProposalSection, Requirement, ReviewSession
 from govcon.security.classification import DataClassification
 
 AMENDMENT_VERSION = "amendment_revalidation.v1"
-_CHANGE_VERB = re.compile(r"\b(revised|changed|replaced|deleted|amended|extended|updated|is now|are now|hereby|superseded|modified|added|removed|reduced|increased)\b", re.I)
+_CHANGE_VERB = re.compile(r"\b(revised|changed|replaced|deleted|amended|extended|updated|is now|are now|hereby|superseded|modified|added|removed|reduced|increased)\b", re.IGNORECASE)
 TOPIC_PATTERNS = {
-    "delivery": re.compile(r"\bdeliver|\bship|f\.?o\.?b|lead time|packag|marking", re.I),
-    "pricing": re.compile(r"\bpric|\bclin\b|price schedule|bid schedule|quantit", re.I),
-    "page_limit": re.compile(r"\bpage", re.I),
-    "submission": re.compile(r"due date|deadline|closing|\bsubmi|received by|offers? (are )?due|quotes? (are )?due", re.I),
-    "signature": re.compile(r"\bsign", re.I),
-    "set_aside": re.compile(r"set-?aside|small business", re.I),
-    "country_of_origin": re.compile(r"country of origin|buy american|trade agreements|specialty metals", re.I),
-    "technical": re.compile(r"specification|drawing|\bspec\b|purchase description", re.I),
-    "formatting": re.compile(r"\bformat|file (name|type|size)", re.I),
-    "past_performance": re.compile(r"past performance|references?", re.I),
+    "delivery": re.compile(r"\bdeliver|\bship|f\.?o\.?b|lead time|packag|marking", re.IGNORECASE),
+    "pricing": re.compile(r"\bpric|\bclin\b|price schedule|bid schedule|quantit", re.IGNORECASE),
+    "page_limit": re.compile(r"\bpage", re.IGNORECASE),
+    "submission": re.compile(r"due date|deadline|closing|\bsubmi|received by|offers? (are )?due|quotes? (are )?due", re.IGNORECASE),
+    "signature": re.compile(r"\bsign", re.IGNORECASE),
+    "set_aside": re.compile(r"set-?aside|small business", re.IGNORECASE),
+    "country_of_origin": re.compile(r"country of origin|buy american|trade agreements|specialty metals", re.IGNORECASE),
+    "technical": re.compile(r"specification|drawing|\bspec\b|purchase description", re.IGNORECASE),
+    "formatting": re.compile(r"\bformat|file (name|type|size)", re.IGNORECASE),
+    "past_performance": re.compile(r"past performance|references?", re.IGNORECASE),
 }
 _EVENT_TOPICS = {
     "deadline_changed": ("submission",),
@@ -94,7 +99,7 @@ def diff_inventory(prior_files: list[dict[str, Any]], inventory: Inventory) -> I
     current_ids = {d.file_id for d in inventory.documents}
     diff = InventoryDiff()
     for doc in inventory.documents:
-        if doc.file_id in prior_ids:
+        if doc.file_id is None or doc.file_id in prior_ids:
             continue
         diff.new_file_ids.append(doc.file_id)
         previous = prior_by_name.get((doc.filename or "").lower())
@@ -141,17 +146,17 @@ def affected_requirement_reasons(
             found.append("source file replaced or removed")
         pattern = TOPIC_PATTERNS.get(req.requirement_type or "")
         section = (req.source_section or "").strip()
-        section_id = re.match(r"(?:section\s+)?([A-Z]?\d+(?:\.\d+)*|[A-Z])\b", section, re.I)
-        clins = set(re.findall(r"\bCLIN\s*(\d{4}[A-Z]{0,2})", req.text or "", re.I))
+        section_id = re.match(r"(?:section\s+)?([A-Z]?\d+(?:\.\d+)*|[A-Z])\b", section, re.IGNORECASE)
+        clins = set(re.findall(r"\bCLIN\s*(\d{4}[A-Z]{0,2})", req.text or "", re.IGNORECASE))
         fname = (filenames.get(req.source_file_id) or "").rsplit(".", 1)[0].lower()
         for sentence in sentences:
             text = sentence["text"]
             lowered = text.lower()
             if pattern is not None and pattern.search(text):
                 found.append(f"amendment changes {req.requirement_type}: {text[:160]}")
-            elif section_id and re.search(rf"\b(section\s+)?{re.escape(section_id.group(1))}\b", text, re.I) and len(section_id.group(1)) > 1:
+            elif section_id and re.search(rf"\b(section\s+)?{re.escape(section_id.group(1))}\b", text, re.IGNORECASE) and len(section_id.group(1)) > 1:
                 found.append(f"amendment revises section {section_id.group(1)}")
-            elif clins and any(re.search(rf"\bCLIN\s*{c}\b", text, re.I) for c in clins):
+            elif clins and any(re.search(rf"\bCLIN\s*{c}\b", text, re.IGNORECASE) for c in clins):
                 found.append(f"amendment revises CLIN {', '.join(sorted(clins))}")
             elif fname and len(fname) > 4 and fname in lowered:
                 found.append(f"amendment references {fname}")
@@ -246,13 +251,20 @@ def run_amendment_revalidation(
                 context_manifest={"new_file_ids": diff.new_file_ids, "prior_requirement_ids": sorted(prior)},
                 settings=settings,
             )
+            output = parse_model(result.output, AmendmentAnalysisV1)
+            analysis = result.analysis
             added = 0
-            for change in result.output.changes:
+            for change in output.changes:
                 for rid in change.affected_requirement_ids:
                     if rid in prior:
                         reasons.setdefault(rid, []).append(f"amendment analysis: {change.change_type}")
                         added += 1
-            ai_summary = {"status": "complete", "ai_analysis_id": result.analysis.id, "material": result.output.material, "stale_marks_added": added}
+            ai_summary = {
+                "status": "complete",
+                "ai_analysis_id": analysis.id if analysis is not None else None,
+                "material": output.material,
+                "stale_marks_added": added,
+            }
         except StructuredCallError as exc:
             warnings.append({"code": f"amendment_ai_{exc.reason}", "severity": "medium", "message": exc.detail})
             ai_summary = {"status": "failed", "reason": exc.reason}
@@ -305,7 +317,7 @@ def run_amendment_revalidation(
                 blocks_submission=False,
                 compliance_run_id=run.id,
             )
-    if impact["review_reopen_required"]:
+    if impact["review_reopen_required"] and review is not None:
         upsert_open_finding(
             session,
             opportunity_id=opportunity_id,

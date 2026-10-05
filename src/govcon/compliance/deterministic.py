@@ -135,7 +135,9 @@ class ValidationContext:
 
 
 def parse_source_deadline(date_text: str | None, time_text: str | None, tz_text: str | None) -> datetime | None:
-    if not all(isinstance(value, str) and value.strip() for value in (date_text, time_text, tz_text)):
+    if not isinstance(date_text, str) or not isinstance(time_text, str) or not isinstance(tz_text, str):
+        return None
+    if not date_text.strip() or not time_text.strip() or not tz_text.strip():
         return None
     zone = _TZ.get(tz_text) or _TZ.get(tz_text.upper()) or _TZ.get(tz_text.title())
     if zone is None:
@@ -144,7 +146,7 @@ def parse_source_deadline(date_text: str | None, time_text: str | None, tz_text:
     cleaned = date_text.replace(",", "").replace(".", "")
     for fmt in ("%B %d %Y", "%b %d %Y", "%m/%d/%Y", "%Y-%m-%d"):
         try:
-            parsed_date = datetime.strptime(cleaned, fmt)
+            parsed_date = datetime.strptime(cleaned, fmt).replace(tzinfo=UTC)
             break
         except ValueError:
             continue
@@ -308,7 +310,12 @@ def quantities_accounted(required: dict[str, int], package: SubmissionPackage | 
     if package is None or package.pricing_rows is None:
         return _result("quantities_accounted", "unknown", "pricing rows not provided")
     offered = {str(r.get("clin", "")).upper(): r.get("quantity") for r in package.pricing_rows}
-    mismatched = {c: {"required": q, "offered": offered.get(c.upper())} for c, q in required.items() if offered.get(c.upper()) is not None and float(offered[c.upper()]) != float(q)}
+    mismatched: dict[str, dict[str, Any]] = {}
+    for clin, required_qty in required.items():
+        offered_qty = offered.get(clin.upper())
+        if offered_qty is None or float(offered_qty) == float(required_qty):
+            continue
+        mismatched[clin] = {"required": required_qty, "offered": offered_qty}
     unknown = [c for c in required if offered.get(c.upper()) is None]
     if mismatched:
         return _result("quantities_accounted", "fail", f"quantity mismatch: {mismatched}", mismatched=mismatched)
@@ -383,11 +390,13 @@ def sam_registration_known(facts: dict[str, Any], deadline: datetime | None) -> 
     if status != "active":
         return _result("sam_registration_known", "fail", f"SAM registration status is {status}", status=status)
     expires = facts.get("sam_expiration_date")
-    if expires and deadline is not None:
-        expiry = datetime.fromisoformat(str(expires))
+    if expires:
+        expiry = datetime.fromisoformat(str(expires)[:10])
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=UTC)
-        if expiry < deadline:
+        if expiry.date() < datetime.now(UTC).date():
+            return _result("sam_registration_known", "fail", "SAM registration is expired", expires=expiry.date())
+        if deadline is not None and expiry < deadline:
             return _result("sam_registration_known", "fail", "SAM registration expires before the response deadline", expires=expiry, deadline=deadline)
     return _result("sam_registration_known", "pass", "SAM registration active", status=status, expires=expires)
 

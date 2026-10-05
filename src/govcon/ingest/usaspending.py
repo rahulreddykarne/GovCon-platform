@@ -27,7 +27,7 @@ import logging
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -130,7 +130,7 @@ def parse_user_date(value: str) -> date:
     text = value.strip()
     for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
         try:
-            return datetime.strptime(text, fmt).date()
+            return datetime.strptime(text, fmt).replace(tzinfo=UTC).date()
         except ValueError:
             continue
     raise ValueError(f"Invalid date {value!r}. Use YYYY-MM-DD or MM/dd/yyyy.")
@@ -145,7 +145,7 @@ def _add_years(value: date, years: int) -> date:
 
 def default_lookback(today: date | None = None) -> tuple[date, date]:
     """Inclusive action-date window covering the last three years through today."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or datetime.now(UTC).date()
     return _add_years(today, -LOOKBACK_YEARS), today
 
 
@@ -183,7 +183,7 @@ def _parse_date(value: object) -> date | None:
         return None
     for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
         try:
-            return datetime.strptime(text[:10], fmt).date()
+            return datetime.strptime(text[:10], fmt).replace(tzinfo=UTC).date()
         except ValueError:
             continue
     return None
@@ -195,7 +195,7 @@ def _code(value: object) -> str | None:
     return _text(value)
 
 
-def _num_text(value: int | float | Decimal) -> str:
+def _num_text(value: float | Decimal) -> str:
     if isinstance(value, float):
         number = Decimal(str(value))
     elif isinstance(value, Decimal):
@@ -475,9 +475,10 @@ def plan_pull(
     An incremental plan also lists codes added since the last history pull;
     those get the 3-year lookback so a new watchlist has award history.
     """
-    today = today or datetime.now(timezone.utc).date()
+    today = today or datetime.now(UTC).date()
     psc_now, naics_now = collect_watchlist_codes(session)
-    codes = {"psc_codes": tuple(psc_now), "naics_codes": tuple(naics_now)}
+    psc_codes = tuple(psc_now)
+    naics_codes = tuple(naics_now)
     if start is not None or end is not None:
         if start is None or end is None:
             raise ValueError("window start and end must be provided together")
@@ -486,18 +487,26 @@ def plan_pull(
         chosen = date_type or "action_date"
         if chosen not in {"action_date", "last_modified_date"}:
             raise ValueError("date_type must be action_date or last_modified_date")
-        return PullPlan(mode="explicit", date_type=chosen, start=start, end=end, **codes)
+        return PullPlan(
+            mode="explicit", date_type=chosen, start=start, end=end,
+            psc_codes=psc_codes, naics_codes=naics_codes,
+        )
     if force_backfill:
         window_start, window_end = default_lookback(today)
-        return PullPlan(mode="backfill", date_type="action_date", start=window_start, end=window_end, **codes)
+        return PullPlan(
+            mode="backfill", date_type="action_date", start=window_start, end=window_end,
+            psc_codes=psc_codes, naics_codes=naics_codes,
+        )
     previous_end = last_completed_window_end(session)
     if previous_end is None:
         window_start, window_end = default_lookback(today)
-        return PullPlan(mode="backfill", date_type="action_date", start=window_start, end=window_end, **codes)
+        return PullPlan(
+            mode="backfill", date_type="action_date", start=window_start, end=window_end,
+            psc_codes=psc_codes, naics_codes=naics_codes,
+        )
     window_end = today
     window_start = previous_end - timedelta(days=1)
-    if window_start > window_end:
-        window_start = window_end
+    window_start = min(window_start, window_end)
     covered_psc, covered_naics = covered_codes(session, (psc_now, naics_now))
     new_psc = _uncovered(psc_now, covered_psc)
     new_naics = _uncovered(naics_now, covered_naics)
@@ -511,7 +520,8 @@ def plan_pull(
         backfill_naics_codes=new_naics,
         backfill_start=lookback_start if new_psc or new_naics else None,
         backfill_end=lookback_end if new_psc or new_naics else None,
-        **codes,
+        psc_codes=psc_codes,
+        naics_codes=naics_codes,
     )
 
 
@@ -593,7 +603,8 @@ def iter_search_pages(
                 )
         previous_ids = page_ids
         yield objects
-        meta = payload.get("page_metadata") if isinstance(payload.get("page_metadata"), dict) else {}
+        page_metadata = payload.get("page_metadata")
+        meta = page_metadata if isinstance(page_metadata, dict) else {}
         if not objects or not meta.get("hasNext"):
             return
     raise UsaSpendingError(f"USAspending search exceeded {MAX_PAGES} pages")

@@ -1,11 +1,11 @@
 """Session-bound CSRF tokens, exact origin checks, and bounded login attempts."""
 
-from collections import OrderedDict
 import hashlib
 import hmac
 import secrets
-from threading import Lock
 import time
+from collections import OrderedDict
+from threading import Lock
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request

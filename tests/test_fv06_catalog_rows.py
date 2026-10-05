@@ -1,15 +1,15 @@
 """Catalog callers retain good rows and report malformed rows."""
-from uuid import uuid4
 from urllib.parse import unquote_plus
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from test_sourcing_company import user
 from typer.testing import CliRunner
 
 from govcon.cli import app
 from govcon.models import CatalogImport, Product, Supplier
 from govcon.sourcing.records import get_or_create_supplier, import_catalog_csv
-from test_sourcing_company import client, db, user
 
 
 def catalog_input():

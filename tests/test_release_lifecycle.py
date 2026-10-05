@@ -17,23 +17,28 @@ from sqlalchemy.orm import Session
 def prepared_lifecycle(engine, artifact_dir):
     from docx import Document
     from openpyxl import Workbook
-    from govcon.collaboration.users import invite_user
+
     from govcon.collaboration.assignments import assign_reviewer
     from govcon.collaboration.comments import add_comment
-    from govcon.collaboration.review_sessions import complete_assignment, finalize_approval, set_review_policy
+    from govcon.collaboration.review_sessions import (
+        complete_assignment,
+        finalize_approval,
+        set_review_policy,
+    )
+    from govcon.collaboration.users import invite_user
+    from govcon.compliance.deterministic import PackageFile, SubmissionPackage
     from govcon.compliance.inventory import build_document_inventory
     from govcon.compliance.matrix import override_requirement
     from govcon.compliance.proposal_coverage import check_proposal_coverage
-    from govcon.compliance.deterministic import PackageFile, SubmissionPackage
     from govcon.config import Settings
     from govcon.enrich.attachments import process_local_file
     from govcon.models import Opportunity, Proposal, Requirement, Submission
+    from govcon.proposals.export import export_proposal_docx
     from govcon.proposals.service import generate_proposal
     from govcon.proposals.versions import create_proposal_version
-    from govcon.proposals.export import export_proposal_docx
     from govcon.security.classification import DataClassification
-    from govcon.submissions.service import generate_submission_package
     from govcon.submissions.manifest import assemble_package
+    from govcon.submissions.service import generate_submission_package
     configured = Settings(_env_file=None, decision_primary_provider="rules", decision_fallback_provider="rules",
                           deepseek_api_key=None, anthropic_api_key=None, openai_api_key=None, jev_api_key=None,
                           ai_external_allowed_for_proprietary=False, ai_external_allowed_for_fci=False, ai_external_allowed_for_cui=False)
@@ -99,7 +104,10 @@ def prepared_lifecycle(engine, artifact_dir):
 def run_release_lifecycle(engine, artifact_dir):
     from govcon.compliance.submission_preflight import run_submission_preflight
     from govcon.models import Proposal, Submission, User
-    from govcon.proposals.service import finalize_proposal, record_submission_confirmation
+    from govcon.proposals.service import (
+        finalize_proposal,
+        record_submission_confirmation,
+    )
     from govcon.submissions.checklist import generate_final_checklist
     ids, package, configured = prepared_lifecycle(engine, artifact_dir)
     opp_id, actor_id, proposal_id, submission_id = ids
@@ -124,7 +132,10 @@ def test_full_release_lifecycle(upgraded_engine, tmp_path):
 
 
 def test_release_package_failure_and_recovery(upgraded_engine, tmp_path):
-    from govcon.compliance.submission_preflight import ReadinessBlocked, run_submission_preflight
+    from govcon.compliance.submission_preflight import (
+        ReadinessBlocked,
+        run_submission_preflight,
+    )
     from govcon.models import Proposal, User
     from govcon.proposals.service import finalize_proposal
     ids, package, configured = prepared_lifecycle(upgraded_engine, tmp_path)

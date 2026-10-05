@@ -7,13 +7,22 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from govcon.ai.structured import PreparedCall, execute_prepared_call, persist_structured_result
+from govcon.ai.structured import (
+    PreparedCall,
+    execute_prepared_call,
+    persist_structured_result,
+)
 from govcon.audit import record_audit
 from govcon.db import shared_session_factory
 from govcon.intelligence.ai_analyses import AnalysisInputMissing, prepare_analysis
 from govcon.intelligence.analysis_tasks import ANALYSIS_TASK, analysis_inputs
 from govcon.models import Task
-from govcon.tasks.errors import TaskBlocked, TaskSuperseded
+from govcon.tasks.errors import (
+    TaskBlocked,
+    TaskFailedPermanently,
+    TaskSuperseded,
+    require_task_opportunity,
+)
 from govcon.tasks.registry import Step, StepContext, TaskHandler, register
 
 _INPUT_ACTION = {
@@ -32,7 +41,7 @@ class _Call:
 
 def _check_inputs(session: Session, task: Task, ctx: StepContext) -> str:
     kind = ctx.payload["kind"]
-    current = analysis_inputs(session, task.opportunity_id, kind)
+    current = analysis_inputs(session, require_task_opportunity(task), kind)
     if current != ctx.input_revision:
         raise TaskSuperseded(
             "the source documents or pursuit facts changed after this analysis was queued; "
@@ -45,7 +54,9 @@ def _check_inputs(session: Session, task: Task, ctx: StepContext) -> str:
 def _prepare(session: Session, task: Task, ctx: StepContext) -> _Call:
     kind = _check_inputs(session, task, ctx)
     try:
-        return _Call(prepared=prepare_analysis(session, task.opportunity_id, kind, settings=ctx.settings))
+        return _Call(prepared=prepare_analysis(
+            session, require_task_opportunity(task), kind, settings=ctx.settings
+        ))
     except AnalysisInputMissing as exc:
         raise TaskBlocked(str(exc), owner_role="approver",
                           next_action=_INPUT_ACTION.get(kind, "Record the missing inputs, then retry.")) from exc
@@ -60,9 +71,14 @@ def _execute(call: _Call, ctx: StepContext) -> _Call:
 def _publish(session: Session, task: Task, call: _Call, ctx: StepContext) -> None:
     kind = _check_inputs(session, task, ctx)
     analysis = persist_structured_result(session, call.prepared, call.executed).analysis
+    if analysis is None:
+        raise TaskFailedPermanently(
+            "analysis result was not stored",
+            next_action="Retry the analysis.",
+        )
     record_audit(
         session, action_type="ai_analysis_completed", user_id=task.created_by_user_id,
-        opportunity_id=task.opportunity_id, entity_type="ai_analyses", entity_id=analysis.id,
+        opportunity_id=require_task_opportunity(task), entity_type="ai_analyses", entity_id=analysis.id,
         new_value={"kind": kind, "task_id": task.id},
     )
     ctx.result = {"kind": kind, "analysis_id": analysis.id}

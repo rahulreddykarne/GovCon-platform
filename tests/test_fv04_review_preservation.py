@@ -3,14 +3,14 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from test_preparation import new_opportunity
+from test_web_ui import _make_user
 
 from govcon.collaboration.review_sessions import ensure_review_session
 from govcon.models import ReviewAssignment
 from govcon.tasks.worker import run_once
 from govcon.workflow.app_settings import REVIEWER_ASSIGNMENT, set_setting
 from govcon.workflow.preparation import STEPS, queue_preparation
-from test_preparation import db, default_settings, new_opportunity
-from test_web_ui import _make_user
 
 
 def prepared_review(db, mode, status):

@@ -30,17 +30,28 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.budget import AIBudgetExceeded, complete_with_budget
+from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
 from govcon.ai.schemas import SCHEMA_REGISTRY
 from govcon.config import Settings, get_settings
 from govcon.models import AIAnalysis
 from govcon.prompting.loader import PromptAsset
-from govcon.prompting.registry import PromptRegistryAbsent, load_prompt, load_prompt_from_disk
-from govcon.prompting.renderer import PromptRenderError, render_system_prompt, render_user_context
-from govcon.security.classification import DataClassification, opportunity_classification
+from govcon.prompting.registry import (
+    PromptRegistryAbsent,
+    load_prompt,
+    load_prompt_from_disk,
+)
+from govcon.prompting.renderer import (
+    PromptRenderError,
+    render_system_prompt,
+    render_user_context,
+)
+from govcon.security.classification import (
+    DataClassification,
+    opportunity_classification,
+)
 
 logger = logging.getLogger("govcon.ai.structured")
 

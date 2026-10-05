@@ -24,8 +24,14 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
-from govcon.compliance.matrix import active_requirements, close_undetected_findings, record_run, upsert_open_finding
+from govcon.compliance.matrix import (
+    active_requirements,
+    close_undetected_findings,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory, SourceDocument
+from govcon.compliance.schemas import ContradictionDetectionV1, parse_model
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement
 from govcon.security.classification import DataClassification
@@ -35,7 +41,7 @@ SCALAR_TOPICS = (
     "delivery_days", "page_limit", "response_deadline_date", "response_deadline_time", "deadline_timezone",
     "recipient_email", "submission_portal", "max_file_size_mb", "allowed_file_types",
 )
-_CLIN = re.compile(r"\bCLIN\s*(\d{4}[A-Z]{0,2})\b", re.I)
+_CLIN = re.compile(r"\bCLIN\s*(\d{4}[A-Z]{0,2})\b", re.IGNORECASE)
 
 
 @dataclass
@@ -283,8 +289,10 @@ def _ai_conflicts(session, opportunity_id, inventory, requirements, docs, run_id
     except StructuredCallError as exc:
         warnings.append({"code": f"contradiction_ai_{exc.reason}", "severity": "medium", "message": exc.detail})
         return {"status": "failed", "reason": exc.reason}
+    output = parse_model(result.output, ContradictionDetectionV1)
+    analysis = result.analysis
     raised = 0
-    for item in result.output.conflicts:
+    for item in output.conflicts:
         ids = [i for i in item.requirement_ids if i in by_id]
         if len(ids) >= 2:
             entries = [(_facts_for(by_id[i]), str(i)) for i in ids]
@@ -314,4 +322,4 @@ def _ai_conflicts(session, opportunity_id, inventory, requirements, docs, run_id
                 compliance_run_id=run_id,
             )
         raised += 1
-    return {"status": "complete", "ai_analysis_id": result.analysis.id, "conflicts_raised": raised}
+    return {"status": "complete", "ai_analysis_id": analysis.id if analysis is not None else None, "conflicts_raised": raised}

@@ -30,7 +30,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.message import Message
 from pathlib import Path
-from govcon.security.classification import DataClassification, strictest_classification
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
@@ -42,9 +41,10 @@ from govcon.enrich.attachment_refs import AttachmentRef, attachment_refs_for
 from govcon.enrich.extract import ExtractionResult, extract_text, guess_mime_type
 from govcon.enrich.safe_fetch import FetchError, Resolver, safe_fetch
 from govcon.http import build_client
-from govcon.logging import redact
 from govcon.ingest.snapshots import current_snapshot_id
+from govcon.logging import redact
 from govcon.models import FilePage, Opportunity, StoredFile
+from govcon.security.classification import DataClassification, strictest_classification
 
 logger = logging.getLogger("govcon.enrich.attachments")
 
@@ -289,6 +289,8 @@ def known_versions(session: Session, opportunity_id: int, refs: list[AttachmentR
         select(StoredFile.url, StoredFile.sha256)
         .where(StoredFile.opportunity_id == opportunity_id, StoredFile.url.in_(urls), StoredFile.sha256.is_not(None))
     ):
+        if url is None or sha is None:
+            continue
         known[url].add(sha)
     return known
 

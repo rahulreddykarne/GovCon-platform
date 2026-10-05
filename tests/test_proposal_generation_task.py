@@ -19,8 +19,11 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+import test_web_ui
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
+from test_web_ui import _make_user
+from web_client import CsrfTestClient
 
 from govcon.models import (
     AuditEvent,
@@ -36,9 +39,6 @@ from govcon.tasks import queue
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
 from govcon.workflow.proposal_generation import PROPOSAL_TASK
-import test_web_ui
-from test_web_ui import _make_user
-from web_client import CsrfTestClient
 
 
 @pytest.fixture()
@@ -186,7 +186,7 @@ def test_ac3_failed_publish_rolls_back_artifacts_and_retries(db, client, monkeyp
 
 
 def test_ac3_exhausted_retries_fail_with_owner_and_next_action(db, client, monkeypatch):
-    opp, _, review, _ = approved_bid(db, client)
+    opp, _, _review, _ = approved_bid(db, client)
     task = tasks_for(db, opp.id)[0]
     db.execute(update(Task).where(Task.id == task.id).values(max_attempts=1))
     db.commit()
@@ -301,7 +301,7 @@ def test_budget_and_policy_errors_block_with_an_owner(db, client, monkeypatch, r
         raise StructuredCallError(reason, "synthetic refusal")
 
     monkeypatch.setattr("govcon.proposals.drafting.prepare_draft_call", refuse)
-    [(task_id, result)] = drain(opportunity_id=opp.id)
+    [(_task_id, result)] = drain(opportunity_id=opp.id)
     assert result == status
     task = tasks_for(db, opp.id)[0]
     assert task.blocker_owner_role == "owner" and task.blocker_next_action
@@ -379,7 +379,7 @@ def test_ac6_two_workers_racing_produce_one_proposal(db, client):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = [f.result(timeout=120) for f in [pool.submit(work) for _ in range(2)]]
-    assert sorted(results, key=lambda r: r is None) [0][1] == "succeeded"
+    assert min(results, key=lambda r: r is None)[1] == "succeeded"
     assert sum(r is None for r in results) == 1, "SKIP LOCKED hands the task to one worker"
     assert counts(db, opp.id) == (1, 1, 1)
 
@@ -408,7 +408,7 @@ def test_ac6_identical_work_is_queued_once(db, client):
     from govcon.workflow.proposal_generation import queue_proposal_generation
     opp, _, _, _ = approved_bid(db, client)
     with session_scope() as s:
-        task, created = queue_proposal_generation(s, opportunity_id=opp.id, actor_user_id=None)
+        _task, created = queue_proposal_generation(s, opportunity_id=opp.id, actor_user_id=None)
     assert created is False and len(tasks_for(db, opp.id)) == 1
 
 
@@ -454,7 +454,7 @@ def test_ac7_amendment_with_a_stale_package_waits_for_the_approver(db, client, m
 def test_ac7_material_source_change_cancels_inflight_generation(db, client):
     from govcon.db import session_scope
     from govcon.workflow.invalidation import apply_source_change, lock_opportunity
-    opp, _, review, _ = approved_bid(db, client)
+    opp, _, _review, _ = approved_bid(db, client)
     with session_scope() as s:
         lock_opportunity(s, opp.id)
         apply_source_change(s, opp.id, level="material", reason="amendment 0001")
@@ -497,7 +497,7 @@ def test_ac8_reapproval_never_regenerates_an_edited_proposal(db, client):
 def test_ac8_a_proposal_created_meanwhile_cancels_the_task(db, client):
     from govcon.db import session_scope
     from govcon.proposals.service import generate_proposal
-    opp, _, _, actor = approved_bid(db, client)
+    opp, _, _, _actor = approved_bid(db, client)
     with session_scope() as s:
         generate_proposal(s, opportunity_id=opp.id, skip_ai=True)
     assert drain(opportunity_id=opp.id)[0][1] == "cancelled"

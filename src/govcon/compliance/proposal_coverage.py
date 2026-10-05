@@ -35,17 +35,28 @@ from govcon.compliance.matrix import (
     record_run,
     upsert_open_finding,
 )
-from govcon.compliance.text import containment, numbers, quote_in_text, split_sentences, tokens
+from govcon.compliance.schemas import ProposalCoverageV1, parse_model
+from govcon.compliance.text import (
+    containment,
+    numbers,
+    quote_in_text,
+    split_sentences,
+    tokens,
+)
 from govcon.config import Settings, get_settings
-from govcon.models import ProposalSection, ProposalVersion, Requirement, RequirementEvidence
+from govcon.models import (
+    ProposalSection,
+    ProposalVersion,
+    Requirement,
+    RequirementEvidence,
+)
 from govcon.security.classification import DataClassification
 
 COVERAGE_VERSION = "proposal_coverage.v1"
 RESPONSE_TYPES = frozenset({"technical", "past_performance", "pricing", "delivery", "cybersecurity", "country_of_origin", "certification", "representation", "set_aside", "other"})
 ARTIFACT_TYPES = frozenset({"signature", "amendment_acknowledgment", "formatting", "page_limit", "submission"})
 _GENERIC = frozenset(
-    "offeror offerors quoter quoters vendor contractor provide provided submit submitted include included required requirement "
-    "proposal proposals quote quotes offer offers response shall must describe demonstrate government solicitation".split()
+    ["offeror", "offerors", "quoter", "quoters", "vendor", "contractor", "provide", "provided", "submit", "submitted", "include", "included", "required", "requirement", "proposal", "proposals", "quote", "quotes", "offer", "offers", "response", "shall", "must", "describe", "demonstrate", "government", "solicitation"]
 )
 _ORDER = {"NOT_FOUND": 0, "PARTIAL": 1, "NEEDS_REVIEW": 2, "COVERED": 3}
 
@@ -86,7 +97,7 @@ def needs_response(req: Requirement) -> bool:
 
 def count_items(noun: str, text: str) -> int:
     labels = set(re.findall(rf"\b(?i:{re.escape(noun)})s?\s+(?:#\s*|(?i:no\.?)\s*)?([A-Z]|\d+)\b", text))
-    lines = [line for line in text.splitlines() if re.match(rf"\s*(?:[-*•]|\d+[.)])?\s*{re.escape(noun)}\b", line, re.I)]
+    lines = [line for line in text.splitlines() if re.match(rf"\s*(?:[-*•]|\d+[.)])?\s*{re.escape(noun)}\b", line, re.IGNORECASE)]
     return max(len(labels), len(lines))
 
 
@@ -96,12 +107,12 @@ _AFFIRMATIVE_IDIOMS = re.compile(
     r"\b(?:no|not)\s+(?:later|more|less|fewer|greater)\s+than\b|\bnot\s+to\s+exceed\b|"
     r"\bwithout\s+(?:any\s+)?exceptions?\b|\b(?:takes?|taking|with)\s+no\s+exceptions?\b|\bno\s+exceptions?\s+(?:is|are)\s+taken\b|"
     r"\bno\.?\s*(?=[#\d])",
-    re.I,
+    re.IGNORECASE,
 )
 _NEGATION = re.compile(
     r"\b(?:not|no|never|none|nor|neither|cannot|unable|without|lacks?|lacking|decline[sd]?|"
     r"exceptions?\s+to|\w+n['’]t|non-?compliant|noncompliance)\b",
-    re.I,
+    re.IGNORECASE,
 )
 _DIGITS = re.compile(r"\b\d+(?:\.\d+)?\b")
 
@@ -154,23 +165,30 @@ def scan_coverage(req_id: Any, text: str, key_values: dict[str, Any], sections: 
     claimed = [s for _, _, m, s in scored if m]
     sentences = split_sentences(best.content) or ([best.content[:300]] if best.content.strip() else [])
     excerpt = max(sentences, key=lambda s: containment(wanted, tokens(s)))[:500] if sentences else None
-    base = dict(section_id=best.section_id, section_key=best.section_key, excerpt=excerpt)
+    section_id = best.section_id
+    section_key = best.section_key
     if overlap >= full:
         # Idioms are neutralised before splitting so "No. 3" is not cut into a bare "No.".
         passages = [s for s in split_sentences(_AFFIRMATIVE_IDIOMS.sub(" ", best.content)) if wanted & tokens(s)]
         issue = content_issue(text, key_values, best.content, passages)
         if issue:
-            return CoverageResult(req_id, "NEEDS_REVIEW", issue=issue, **base)
+            return CoverageResult(req_id, "NEEDS_REVIEW", section_id=section_id, section_key=section_key, excerpt=excerpt, issue=issue)
         required = key_values.get("required_count")
         noun = key_values.get("count_noun")
         if required and noun:
             detected = count_items(noun, best.content)
             if detected < int(required):
-                return CoverageResult(req_id, "PARTIAL", issue=f"detected {detected} of {required} required {noun}s", detected_count=detected, **base)
-            return CoverageResult(req_id, "COVERED", detected_count=detected, **base)
-        return CoverageResult(req_id, "COVERED", **base)
+                return CoverageResult(
+                    req_id, "PARTIAL", section_id=section_id, section_key=section_key, excerpt=excerpt,
+                    issue=f"detected {detected} of {required} required {noun}s", detected_count=detected,
+                )
+            return CoverageResult(req_id, "COVERED", section_id=section_id, section_key=section_key, excerpt=excerpt, detected_count=detected)
+        return CoverageResult(req_id, "COVERED", section_id=section_id, section_key=section_key, excerpt=excerpt)
     if overlap >= partial:
-        return CoverageResult(req_id, "NEEDS_REVIEW" if mapped else "PARTIAL", issue=f"only {overlap:.0%} of requirement terms addressed", **base)
+        return CoverageResult(
+            req_id, "NEEDS_REVIEW" if mapped else "PARTIAL", section_id=section_id, section_key=section_key, excerpt=excerpt,
+            issue=f"only {overlap:.0%} of requirement terms addressed",
+        )
     headed = max(scored, key=lambda item: (item[1], item[2]))
     if headed[1] >= partial:
         section = headed[3]
@@ -234,7 +252,9 @@ def check_proposal_coverage(
                 context_manifest={"proposal_version_id": proposal_version_id, "requirement_ids": [r.id for r in requirements]},
                 settings=settings,
             )
-            for item in ai.output.coverage:
+            output = parse_model(ai.output, ProposalCoverageV1)
+            analysis = ai.analysis
+            for item in output.coverage:
                 current = results.get(item.requirement_id)
                 if current is None:
                     continue
@@ -260,7 +280,7 @@ def check_proposal_coverage(
                     else:
                         current.issue = "AI auditor claimed coverage without a verifiable excerpt"
                         current.coverage_status = "NEEDS_REVIEW"
-            ai_summary = {"status": "complete", "ai_analysis_id": ai.analysis.id}
+            ai_summary = {"status": "complete", "ai_analysis_id": analysis.id if analysis is not None else None}
         except StructuredCallError as exc:
             warnings.append({"code": f"coverage_ai_{exc.reason}", "severity": "medium", "message": exc.detail})
             ai_summary = {"status": "failed", "reason": exc.reason}

@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 from govcon.collaboration.users import require_permission
 from govcon.config import Settings, get_settings
 from govcon.models import SupplierQuote, Task, User
-from govcon.sourcing.records import SourcingError, parse_quote_table, record_quote, store_quote_file
+from govcon.sourcing.records import (
+    SourcingError,
+    parse_quote_table,
+    record_quote,
+    store_quote_file,
+)
 
 MAX_QUOTE_BYTES = 25 * 1024 * 1024
 

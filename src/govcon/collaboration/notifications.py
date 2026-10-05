@@ -7,7 +7,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
-from govcon.models import Notification
+from govcon.models import Notification, User
 
 logger = logging.getLogger("govcon.collaboration.notifications")
 
@@ -78,7 +78,7 @@ def notify(
 
 
 def _queue_email(session: Session, row: Notification, settings: Settings) -> None:
-    from govcon.models import NotificationDelivery, User
+    from govcon.models import NotificationDelivery
     from govcon.tasks import queue
 
     user = session.get(User, row.user_id)
@@ -93,7 +93,7 @@ def _queue_email(session: Session, row: Notification, settings: Settings) -> Non
     )
 
 
-def acknowledge(session: Session, *, notification_id: int, user: "User") -> Notification:
+def acknowledge(session: Session, *, notification_id: int, user: User) -> Notification:
     """Record that the user has seen and accepted an action-required notification."""
     from datetime import UTC, datetime
 

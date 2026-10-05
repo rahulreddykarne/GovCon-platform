@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Self
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ class SourceRevision(str):
 
     legacy: str
 
-    def __new__(cls, value: str, legacy: str) -> "SourceRevision":
+    def __new__(cls, value: str, legacy: str) -> Self:
         obj = super().__new__(cls, value)
         obj.legacy = legacy
         return obj
@@ -59,14 +59,22 @@ def current_source_revision(session: Session, opportunity_id: int) -> str | None
         for file_id, url, sha, status, active in rows
         if active
     )
-    basis = {"opportunity_id": opportunity_id, "raw_hash": opportunity.raw_hash, "attachments": current}
+    basis: dict[str, object] = {
+        "opportunity_id": opportunity_id,
+        "raw_hash": opportunity.raw_hash,
+        "attachments": current,
+    }
     policy = sorted((row.id, row.classification, row.source_origin) for row in session.scalars(
         select(StoredFile).where(StoredFile.opportunity_id == opportunity_id)
     ) if row.classification != "PUBLIC")
     if policy:
         basis["document_policy"] = policy
     value = REVISION_PREFIX + hashlib.sha256(json.dumps(basis, sort_keys=True).encode("utf-8")).hexdigest()
-    legacy_basis = {"opportunity_id": opportunity_id, "raw_hash": opportunity.raw_hash, "files": sorted(sha or "" for _, _, sha, _, _ in rows)}
+    legacy_basis: dict[str, object] = {
+        "opportunity_id": opportunity_id,
+        "raw_hash": opportunity.raw_hash,
+        "files": sorted(sha or "" for _, _, sha, _, _ in rows),
+    }
     if policy:
         legacy_basis["document_policy"] = policy
     legacy = hashlib.sha256(json.dumps(legacy_basis, sort_keys=True).encode("utf-8")).hexdigest()

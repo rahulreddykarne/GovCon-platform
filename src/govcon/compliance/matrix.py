@@ -539,9 +539,13 @@ def inputs_for(
         if e.verification_status == "verified"
     ]
     override = validation.get("override")
-    if override and requirement.amendment_changed_at and override.get("at"):
-        if datetime.fromisoformat(override["at"]) < requirement.amendment_changed_at:
-            override = None
+    if (
+        override
+        and requirement.amendment_changed_at
+        and override.get("at")
+        and datetime.fromisoformat(override["at"]) < requirement.amendment_changed_at
+    ):
+        override = None
     deterministic = list(validation.get("deterministic") or []) + list(validation.get("proposal_coverage_checks") or [])
     revalidated = bool(fresh) or any(d.get("status") in {"pass", "fail"} for d in deterministic)
     return ValidationInputs(
@@ -709,7 +713,8 @@ def compliance_matrix(session: Session, opportunity_id: int, *, filters: list[st
     }
     rows: list[dict[str, Any]] = []
     for req in requirements:
-        row = _matrix_row(req, evidence.get(req.id, []), files.get(req.source_file_id))
+        source_file = files.get(req.source_file_id) if req.source_file_id is not None else None
+        row = _matrix_row(req, evidence.get(req.id, []), source_file)
         if _row_matches(row, filters):
             rows.append(row)
     return rows

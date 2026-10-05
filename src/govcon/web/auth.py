@@ -9,7 +9,6 @@ from typing import Annotated
 
 from fastapi import Cookie, Depends, Request, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session as OrmSession
 
 from govcon.collaboration.users import user_for_token
 from govcon.db import session_scope
@@ -48,7 +47,6 @@ def require_user(
 
 
 def _redirect_to_login(request: Request) -> Exception:
-    from fastapi import HTTPException
     # We use a redirect response stored as an attribute on a minimal exception
     # so route handlers can catch it and return it.
     class _LoginRedirect(Exception):

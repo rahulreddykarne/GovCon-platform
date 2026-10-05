@@ -176,11 +176,16 @@ def _refresh(opp: Opportunity, provider: EmbeddingProvider) -> list[float] | Non
         opp.embedding_source_hash = None
         return None
     if not _fresh(opp, provider, text):
-        opp.embedding = _vector(provider, text)
+        vector = _vector(provider, text)
+        opp.embedding = vector
         opp.embedding_model = _model_id(provider)
         opp.embedding_dimension = _EMBEDDING_DIM
         opp.embedding_source_hash = _source_hash(text)
-    return list(opp.embedding)
+        return list(vector)
+    stored = opp.embedding
+    if stored is None:
+        return None
+    return list(stored)
 
 
 # ── job functions ─────────────────────────────────────────────────────────────
@@ -265,7 +270,9 @@ def build_watchlist_profiles(
         matched = session.scalars(select(Opportunity).join(Match, Match.opportunity_id == Opportunity.id).where(Match.watchlist_id == wl.id, Match.active.is_(True)).order_by(Opportunity.id)).all()
         matched_vectors = [v for opp in matched if (v := _refresh(opp, provider)) is not None]
         if matched_vectors:
-            vectors.append(_mean_pool(matched_vectors))
+            pooled = _mean_pool(matched_vectors)
+            if pooled is not None:
+                vectors.append(pooled)
         wl.embedding = vectors[0] if len(vectors) == 1 else _mean_pool(vectors) or [0.0] * _EMBEDDING_DIM
         wl.embedding_updated_at = datetime.now(UTC)
         wl.embedding_model = _model_id(provider)

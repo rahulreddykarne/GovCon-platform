@@ -25,7 +25,7 @@ not one per award record.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -33,7 +33,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
-from govcon.models import Award, Opportunity, OutcomeFeedback, OutcomeSuggestion, Pursuit, User
+from govcon.models import (
+    Award,
+    Opportunity,
+    OutcomeFeedback,
+    OutcomeSuggestion,
+    Pursuit,
+    User,
+)
 
 POSSIBLE_WINDOW = (timedelta(days=-30), timedelta(days=365))
 # Possible (non-identifying) matches kept per bid, over all runs.

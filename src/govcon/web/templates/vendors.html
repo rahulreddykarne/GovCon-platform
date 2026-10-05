@@ -26,7 +26,8 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">{{ vendor.legal_name or vendor.uei }}</span>
-    <span class="badge badge-{% if vendor.registration_status == 'Active' %}success{% else %}secondary{% endif %}">{{ vendor.registration_status or 'Unknown' }}</span>
+    {% set vendor_current = vendor.freshness_status == 'fresh' %}
+    <span class="badge badge-{% if vendor_current and vendor.registration_status == 'Active' %}success{% else %}secondary{% endif %}">{{ vendor.registration_status if vendor_current else (vendor.freshness_status or 'unknown') }}</span>
   </div>
   <dl class="key-val">
     <dt>UEI</dt><dd>{{ vendor.uei }}</dd>
@@ -79,7 +80,7 @@
           <td><a href="/vendors?q={{ v.uei }}">{{ v.legal_name or v.uei }}</a></td>
           <td><code>{{ v.uei }}</code></td>
           <td>{{ v.cage_code or "—" }}</td>
-          <td><span class="badge badge-{% if v.registration_status == 'Active' %}success{% else %}secondary{% endif %}">{{ v.registration_status or '?' }}</span></td>
+          <td><span class="badge badge-{% if v.freshness_status == 'fresh' and v.registration_status == 'Active' %}success{% else %}secondary{% endif %}">{{ v.registration_status if v.freshness_status == 'fresh' else (v.freshness_status or 'unknown') }}</span></td>
           <td>
             {% if v.psc_codes %}
               {% for k in (v.psc_codes.keys() if v.psc_codes is mapping else []) | list %}

@@ -30,20 +30,27 @@ from govcon.ingest.dibbs import (
     DibbsError,
     dibbs_return_deadline,
     federal_holidays,
-    last_ingested_index_date,
-    next_business_day,
     fetch_consented,
     index_file_url,
     index_links,
     ingest_index_bytes,
     ingest_index_file,
+    last_ingested_index_date,
+    next_business_day,
     parse_index,
     pull_dibbs_index,
 )
 from govcon.ingest.snapshots import canonical_content_hash, upsert_opportunity
 from govcon.matching.engine import run_matching
 from govcon.matching.watchlists import create_watchlist
-from govcon.models import Contact, IngestionRun, Match, Opportunity, OpportunityEvent, OpportunitySnapshot
+from govcon.models import (
+    Contact,
+    IngestionRun,
+    Match,
+    Opportunity,
+    OpportunityEvent,
+    OpportunitySnapshot,
+)
 
 runner = CliRunner()
 FIXTURE = Path(__file__).parent / "fixtures" / "dibbs" / "in260925.txt"
@@ -133,7 +140,7 @@ def test_index_parses_solicitation_nsn_quantity_and_buyer() -> None:
     assert first.nsn == FIRST_NSN
     assert first.nsn_candidates == (FIRST_NSN,)
     assert first.psc_code == "8415"
-    assert first.quantity == Decimal("200")
+    assert first.quantity == Decimal(200)
     assert first.unit == "EA"
     assert first.title == "BAG,FLYER'S HELMET"
     assert first.set_aside_code == "N"
@@ -150,7 +157,7 @@ def test_index_parses_solicitation_nsn_quantity_and_buyer() -> None:
     assert len(first.raw["record"]) == 140
     local = next(item for item in items if item.solicitation_number == "SPEFA526Q0078")
     assert local.nsn is None
-    assert local.quantity == Decimal("24")
+    assert local.quantity == Decimal(24)
     assert local.unit == "EA"
     assert sum(1 for item in items if item.nsn) == 521
     assert sum(1 for item in items if item.quantity is not None) == 523
@@ -254,7 +261,7 @@ def test_amendment_writes_snapshot_and_field_events(session: Session) -> None:
     assert upsert_opportunity(session, original[0]) == "inserted"
     assert upsert_opportunity(session, changed[0]) == "updated"
     row = _opportunity(session, FIRST_SOURCE_ID)
-    assert row.quantity == Decimal("201")
+    assert row.quantity == Decimal(201)
     assert row.response_deadline == datetime(2026, 10, 15, 19, 0, tzinfo=UTC)  # 3:00 PM EDT
     assert _snapshot_count(session, row.id) == 2
     events = session.scalars(select(OpportunityEvent).where(OpportunityEvent.opportunity_id == row.id)).all()

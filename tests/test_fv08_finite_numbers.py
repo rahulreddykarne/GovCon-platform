@@ -4,10 +4,16 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from test_sourcing_company import opportunity, user
 
 from govcon.models import SupplierQuote
-from govcon.sourcing.records import SourcingError, _decimal, get_or_create_supplier, import_catalog_csv, parse_quote_table
-from test_sourcing_company import client, db, opportunity, user
+from govcon.sourcing.records import (
+    SourcingError,
+    _decimal,
+    get_or_create_supplier,
+    import_catalog_csv,
+    parse_quote_table,
+)
 
 
 @pytest.mark.parametrize("value,expected", [(None, None), ("", None), (" ", None), (0, Decimal(0)),
@@ -25,7 +31,7 @@ def test_current_invalid_number_contract(value):
 
 def test_current_formatted_manual_total_web_contract(db, client):
     opp = opportunity(db)
-    actor, token = user(db)
+    _actor, token = user(db)
     client.cookies.set("govcon_session", token)
     response = client.post(f"/workspace/{opp.id}/quotes", data={"supplier_name": f"finite-{uuid4().hex}",
                                                                "total_price": "$1,200.50"})
