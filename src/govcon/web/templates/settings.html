@@ -10,6 +10,17 @@
   </div>
 </div>
 
+<div class="card">
+  <div class="card-header"><span class="card-title">External AI sharing</span></div>
+  <p>These switches live in the environment, not in this form. The page does not change them.</p>
+  <ul>
+    <li>Proprietary data to an external model: <strong>{{ 'on' if ai_sharing.proprietary else 'off' }}</strong></li>
+    <li>FCI: <strong>{{ 'on' if ai_sharing.fci else 'off' }}</strong></li>
+    <li>CUI: <strong>{{ 'on' if ai_sharing.cui else 'off' }}</strong></li>
+  </ul>
+  <p class="text-sm text-muted">Off means the call is blocked and the local rules engine is used for bid/no-bid. Unknown and credential material is always blocked. Government solicitations mixed with company data are treated as proprietary.</p>
+</div>
+
 <form method="post" action="/settings">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
 

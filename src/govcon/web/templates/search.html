@@ -85,6 +85,15 @@
   {% else %}
     <p class="text-muted text-center" style="padding:2rem 0;">No matching opportunities found.</p>
   {% endif %}
+  <p class="text-sm">
+    {% if page > 1 %}
+    <a href="/search?q={{ query or '' }}&source={{ source or '' }}&psc={{ psc or '' }}&naics={{ naics or '' }}&status={{ status or '' }}&page={{ page - 1 }}">Previous</a>
+    {% endif %}
+    Page {{ page }}
+    {% if has_more %}
+    <a href="/search?q={{ query or '' }}&source={{ source or '' }}&psc={{ psc or '' }}&naics={{ naics or '' }}&status={{ status or '' }}&page={{ page + 1 }}">Next</a>
+    {% endif %}
+  </p>
 </div>
 {% endif %}
 

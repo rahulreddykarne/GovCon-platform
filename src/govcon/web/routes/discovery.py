@@ -93,8 +93,36 @@ def inbox(request: Request, page: Annotated[int, Query(ge=1, le=1_000_000)] = 1)
                 }
             )
         groups = [{"watchlist_name": "New opportunities", "matches": matches}] if matches else []
-    return _render(request, "inbox.html", {"groups": groups, "total_count": total, "page": page,
-        "pages": pages, "active_page": "inbox"}, user)
+        from govcon.models import BotApproval, BotRun
+        from govcon.ops.health import collect_health
+
+        pending_approvals = db.scalar(
+            select(func.count()).select_from(BotApproval).where(BotApproval.status == "pending")
+        ) or 0
+        latest_orchestrator = db.scalar(
+            select(BotRun).where(BotRun.bot_name == "orchestrator").order_by(desc(BotRun.started_at)).limit(1)
+        )
+        orchestrator_view = None
+        if latest_orchestrator is not None:
+            orchestrator_view = {
+                "status": latest_orchestrator.status,
+                "state": (latest_orchestrator.outputs or {}).get("state") or latest_orchestrator.status,
+            }
+        try:
+            health = collect_health(db, request.app.state.settings)
+            unhealthy = [item["name"] for item in health["checks"] if item["status"] in {"down", "degraded", "stale"}]
+        except Exception:
+            unhealthy = ["health"]
+        promising = sorted(
+            (item for item in matches if item["rank_score"] is not None),
+            key=lambda item: item["rank_score"],
+            reverse=True,
+        )[:3]
+    return _render(request, "inbox.html", {
+        "groups": groups, "total_count": total, "page": page, "pages": pages, "active_page": "inbox",
+        "pending_approvals": pending_approvals, "orchestrator": orchestrator_view,
+        "unhealthy": unhealthy[:6], "promising": promising,
+    }, user)
 
 
 def inbox_action(
@@ -151,14 +179,16 @@ def search(
     psc: str | None = None,
     naics: str | None = None,
     status_filter: str | None = Query(None, alias="status"),
+    page: Annotated[int, Query(ge=1, le=1_000_000)] = 1,
 ) -> Response:
     try:
         user = _require_login(request)
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    LIMIT = 100
+    LIMIT = 50
     results = None
+    has_more = False
 
     if q or source or psc or naics or status_filter:
         with session_scope() as db:
@@ -177,8 +207,10 @@ def search(
                 stmt = stmt.where(Opportunity.status == status_filter)
             if q:
                 stmt = stmt.order_by(text("ts_rank_cd(to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,'')), plainto_tsquery('english', :q)) DESC"))
-            stmt = stmt.order_by(Opportunity.response_deadline.asc().nullslast(), Opportunity.id).limit(LIMIT)
-            rows = db.scalars(stmt).all()
+            stmt = stmt.order_by(Opportunity.response_deadline.asc().nullslast(), Opportunity.id).offset((page - 1) * LIMIT).limit(LIMIT + 1)
+            rows = list(db.scalars(stmt).all())
+            has_more = len(rows) > LIMIT
+            rows = rows[:LIMIT]
             results = []
             for r in rows:
                 dl, dlc = deadline_info(r.response_deadline)
@@ -206,6 +238,8 @@ def search(
         "naics": naics,
         "status": status_filter,
         "limit": LIMIT,
+        "page": page,
+        "has_more": has_more,
         "active_page": "search",
     }, user)
 
@@ -248,6 +282,7 @@ def pipeline(request: Request, matched_page: Annotated[int, Query(ge=1, le=1_000
             dl, dlc = deadline_info(opp.response_deadline)
             return {"opp_id": opp.id, "title": opp.title, "source_id": opp.source_id,
                     "deadline_label": dl, "deadline_class": dlc, "stage": stage,
+                    "stage_label": stage.replace("_", " "),
                     "value": format_value(opp.estimated_value_min, opp.estimated_value_max), "margin": margin}
 
         for pursuit, opp, review in pursuits:

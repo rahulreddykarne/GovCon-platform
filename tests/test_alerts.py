@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import smtplib
 import ssl
+from pathlib import Path
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -502,6 +503,30 @@ class _FakeSMTP:
         self.messages.append(message)
 
 
+def test_configured_smtp_still_writes_the_outbox_by_default(session: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A configured SMTP server must not be contacted unless a caller opts in."""
+    _quiet_existing(session)
+
+    class BoomSMTP:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("SMTP must not be opened")
+
+    monkeypatch.setattr("govcon.alerts.digest.smtplib.SMTP", BoomSMTP)
+    watchlist = _watchlist(session)
+    _match(session, _opportunity(session, title="Outbox only hull"), watchlist)
+    settings = _settings(
+        tmp_path,
+        smtp_host="smtp.example.test",
+        smtp_user="alerts@example.test",
+        smtp_pass="supersecret-value",
+        alert_email_to="ops@example.test",
+    )
+    result = run_digest(session, settings=settings, now=NOW)
+    assert result.channel == "outbox"
+    assert result.path is not None
+    assert "Outbox only hull" in Path(result.path).read_text(encoding="utf-8")
+
+
 def test_smtp_sends_html_and_skips_outbox(session: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _quiet_existing(session)
     created: list[_FakeSMTP] = []
@@ -521,7 +546,7 @@ def test_smtp_sends_html_and_skips_outbox(session: Session, tmp_path, monkeypatc
         smtp_pass="supersecret-value",
         alert_email_to="ops@example.test",
     )
-    result = run_digest(session, settings=settings, now=NOW)
+    result = run_digest(session, settings=settings, now=NOW, external_delivery=True)
     assert result.sent is True
     assert result.channel == "smtp"
     assert result.path is None
@@ -555,7 +580,7 @@ def test_smtp_failure_leaves_match_unalerted(session: Session, tmp_path, monkeyp
         alert_email_to="ops@example.test",
     )
     with pytest.raises(DigestDeliveryError) as caught:
-        run_digest(session, settings=settings, now=NOW)
+        run_digest(session, settings=settings, now=NOW, external_delivery=True)
     assert "supersecret-value" not in str(caught.value)
     assert match.alerted_at is None
     assert match.status == "new"

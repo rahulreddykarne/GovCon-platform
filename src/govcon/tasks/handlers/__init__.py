@@ -2,6 +2,7 @@
 
 from govcon.tasks.handlers import (  # noqa: F401
     analysis,
+    bots,
     chain,
     notification_email,
     proposal,

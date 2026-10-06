@@ -6,7 +6,28 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Operations</h1>
-    <div class="page-subtitle">Ingestion and job health</div>
+    <div class="page-subtitle">Is the system running, and what should you do next?</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Health</span>
+    <span class="text-muted" style="font-size:0.85rem;">Local checks only. This page does not call SAM, DIBBS, or an AI provider.</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for check in health.checks %}
+        <tr>
+          <td>{{ check.name }}</td>
+          <td><span class="badge badge-{% if check.status == 'ok' %}success{% elif check.status == 'unknown' or check.status == 'stale' or check.status == 'degraded' %}warning{% else %}danger{% endif %}">{{ check.status }}</span></td>
+          <td>{{ check.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 
@@ -164,40 +185,29 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Chain</th><th>Schedule</th><th>Steps</th><th>Last Run</th><th>Status</th><th>Details</th></tr>
+        <tr><th>Chain</th><th>Schedule</th><th>Last success</th><th>Last failure</th><th>Next run</th><th>Duration</th><th>Counts</th><th>What to do</th></tr>
       </thead>
       <tbody>
         {% for chain in chain_summary %}
         <tr>
-          <td><strong>{{ chain.name }}</strong><br><small class="text-muted">{{ chain.description }}</small></td>
+          <td><strong>{{ chain.name }}</strong><br><small class="text-muted">{{ chain.steps | join(' → ') }}</small></td>
           <td><code>{{ chain.cron }}</code></td>
-          <td><small>{{ chain.steps | join(' → ') }}</small></td>
           <td>
-            {% if chain.last_run %}
-              {{ chain.last_run.started_at.strftime('%Y-%m-%d %H:%M') if chain.last_run.started_at else '—' }} UTC
-              <small class="text-muted">({{ chain.last_run.trigger or 'manual' }})</small>
-            {% else %}
-              <span class="text-muted">never run</span>
-            {% endif %}
+            {% if chain.last_success %}
+              {{ chain.last_success.finished_at.strftime('%Y-%m-%d %H:%M') if chain.last_success.finished_at else 'running' }} UTC
+              <span class="badge badge-{% if chain.last_success.status == 'succeeded' %}success{% else %}warning{% endif %}">{{ chain.last_success.status }}</span>
+            {% else %}<span class="text-muted">never</span>{% endif %}
           </td>
           <td>
-            {% if chain.last_run %}
-              <span class="badge badge-{% if chain.last_run.status == 'succeeded' %}success{% elif chain.last_run.status == 'running' %}primary{% elif chain.last_run.status == 'completed_with_errors' %}warning{% else %}danger{% endif %}">
-                {{ chain.last_run.status }}
-              </span>
-            {% else %}
-              <span class="badge">—</span>
-            {% endif %}
+            {% if chain.last_failure %}
+              <span class="text-danger">{{ chain.last_failure.started_at.strftime('%Y-%m-%d %H:%M') if chain.last_failure.started_at else '—' }} UTC</span>
+              <br><small>{{ chain.last_failure.error or chain.last_failure.failed_step or 'failed' }}</small>
+            {% else %}<span class="text-muted">none</span>{% endif %}
           </td>
-          <td>
-            {% if chain.last_run and chain.last_run.failed_step %}
-              <small class="text-danger">failed at: {{ chain.last_run.failed_step }}</small>
-            {% elif chain.last_run and chain.last_run.steps_completed %}
-              <small class="text-muted">{{ chain.last_run.steps_completed | length }} steps</small>
-            {% else %}
-              —
-            {% endif %}
-          </td>
+          <td>{{ chain.next_run_local }}</td>
+          <td>{{ chain.duration_text }}</td>
+          <td><small>{{ chain.counts_text }}</small></td>
+          <td><small>{{ chain.action }}</small></td>
         </tr>
         {% endfor %}
       </tbody>

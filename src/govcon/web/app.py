@@ -63,9 +63,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             with session_scope(settings) as db:
                 db.execute(sql_text("SELECT 1"))
+                from govcon.ops.health import collect_health, record_heartbeat
+
+                record_heartbeat(db, role="web", instance_id="web")
+                report = collect_health(db, settings)
         except Exception:  # noqa: BLE001  boundary must record any failure
             return JSONResponse({"status": "unavailable"}, status_code=503)
-        return JSONResponse({"status": "ok"})
+        return JSONResponse({"status": "ok", "checks": report["checks"]})
 
     # Import routes (late import to avoid circular deps at module load time)
     from govcon.web.routes import (
@@ -85,6 +89,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         opp_start_workspace,
         ops,
         ops_task_action,
+    )
+    from govcon.web.bot_pages import bots_decide, bots_page, bots_run
+    from govcon.web.routes import (
         pipeline,
         search,
         settings_page,
@@ -176,6 +183,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Ops
     app.add_api_route("/ops", ops, methods=["GET"])
+    app.add_api_route("/bots", bots_page, methods=["GET"])
+    app.add_api_route("/bots/run/{bot_name}", bots_run, methods=["POST"])
+    app.add_api_route("/bots/approvals/{approval_id}/{action}", bots_decide, methods=["POST"])
     app.add_api_route("/settings", settings_page, methods=["GET"])
     app.add_api_route("/workspace/{opp_id}/outcome-suggestions/{suggestion_id}/{action}",
                       workspace_outcome_suggestion, methods=["POST"])

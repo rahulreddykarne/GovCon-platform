@@ -1,9 +1,8 @@
 """Alert digests for unalerted new matches and optional deadline re-alerts.
 
-Phase 3 sends one HTML message per run, grouped by watchlist. SMTP is used
-when ``SMTP_HOST`` and ``ALERT_EMAIL_TO`` are both set. Otherwise the HTML
-file is written under ``OUTBOX_DIR``. An empty run writes nothing and sends
-nothing.
+Phase 3 writes one HTML message per run, grouped by watchlist, under
+``OUTBOX_DIR``. An empty run writes nothing. SMTP is not used unless a caller
+passes ``external_delivery=True``; the application does not do that.
 
 Phase 5 adds recent award comps when a stored award matches the opportunity
 NSN, or the PSC when no NSN history exists. Unit price is shown only when the
@@ -95,6 +94,7 @@ def run_digest(
     *,
     settings: Settings | None = None,
     now: datetime | None = None,
+    external_delivery: bool = False,
 ) -> DigestResult:
     """Deliver one digest, then stamp ``alerted_at`` on the included matches.
 
@@ -124,7 +124,9 @@ def run_digest(
     html = render_html(new_items, amendment_items, generated_at=now)
     plain = render_plain(new_items, amendment_items, generated_at=now)
     subject = _subject(len(new_items), len(amendment_items))
-    if settings.email_configured:
+    # Scheduled and manual digests stay on disk unless a caller explicitly
+    # asks to send. Nothing in the application passes external_delivery=True.
+    if external_delivery and settings.email_configured:
         send_smtp(settings, subject=subject, html=html, plain=plain)
         channel = "smtp"
         path = None

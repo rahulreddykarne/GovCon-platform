@@ -53,6 +53,11 @@ def settings_page(request: Request) -> Response:
             "authorizations": _authorizations(db),
             "registration": _our_registration(db),
             "ai_providers": ("anthropic", "openai", "deepseek"),
+            "ai_sharing": {
+                "proprietary": get_settings().ai_external_allowed_for_proprietary,
+                "fci": get_settings().ai_external_allowed_for_fci,
+                "cui": get_settings().ai_external_allowed_for_cui,
+            },
             "reviewers": list(reviewers),
             "can_edit": can(user, "manage_users"),
             "active_page": "settings",

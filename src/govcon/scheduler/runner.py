@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 _scheduler_settings = None
 
 
-def execute_scheduled_chain(chain_name: str) -> None:
+def execute_scheduled_chain(chain_name: str, schedule_version: str | None = None) -> None:
     """Importable callback for APScheduler's persistent job store.
 
     Queues a durable ``scheduler_chain`` task (ADR-063); a worker runs it and
@@ -26,6 +26,7 @@ def execute_scheduled_chain(chain_name: str) -> None:
     from govcon.db import session_scope
     from govcon.scheduler.chain_tasks import queue_chain
 
+    del schedule_version  # stored on the job so a UTC schedule is not reused
     settings = _scheduler_settings or get_settings()
     slot = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M")
     with session_scope(settings) as db:
@@ -82,95 +83,44 @@ def _start_embedded_worker(settings):
 
 
 def _configured_scheduler(settings):
-    """Build persistent schedules while preserving saved due times."""
+    """Build persistent Pacific schedules while preserving due times from this version."""
     from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
     from apscheduler.schedulers.blocking import BlockingScheduler
-    from apscheduler.triggers.cron import CronTrigger
-    from apscheduler.util import undefined
+
+    from govcon.scheduler.schedule import JOBS, OPERATOR_TZ_NAME, SCHEDULE_VERSION, cron_trigger, preserved_next_run
+
     store = SQLAlchemyJobStore(url=settings.require_database_url())
-    scheduler = BlockingScheduler(timezone="UTC", jobstores={"default": store}, job_defaults={"max_instances": 1})
-    # Load persisted due times before replacing definitions so restart retains misfires.
+    scheduler = BlockingScheduler(
+        timezone=OPERATOR_TZ_NAME, jobstores={"default": store}, job_defaults={"max_instances": 1},
+    )
+    # Load persisted due times before replacing definitions so a restart can catch a missed run.
     store.start(scheduler, "default")
-    due_times = {job.id: job.next_run_time for job in store.get_all_jobs()}
-
-    # 06:30 daily — morning ingest chain
-    scheduler.add_job(
-        execute_scheduled_chain,
-        CronTrigger(hour=6, minute=30, timezone="UTC"),
-        id="morning_ingest",
-        replace_existing=True,
-        next_run_time=due_times.get("morning_ingest", undefined),
-        args=["morning_ingest"],
-        name="Morning ingest: SAM → DIBBS → source changes → match → alerts",
-        misfire_grace_time=600,
-        coalesce=True,
-    )
-
-    # 07:30 daily — USAspending delta
-    scheduler.add_job(
-        execute_scheduled_chain,
-        CronTrigger(hour=7, minute=30, timezone="UTC"),
-        id="usaspending",
-        replace_existing=True,
-        next_run_time=due_times.get("usaspending", undefined),
-        args=["usaspending"],
-        name="USAspending delta",
-        misfire_grace_time=600,
-        coalesce=True,
-    )
-
-    # 08:00 daily — embeddings + semantic
-    scheduler.add_job(
-        execute_scheduled_chain,
-        CronTrigger(hour=8, minute=0, timezone="UTC"),
-        id="embeddings",
-        replace_existing=True,
-        next_run_time=due_times.get("embeddings", undefined),
-        args=["embeddings"],
-        name="Embeddings → semantic matching",
-        misfire_grace_time=600,
-        coalesce=True,
-    )
-
-    # 12:00 daily — midday lightweight check
-    scheduler.add_job(
-        execute_scheduled_chain,
-        CronTrigger(hour=12, minute=0, timezone="UTC"),
-        id="midday_check",
-        replace_existing=True,
-        next_run_time=due_times.get("midday_check", undefined),
-        args=["midday_check"],
-        name="Midday deadline/amendment check",
-        misfire_grace_time=600,
-        coalesce=True,
-    )
-
-    # 18:00 daily — evening ingest chain
-    scheduler.add_job(
-        execute_scheduled_chain,
-        CronTrigger(hour=18, minute=0, timezone="UTC"),
-        id="evening_ingest",
-        replace_existing=True,
-        next_run_time=due_times.get("evening_ingest", undefined),
-        args=["evening_ingest"],
-        name="Evening ingest: SAM → DIBBS → source changes → match → alerts",
-        misfire_grace_time=600,
-        coalesce=True,
-    )
-
-    # 09:00 every Sunday — weekly sweep
-    scheduler.add_job(
-        execute_scheduled_chain,
-        CronTrigger(day_of_week="sun", hour=9, minute=0, timezone="UTC"),
-        id="sunday_sweep",
-        replace_existing=True,
-        next_run_time=due_times.get("sunday_sweep", undefined),
-        args=["sunday_sweep"],
-        name="Sunday sweep: archive → cache → analytics → VACUUM",
-        misfire_grace_time=1800,
-        coalesce=True,
-    )
-
+    existing = {job.id: job for job in store.get_all_jobs()}
+    titles = {
+        "morning_ingest": "11:30 PM PT: SAM → DIBBS → source changes → match → alerts",
+        "usaspending": "12:30 AM PT: USAspending delta",
+        "embeddings": "1:00 AM PT: embeddings → semantic matching",
+        "midday_check": "5:00 AM PT: deadline and amendment check",
+        "evening_ingest": "11:00 AM PT: SAM → DIBBS → source changes → match → alerts",
+        "sunday_sweep": "Sunday 2:00 AM PT: archive → cache → analytics → VACUUM",
+    }
+    for job_id, spec in JOBS.items():
+        previous = existing.get(job_id)
+        scheduler.add_job(
+            execute_scheduled_chain,
+            cron_trigger(job_id),
+            id=job_id,
+            replace_existing=True,
+            next_run_time=preserved_next_run(
+                dict(previous.kwargs) if previous is not None else None,
+                previous.next_run_time if previous is not None else None,
+            ),
+            args=[job_id],
+            kwargs={"schedule_version": SCHEDULE_VERSION},
+            name=titles[job_id],
+            misfire_grace_time=int(spec["grace"]),
+            coalesce=True,
+        )
     return scheduler
 
 
@@ -194,6 +144,14 @@ def _start_scheduler(settings, *, leader_connection) -> None:
                 if scheduler.running:
                     scheduler.shutdown(wait=False)
                 return
+            try:
+                from govcon.db import session_scope
+                from govcon.ops.health import record_heartbeat
+
+                with session_scope(settings) as db:
+                    record_heartbeat(db, role="scheduler", instance_id="scheduler")
+            except Exception:
+                logger.warning("scheduler: heartbeat was not recorded")
 
     monitor = Thread(target=heartbeat, name="scheduler-leadership", daemon=True)
     monitor.start()

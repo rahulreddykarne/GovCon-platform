@@ -1024,9 +1024,86 @@ class SchedulerJobRun(Base):
     row_counts: Mapped[dict | None] = mapped_column(JSONB)
 
 
+class ProcessHeartbeat(Base):
+    """Latest liveness beat for a local web, worker, or scheduler process."""
+
+    __tablename__ = "process_heartbeats"
+    __table_args__ = (
+        UniqueConstraint("role", "instance_id", name="uq_process_heartbeats_role_instance"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    instance_id: Mapped[str] = mapped_column(Text, nullable=False)
+    beat_at: Mapped[datetime] = mapped_column(_ts(), nullable=False)
+    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+
+
+BOT_NAMES = (
+    "orchestrator", "discovery", "document", "matching", "bid_decision",
+    "compliance", "amendment", "awards", "alert", "operations",
+)
+BOT_STATUSES = (
+    "queued", "running", "succeeded", "completed_with_errors", "failed",
+    "skipped", "blocked", "waiting_approval",
+)
+BOT_APPROVAL_STATUSES = ("pending", "approved", "rejected")
+
+
+class BotRun(Base):
+    """One execution of an in-app bot, including retries of the same inputs."""
+
+    __tablename__ = "bot_runs"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_bot_runs_idempotency_key"),
+        CheckConstraint(f"bot_name IN {BOT_NAMES!r}", name="ck_bot_runs_bot_name"),
+        CheckConstraint(f"status IN {BOT_STATUSES!r}", name="ck_bot_runs_status"),
+        Index("ix_bot_runs_bot_started", "bot_name", "started_at"),
+        Index("ix_bot_runs_opportunity", "opportunity_id", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    bot_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'running'"))
+    trigger: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'manual'"))
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    opportunity_id: Mapped[int | None] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"))
+    source_revision: Mapped[str | None] = mapped_column(Text)
+    parent_run_id: Mapped[int | None] = mapped_column(ForeignKey("bot_runs.id", ondelete="SET NULL"))
+    started_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(_ts())
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    inputs: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    outputs: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+
+
+class BotApproval(Base):
+    """A human decision the bots are not allowed to make themselves."""
+
+    __tablename__ = "bot_approvals"
+    __table_args__ = (
+        CheckConstraint(f"status IN {BOT_APPROVAL_STATUSES!r}", name="ck_bot_approvals_status"),
+        Index("ix_bot_approvals_status", "status", "requested_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    bot_run_id: Mapped[int] = mapped_column(ForeignKey("bot_runs.id", ondelete="CASCADE"), nullable=False)
+    opportunity_id: Mapped[int | None] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    requested_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    decided_at: Mapped[datetime | None] = mapped_column(_ts())
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decision_note: Mapped[str | None] = mapped_column(Text)
+
+
 TASK_TYPES = (
     "proposal_generation", "ai_analysis", "solicitation_summary", "scheduler_chain", "opportunity_preparation",
-    "notification_email", "quote_extraction",
+    "notification_email", "quote_extraction", "bot_run",
 )
 TASK_STATUSES = (
     "queued", "running", "waiting_for_input", "waiting_for_budget", "retrying",

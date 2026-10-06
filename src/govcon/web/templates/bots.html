@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Bots — GovCon{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Bots</h1>
+    <div class="page-subtitle">What ran, why, and what is waiting for you. Nothing here sends email or submits a bid.</div>
+  </div>
+  {% if can_decide %}
+  <form method="post" action="/bots/run/orchestrator">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-primary">Run on data already ingested</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Approvals</span></div>
+  {% if pending %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Kind</th><th>What it is asking</th><th>Opportunity</th><th></th></tr></thead>
+      <tbody>
+        {% for item in pending %}
+        <tr>
+          <td>{{ item.kind }}</td>
+          <td>{{ item.summary }}</td>
+          <td>{% if item.opportunity_id %}<a href="/opp/{{ item.opportunity_id }}">#{{ item.opportunity_id }}</a>{% else %}—{% endif %}</td>
+          <td>
+            {% if can_decide %}
+            <form method="post" action="/bots/approvals/{{ item.id }}/approved" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <button class="btn btn-sm btn-primary" type="submit">Record approval</button>
+            </form>
+            <form method="post" action="/bots/approvals/{{ item.id }}/rejected" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <button class="btn btn-sm btn-secondary" type="submit">Dismiss</button>
+            </form>
+            {% else %}
+            <span class="text-muted">Owner or approver decides</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-sm text-muted">Recording a decision does not submit a proposal, contact a contracting officer, or change AI sharing.</p>
+  {% else %}
+  <p class="text-muted">Nothing is waiting for a decision.</p>
+  {% endif %}
+</div>
+
+{% for card in cards %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{{ card.spec.title }}</span>
+    {% if card.run %}
+      <span class="badge badge-{% if card.run.status == 'succeeded' %}success{% elif card.run.status == 'failed' %}danger{% elif card.run.status == 'waiting_approval' or card.run.status == 'completed_with_errors' %}warning{% else %}primary{% endif %}">{{ card.run.status }}</span>
+    {% else %}
+      <span class="badge">not run</span>
+    {% endif %}
+  </div>
+  <p>{{ card.why }}</p>
+  {% if card.run %}
+  <p class="text-sm text-muted">
+    Started {{ card.run.started_at.strftime('%Y-%m-%d %H:%M') if card.run.started_at else '—' }} UTC
+    · attempt {{ card.run.attempt }}
+    · trigger {{ card.run.trigger }}
+    {% if card.run.opportunity_id %} · <a href="/opp/{{ card.run.opportunity_id }}">opportunity #{{ card.run.opportunity_id }}</a>{% endif %}
+    {% if card.run.source_revision %} · revision {{ card.run.source_revision[:18] }}{% endif %}
+  </p>
+  {% if card.run.outputs and card.run.outputs.state == 'incomplete' %}
+  <p class="text-danger">This run is incomplete. The opportunity is not finished.</p>
+  {% endif %}
+  {% endif %}
+  <p class="text-sm"><strong>Trigger.</strong> {{ card.spec.trigger }}</p>
+  <p class="text-sm"><strong>Inputs.</strong> {{ card.spec.inputs }}</p>
+  <p class="text-sm"><strong>Outputs.</strong> {{ card.spec.outputs }}</p>
+  <p class="text-sm"><strong>Permissions.</strong> {{ card.spec.permissions }}</p>
+  <p class="text-sm"><strong>If it fails.</strong> {{ card.spec.failure }}</p>
+  {% if card.evidence %}
+  <h4>Evidence</h4>
+  <ul>
+    {% for line in card.evidence %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

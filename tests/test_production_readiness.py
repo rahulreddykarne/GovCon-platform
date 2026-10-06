@@ -688,7 +688,11 @@ def test_health_reports_database_connectivity_without_leaking_errors(session: Se
     with CsrfTestClient(create_app()) as client:
         healthy = client.get("/health")
     assert healthy.status_code == 200
-    assert healthy.json() == {"status": "ok"}
+    body = healthy.json()
+    assert body["status"] == "ok"
+    assert body["checks"]
+    assert any(item["name"] == "database" and item["status"] == "ok" for item in body["checks"])
+    assert "password" not in healthy.text
 
     def explode(*args, **kwargs):
         raise RuntimeError("password=super-secret-db-password")

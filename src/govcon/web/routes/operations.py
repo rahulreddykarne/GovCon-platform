@@ -31,8 +31,6 @@ def ops(request: Request) -> Response:
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    from govcon.scheduler.chains import CHAIN_DEFINITIONS
-
     with session_scope() as db:
         opp_count = db.scalar(select(func.count()).select_from(Opportunity)) or 0
         opp_open = db.scalar(select(func.count()).select_from(Opportunity).where(Opportunity.status == "open")) or 0
@@ -52,22 +50,11 @@ def ops(request: Request) -> Response:
             select(SchedulerJobRun).order_by(desc(SchedulerJobRun.started_at)).limit(50)
         ).all()
 
-        # Latest run per chain for the summary panel
-        chain_summary = []
-        for chain_name, chain_def in CHAIN_DEFINITIONS.items():
-            last = db.scalars(
-                select(SchedulerJobRun)
-                .where(SchedulerJobRun.chain_name == chain_name)
-                .order_by(desc(SchedulerJobRun.started_at))
-                .limit(1)
-            ).first()
-            chain_summary.append({
-                "name": chain_name,
-                "description": chain_def.description,
-                "cron": chain_def.cron,
-                "steps": chain_def.steps,
-                "last_run": last,
-            })
+        from govcon.ops.health import chain_board, collect_health, record_heartbeat
+
+        record_heartbeat(db, role="web", instance_id="web")
+        health = collect_health(db, request.app.state.settings)
+        chain_summary = chain_board(db)
 
         users = db.scalars(select(User).order_by(User.email)).all() if can(user, "manage_users") else []
 
@@ -113,6 +100,7 @@ def ops(request: Request) -> Response:
         "runs": list(runs),
         "job_runs": list(job_runs),
         "chain_summary": chain_summary,
+        "health": health,
         "users": list(users),
         "task_counts": task_counts,
         "failed_tasks": list(failed_tasks),

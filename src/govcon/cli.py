@@ -18,7 +18,7 @@ from govcon.db import check_connectivity, make_engine, session_scope
 from govcon.logging import configure_logging, redact
 from govcon.models import Opportunity, User
 from govcon.paths import migration_root
-from govcon.seed import demo_watchlist_count, seed_demo_watchlist
+from govcon.seed import demo_watchlist_count, seed_demo_opportunities, seed_demo_watchlist
 
 app = typer.Typer(help="GovCon opportunity and bid management platform.", no_args_is_help=True)
 db_app = typer.Typer(help="Database administration.")
@@ -213,6 +213,19 @@ def db_seed_demo_watchlist() -> None:
         count = demo_watchlist_count(session)
     typer.echo(f"demo_watchlist_created: {'yes' if created else 'no'}")
     typer.echo(f"demo_watchlist_count: {count}")
+
+
+@db_app.command("seed-demo-opportunities")
+def db_seed_demo_opportunities() -> None:
+    """Insert sanitized fictional notices. They are not real solicitations."""
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        created = seed_demo_opportunities(session)
+    typer.echo(f"demo_opportunities_created: {created}")
 
 
 @users_app.command("invite")
@@ -910,7 +923,7 @@ def _echo_digest(result) -> None:
 
 @alerts_app.command("digest")
 def alerts_digest() -> None:
-    """Send unalerted new matches, grouped by watchlist, and optional deadline re-alerts."""
+    """Write unalerted matches to the outbox. Does not send email."""
     from govcon.alerts.digest import DigestDeliveryError, run_digest
 
     try:

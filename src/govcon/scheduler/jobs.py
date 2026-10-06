@@ -184,12 +184,35 @@ def step_match(session: Session) -> StepResult:
         return StepResult(step="match", status="failed", error=str(exc))
 
 
+def step_orchestrate(session: Session, settings) -> StepResult:
+    """Queue the orchestrator. It does not pull SAM again; discovery records this cycle."""
+    from datetime import UTC, datetime
+
+    from govcon.bots.orchestrator import queue_orchestrator
+
+    try:
+        slot = datetime.now(UTC).strftime("%Y-%m-%dT%H")
+        task, created = queue_orchestrator(
+            session, settings=settings, slot=slot, pull=False, trigger="scheduler",
+        )
+        return StepResult(
+            step="orchestrate", status="succeeded",
+            extra={"task_id": task.id, "created": created},
+        )
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
+        from govcon.logging import redact
+
+        err = redact(str(exc))
+        logger.error("orchestrate failed: %s", err)
+        return StepResult(step="orchestrate", status="failed", error=err)
+
+
 def step_alerts(session: Session, settings) -> StepResult:
     """Send alert digests for new matches."""
     from govcon.alerts.digest import DigestDeliveryError, run_digest
 
     try:
-        result = run_digest(session, settings=settings)
+        result = run_digest(session, settings=settings, external_delivery=False)
         return StepResult(
             step="alerts",
             status="succeeded",

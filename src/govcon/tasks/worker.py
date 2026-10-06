@@ -230,6 +230,7 @@ def run_worker(
     processed = 0
     logger.info("worker %s started (types=%s)", worker_id, task_types or "all")
     while not stop_event.is_set():
+        _beat(settings, "worker", worker_id)
         if max_tasks is not None and processed >= max_tasks:
             break
         try:
@@ -250,6 +251,17 @@ def run_worker(
         processed += 1
     logger.info("worker %s stopped after %d task(s)", worker_id, processed)
     return processed
+
+
+def _beat(settings: Settings, role: str, instance_id: str) -> None:
+    """Record liveness. A database problem here must not kill the worker."""
+    try:
+        from govcon.ops.health import record_heartbeat
+
+        with session_scope(settings) as db:
+            record_heartbeat(db, role=role, instance_id=instance_id)
+    except Exception:
+        logger.warning("%s heartbeat was not recorded", role)
 
 
 def wait_for(settings: Settings, task_id: int, *, timeout: float, poll: float = 1.0) -> Task | None:

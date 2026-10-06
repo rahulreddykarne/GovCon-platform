@@ -26,6 +26,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from govcon.scheduler.jobs import StepResult
+from govcon.scheduler.schedule import describe
 
 logger = logging.getLogger(__name__)
 
@@ -50,42 +51,42 @@ CHAIN_DEFINITIONS: dict[str, ChainDef] = {
     "morning_ingest": ChainDef(
         name="morning_ingest",
         description="SAM ingest → DIBBS ingest → source-change workflow → match → rank → auto-pursue → alerts",
-        cron="06:30 daily",
-        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"],
-        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue"}),
+        cron=describe("morning_ingest"),
+        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
+        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue", "orchestrate"}),
     ),
     "usaspending": ChainDef(
         name="usaspending",
         description="USAspending delta ingest → award-match outcome suggestions",
-        cron="07:30 daily",
+        cron=describe("usaspending"),
         steps=["usaspending", "outcome_suggestions"],
         soft_steps=frozenset({"outcome_suggestions"}),
     ),
     "embeddings": ChainDef(
         name="embeddings",
         description="Opportunity embeddings → semantic recommendations → rank",
-        cron="08:00 daily",
+        cron=describe("embeddings"),
         steps=["embeddings", "semantic_match", "rank"],
         soft_steps=frozenset({"rank"}),
     ),
     "midday_check": ChainDef(
         name="midday_check",
         description="Deadline/amendment check → review reminders and escalations → company SAM registration refresh",
-        cron="12:00 daily",
+        cron=describe("midday_check"),
         steps=["midday_deadline_check", "review_escalations", "company_registration"],
         soft_steps=frozenset({"review_escalations", "company_registration"}),
     ),
     "evening_ingest": ChainDef(
         name="evening_ingest",
         description="Second SAM/DIBBS → source-change workflow → match → rank → auto-pursue → alerts",
-        cron="18:00 daily",
-        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"],
-        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue"}),
+        cron=describe("evening_ingest"),
+        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
+        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue", "orchestrate"}),
     ),
     "sunday_sweep": ChainDef(
         name="sunday_sweep",
         description="Archive sweep → cache refresh → analytics refresh → VACUUM ANALYZE",
-        cron="09:00 every Sunday",
+        cron=describe("sunday_sweep"),
         steps=["archive_sweep", "cache_refresh", "analytics_refresh", "vacuum_analyze"],
     ),
 }
@@ -331,6 +332,7 @@ def _build_step_table() -> dict[str, Callable]:
         "source_changes": jobs.step_source_changes,
         "match": jobs.step_match,
         "alerts": jobs.step_alerts,
+        "orchestrate": jobs.step_orchestrate,
         "usaspending": jobs.step_usaspending,
         "embeddings": jobs.step_embeddings,
         "semantic_match": jobs.step_semantic_match,

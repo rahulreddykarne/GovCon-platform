@@ -13,6 +13,7 @@
 {% set submitted = submitted if submitted is defined and submitted else {} %}
 
 <div class="card">
+  <p class="text-sm">Every group you fill in must pass (AND). Values inside one group match if any of them hit (OR). An empty group is ignored. A watchlist with no groups does not match anything.</p>
   <form method="post" action="{% if editing %}/watchlists/{{ wl.id }}/edit{% else %}/watchlists/new{% endif %}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <div class="form-group">

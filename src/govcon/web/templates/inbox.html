@@ -12,6 +12,36 @@
   </div>
 </div>
 
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Needs a decision</div>
+    <div class="value">{{ pending_approvals }}</div>
+    <div class="text-sm"><a href="/bots">Approvals</a></div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Orchestrator</div>
+    <div class="value">{{ orchestrator.state if orchestrator else "not run" }}</div>
+    <div class="text-sm">{% if orchestrator %}{{ orchestrator.status }}{% else %}Start it from Bots{% endif %}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">System</div>
+    <div class="value">{% if unhealthy %}attention{% else %}quiet{% endif %}</div>
+    <div class="text-sm">{% if unhealthy %}{{ unhealthy|join(', ') }} — see <a href="/ops">Ops</a>{% else %}<a href="/ops">Ops</a> is quiet{% endif %}</div>
+  </div>
+</div>
+
+{% if promising %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Highest ranks in the new inbox</span></div>
+  <ul>
+    {% for m in promising %}
+    <li><a href="/opp/{{ m.opp_id }}">{{ m.title or "(no title)" }}</a> — rank {{ '%.0f' % m.rank_score }}. {{ m.matched_on }}</li>
+    {% endfor %}
+  </ul>
+  <p class="text-sm text-muted">Rank is a weighted score. A hard eligibility failure is not a rank.</p>
+</div>
+{% endif %}
+
 {% if not groups %}
   <div class="card">
     <p class="text-muted text-center" style="padding:2rem 0;">No new matches. <a href="/watchlists">Create or rebuild a watchlist</a> to find opportunities.</p>
