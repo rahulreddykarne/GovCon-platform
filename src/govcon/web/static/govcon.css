@@ -523,6 +523,7 @@ fieldset.form-group input[type="checkbox"] { width: auto; }
 .inspector dl, .integration-card dl { display: flex; flex-direction: column; gap: 0.55rem; }
 .inspector dt, .integration-card dt { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: #5b7c99; }
 .inspector dd, .integration-card dd { margin: 0; }
+.guide-steps { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
 .integration-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .integration-card header { display: flex; justify-content: space-between; gap: 0.5rem; align-items: flex-start; }
 @media (max-width: 900px) {

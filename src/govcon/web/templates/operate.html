@@ -15,6 +15,7 @@
     <a href="/operate/agents" {% if view == 'agents' %}class="active" aria-current="page"{% endif %}>Agents</a>
     <a href="/operate/architecture" {% if view == 'architecture' %}class="active" aria-current="page"{% endif %}>Architecture</a>
     <a href="/operate/integrations" {% if view == 'integrations' %}class="active" aria-current="page"{% endif %}>Integrations &amp; models</a>
+    <a href="/operate/how" {% if view == 'how' %}class="active" aria-current="page"{% endif %}>How GovCon works</a>
   </nav>
 
   {% if view == 'overview' and overview %}
@@ -160,6 +161,42 @@
     {% set inspector = architecture.selected %}
     {% include "operate_inspector.html" %}
   </div>
+  {% endif %}
+
+  {% if view == 'how' and guide %}
+  <section class="mission-panel" style="margin-bottom:0.9rem;">
+    <h2>Follow one stored notice</h2>
+    {% if guide.missing %}
+    <p>That notice id is not stored. The steps below use another stored notice.</p>
+    {% endif %}
+    {% if guide.opportunity %}
+    <h3>{{ guide.opportunity.title }}</h3>
+    <p>{{ guide.opportunity.source }} · {{ guide.opportunity.source_id }}</p>
+    <a class="mission-link" href="/workspace/{{ guide.opportunity.id }}">Open this notice</a>
+    {% if guide.choices|length > 1 %}
+    <p class="mission-lead">Other stored notices:</p>
+    <ul class="mission-list">
+      {% for choice in guide.choices if choice.id != guide.opportunity.id %}
+      <li><a href="/operate/how?opp={{ choice.id }}">{{ choice.title }}</a> <span class="tag info">{{ choice.source }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% else %}
+    <p class="mission-empty">No notice is stored, so this guide has nothing to follow.</p>
+    {% endif %}
+  </section>
+  {% if guide.stages %}
+  <ol class="guide-steps">
+    {% for stage in guide.stages %}
+    <li class="mission-panel">
+      <h2>{{ loop.index }}. {{ stage.title }} <span class="tag {{ stage.tag }}">{{ stage.status }}</span></h2>
+      <p>{{ stage.explain }}</p>
+      <p class="text-sm">{{ stage.detail }}</p>
+    </li>
+    {% if not loop.last %}<div class="flow-arrow down" aria-hidden="true">↓</div>{% endif %}
+    {% endfor %}
+  </ol>
+  {% endif %}
   {% endif %}
 
   {% if view == 'integrations' and integrations %}

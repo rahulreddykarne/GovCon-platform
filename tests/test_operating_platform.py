@@ -70,6 +70,27 @@ def test_settings_page_renders_the_operator_clocks(db, client) -> None:
     assert "restart it after a change" in page
 
 
+def test_how_govcon_works_follows_a_stored_notice(db, client) -> None:
+    from govcon.models import Opportunity
+
+    _, token = _make_user(db, f"how-{uuid4().hex[:8]}@example.test", "owner")
+    opp = Opportunity(
+        source="demo", source_id=f"HOW-{uuid4().hex[:8]}",
+        title="Guide notice, not a real solicitation", status="open", raw={"demo": True},
+    )
+    db.add(opp)
+    db.commit()
+    client.cookies.set("govcon_session", token)
+    page = client.get(f"/operate/how?opp={opp.id}").text
+    assert "How GovCon works" in page
+    assert "Guide notice, not a real solicitation" in page
+    assert "Rank is not a decision." in page
+    assert "not run" in page
+    missing = client.get("/operate/how?opp=999999999").text
+    assert "That notice id is not stored" in missing
+    assert "DLA aircraft parts" not in page
+
+
 def test_operate_views_use_stored_rows(db, client) -> None:
     _, token = _make_user(db, f"ops-{uuid4().hex[:8]}@example.test", "owner")
     db.commit()
