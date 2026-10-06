@@ -29,17 +29,20 @@ The scheduler uses `America/Los_Angeles`, so the same local hour holds in Pacifi
 
 | Local time | Job |
 |---|---|
-| 11:30 PM | SAM, DIBBS, match, alerts, then queue the orchestrator |
-| 12:30 AM | USAspending |
-| 1:00 AM | Embeddings and semantic match |
-| 5:00 AM | Deadline and archive check |
-| 11:00 AM | Second SAM and DIBBS cycle, then the orchestrator |
-| Sunday 2:00 AM | Archive, cache, analytics, VACUUM |
+| 6:30 AM | SAM, DIBBS, source documents, match, alerts, then queue the orchestrator |
+| 7:00 AM | USAspending |
+| 8:00 AM | Embeddings and semantic match, after the morning ingest |
+| 12:00 PM | Deadline and amendment check |
+| 5:00 PM | Second SAM and DIBBS cycle, then the orchestrator |
+| Sunday 9:00 AM | Archive, cache, analytics, VACUUM |
+
+Settings can change these clocks. Restart the scheduler after a change. The morning and evening ingest chains also download the SAM description body and the DIBBS RFQ PDF for notices that ingest just stored.
 
 A missed run still fires once if you open the laptop within 18 hours (36 hours for Sunday). Two schedulers cannot hold the advisory lock at the same time. Digest alerts are written to the outbox and are not emailed.
 
 ## Where to look
 
+- `/operate` — overview, agents, the architecture diagram, and integration health from stored rows.
 - `/` — new matches, pending bot decisions, and whether health checks need you.
 - `/bots` — each bot's last run, evidence, and the approvals queue.
 - `/ops` — heartbeats, last success, last failure, next run, and the next command to run.
@@ -74,9 +77,8 @@ The demo notices use source `demo` and titles that say they are not real solicit
 
 ## Remaining risks
 
-- If `NOTIFY_EMAIL_ENABLED` is turned on, the notification-email task can still send SMTP. Bot approvals and the scheduled digest do not.
-- A crash after an alert email is handed to SMTP and before the send is recorded can deliver that digest twice. The outbox path used by the app does not send.
-- DIBBS quote PDFs and the full SAM description body are not fetched on the scheduled ingest. The workflow still uses attachments that were already stored.
+- If `NOTIFY_EMAIL_ENABLED` is turned on, the notification-email task can still send SMTP. Bot approvals and the scheduled digest do not. A digest that does use SMTP records a claim before the hand-off, so a crash after the hand-off does not send that body again.
+- The morning and evening chains download SAM description bodies and DIBBS RFQ PDFs for notices stored by the ingest that just ran, up to 40 notices. The rest wait for the next run. The daily DIBBS zip is not fetched.
 - Tesseract may be missing on the laptop. Pages that need OCR stay unread and the document bot does not treat that opportunity as finished.
 - Live SAM quota and whether the Hugging Face embedding model is already cached are unknown until the first real run. `/ops` does not download the model or call SAM.
 - `/` and `/ops` mark the worker and the scheduler down when those processes have not written a heartbeat in the last 90 seconds. That is the web process looking at local rows, not a live probe of another machine.

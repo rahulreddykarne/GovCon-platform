@@ -422,3 +422,97 @@ fieldset.form-group input[type="checkbox"] { width: auto; }
   .top-bar .spacer { display: none; }
   .user-badge { flex-wrap: wrap; }
 }
+
+/* Mission control. Scoped so the rest of the app keeps its existing chrome. */
+.mission {
+  --mission-primary: #339cff;
+  --mission-accent: #e5f2ff;
+  --mission-ink: #16324f;
+  background: #f4f8fc;
+  color: var(--mission-ink);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.mission h1, .mission h2, .mission h3 { color: var(--mission-ink); font-weight: 650; }
+.mission h1 { font-size: 1.45rem; margin: 0.15rem 0; }
+.mission h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+.mission a { color: #0b6bcb; }
+.mission-kicker { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: #5b7c99; margin: 0; }
+.mission-lead, .mission-greeting { color: #3d5a73; margin: 0.35rem 0 0.9rem; }
+.mission-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.mission-tabs a {
+  background: #fff;
+  border: 1px solid #d5e6f5;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  color: var(--mission-ink);
+  text-decoration: none;
+}
+.mission-tabs a.active, .mission-tabs a:hover { background: var(--mission-accent); border-color: var(--mission-primary); text-decoration: none; }
+.metric-row, .mission-split, .agent-grid, .integration-grid { display: grid; gap: 0.75rem; }
+.metric-row { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 0.9rem; }
+.mission-split { grid-template-columns: 1fr 1fr; margin-bottom: 0.9rem; }
+.metric, .mission-panel, .agent-card, .arch-node, .integration-card, .inspector {
+  background: #fff;
+  border: 1px solid #d5e6f5;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(22, 50, 79, .04);
+}
+.metric { padding: 0.85rem 1rem; }
+.metric-value { font-size: 1.6rem; font-weight: 700; }
+.metric-of { font-size: 0.95rem; font-weight: 500; color: #5b7c99; }
+.metric-label { color: #5b7c99; font-size: 12px; }
+.mission-panel, .integration-card, .inspector { padding: 0.9rem 1rem; }
+.mission-list { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
+.mission-list p, .agent-desc, .arch-caption, .integration-card p { color: #3d5a73; font-size: 13px; margin: 0.2rem 0; }
+.mission-empty { color: #5b7c99; }
+.mission-link { display: inline-block; margin-top: 0.4rem; }
+.mission .tag {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--mission-accent);
+  color: #0b6bcb;
+}
+.mission .tag.good { background: #e5f6ec; color: #0f5132; }
+.mission .tag.warn { background: #fff4e0; color: #8a5a00; }
+.mission .tag.bad { background: #fdeCEC; color: #842029; }
+.mission .tag.info { background: var(--mission-accent); color: #0b6bcb; }
+.mission-work { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 0.9rem; align-items: start; }
+.agent-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.agent-card, .arch-node { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.75rem; color: inherit; text-decoration: none; }
+.agent-card:hover, .arch-node:hover, .agent-card.is-selected, .arch-node.is-selected {
+  border-color: var(--mission-primary);
+  box-shadow: 0 0 0 3px var(--mission-accent);
+  text-decoration: none;
+  color: inherit;
+}
+.agent-mark {
+  width: 2rem; height: 2rem; border-radius: 8px; background: var(--mission-accent); color: #0b6bcb;
+  display: grid; place-items: center; font-weight: 700; font-size: 12px;
+}
+.agent-title, .arch-title { font-weight: 650; }
+.agent-foot, .arch-kind { font-size: 11px; color: #5b7c99; }
+.arch { display: flex; flex-direction: column; gap: 0.35rem; }
+.arch-band h2 { font-size: 12px; letter-spacing: .03em; text-transform: uppercase; color: #5b7c99; }
+.arch-row { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: stretch; }
+.arch-node { min-width: 140px; flex: 1; }
+.flow-arrow { color: var(--mission-primary); font-size: 1.15rem; align-self: center; font-weight: 700; }
+.flow-arrow.down { text-align: center; }
+.flow-arrow.across { animation: mission-nudge-x 1.8s ease-in-out infinite; }
+.flow-arrow.down { animation: mission-nudge-y 1.8s ease-in-out infinite; }
+@keyframes mission-nudge-x { 0%, 100% { transform: translateX(0); opacity: .65; } 50% { transform: translateX(5px); opacity: 1; } }
+@keyframes mission-nudge-y { 0%, 100% { transform: translateY(0); opacity: .65; } 50% { transform: translateY(4px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .flow-arrow.across, .flow-arrow.down { animation: none; }
+}
+.inspector dl, .integration-card dl { display: flex; flex-direction: column; gap: 0.55rem; }
+.inspector dt, .integration-card dt { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: #5b7c99; }
+.inspector dd, .integration-card dd { margin: 0; }
+.integration-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.integration-card header { display: flex; justify-content: space-between; gap: 0.5rem; align-items: flex-start; }
+@media (max-width: 900px) {
+  .metric-row, .mission-split, .mission-work { grid-template-columns: 1fr; }
+}

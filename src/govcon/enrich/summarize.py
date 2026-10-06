@@ -102,6 +102,9 @@ def run_solicitation_analysis(
             except ValueError:
                 logger.info("cached solicitation analysis %d has no valid content; re-running", existing.id)
                 existing = None
+        if existing is not None and (existing.generation_settings or {}).get("quality") == "incomplete":
+            logger.info("cached solicitation analysis %d is incomplete; re-running", existing.id)
+            existing = None
         if existing is not None:
             logger.info(
                 "solicitation analysis already exists for opportunity %d",

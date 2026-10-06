@@ -12,7 +12,7 @@
 <header class="top-bar">
   <a class="brand" href="/">GovCon</a>
   <nav class="d-flex gap-1 align-center" aria-label="Main navigation">
-    {% for key, path, label in [('inbox', '/', 'Inbox'), ('pipeline', '/pipeline', 'Pipeline'), ('search', '/search', 'Search'), ('watchlists', '/watchlists', 'Watchlists'), ('vendors', '/vendors', 'Vendors'), ('suppliers', '/suppliers', 'Suppliers'), ('ops', '/ops', 'Ops'), ('bots', '/bots', 'Bots'), ('settings', '/settings', 'Settings'), ('learning', '/learning', 'Insights'), ('admin', '/admin', 'Admin')] %}
+    {% for key, path, label in [('operate', '/operate', 'Operate'), ('inbox', '/', 'Inbox'), ('pipeline', '/pipeline', 'Pipeline'), ('search', '/search', 'Search'), ('watchlists', '/watchlists', 'Watchlists'), ('vendors', '/vendors', 'Vendors'), ('suppliers', '/suppliers', 'Suppliers'), ('ops', '/ops', 'Ops'), ('bots', '/bots', 'Bots'), ('settings', '/settings', 'Settings'), ('learning', '/learning', 'Insights'), ('admin', '/admin', 'Admin')] %}
     <a href="{{ path }}" {% if active_page == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>

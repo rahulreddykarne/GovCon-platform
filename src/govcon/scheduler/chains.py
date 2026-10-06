@@ -50,10 +50,10 @@ class ChainDef:
 CHAIN_DEFINITIONS: dict[str, ChainDef] = {
     "morning_ingest": ChainDef(
         name="morning_ingest",
-        description="SAM ingest → DIBBS ingest → source-change workflow → match → rank → auto-pursue → alerts",
+        description="SAM ingest → DIBBS ingest → source documents → source-change workflow → match → rank → auto-pursue → alerts",
         cron=describe("morning_ingest"),
-        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
-        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue", "orchestrate"}),
+        steps=["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
+        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "rank", "auto_pursue", "orchestrate"}),
     ),
     "usaspending": ChainDef(
         name="usaspending",
@@ -78,10 +78,10 @@ CHAIN_DEFINITIONS: dict[str, ChainDef] = {
     ),
     "evening_ingest": ChainDef(
         name="evening_ingest",
-        description="Second SAM/DIBBS → source-change workflow → match → rank → auto-pursue → alerts",
+        description="Second SAM/DIBBS → source documents → source-change workflow → match → rank → auto-pursue → alerts",
         cron=describe("evening_ingest"),
-        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
-        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue", "orchestrate"}),
+        steps=["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
+        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "rank", "auto_pursue", "orchestrate"}),
     ),
     "sunday_sweep": ChainDef(
         name="sunday_sweep",
@@ -329,6 +329,7 @@ def _build_step_table() -> dict[str, Callable]:
     return {
         "sam_ingest": jobs.step_sam_ingest,
         "dibbs_ingest": jobs.step_dibbs_ingest,
+        "source_documents": jobs.step_source_documents,
         "source_changes": jobs.step_source_changes,
         "match": jobs.step_match,
         "alerts": jobs.step_alerts,

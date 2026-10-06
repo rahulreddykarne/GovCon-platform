@@ -1101,6 +1101,24 @@ class BotApproval(Base):
     decision_note: Mapped[str | None] = mapped_column(Text)
 
 
+class AlertDelivery(Base):
+    """A digest claim committed before SMTP so a crash cannot send the same body twice."""
+
+    __tablename__ = "alert_deliveries"
+    __table_args__ = (
+        UniqueConstraint("claim_key", name="uq_alert_deliveries_claim_key"),
+        CheckConstraint("status IN ('sending', 'sent', 'failed')", name="ck_alert_deliveries_status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    claim_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'sending'"))
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    match_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    claimed_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(_ts())
+
+
 TASK_TYPES = (
     "proposal_generation", "ai_analysis", "solicitation_summary", "scheduler_chain", "opportunity_preparation",
     "notification_email", "quote_extraction", "bot_run",

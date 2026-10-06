@@ -22,11 +22,11 @@ def test_daily_jobs_keep_the_same_local_hour_in_summer_and_winter() -> None:
     summer_now = datetime(2026, 7, 1, 12, tzinfo=LA)
     winter_now = datetime(2026, 1, 2, 12, tzinfo=LA)
     expected = {
-        "morning_ingest": 23,
-        "usaspending": 0,
-        "embeddings": 1,
-        "midday_check": 5,
-        "evening_ingest": 11,
+        "morning_ingest": 6,
+        "usaspending": 7,
+        "embeddings": 8,
+        "midday_check": 12,
+        "evening_ingest": 17,
     }
     for job_id, hour in expected.items():
         trigger = cron_trigger(job_id)
@@ -38,13 +38,13 @@ def test_daily_jobs_keep_the_same_local_hour_in_summer_and_winter() -> None:
         assert summer.utcoffset() != winter.utcoffset()
 
 
-def test_sunday_sweep_is_sunday_at_2am_pacific() -> None:
+def test_sunday_sweep_is_sunday_at_9am_pacific() -> None:
     trigger = cron_trigger("sunday_sweep")
     nxt = trigger.get_next_fire_time(None, datetime(2026, 1, 5, 12, tzinfo=LA))  # a Monday
     assert nxt is not None
     local = nxt.astimezone(LA)
     assert local.weekday() == 6
-    assert local.hour == 2 and local.minute == 0
+    assert local.hour == 9 and local.minute == 0
 
 
 def test_misfire_grace_covers_an_overnight_laptop_restart() -> None:

@@ -31,6 +31,7 @@ def settings_page(request: Request) -> Response:
         AUTO_PREPARE,
         AUTO_PURSUE,
         DEADLINE_EXCEPTION,
+        OPERATOR_SCHEDULE,
         REVIEWER_ASSIGNMENT,
         get_setting,
     )
@@ -60,9 +61,34 @@ def settings_page(request: Request) -> Response:
             },
             "reviewers": list(reviewers),
             "can_edit": can(user, "manage_users"),
+            "schedule": _schedule_fields(get_setting(db, OPERATOR_SCHEDULE)),
             "active_page": "settings",
         }
     return _render(request, "settings.html", ctx, user)
+
+
+def _schedule_fields(stored: dict) -> list[dict[str, str]]:
+    from govcon.scheduler.schedule import JOBS, clock_label, effective_jobs
+
+    jobs = effective_jobs(stored.get("jobs") if isinstance(stored, dict) else None)
+    labels = {
+        "morning_ingest": "Morning SAM and DIBBS",
+        "usaspending": "USAspending",
+        "embeddings": "Embeddings, after morning ingest",
+        "midday_check": "Midday deadline check",
+        "evening_ingest": "Evening SAM and DIBBS",
+        "sunday_sweep": "Sunday sweep",
+    }
+    fields = []
+    for name in JOBS:
+        spec = jobs[name]
+        fields.append({
+            "name": name,
+            "label": labels[name],
+            "value": f"{int(spec['hour']):02d}:{int(spec['minute']):02d}",
+            "shown": clock_label(int(spec["hour"]), int(spec["minute"])),
+        })
+    return fields
 
 
 def _our_registration(db: OrmSession) -> CompanyRegistration | None:
@@ -96,11 +122,18 @@ def settings_save(
     auto_pursue_min_days: Annotated[str | None, Form()] = None,
     auto_pursue_max_per_day: Annotated[str | None, Form()] = None,
     deadline_exception: Annotated[str | None, Form()] = None,
+    schedule_morning_ingest: Annotated[str | None, Form()] = None,
+    schedule_usaspending: Annotated[str | None, Form()] = None,
+    schedule_embeddings: Annotated[str | None, Form()] = None,
+    schedule_midday_check: Annotated[str | None, Form()] = None,
+    schedule_evening_ingest: Annotated[str | None, Form()] = None,
+    schedule_sunday_sweep: Annotated[str | None, Form()] = None,
 ) -> Response:
     from govcon.workflow.app_settings import (
         AUTO_PREPARE,
         AUTO_PURSUE,
         DEADLINE_EXCEPTION,
+        OPERATOR_SCHEDULE,
         REVIEWER_ASSIGNMENT,
         get_setting,
         set_setting,
@@ -124,9 +157,31 @@ def settings_save(
                 "max_per_day": auto_pursue_max_per_day if auto_pursue_max_per_day not in (None, "") else current["max_per_day"],
             }, actor=actor)
             set_setting(db, DEADLINE_EXCEPTION, {"enabled": deadline_exception == "on"}, actor=actor)
+            clocks = {
+                "morning_ingest": schedule_morning_ingest,
+                "usaspending": schedule_usaspending,
+                "embeddings": schedule_embeddings,
+                "midday_check": schedule_midday_check,
+                "evening_ingest": schedule_evening_ingest,
+                "sunday_sweep": schedule_sunday_sweep,
+            }
+            set_setting(db, OPERATOR_SCHEDULE, {"jobs": _parse_clocks(clocks)}, actor=actor)
     except _WORKFLOW_ERRORS as exc:
         return _redirect("/settings", error=_error_text(exc), request=request)
     return _redirect("/settings", notice="Settings saved.", request=request)
+
+
+def _parse_clocks(clocks: dict[str, str | None]) -> dict[str, dict[str, int]]:
+    jobs: dict[str, dict[str, int]] = {}
+    for name, raw in clocks.items():
+        text = (raw or "").strip()
+        if not text:
+            continue
+        hour_text, _, minute_text = text.partition(":")
+        if not hour_text.isdigit() or not minute_text.isdigit():
+            raise ValueError(f"{name.replace('_', ' ')} needs a time like 06:30")
+        jobs[name] = {"hour": int(hour_text), "minute": int(minute_text)}
+    return jobs
 
 
 def ai_sharing_save(

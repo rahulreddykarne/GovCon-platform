@@ -70,7 +70,7 @@ def inbox(request: Request, page: Annotated[int, Query(ge=1, le=1_000_000)] = 1)
                 Match.opportunity_id.in_([opp.id for _, opp in rows]), Match.active.is_(True),
                 Watchlist.enabled.is_(True)).order_by(Watchlist.name)):
             names.setdefault(opp_id, []).append(name)
-        matches = []
+        matches: list[dict[str, Any]] = []
         for m, opp in rows:
             deadline_label, deadline_class = deadline_info(opp.response_deadline)
             matches.append(
@@ -92,6 +92,17 @@ def inbox(request: Request, page: Annotated[int, Query(ge=1, le=1_000_000)] = 1)
                     "needs_eligibility_decision": needs_eligibility_decision(m, opp, policy, now),
                 }
             )
+        from govcon.bots.status import analysis_labels
+
+        opp_ids = [int(item["opp_id"]) for item in matches]
+        labels = analysis_labels(db, opp_ids)
+        for item, opp_id in zip(matches, opp_ids, strict=True):
+            shown = labels.get(opp_id, {
+                "label": "not run",
+                "detail": "No document, match, compliance, or decision run is stored for this notice.",
+            })
+            item["analysis_label"] = shown["label"]
+            item["analysis_detail"] = shown["detail"]
         groups = [{"watchlist_name": "New opportunities", "matches": matches}] if matches else []
         from govcon.models import BotApproval, BotRun
         from govcon.ops.health import collect_health

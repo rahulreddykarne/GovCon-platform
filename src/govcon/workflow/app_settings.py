@@ -20,6 +20,7 @@ REVIEWER_ASSIGNMENT = "reviewer_assignment"
 AUTO_PREPARE = "auto_prepare_on_pursuit"
 AUTO_PURSUE = "auto_pursue"
 DEADLINE_EXCEPTION = "single_reviewer_deadline_exception"
+OPERATOR_SCHEDULE = "operator_schedule"
 REVIEWER_MODES = ("manual", "named", "all_active")
 
 DEFAULTS: dict[str, dict[str, Any]] = {
@@ -31,6 +32,8 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     AUTO_PURSUE: {"enabled": True, "min_score": 75, "min_days": 10, "max_per_day": 3},
     # One completed review may approve when the deadline is close (roadmap Q5, ADR-070).
     DEADLINE_EXCEPTION: {"enabled": True},
+    # Empty jobs means the code defaults in govcon.scheduler.schedule.JOBS.
+    OPERATOR_SCHEDULE: {"jobs": {}},
 }
 
 
@@ -75,6 +78,26 @@ def _validate(session: Session, key: str, value: dict[str, Any]) -> dict[str, An
         if clean["min_days"] < 0 or not 0 <= clean["max_per_day"] <= 50:
             raise SettingError("minimum days must be 0 or more and the daily maximum between 0 and 50")
         return clean
+    if key == OPERATOR_SCHEDULE:
+        from govcon.scheduler.schedule import JOBS
+
+        raw = value.get("jobs") or {}
+        if not isinstance(raw, dict):
+            raise SettingError("the schedule must list each job")
+        jobs: dict[str, dict[str, int]] = {}
+        for name, spec in JOBS.items():
+            incoming = raw.get(name, spec)
+            if not isinstance(incoming, dict):
+                raise SettingError(f"{name} needs an hour and a minute")
+            try:
+                hour = int(incoming.get("hour", spec["hour"]))
+                minute = int(incoming.get("minute", spec["minute"]))
+            except (TypeError, ValueError) as exc:
+                raise SettingError(f"{name} needs an hour and a minute") from exc
+            if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+                raise SettingError(f"{name} must be a time of day")
+            jobs[name] = {"hour": hour, "minute": minute}
+        return {"jobs": jobs}
     raise SettingError(f"unknown setting {key!r}")
 
 

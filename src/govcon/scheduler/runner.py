@@ -82,16 +82,34 @@ def _start_embedded_worker(settings):
     return stop
 
 
+def _operator_jobs(settings):
+    """Owner clocks from Settings, or the code defaults when the row is absent."""
+    from govcon.db import session_scope
+    from govcon.scheduler.schedule import effective_jobs
+    from govcon.workflow.app_settings import OPERATOR_SCHEDULE, get_setting
+
+    saved: dict = {}
+    try:
+        with session_scope(settings) as db:
+            value = get_setting(db, OPERATOR_SCHEDULE)
+            raw = value.get("jobs") if isinstance(value, dict) else None
+            if isinstance(raw, dict):
+                saved = raw
+    except Exception:
+        logger.warning("scheduler: operator schedule could not be read; using the default clocks")
+    return effective_jobs(saved)
+
+
 def _configured_scheduler(settings):
     """Build persistent Pacific schedules while preserving due times from this version."""
     from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
     from apscheduler.schedulers.blocking import BlockingScheduler
 
     from govcon.scheduler.schedule import (
-        JOBS,
         OPERATOR_TZ_NAME,
         SCHEDULE_VERSION,
         cron_trigger,
+        describe,
         preserved_next_run,
     )
 
@@ -102,19 +120,20 @@ def _configured_scheduler(settings):
     # Load persisted due times before replacing definitions so a restart can catch a missed run.
     store.start(scheduler, "default")
     existing = {job.id: job for job in store.get_all_jobs()}
+    jobs = _operator_jobs(settings)
     titles = {
-        "morning_ingest": "11:30 PM PT: SAM → DIBBS → source changes → match → alerts",
-        "usaspending": "12:30 AM PT: USAspending delta",
-        "embeddings": "1:00 AM PT: embeddings → semantic matching",
-        "midday_check": "5:00 AM PT: deadline and amendment check",
-        "evening_ingest": "11:00 AM PT: SAM → DIBBS → source changes → match → alerts",
-        "sunday_sweep": "Sunday 2:00 AM PT: archive → cache → analytics → VACUUM",
+        "morning_ingest": "SAM, DIBBS, source documents, match, alerts",
+        "usaspending": "USAspending delta",
+        "embeddings": "embeddings after the morning ingest",
+        "midday_check": "deadline and amendment check",
+        "evening_ingest": "second SAM and DIBBS cycle",
+        "sunday_sweep": "archive, cache, analytics, VACUUM",
     }
-    for job_id, spec in JOBS.items():
+    for job_id, spec in jobs.items():
         previous = existing.get(job_id)
         scheduler.add_job(
             execute_scheduled_chain,
-            cron_trigger(job_id),
+            cron_trigger(job_id, jobs),
             id=job_id,
             replace_existing=True,
             next_run_time=preserved_next_run(
@@ -123,7 +142,7 @@ def _configured_scheduler(settings):
             ),
             args=[job_id],
             kwargs={"schedule_version": SCHEDULE_VERSION},
-            name=titles[job_id],
+            name=f"{describe(job_id, jobs)}: {titles[job_id]}",
             misfire_grace_time=int(spec["grace"]),
             coalesce=True,
         )

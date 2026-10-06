@@ -79,7 +79,7 @@ class TestChainDefinitions:
     def test_morning_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["morning_ingest"]
         # ADR-069: ranking and controlled auto-pursue run between matching and alerts.
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"]
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"]
 
     def test_usaspending_steps(self):
         chain = CHAIN_DEFINITIONS["usaspending"]
@@ -96,7 +96,7 @@ class TestChainDefinitions:
 
     def test_evening_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["evening_ingest"]
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"]
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"]
 
     def test_sunday_sweep_steps(self):
         chain = CHAIN_DEFINITIONS["sunday_sweep"]
@@ -170,8 +170,8 @@ class TestJobsList:
     def test_shows_schedule_for_each_chain(self):
         result = _invoke("jobs", "list")
         assert result.exit_code == 0
-        assert "11:30 PM America/Los_Angeles" in result.output
-        assert "11:00 AM America/Los_Angeles" in result.output
+        assert "6:30 AM America/Los_Angeles" in result.output
+        assert "5:00 PM America/Los_Angeles" in result.output
         assert "Sunday" in result.output
 
     def test_shows_steps_for_each_chain(self):
@@ -185,8 +185,8 @@ class TestJobsList:
         result = _invoke("jobs", "list")
         assert result.exit_code == 0
         # At least one column should mention the schedule
-        assert "11:30 PM America/Los_Angeles" in result.output
-        assert "Sunday 2:00 AM America/Los_Angeles" in result.output
+        assert "6:30 AM America/Los_Angeles" in result.output
+        assert "Sunday 9:00 AM America/Los_Angeles" in result.output
 
 
 # ---------------------------------------------------------------------------

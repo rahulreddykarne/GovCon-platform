@@ -65,6 +65,7 @@
         {% if m.alerted %}<span class="badge badge-secondary" title="Included in an alert digest">Alerted</span>{% endif %}
         {% if m.rank_score is not none %}<span class="badge badge-primary" title="Explainable rank, 0-100">Rank {{ '%.0f' % m.rank_score }}</span>{% endif %}
         {% if m.needs_eligibility_decision %}<span class="badge badge-warning" title="Ranked highly, but eligibility or ranking data is too uncertain to pursue automatically">Needs eligibility decision</span>{% endif %}
+        <span class="badge badge-secondary" title="{{ m.analysis_detail }}">Analysis {{ m.analysis_label }}</span>
       </div>
       <div class="match-meta">
         {% if m.deadline_label %}

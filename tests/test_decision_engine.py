@@ -284,6 +284,8 @@ def test_jev_unavailable_falls_back_to_rules(upgraded_engine, monkeypatch: pytes
         )
         session.commit()
         assert execution.provider == "rules"
+        assert execution.fallback_reason == "JEV unavailable (DecisionProviderUnavailable); rules result kept"
+        assert execution.result  # the rules package, including its compliance findings, is kept
 
 
 def test_decision_fixture_contract_and_boundaries() -> None:

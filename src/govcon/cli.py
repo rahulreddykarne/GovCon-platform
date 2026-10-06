@@ -2975,6 +2975,8 @@ def jobs_list() -> None:
 
     from govcon.models import SchedulerJobRun
     from govcon.scheduler.chains import CHAIN_DEFINITIONS
+    from govcon.scheduler.schedule import describe, effective_jobs
+    from govcon.workflow.app_settings import OPERATOR_SCHEDULE, get_setting
 
     try:
         _settings().require_database_url()
@@ -2983,6 +2985,8 @@ def jobs_list() -> None:
         return
 
     with session_scope() as db:
+        saved = get_setting(db, OPERATOR_SCHEDULE)
+        jobs = effective_jobs(saved.get("jobs") if isinstance(saved, dict) else None)
         for chain_name, chain_def in CHAIN_DEFINITIONS.items():
             last_run = db.scalars(
                 select(SchedulerJobRun)
@@ -3007,7 +3011,7 @@ def jobs_list() -> None:
                     row_info = ""
 
             typer.echo(f"chain: {chain_name}")
-            typer.echo(f"  schedule: {chain_def.cron}")
+            typer.echo(f"  schedule: {describe(chain_name, jobs)}")
             typer.echo(f"  steps: {' → '.join(chain_def.steps)}")
             typer.echo(f"  last_run: {last_info}{row_info}")
             if last_run and last_run.failed_step:

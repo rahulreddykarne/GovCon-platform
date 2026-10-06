@@ -54,7 +54,7 @@ def test_chain_board_shows_last_failure_and_an_action(session: Session) -> None:
     session.flush()
     board = {row["name"]: row for row in chain_board(session)}
     morning = board["morning_ingest"]
-    assert morning["cron"] == "11:30 PM America/Los_Angeles"
+    assert morning["cron"] == "6:30 AM America/Los_Angeles"
     assert morning["last_failure"] is not None
     assert morning["last_failure"].error == "SAM HTTP 503"
     assert "govcon jobs run morning_ingest" in morning["action"]

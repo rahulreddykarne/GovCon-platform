@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Operate — GovCon{% endblock %}
+{% block content %}
+<div class="mission">
+  <header class="mission-head">
+    <div>
+      <p class="mission-kicker">Mission control</p>
+      <h1>How the agents are connected</h1>
+      <p class="mission-lead">Counts, statuses, and the last run come from rows already stored. A missing run stays missing.</p>
+    </div>
+  </header>
+
+  <nav class="mission-tabs" aria-label="Operating views">
+    <a href="/operate" {% if view == 'overview' %}class="active" aria-current="page"{% endif %}>Overview</a>
+    <a href="/operate/agents" {% if view == 'agents' %}class="active" aria-current="page"{% endif %}>Agents</a>
+    <a href="/operate/architecture" {% if view == 'architecture' %}class="active" aria-current="page"{% endif %}>Architecture</a>
+    <a href="/operate/integrations" {% if view == 'integrations' %}class="active" aria-current="page"{% endif %}>Integrations &amp; models</a>
+  </nav>
+
+  {% if view == 'overview' and overview %}
+  <p class="mission-greeting">{{ overview.greeting }}</p>
+  <div class="metric-row">
+    <div class="metric">
+      <div class="metric-value">{{ overview.pending_count }}</div>
+      <div class="metric-label">Decisions waiting</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">{{ overview.running_count }}</div>
+      <div class="metric-label">Agents running now</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">{{ overview.new_match_count }}</div>
+      <div class="metric-label">New matches</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">{{ overview.healthy_count }} <span class="metric-of">of {{ overview.check_count }}</span></div>
+      <div class="metric-label">Checks currently healthy</div>
+    </div>
+  </div>
+
+  <div class="mission-split">
+    <section class="mission-panel">
+      <h2>Waiting for you</h2>
+      {% if overview.pending %}
+      <ul class="mission-list">
+        {% for item in overview.pending %}
+        <li>
+          <strong>{{ item.title }}</strong>
+          <span class="tag info">{{ item.kind }}</span>
+          <p>{{ item.summary }}</p>
+          {% if item.opportunity_id %}<a href="/opp/{{ item.opportunity_id }}">Open notice</a>{% endif %}
+          <a href="/bots">Record the decision on Bots</a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="mission-empty">No bot approval is pending.</p>
+      {% endif %}
+    </section>
+    <section class="mission-panel">
+      <h2>Recent agent activity</h2>
+      {% if overview.activity %}
+      <ul class="mission-list">
+        {% for line in overview.activity %}
+        <li>
+          <strong>{{ line.bot }}</strong>
+          <span class="tag {% if line.status == 'succeeded' %}good{% elif line.status == 'failed' %}bad{% else %}warn{% endif %}">{{ line.status }}</span>
+          <p>{{ line.when }}{% if line.detail %} — {{ line.detail }}{% endif %}</p>
+          {% if line.opportunity_id %}<a href="/opp/{{ line.opportunity_id }}">Opportunity #{{ line.opportunity_id }}</a>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="mission-empty">No bot run is stored yet.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="mission-split">
+    <section class="mission-panel">
+      <h2>Current opportunity</h2>
+      {% if overview.current %}
+      <h3>{{ overview.current.title }}</h3>
+      <p>{{ overview.current.why }}</p>
+      <p>{{ overview.current.next_action }}</p>
+      <a class="mission-link" href="/opp/{{ overview.current.opportunity_id }}">Open this notice</a>
+      {% else %}
+      <p class="mission-empty">No pending approval and no new match are stored.</p>
+      {% endif %}
+    </section>
+    <section class="mission-panel">
+      <h2>Needs attention</h2>
+      {% if overview.attention %}
+      <ul class="mission-list">
+        {% for card in overview.attention %}
+        <li>
+          <strong>{{ card.name }}</strong>
+          <span class="tag {{ card.tag }}">{{ card.status }}</span>
+          <p>{{ card.blurb }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      <a class="mission-link" href="/operate/integrations">All integration checks</a>
+      {% else %}
+      <p class="mission-empty">No check is failed, degraded, or blocked by policy.</p>
+      {% endif %}
+    </section>
+  </div>
+  {% endif %}
+
+  {% if view == 'agents' and agents %}
+  <div class="mission-work">
+    <div class="agent-grid">
+      {% for card in agents.cards %}
+      <a class="agent-card {% if agents.selected.id == card.id %}is-selected{% endif %}" href="/operate/agents?node={{ card.id }}">
+        <span class="agent-mark" aria-hidden="true">{{ card.initials }}</span>
+        <span class="agent-title">{{ card.title }}</span>
+        <span class="tag {{ card.tag }}">{{ card.status }}</span>
+        <span class="agent-desc">{{ card.description }}</span>
+        <span class="agent-foot">{{ card.foot }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% set inspector = agents.selected %}
+    {% include "operate_inspector.html" %}
+  </div>
+  {% endif %}
+
+  {% if view == 'architecture' and architecture %}
+  <div class="mission-work">
+    <div class="arch">
+      {% for band in architecture.rows %}
+      <section class="arch-band">
+        <h2>{{ band.label }}</h2>
+        <div class="arch-row layout-{{ band.layout }}">
+          {% for node in band.nodes %}
+          {% if not loop.first %}<span class="flow-arrow across" aria-hidden="true">→</span>{% endif %}
+          <a class="arch-node {% if architecture.selected.id == node.id %}is-selected{% endif %}"
+             href="/operate/architecture?node={{ node.id }}" title="{{ node.tip }}">
+            <span class="arch-kind">{{ node.kind }}</span>
+            <span class="arch-title">{{ node.title }}</span>
+            <span class="arch-caption">{{ node.caption }}</span>
+            <span class="tag {{ node.tag }}">{{ node.status }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
+      {% if not loop.last %}<div class="flow-arrow down" aria-hidden="true">↓</div>{% endif %}
+      {% endfor %}
+    </div>
+    {% set inspector = architecture.selected %}
+    {% include "operate_inspector.html" %}
+  </div>
+  {% endif %}
+
+  {% if view == 'integrations' and integrations %}
+  <div class="integration-grid">
+    {% for card in integrations %}
+    <article class="integration-card">
+      <header>
+        <h2>{{ card.name }}</h2>
+        <span class="tag {{ card.tag }}">{{ card.status }}</span>
+      </header>
+      <p>{{ card.blurb }}</p>
+      <dl>
+        {% for row in card.rows %}
+        <div>
+          <dt>{{ row.label }}</dt>
+          <dd>{{ row.value }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

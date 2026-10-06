@@ -74,6 +74,11 @@ def collect_health(session: Session, settings: Settings | None = None) -> dict[s
 
 def chain_board(session: Session) -> list[dict[str, Any]]:
     """One row per chain: last success, last failure, next run, duration, counts."""
+    from govcon.scheduler.schedule import effective_jobs
+    from govcon.workflow.app_settings import OPERATOR_SCHEDULE, get_setting
+
+    saved = get_setting(session, OPERATOR_SCHEDULE)
+    jobs = effective_jobs(saved.get("jobs") if isinstance(saved, dict) else None)
     upcoming = _next_runs(session)
     rows: list[dict[str, Any]] = []
     for name, chain_def in CHAIN_DEFINITIONS.items():
@@ -84,7 +89,7 @@ def chain_board(session: Session) -> list[dict[str, Any]]:
         rows.append({
             "name": name,
             "description": chain_def.description,
-            "cron": describe(name) if name in CHAIN_DEFINITIONS else chain_def.cron,
+            "cron": describe(name, jobs) if name in jobs else chain_def.cron,
             "steps": chain_def.steps,
             "last_run": last,
             "last_success": last_ok,

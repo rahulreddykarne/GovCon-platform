@@ -131,6 +131,93 @@ def step_dibbs_ingest(session: Session, settings) -> StepResult:
         return StepResult(step="dibbs_ingest", status="failed", error=err)
 
 
+def step_source_documents(session: Session, settings) -> StepResult:
+    """Download SAM description bodies and DIBBS RFQ PDFs for notices just ingested.
+
+    The daily index does not carry those files. This step uses the same
+    downloader as the document bot. A failed download is recorded and does
+    not stop matching. Notices left past the batch limit stay for the next run.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from govcon.enrich.attachment_refs import (
+        DIBBS_RFQ_PDF,
+        SAM_DESCRIPTION,
+        attachment_refs_for,
+    )
+    from govcon.enrich.attachments import download_attachments
+    from govcon.ingest.runs import IngestStats, finish_run, start_run
+    from govcon.logging import redact
+    from govcon.models import IngestionRun, Opportunity, StoredFile
+
+    run = start_run(session, "sched:source_documents")
+    try:
+        since = datetime.now(UTC) - timedelta(hours=6)
+        ingest_start = session.scalar(
+            select(IngestionRun.started_at).where(
+                IngestionRun.job.in_(("sched:sam_ingest", "sched:dibbs_ingest", "sam_opportunities", "dibbs_index")),
+                IngestionRun.started_at >= since,
+                IngestionRun.status.in_(("succeeded", "completed_with_errors")),
+            ).order_by(IngestionRun.started_at.asc()).limit(1)
+        )
+        if ingest_start is None:
+            finish_run(run, IngestStats(), status="succeeded", details={"reason": "no recent ingest"})
+            return StepResult(step="source_documents", status="succeeded", extra={"reason": "no recent ingest"})
+        candidates = session.scalars(
+            select(Opportunity).where(
+                Opportunity.updated_at >= ingest_start,
+                Opportunity.source.in_(("sam", "dibbs")),
+            ).order_by(Opportunity.id).limit(200)
+        ).all()
+        batch = 40
+        chosen: list[Opportunity] = []
+        for opportunity in candidates:
+            refs = [
+                ref for ref in attachment_refs_for(opportunity)
+                if ref.source_metadata.get("origin") in {SAM_DESCRIPTION, DIBBS_RFQ_PDF}
+            ]
+            if not refs:
+                continue
+            urls = [ref.url for ref in refs]
+            stored = set(session.scalars(
+                select(StoredFile.url).where(
+                    StoredFile.opportunity_id == opportunity.id,
+                    StoredFile.url.in_(urls),
+                    StoredFile.sha256.is_not(None),
+                    StoredFile.active.is_(True),
+                )
+            ))
+            if any(url not in stored for url in urls):
+                chosen.append(opportunity)
+        errors: list[str] = []
+        fetched = 0
+        for opportunity in chosen[:batch]:
+            try:
+                download_attachments(session, opportunity, settings=settings)
+                fetched += 1
+            except Exception as exc:  # noqa: BLE001  one notice must not stop the batch
+                errors.append(redact(f"opportunity {opportunity.id}: {exc}"))
+        deferred = max(0, len(chosen) - batch)
+        stats = IngestStats(fetched=fetched, errors=errors)
+        details = {"deferred": deferred, "candidates": len(chosen)}
+        status = "completed_with_errors" if errors else "succeeded"
+        finish_run(run, stats, status=status, details=details)
+        return StepResult(
+            step="source_documents",
+            status=status,
+            fetched=fetched,
+            error="; ".join(errors) if errors else None,
+            extra=details,
+        )
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
+        err = redact(str(exc))
+        finish_run(run, IngestStats(errors=[err]), status="failed")
+        logger.error("source_documents failed: %s", err)
+        return StepResult(step="source_documents", status="failed", error=err)
+
+
 def step_source_changes(session: Session, settings) -> StepResult:
     """Handle material source changes found by ingest.
 

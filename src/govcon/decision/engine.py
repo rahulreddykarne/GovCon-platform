@@ -74,6 +74,7 @@ class BundleExecution:
     model: str | None
     confidence: float | None
     hard_rule_findings: tuple[str, ...]
+    fallback_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -466,6 +467,11 @@ def run_decision_bundle(
     )
     session.add(row)
     session.flush()
+    fallback_reason = None
+    if jev_error is not None and active.provider == "rules":
+        # The rules result above is the baseline, including compliance findings.
+        # The exception type is recorded; the message can contain a URL.
+        fallback_reason = f"JEV unavailable ({type(jev_error).__name__}); rules result kept"
     return BundleExecution(
         bundle_name=bundle_name,
         run=row,
@@ -474,7 +480,16 @@ def run_decision_bundle(
         model=active.model,
         confidence=active.confidence,
         hard_rule_findings=tuple(item.reason for item in hard_findings),
+        fallback_reason=fallback_reason,
     )
+
+
+def _rules_payload(bid_bundle: dict[str, Any], runs: list[BundleExecution]) -> dict[str, Any]:
+    payload: dict[str, Any] = {"hard_rule_blockers": bid_bundle.get("hard_rule_blockers", [])}
+    reasons = [run.fallback_reason for run in runs if run.fallback_reason]
+    if reasons:
+        payload["fallback"] = {"from": "jev", "to": "rules", "why": reasons}
+    return payload
 
 
 def run_preliminary_decision_package(
@@ -553,7 +568,7 @@ def run_preliminary_decision_package(
         risks={"items": recommendation.risks},
         missing_information={"items": recommendation.missing_information},
         evidence={"items": recommendation.evidence},
-        rules_result={"hard_rule_blockers": bid_bundle.get("hard_rule_blockers", [])},
+        rules_result=_rules_payload(bid_bundle, runs),
         jev_result=_find_provider_payload(runs, "jev"),
         llm_result=_find_provider_payload(runs, "llm"),
         human_decision=None,

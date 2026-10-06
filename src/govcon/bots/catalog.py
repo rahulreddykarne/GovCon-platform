@@ -17,7 +17,7 @@ class BotSpec(TypedDict):
 CATALOG: dict[str, BotSpec] = {
     "orchestrator": {
         "title": "Orchestrator",
-        "trigger": "Queued at the end of the 11:30 PM and 11:00 AM chains, or from /bots.",
+        "trigger": "Queued at the end of the morning and evening ingest chains, or from /bots.",
         "inputs": "A slot id and whether this run should pull sources again.",
         "outputs": "Child run ids and a per-opportunity state. A failed child stays incomplete.",
         "permissions": "Queue the other bots. It cannot send email, submit a bid, or change AI sharing.",
