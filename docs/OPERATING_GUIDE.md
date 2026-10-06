@@ -71,3 +71,12 @@ The demo notices use source `demo` and titles that say they are not real solicit
 ## Logs
 
 `logs-live/web.out.log`, `worker.out.log`, and `scheduler.out.log` when you use the PowerShell scripts. Do not paste those files into chat if they might contain a URL with an API key. SAM description downloads append the key as a query parameter.
+
+## Remaining risks
+
+- If `NOTIFY_EMAIL_ENABLED` is turned on, the notification-email task can still send SMTP. Bot approvals and the scheduled digest do not.
+- A crash after an alert email is handed to SMTP and before the send is recorded can deliver that digest twice. The outbox path used by the app does not send.
+- DIBBS quote PDFs and the full SAM description body are not fetched on the scheduled ingest. The workflow still uses attachments that were already stored.
+- Tesseract may be missing on the laptop. Pages that need OCR stay unread and the document bot does not treat that opportunity as finished.
+- Live SAM quota and whether the Hugging Face embedding model is already cached are unknown until the first real run. `/ops` does not download the model or call SAM.
+- `/` and `/ops` mark the worker and the scheduler down when those processes have not written a heartbeat in the last 90 seconds. That is the web process looking at local rows, not a live probe of another machine.
