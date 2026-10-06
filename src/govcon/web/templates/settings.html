@@ -95,6 +95,26 @@
     {% endfor %}
   </div>
 
+  <div class="card">
+    <div class="card-header"><span class="card-title">Company strategy</span></div>
+    <p>Blank means missing. A recommendation will say so. Nothing here is guessed from the watchlist.</p>
+    <input type="hidden" name="strategy_form" value="on">
+    {% if strategy_missing %}
+    <p class="text-sm">Missing: {{ strategy_missing|join(', ') }}.</p>
+    {% else %}
+    <p class="text-sm">Every strategy field has a saved value.</p>
+    {% endif %}
+    {% for field in strategy %}
+    <label>{{ field.label }}{% if field.missing %} <span class="text-muted">(missing)</span>{% endif %}
+      {% if field.kind == 'list' or field.kind == 'text' %}
+      <textarea name="strategy_{{ field.name }}" rows="2" {% if not can_edit %}disabled{% endif %}>{{ field.value }}</textarea>
+      {% else %}
+      <input name="strategy_{{ field.name }}" value="{{ field.value }}" inputmode="decimal" {% if not can_edit %}disabled{% endif %}>
+      {% endif %}
+    </label>
+    {% endfor %}
+  </div>
+
   {% if can_edit %}
   <button type="submit" class="btn btn-primary">Save settings</button>
   {% else %}

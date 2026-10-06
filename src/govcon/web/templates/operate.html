@@ -19,6 +19,15 @@
 
   {% if view == 'overview' and overview %}
   <p class="mission-greeting">{{ overview.greeting }}</p>
+  <section class="mission-panel" style="margin-bottom:0.9rem;">
+    <h2>Company strategy</h2>
+    {% if overview.strategy_missing %}
+    <p>Missing, and not guessed: {{ overview.strategy_missing|join(', ') }}.</p>
+    {% else %}
+    <p>Every strategy field has a saved value.</p>
+    {% endif %}
+    <a class="mission-link" href="/settings">Edit on Settings</a>
+  </section>
   <div class="metric-row">
     <div class="metric">
       <div class="metric-value">{{ overview.pending_count }}</div>

@@ -97,6 +97,9 @@ def overview(session: Session, settings: Settings) -> dict[str, Any]:
     activity = list(session.scalars(
         select(BotRun).order_by(BotRun.started_at.desc()).limit(6)
     ).all())
+    from govcon.company.strategy import missing_labels
+    from govcon.workflow.app_settings import COMPANY_STRATEGY, get_setting
+
     cards = integration_cards(session, settings)
     healthy = sum(1 for card in cards if card["status"] == "Healthy")
     attention = [card for card in cards if card["status"] in {"Failed", "Degraded", "Blocked by policy"}][:4]
@@ -111,6 +114,7 @@ def overview(session: Session, settings: Settings) -> dict[str, Any]:
         "healthy_count": healthy,
         "check_count": len(cards),
         "attention": attention,
+        "strategy_missing": missing_labels(get_setting(session, COMPANY_STRATEGY)),
     }
 
 

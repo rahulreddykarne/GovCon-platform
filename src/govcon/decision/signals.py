@@ -292,7 +292,11 @@ def capability_signal(session: Session, opportunity: Opportunity, profile: dict[
             score += 0.15
             evidence.append("NAICS is in the company profile")
     if not evidence:
-        signals.set("capability_fit_score", None, source="none", confidence="unknown", detail="no watchlist match, past win, or profile NAICS")
+        missing = profile.get("_strategy_missing") or []
+        detail = "no watchlist match, past win, or profile NAICS"
+        if missing:
+            detail += ". Company strategy is missing: " + ", ".join(missing)
+        signals.set("capability_fit_score", None, source="none", confidence="unknown", detail=detail)
         return
     signals.set(
         "capability_fit_score",

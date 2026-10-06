@@ -67,14 +67,19 @@ def load_company_facts(settings: Settings, session: Session | None = None) -> di
     """Approved company facts (§38.4); absent facts stay unknown.
 
     With a session, SAM registration fields refreshed daily (ADR-072) replace
-    the file's values, or are removed when the refresh is stale.
+    the file's values, or are removed when the refresh is stale. Strategy
+    fields the owner saved in Settings replace the file for those keys only.
+    A blank strategy field stays missing.
     """
     facts = read_company_facts_file(settings)
     if session is None:
         return facts
     from govcon.company.registration import overlay_registration
+    from govcon.company.strategy import apply_strategy
+    from govcon.workflow.app_settings import COMPANY_STRATEGY, get_setting
 
-    return overlay_registration(session, facts, settings=settings)
+    facts = overlay_registration(session, facts, settings=settings)
+    return apply_strategy(facts, get_setting(session, COMPANY_STRATEGY))
 
 
 def read_company_facts_file(settings: Settings) -> dict[str, Any]:

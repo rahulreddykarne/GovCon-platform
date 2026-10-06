@@ -21,6 +21,7 @@ AUTO_PREPARE = "auto_prepare_on_pursuit"
 AUTO_PURSUE = "auto_pursue"
 DEADLINE_EXCEPTION = "single_reviewer_deadline_exception"
 OPERATOR_SCHEDULE = "operator_schedule"
+COMPANY_STRATEGY = "company_strategy"
 REVIEWER_MODES = ("manual", "named", "all_active")
 
 DEFAULTS: dict[str, dict[str, Any]] = {
@@ -34,6 +35,8 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     DEADLINE_EXCEPTION: {"enabled": True},
     # Empty jobs means the code defaults in govcon.scheduler.schedule.JOBS.
     OPERATOR_SCHEDULE: {"jobs": {}},
+    # Empty strategy fields stay missing. They are not guessed from the watchlist.
+    COMPANY_STRATEGY: {},
 }
 
 
@@ -98,6 +101,42 @@ def _validate(session: Session, key: str, value: dict[str, Any]) -> dict[str, An
                 raise SettingError(f"{name} must be a time of day")
             jobs[name] = {"hour": hour, "minute": minute}
         return {"jobs": jobs}
+    if key == COMPANY_STRATEGY:
+        from govcon.company.strategy import FIELDS, present
+
+        if not isinstance(value, dict):
+            raise SettingError("the company strategy must be a set of fields")
+        strategy: dict[str, Any] = {}
+        for name, label, kind in FIELDS:
+            incoming = value.get(name)
+            if kind == "list":
+                if incoming is None:
+                    strategy[name] = []
+                    continue
+                if not isinstance(incoming, list) or not all(isinstance(item, str) and item.strip() for item in incoming):
+                    raise SettingError(f"{label} must be a list of text")
+                strategy[name] = [item.strip() for item in incoming]
+            elif kind == "number":
+                if incoming is None or incoming == "":
+                    strategy[name] = None
+                    continue
+                try:
+                    number = float(incoming)
+                except (TypeError, ValueError) as exc:
+                    raise SettingError(f"{label} must be a percent") from exc
+                if not 0 <= number <= 100:
+                    raise SettingError(f"{label} must be between 0 and 100")
+                strategy[name] = number
+            else:
+                if incoming is None or incoming == "":
+                    strategy[name] = None
+                    continue
+                if not isinstance(incoming, str):
+                    raise SettingError(f"{label} must be text")
+                strategy[name] = incoming.strip()
+            if not present(strategy[name], kind) and kind != "list":
+                strategy[name] = None
+        return strategy
     raise SettingError(f"unknown setting {key!r}")
 
 

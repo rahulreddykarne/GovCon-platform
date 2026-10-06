@@ -42,7 +42,8 @@ A missed run still fires once if you open the laptop within 18 hours (36 hours f
 
 ## Where to look
 
-- `/operate` — overview, agents, the architecture diagram, and integration health from stored rows.
+- `/operate` — overview, agents, the architecture diagram, and integration health from stored rows. The overview lists company-strategy fields that are still blank.
+- `/settings` — clocks, workflow choices, and the company strategy. A blank strategy field stays missing. It is not guessed.
 - `/` — new matches, pending bot decisions, and whether health checks need you.
 - `/bots` — each bot's last run, evidence, and the approvals queue.
 - `/ops` — heartbeats, last success, last failure, next run, and the next command to run.
