@@ -2,6 +2,58 @@
 {% block title %}Learning — GovCon{% endblock %}
 {% block content %}
 
+<div class="card">
+  <div class="card-header"><span class="card-title">Outcome capture</span></div>
+  <p class="text-sm text-muted">The USAspending chain writes suggestions from stored award rows. A person confirms or dismisses them. Nothing here is recorded as won or lost until then.</p>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="label">Suggested</div><div class="value">{{ capture_counts.suggested }}</div></div>
+    <div class="stat-card"><div class="label">Confirmed</div><div class="value">{{ capture_counts.confirmed }}</div></div>
+    <div class="stat-card"><div class="label">Dismissed</div><div class="value">{{ capture_counts.dismissed }}</div></div>
+  </div>
+  {% if capture_rows %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Notice</th><th>Source</th><th>Strength</th><th>Suggestion</th><th>Status</th><th>Evidence fields</th></tr></thead>
+      <tbody>
+        {% for row in capture_rows %}
+        <tr>
+          <td><a href="/workspace/{{ row.opportunity_id }}">#{{ row.opportunity_id }}</a></td>
+          <td>{{ row.source }}</td>
+          <td>{{ row.strength }}</td>
+          <td>{{ row.suggested_outcome }}</td>
+          <td>{{ row.status }}</td>
+          <td>{{ row.evidence_keys|join(', ') or 'none stored' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">No outcome suggestion is stored.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Sanitized eval set</span></div>
+  <p>{{ evals.note }}</p>
+  <p>Sample size {{ evals.sample_size }}. Passed {{ evals.passed }}. Failed {{ evals.failed }}.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Case</th><th>Result</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        {% for case in evals.cases %}
+        <tr>
+          <td>{{ case.title }}</td>
+          <td>{% if case.passed %}passed{% else %}failed{% endif %}</td>
+          <td>{{ case.before }}</td>
+          <td>{{ case.after }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="page-header">
   <div>
     <h1 class="page-title">Learning &amp; Analytics</h1>

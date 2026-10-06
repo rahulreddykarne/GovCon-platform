@@ -146,10 +146,33 @@ def learning(request: Request) -> Response:
         return RedirectResponse("/login", status_code=303)
 
     with session_scope() as db:
-        from govcon.models import AnalyticsSnapshot
+        from govcon.learning.evals import run_eval_harness
+        from govcon.models import AnalyticsSnapshot, OutcomeSuggestion
 
         analytics = outcome_analytics(db)
         last_refresh = db.scalar(select(AnalyticsSnapshot).order_by(AnalyticsSnapshot.id.desc()).limit(1))
+        suggestion_rows = list(db.scalars(
+            select(OutcomeSuggestion).order_by(OutcomeSuggestion.created_at.desc()).limit(8)
+        ).all())
+        capture_counts = {
+            status: int(db.scalar(
+                select(func.count()).select_from(OutcomeSuggestion).where(OutcomeSuggestion.status == status)
+            ) or 0)
+            for status in ("suggested", "confirmed", "dismissed")
+        }
+        capture_rows = [
+            {
+                "id": row.id,
+                "opportunity_id": row.opportunity_id,
+                "source": row.source,
+                "strength": row.strength,
+                "status": row.status,
+                "suggested_outcome": row.suggested_outcome or "none suggested",
+                "evidence_keys": sorted((row.evidence or {}).keys()),
+            }
+            for row in suggestion_rows
+        ]
+        evals = run_eval_harness()
 
     stats = ViewRow({
         "submitted": analytics.total_submitted,
@@ -175,5 +198,8 @@ def learning(request: Request) -> Response:
         "common_competitors": analytics.common_competitors,
         "reliable_suppliers": analytics.reliable_suppliers,
         "recent_outcomes": analytics.recent_outcomes,
+        "capture_counts": capture_counts,
+        "capture_rows": capture_rows,
+        "evals": evals,
         "active_page": "learning",
     }, user)
