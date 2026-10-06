@@ -200,6 +200,52 @@
   {% endif %}
 
   {% if view == 'integrations' and integrations %}
+  {% if routing %}
+  <section class="mission-panel" style="margin-bottom:0.9rem;">
+    <h2>Model route <span class="tag info">{{ routing.version }}</span></h2>
+    <p>Analysis: {{ routing.analysis_provider }} · {{ routing.analysis_model }}</p>
+    <p>Known-good fallback: {{ routing.known_good_provider }} · {{ routing.known_good_model }}</p>
+    <p>Decision: {{ routing.decision_provider }}, then {{ routing.decision_fallback }} when that provider does not run.</p>
+    {% if routing.fallback_reason %}<p>{{ routing.fallback_reason }}</p>{% endif %}
+    <p class="text-sm">Source of this route: {{ routing.source }}.</p>
+    {% if routing.history %}
+    <ul class="mission-list">
+      {% for item in routing.history %}
+      <li>
+        <strong>{{ item.version }}</strong>
+        <p>{{ item.analysis.provider }} · {{ item.analysis.model }}</p>
+        {% if can(current_user, 'manage_users') %}
+        <form method="post" action="/settings/model-routing">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <input type="hidden" name="action" value="rollback">
+          <input type="hidden" name="version" value="{{ item.version }}">
+          <button class="btn btn-secondary btn-sm" type="submit">Roll back to this version</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mission-empty">No earlier version is saved. The route in use is the process settings, or the first saved version.</p>
+    {% endif %}
+    {% if can(current_user, 'manage_users') %}
+    <form method="post" action="/settings/model-routing">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="action" value="save">
+      <label>Analysis provider
+        <select name="provider">
+          <option value="deepseek" {% if routing.analysis_provider == 'deepseek' %}selected{% endif %}>deepseek</option>
+          <option value="anthropic">anthropic</option>
+          <option value="openai">openai</option>
+        </select>
+      </label>
+      <label>Model id <input name="model" value="{{ routing.analysis_model }}" maxlength="80"></label>
+      <button class="btn btn-primary btn-sm" type="submit">Save a new route version</button>
+    </form>
+    <p class="text-sm">Saving does not call the provider and does not change AI sharing. Decision fallback stays rules.</p>
+    {% endif %}
+  </section>
+  {% endif %}
   <div class="integration-grid">
     {% for card in integrations %}
     <article class="integration-card">

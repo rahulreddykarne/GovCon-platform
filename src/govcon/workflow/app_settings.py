@@ -22,6 +22,7 @@ AUTO_PURSUE = "auto_pursue"
 DEADLINE_EXCEPTION = "single_reviewer_deadline_exception"
 OPERATOR_SCHEDULE = "operator_schedule"
 COMPANY_STRATEGY = "company_strategy"
+MODEL_ROUTING = "model_routing"
 REVIEWER_MODES = ("manual", "named", "all_active")
 
 DEFAULTS: dict[str, dict[str, Any]] = {
@@ -137,7 +138,37 @@ def _validate(session: Session, key: str, value: dict[str, Any]) -> dict[str, An
             if not present(strategy[name], kind) and kind != "list":
                 strategy[name] = None
         return strategy
+    if key == MODEL_ROUTING:
+        return _validate_model_route(value)
     raise SettingError(f"unknown setting {key!r}")
+
+
+def _validate_model_route(value: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise SettingError("the model route must be an object")
+    analysis = value.get("analysis")
+    decision = value.get("decision")
+    if not isinstance(analysis, dict) or not isinstance(decision, dict):
+        raise SettingError("the model route needs an analysis and a decision")
+    provider = str(analysis.get("provider") or "").strip().lower()
+    model = str(analysis.get("model") or "").strip()
+    if provider not in {"deepseek", "anthropic", "openai"} or not model or len(model) > 80:
+        raise SettingError("analysis provider and model id are not valid")
+    decision_provider = str(decision.get("provider") or "").strip().lower()
+    if decision_provider not in {"jev", "rules"}:
+        raise SettingError("the decision route must be jev or rules")
+    history = value.get("history") or []
+    if not isinstance(history, list) or len(history) > 20:
+        raise SettingError("route history must be a short list")
+    version = str(value.get("version") or "").strip()
+    if not version or len(version) > 40:
+        raise SettingError("the route version must be set")
+    return {
+        "version": version,
+        "analysis": {"provider": provider, "model": model},
+        "decision": {"provider": decision_provider, "fallback_provider": "rules"},
+        "history": history,
+    }
 
 
 def set_setting(session: Session, key: str, value: dict[str, Any], *, actor: User) -> dict[str, Any]:

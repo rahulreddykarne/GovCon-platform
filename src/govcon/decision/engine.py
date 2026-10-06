@@ -357,8 +357,9 @@ def run_decision_bundle(
     )
     active: ProviderDecision = baseline
 
-    primary = (settings.decision_primary_provider or "jev").strip().lower()
-    fallback = (settings.decision_fallback_provider or "rules").strip().lower()
+    from govcon.ai.routing import decision_providers
+
+    primary, fallback = decision_providers(session, settings)
     jev_error: Exception | None = None
     if primary == "jev":
         try:

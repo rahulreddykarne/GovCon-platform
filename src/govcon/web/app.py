@@ -84,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         login_get,
         login_post,
         logout_post,
+        model_route_save,
         notification_acknowledge,
         notification_read,
         notifications,
@@ -192,6 +193,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                       workspace_outcome_suggestion, methods=["POST"])
     app.add_api_route("/settings", settings_save, methods=["POST"])
     app.add_api_route("/settings/ai-sharing", ai_sharing_save, methods=["POST"])
+    app.add_api_route("/settings/model-routing", model_route_save, methods=["POST"])
     app.add_api_route("/suppliers", suppliers_page, methods=["GET"])
     app.add_api_route("/suppliers", suppliers_save, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/quotes", workspace_add_quote, methods=["POST"])

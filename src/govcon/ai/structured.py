@@ -193,6 +193,11 @@ def prepare_structured_call(
 ) -> PreparedCall:
     """Resolve the prompt and enforce policy; refuse before any content is sent."""
     settings = settings or get_settings()
+    from govcon.ai.routing import analysis_selection
+
+    provider_name, model, route_fallback = analysis_selection(
+        session, settings, provider_name=provider_name, model=model,
+    )
     if not isinstance(classification, DataClassification):
         raise TypeError("classification must be a DataClassification")
     if session is not None and opportunity_id is not None:
@@ -236,6 +241,8 @@ def prepare_structured_call(
     }
     if model:
         generation_settings["model"] = model
+    if route_fallback:
+        generation_settings["route_fallback"] = route_fallback
     return PreparedCall(
         prompt=prompt,
         schema_cls=schema_cls,

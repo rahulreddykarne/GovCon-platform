@@ -235,6 +235,37 @@ def _parse_clocks(clocks: dict[str, str | None]) -> dict[str, dict[str, int]]:
     return jobs
 
 
+def model_route_save(
+    request: Request,
+    action: Annotated[str, Form()],
+    provider: Annotated[str | None, Form()] = None,
+    model: Annotated[str | None, Form()] = None,
+    version: Annotated[str | None, Form()] = None,
+) -> Response:
+    """Save a new analysis route version, or restore an older one. Does not call a model."""
+    from govcon.ai.routing import rollback_route, save_analysis_route
+    from govcon.db import current_settings
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "manage_users")
+            if action == "save":
+                save_analysis_route(db, current_settings(), provider=provider or "", model=model or "", actor=actor)
+                notice = "Saved a new model route version. No provider was called."
+            elif action == "rollback":
+                rollback_route(db, version=version or "", actor=actor)
+                notice = "Restored that model route version. No provider was called."
+            else:
+                raise ValueError("unknown action")
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect("/operate/integrations", error=_error_text(exc), request=request)
+    return _redirect("/operate/integrations", notice=notice, request=request)
+
+
 def ai_sharing_save(
     request: Request,
     action: Annotated[str, Form()],

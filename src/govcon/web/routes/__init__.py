@@ -58,6 +58,7 @@ from govcon.web.routes.reviews import (
 from govcon.web.routes.reviews import workspace_run_analysis as workspace_run_analysis
 from govcon.web.routes.settings import ai_sharing_save as ai_sharing_save
 from govcon.web.routes.settings import settings_page as settings_page
+from govcon.web.routes.settings import model_route_save as model_route_save
 from govcon.web.routes.settings import settings_save as settings_save
 from govcon.web.routes.sourcing import suppliers_page as suppliers_page
 from govcon.web.routes.sourcing import suppliers_save as suppliers_save

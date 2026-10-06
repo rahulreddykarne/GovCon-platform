@@ -15,6 +15,12 @@ from govcon.web.routes.common import _NeedsLogin, _render, _require_login
 _VIEWS = ("overview", "agents", "architecture", "integrations", "how")
 
 
+def _routing(db, settings):
+    from govcon.ai.routing import describe_route
+
+    return describe_route(db, settings)
+
+
 def operate(request: Request, view: str = "overview") -> Response:
     if view not in _VIEWS:
         return RedirectResponse("/operate", status_code=303)
@@ -34,6 +40,7 @@ def operate(request: Request, view: str = "overview") -> Response:
             "agents": agent_board(db, selected) if view == "agents" else None,
             "architecture": architecture_board(db, settings, selected) if view == "architecture" else None,
             "integrations": integration_cards(db, settings) if view == "integrations" else None,
+            "routing": _routing(db, settings) if view == "integrations" else None,
             "guide": guided_walk(db, opp_id) if view == "how" else None,
         }
     return _render(request, "operate.html", ctx, user)
