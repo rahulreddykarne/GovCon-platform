@@ -170,7 +170,8 @@ class TestJobsList:
     def test_shows_schedule_for_each_chain(self):
         result = _invoke("jobs", "list")
         assert result.exit_code == 0
-        assert "daily" in result.output
+        assert "11:30 PM America/Los_Angeles" in result.output
+        assert "11:00 AM America/Los_Angeles" in result.output
         assert "Sunday" in result.output
 
     def test_shows_steps_for_each_chain(self):

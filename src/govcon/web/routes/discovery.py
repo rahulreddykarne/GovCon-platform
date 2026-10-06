@@ -113,11 +113,13 @@ def inbox(request: Request, page: Annotated[int, Query(ge=1, le=1_000_000)] = 1)
             unhealthy = [item["name"] for item in health["checks"] if item["status"] in {"down", "degraded", "stale"}]
         except Exception:
             unhealthy = ["health"]
-        promising = sorted(
-            (item for item in matches if item["rank_score"] is not None),
-            key=lambda item: item["rank_score"],
-            reverse=True,
-        )[:3]
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for item in matches:
+            score = item["rank_score"]
+            if isinstance(score, (int, float)) and not isinstance(score, bool):
+                scored.append((float(score), item))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        promising = [item for _, item in scored[:3]]
     return _render(request, "inbox.html", {
         "groups": groups, "total_count": total, "page": page, "pages": pages, "active_page": "inbox",
         "pending_approvals": pending_approvals, "orchestrator": orchestrator_view,

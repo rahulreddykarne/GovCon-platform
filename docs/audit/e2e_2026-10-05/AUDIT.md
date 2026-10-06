@@ -235,3 +235,17 @@ Tests listed above. A few sanitized demo notices clearly marked demo. `docs/OPER
 ### Explicitly out of scope
 
 Phase 16 state/local. Production deploy. Merging this PR. Changing the AI sharing flags as a side effect. Reading or committing `.env`.
+
+## Conflict resolution (2026-10-06)
+
+Suhas's current line is `fix/audit-and-workflow-2026-10-05` at `118a94a`. PR 26 (`fddb61a` on `audit10032026`) was not in that line. This branch merges both. Common ancestor is `9d81537`. Alembic stays one chain: `a3b4c5d6e7f8` → `b4c5d6e7f8a9` (registration freshness) → `c5d6e7f8a9b0` (process heartbeats) → `d6e7f8a9b0c1` (bot runs). Single head `d6e7f8a9b0c1` after the bot migration.
+
+Decisions:
+
+- **Workflow structure wins** where `118a94a` split or simplified behavior: route package (`web/routes/*.py` barrel, not the old monolith), watchlist checkboxes and AND/OR copy, package upload limit, document reuse during preparation, prompt output-schema injection, inbox ranking and eligibility flags, pipeline columns (matched / preparing / in review / drafting / ready / closed) with the internal stage as a subtitle. Search keeps the workflow sort and adds 50-row pages.
+- **PR 26 functional fixes win** for SAM registration freshness: `ingest/freshness.py`, `b4c5d6e7f8a9`, `company/registration.py` overlay (null removes a field and writes freshness provenance), `ingest/sam_entities.py` attempt/freshness writes, public-bind `WEB_CSRF_SECRET` length check, and `/health` that returns `{"status":"unavailable"}` with no error body when the database is down.
+- **Both, where they touch the same decision:** a vendor cache is used only when `evidence_status` is fresh or a known expiry, and a fresh cache still runs `sam_registration_known` so an expired date or a date before the deadline is not "active". If company-registration overlay already recorded provenance, including "unknown", the vendor cache does not override it. Preparation keeps workflow document reuse and also persists `checkpoint.ai_replay` so a restart does not repeat the model call.
+- **Typecheck and lint:** ruff select stays `E9`, `F`, `I` (workflow) plus the PR 26 bugbear exception for `typer.Option` / `typer.Argument`. Mypy uses `stubs` and `.quality/stubs`, with `warn_unused_ignores` and `warn_redundant_casts`. HTTP client signatures are the explicit PR 26 parameters (`timeout`, `headers`, `transport`, `params`, `json`, `data`) because every caller uses those names. `pricing_signals` keeps the workflow `product_quantity` argument.
+- **Invalid watchlist forms stay HTTP 422** (workflow test). The page still redisplays the submitted values, refuses to save, and says "dollar amount" and "whole number".
+- **Files restored to the workflow version** after a mixed hunk left undefined names: compliance extractor and proposal coverage, DIBBS and USAspending date parsing, learning analytics, task queue, preparation (then replay persistence was added back), and several handlers. Runtime behavior matches `118a94a` plus the freshness and replay pieces above.
+- **Draft PR base** is `fix/audit-and-workflow-2026-10-05`, not `audit10032026`, because that is the line Suhas is using. `audit10032026` is already merged into this branch, so the PR does not need that base.

@@ -14,7 +14,14 @@ from govcon.bots.store import decide_approval
 from govcon.bots.workflows import execute_discovery
 from govcon.config import get_settings
 from govcon.decision.provider import DecisionProviderUnavailable
-from govcon.models import BotApproval, BotRun, Opportunity, OpportunityEvent, Pursuit, Watchlist
+from govcon.models import (
+    BotApproval,
+    BotRun,
+    Opportunity,
+    OpportunityEvent,
+    Pursuit,
+    Watchlist,
+)
 
 
 @pytest.fixture()
@@ -195,10 +202,11 @@ def test_approval_records_the_human_and_does_not_change_sharing(
 
 
 def test_bots_page_requires_login_and_lists_the_catalog(upgraded_engine) -> None:
+    from web_client import CsrfTestClient
+
     from govcon.collaboration.users import create_session, hash_password
     from govcon.models import User
     from govcon.web.app import create_app
-    from web_client import CsrfTestClient
 
     with Session(upgraded_engine) as db:
         user = User(

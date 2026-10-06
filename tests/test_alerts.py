@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 import smtplib
 import ssl
-from pathlib import Path
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 import pytest

@@ -72,6 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse({"status": "ok", "checks": report["checks"]})
 
     # Import routes (late import to avoid circular deps at module load time)
+    from govcon.web.bot_pages import bots_decide, bots_page, bots_run
     from govcon.web.routes import (
         admin_invite_get,
         admin_invite_post,
@@ -89,9 +90,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         opp_start_workspace,
         ops,
         ops_task_action,
-    )
-    from govcon.web.bot_pages import bots_decide, bots_page, bots_run
-    from govcon.web.routes import (
         pipeline,
         search,
         settings_page,

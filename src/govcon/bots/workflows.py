@@ -13,7 +13,13 @@ from sqlalchemy.orm import Session
 from govcon.bots.store import begin_run, finish_run, open_approval
 from govcon.config import Settings
 from govcon.logging import redact
-from govcon.models import BotRun, IngestionRun, Opportunity, OpportunityEvent, Requirement
+from govcon.models import (
+    BotRun,
+    IngestionRun,
+    Opportunity,
+    OpportunityEvent,
+    Requirement,
+)
 
 _SHALL = re.compile(r"\b(shall|must|required)\b", re.IGNORECASE)
 _IMPACT = {
@@ -418,7 +424,8 @@ def _requirements_from_listing(opportunity: Opportunity) -> list[dict[str, Any]]
     )
     for field, label in fields:
         value = getattr(opportunity, field, None)
-        shown = value.isoformat() if hasattr(value, "isoformat") else value
+        formatter = getattr(value, "isoformat", None)
+        shown = formatter() if callable(formatter) else value
         rows.append({
             "text": f"{label}: {shown}" if shown else f"{label}: unknown",
             "status": "stated" if shown else "unknown",
@@ -533,9 +540,9 @@ def _write_cycle_summary(settings: Settings, slot: str, session: Session, parent
 
     from govcon.alerts.digest import resolve_outbox
 
-    children = []
+    children: list[BotRun] = []
     if parent_run_id is not None:
-        children = session.scalars(select(BotRun).where(BotRun.parent_run_id == parent_run_id)).all()
+        children = list(session.scalars(select(BotRun).where(BotRun.parent_run_id == parent_run_id)).all())
     lines = [
         "<!DOCTYPE html><html lang=en><meta charset=utf-8><title>GovCon daily summary</title><body>",
         f"<h1>GovCon cycle {slot}</h1>",

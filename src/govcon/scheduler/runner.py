@@ -87,7 +87,13 @@ def _configured_scheduler(settings):
     from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
     from apscheduler.schedulers.blocking import BlockingScheduler
 
-    from govcon.scheduler.schedule import JOBS, OPERATOR_TZ_NAME, SCHEDULE_VERSION, cron_trigger, preserved_next_run
+    from govcon.scheduler.schedule import (
+        JOBS,
+        OPERATOR_TZ_NAME,
+        SCHEDULE_VERSION,
+        cron_trigger,
+        preserved_next_run,
+    )
 
     store = SQLAlchemyJobStore(url=settings.require_database_url())
     scheduler = BlockingScheduler(

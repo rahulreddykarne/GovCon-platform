@@ -31,13 +31,13 @@ def bots_page(request: Request) -> Response:
             latest.setdefault(run.bot_name, run)
         cards = []
         for name, spec in CATALOG.items():
-            run = latest.get(name)
+            latest_run = latest.get(name)
             cards.append({
                 "name": name,
                 "spec": spec,
-                "run": run,
-                "why": _why(run),
-                "evidence": _evidence(run),
+                "run": latest_run,
+                "why": _why(latest_run),
+                "evidence": _evidence(latest_run),
             })
         pending = [_approval_view(row) for row in approvals]
     return _render(request, "bots.html", {
@@ -60,13 +60,13 @@ def bots_run(
     if user.role not in {"owner", "approver"}:
         return HTMLResponse("Not permitted", status_code=403)
     if bot_name != "orchestrator":
-        return _redirect("/bots", notice="Run the orchestrator. It starts the other bots.")
+        return _redirect("/bots", request=request, notice="Run the orchestrator. It starts the other bots.")
     settings = request.app.state.settings
     with session_scope() as db:
         execute_orchestrator(
             db, settings, trigger=f"manual:{user.id}", slot=new_slot(), pull=pull == "yes",
         )
-    return _redirect("/bots", notice="Orchestrator finished. Nothing was emailed or submitted.")
+    return _redirect("/bots", request=request, notice="Orchestrator finished. Nothing was emailed or submitted.")
 
 
 def bots_decide(
@@ -85,7 +85,7 @@ def bots_decide(
         return HTMLResponse("Unknown action", status_code=404)
     with session_scope() as db:
         decide_approval(db, approval_id, user_id=user.id, status=action, note=note)
-    return _redirect("/bots", notice="Decision recorded. No email was sent and AI sharing was not changed.")
+    return _redirect("/bots", request=request, notice="Decision recorded. No email was sent and AI sharing was not changed.")
 
 
 def _why(run: BotRun | None) -> str:

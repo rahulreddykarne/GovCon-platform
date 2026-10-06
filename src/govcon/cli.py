@@ -18,7 +18,11 @@ from govcon.db import check_connectivity, make_engine, session_scope
 from govcon.logging import configure_logging, redact
 from govcon.models import Opportunity, User
 from govcon.paths import migration_root
-from govcon.seed import demo_watchlist_count, seed_demo_opportunities, seed_demo_watchlist
+from govcon.seed import (
+    demo_watchlist_count,
+    seed_demo_opportunities,
+    seed_demo_watchlist,
+)
 
 app = typer.Typer(help="GovCon opportunity and bid management platform.", no_args_is_help=True)
 db_app = typer.Typer(help="Database administration.")
