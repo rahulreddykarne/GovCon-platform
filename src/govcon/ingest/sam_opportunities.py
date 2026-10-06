@@ -51,6 +51,8 @@ logger = logging.getLogger("govcon.ingest.sam")
 
 SAM_SEARCH_URL = "https://api.sam.gov/opportunities/v2/search"
 SAM_PAGE_LIMIT = 1000
+# A live search of one day has taken about 66 seconds. Stay above that.
+SAM_CLIENT_TIMEOUT = 90.0
 SAM_RETRY_ATTEMPTS = 5
 SAM_RETRY_WAIT = wait_exponential(multiplier=1, min=1, max=32)
 
@@ -550,7 +552,7 @@ def pull_sam_opportunities(
     wait: wait_base | None = None,
 ) -> IngestStats:
     own_client = client is None
-    client = client or build_client(settings or get_settings())
+    client = client or build_client(settings or get_settings(), timeout=SAM_CLIENT_TIMEOUT)
     try:
         records = list(
             iter_search_records(

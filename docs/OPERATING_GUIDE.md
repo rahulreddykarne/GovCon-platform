@@ -23,7 +23,7 @@ Three processes, plus Postgres 15 (or 16) already listening on `127.0.0.1:5433`:
 
 The scripts do not print `DATABASE_URL` or API keys. If Postgres is not accepting connections on the port you pass, they stop.
 
-`Invoke-GovConLiveChecks.ps1` prints whether SAM, DeepSeek, JEV, Anthropic, OpenAI, and SMTP are present or absent, then reads `GET /health`. It does not print values. Without `-Live` it does not call SAM or DeepSeek. With `-Live` it prints only an HTTP status code for those two. It does not probe JEV, because a decision package can contain company data.
+`Invoke-GovConLiveChecks.ps1` prints whether SAM, DeepSeek, JEV, Anthropic, OpenAI, and SMTP are present or absent, then reads `GET /health` and prints one line per check (name, status, detail). A name set in the process environment wins. Otherwise the script reads that name from the repo `.env`, including quoted values, a leading BOM, CRLF, and inline comments. A repeated key is one entry. It does not print values. The helper is `scripts/windows/live_checks.py` (PowerShell 5.1 cannot pass a quoted Python program through `python -c`). Without `-Live` it does not call SAM or DeepSeek. With `-Live` it calls the opportunities search (`postedFrom` and `postedTo` as `MM/dd/yyyy`, `limit=1`) and DeepSeek `/models`, and prints only an HTTP status code. The SAM call waits up to 90 seconds. It does not probe JEV, because a decision package can contain company data. The ingest client uses the same 90 second SAM timeout.
 
 ```powershell
 .\scripts\windows\Invoke-GovConLiveChecks.ps1 -WebPort 8001

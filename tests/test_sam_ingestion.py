@@ -23,6 +23,7 @@ from typer.testing import CliRunner
 
 from govcon.cli import app
 from govcon.ingest.sam_opportunities import (
+    SAM_CLIENT_TIMEOUT,
     SAM_SEARCH_URL,
     SamApiError,
     archive_expired_sam_opportunities,
@@ -587,6 +588,7 @@ def test_ingest_help_lists_sam_commands() -> None:
     assert "sam-backfill" in result.stdout
     assert "sam-archive-sweep" in result.stdout
     assert SAM_SEARCH_URL.startswith("https://api.sam.gov/opportunities/v2/search")
+    assert SAM_CLIENT_TIMEOUT >= 90
 
 
 def test_archive_sweep_command_records_a_run(upgraded_engine) -> None:

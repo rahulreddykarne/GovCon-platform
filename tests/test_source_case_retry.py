@@ -1,6 +1,7 @@
 """Sanitized SAM and DIBBS documents: a failed download is retried on the next run.
 
-No test in this module contacts SAM or DIBBS.
+No test in this module contacts SAM or DIBBS. The clock inside the step is
+moved to 2099 so notices left by other tests stay outside the six-hour window.
 """
 
 from __future__ import annotations
@@ -8,33 +9,37 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete
 
 from govcon.config import Settings
 from govcon.enrich.attachment_refs import attachment_refs_for
 from govcon.models import IngestionRun, Opportunity, StoredFile
 from govcon.scheduler.jobs import step_source_documents
 
+_ANCHOR = datetime(2099, 6, 1, tzinfo=UTC)
+
+
+class _FrozenClock(datetime):
+    @classmethod
+    def now(cls, tz=None):  # noqa: ANN001
+        return _ANCHOR
+
 
 def test_failed_source_documents_are_retried(db, monkeypatch) -> None:
-    now = datetime.now(UTC)
-    older = list(db.scalars(select(IngestionRun)).all())
-    saved = [(row.id, row.started_at) for row in older]
-    for row in older:
-        row.started_at = now - timedelta(days=2)
-    db.add(IngestionRun(job="sam_opportunities", started_at=now - timedelta(minutes=1), status="succeeded"))
-    db.add(IngestionRun(job="dibbs_index", started_at=now - timedelta(minutes=1), status="succeeded"))
     sam = Opportunity(
         source="sam", source_id=f"SAN-{uuid4().hex[:8]}", title="Sanitized SAM notice",
         status="open", solicitation_number="SPE4A726T0001",
         links={"description": "https://api.sam.gov/prod/opportunities/v2/noticedesc?noticeid=sanitized"},
-        raw={"demo": True},
+        raw={"demo": True}, updated_at=_ANCHOR,
     )
     dibbs = Opportunity(
         source="dibbs", source_id=f"SAN-{uuid4().hex[:8]}", title="Sanitized DIBBS RFQ",
         status="open", solicitation_number="SPE4A726T0001", raw={"demo": True}, links={},
+        updated_at=_ANCHOR,
     )
-    db.add_all([sam, dibbs])
+    sam_run = IngestionRun(job="sam_opportunities", started_at=_ANCHOR - timedelta(minutes=1), status="succeeded")
+    dibbs_run = IngestionRun(job="dibbs_index", started_at=_ANCHOR - timedelta(minutes=1), status="succeeded")
+    db.add_all([sam, dibbs, sam_run, dibbs_run])
     db.commit()
     calls: dict[int, int] = {}
 
@@ -50,6 +55,7 @@ def test_failed_source_documents_are_retried(db, monkeypatch) -> None:
         session.flush()
 
     monkeypatch.setattr("govcon.enrich.attachments.download_attachments", fake_download)
+    monkeypatch.setattr("datetime.datetime", _FrozenClock)
     settings = Settings(_env_file=None)
     try:
         first = step_source_documents(db, settings)
@@ -61,8 +67,9 @@ def test_failed_source_documents_are_retried(db, monkeypatch) -> None:
         assert second.fetched == 2
         assert calls[sam.id] == 2 and calls[dibbs.id] == 2
     finally:
-        for row_id, started in saved:
-            row = db.get(IngestionRun, row_id)
-            if row is not None:
-                row.started_at = started
+        ids = [sam.id, dibbs.id]
+        db.execute(delete(StoredFile).where(StoredFile.opportunity_id.in_(ids)))
+        db.flush()
+        db.execute(delete(Opportunity).where(Opportunity.id.in_(ids)))
+        db.execute(delete(IngestionRun).where(IngestionRun.id.in_([sam_run.id, dibbs_run.id])))
         db.commit()
