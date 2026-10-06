@@ -51,6 +51,7 @@ def execute_orchestrator(
     trigger: str,
     slot: str,
     pull: bool,
+    persist_start: bool = False,
 ) -> BotRun:
     run, started = begin_run(
         session, bot_name="orchestrator", idempotency_key=f"orchestrator:{slot}:pull={int(pull)}",
@@ -58,6 +59,10 @@ def execute_orchestrator(
     )
     if not started:
         return run
+    if persist_start:
+        # The row is visible as running before the network work. A killed worker
+        # leaves that row for the next start to mark failed.
+        session.commit()
     try:
         discovery = execute_discovery(
             session, settings, slot=slot, trigger="orchestrator", parent_run_id=run.id, pull=pull,

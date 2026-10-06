@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import socket
+from collections.abc import Callable
+from contextvars import ContextVar, Token
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -9,10 +13,33 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from govcon.models import BotApproval, BotRun
+from govcon.models import BotApproval, BotRun, ProcessHeartbeat
+from govcon.ops.health import STALE_PROCESS
 
 _FINISHED_OK = frozenset({"succeeded", "skipped", "waiting_approval", "completed_with_errors"})
 _STALE_RUNNING = timedelta(minutes=15)
+_OWNER: ContextVar[str | None] = ContextVar("govcon_bot_worker", default=None)
+INTERRUPTED_REASON = (
+    "Worker stopped while this run was still marked running. It can be run again."
+)
+
+
+def set_bot_worker(worker_id: str | None) -> Token[str | None]:
+    """Bind the worker id stamped on bot runs started on this thread."""
+    return _OWNER.set(worker_id)
+
+
+def reset_bot_worker(token: Token[str | None]) -> None:
+    _OWNER.reset(token)
+
+
+def _stamp_owner(run: BotRun) -> None:
+    owner = _OWNER.get()
+    if not owner:
+        return
+    current = dict(run.outputs or {})
+    current["worker_id"] = owner
+    run.outputs = current
 
 
 def begin_run(
@@ -51,6 +78,7 @@ def begin_run(
             if existing is None:
                 raise
             return _maybe_restart(existing, force=force, inputs=inputs)
+        _stamp_owner(row)
         return row, True
     return _maybe_restart(existing, force=force, inputs=inputs)
 
@@ -72,7 +100,56 @@ def _maybe_restart(existing: BotRun, *, force: bool, inputs: dict[str, Any]) -> 
     existing.error = None
     existing.outputs = None
     existing.inputs = inputs
+    _stamp_owner(existing)
     return existing, True
+
+
+def owner_still_running(worker_id: str | None, heartbeats: dict[str, datetime]) -> bool:
+    """True when that worker process is still alive and its heartbeat is fresh."""
+    if not worker_id:
+        return False
+    parts = worker_id.split(":")
+    if len(parts) < 3:
+        return False
+    host, pid_text = parts[0], parts[1]
+    beat = heartbeats.get(worker_id)
+    fresh = beat is not None and datetime.now(UTC) - _aware(beat) <= STALE_PROCESS
+    if host != socket.gethostname():
+        return fresh
+    try:
+        os.kill(int(pid_text), 0)
+    except (OSError, ValueError):
+        return False
+    return fresh
+
+
+def fail_interrupted_runs(
+    session: Session,
+    *,
+    owner_alive: Callable[[str | None], bool] | None = None,
+) -> int:
+    """Mark running bot rows failed when their worker is gone. A failed row can be started again."""
+    heartbeats = {
+        row.instance_id: row.beat_at
+        for row in session.scalars(select(ProcessHeartbeat).where(ProcessHeartbeat.role == "worker")).all()
+    }
+    check = owner_alive or (lambda worker_id: owner_still_running(worker_id, heartbeats))
+    now = datetime.now(UTC)
+    changed = 0
+    rows = session.scalars(select(BotRun).where(BotRun.status == "running")).all()
+    for row in rows:
+        owner = (row.outputs or {}).get("worker_id")
+        if check(owner if isinstance(owner, str) else None):
+            continue
+        outputs = dict(row.outputs or {})
+        outputs["state"] = "incomplete"
+        outputs["retryable"] = True
+        row.status = "failed"
+        row.finished_at = now
+        row.error = INTERRUPTED_REASON
+        row.outputs = outputs
+        changed += 1
+    return changed
 
 
 def finish_run(

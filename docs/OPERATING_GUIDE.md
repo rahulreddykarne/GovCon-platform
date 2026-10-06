@@ -92,4 +92,6 @@ The demo notices use source `demo` and titles that say they are not real solicit
 - The morning and evening chains download SAM description bodies and DIBBS RFQ PDFs for notices stored by the ingest that just ran, up to 40 notices. The rest wait for the next run. The daily DIBBS zip is not fetched.
 - Tesseract may be missing on the laptop. Pages that need OCR stay unread and the document bot does not treat that opportunity as finished.
 - Live SAM quota and whether the Hugging Face embedding model is already cached are unknown until the first real run. `/ops` does not download the model or call SAM.
-- `/` and `/ops` mark the worker and the scheduler down when those processes have not written a heartbeat in the last 90 seconds. That is the web process looking at local rows, not a live probe of another machine.
+- `/` and `/ops` mark the worker and the scheduler down when those processes have not written a heartbeat in the last 90 seconds. That is the web process looking at local rows, not a live probe of another machine. The worker writes that heartbeat from a side thread every 20 seconds, including while a SAM or bot task is still running.
+- Outbound HTTP tries IPv4 before IPv6. The TCP connect timeout is at most 10 seconds, then the call fails and is retried. A black-holed IPv6 address does not sit in SYN_SENT. SAM search still allows 90 seconds to read the body.
+- If the worker process stops while a bot run is still marked running, the next worker start marks that row failed with a stored reason. Starting that bot again is allowed.

@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from govcon.bots.store import fail_interrupted_runs, reset_bot_worker, set_bot_worker
 from govcon.config import Settings, get_settings
 from govcon.db import session_scope
 from govcon.models import Task
@@ -227,10 +228,39 @@ def run_worker(
     settings = settings or get_settings()
     worker_id = new_worker_id()
     stop_event = stop_event or threading.Event()
+    try:
+        with session_scope(settings) as db:
+            interrupted = fail_interrupted_runs(db)
+        if interrupted:
+            logger.warning("worker marked %s interrupted bot run(s) failed so they can be run again", interrupted)
+    except Exception:
+        logger.warning("worker could not reconcile interrupted bot runs")
+    owner = set_bot_worker(worker_id)
+    pulse_stop = threading.Event()
+    pulse = threading.Thread(
+        target=heartbeat_loop, name="worker-heartbeat", args=(settings, worker_id, pulse_stop), daemon=True,
+    )
+    pulse.start()
     processed = 0
     logger.info("worker %s started (types=%s)", worker_id, task_types or "all")
+    try:
+        return _run_loop(settings, worker_id, stop_event, task_types, until_idle, max_tasks, processed)
+    finally:
+        pulse_stop.set()
+        pulse.join(timeout=2)
+        reset_bot_worker(owner)
+
+
+def _run_loop(
+    settings: Settings,
+    worker_id: str,
+    stop_event: threading.Event,
+    task_types: list[str] | None,
+    until_idle: bool,
+    max_tasks: int | None,
+    processed: int,
+) -> int:
     while not stop_event.is_set():
-        _beat(settings, "worker", worker_id)
         if max_tasks is not None and processed >= max_tasks:
             break
         try:
@@ -253,6 +283,9 @@ def run_worker(
     return processed
 
 
+WORKER_HEARTBEAT_SECONDS = 20.0
+
+
 def _beat(settings: Settings, role: str, instance_id: str) -> None:
     """Record liveness. A database problem here must not kill the worker."""
     try:
@@ -262,6 +295,20 @@ def _beat(settings: Settings, role: str, instance_id: str) -> None:
             record_heartbeat(db, role=role, instance_id=instance_id)
     except Exception:
         logger.warning("%s heartbeat was not recorded", role)
+
+
+def heartbeat_loop(
+    settings: Settings,
+    worker_id: str,
+    stop_event: threading.Event,
+    *,
+    interval: float = WORKER_HEARTBEAT_SECONDS,
+) -> None:
+    """Keep /health green while a task is blocked on the network."""
+    while not stop_event.is_set():
+        _beat(settings, "worker", worker_id)
+        if stop_event.wait(interval):
+            return
 
 
 def wait_for(settings: Settings, task_id: int, *, timeout: float, poll: float = 1.0) -> Task | None:

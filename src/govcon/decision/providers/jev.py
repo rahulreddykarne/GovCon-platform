@@ -162,7 +162,9 @@ class JevDecisionProvider:
             raise DecisionProviderUnavailable(str(exc)) from exc
         started = time.monotonic()
         try:
-            with httpx.Client(timeout=self._timeout_seconds) as client:
+            from govcon.http import build_client
+
+            with build_client(self._settings, timeout=self._timeout_seconds) as client:
                 response = client.post(endpoint, json=body, headers=headers)
         except httpx.HTTPError as exc:  # pragma: no cover - network-dependent
             if reservation is not None:

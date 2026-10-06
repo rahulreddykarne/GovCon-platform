@@ -26,6 +26,7 @@ def run_bot_task(settings, claim, heartbeat) -> str:
             trigger=str(payload.get("trigger") or "worker"),
             slot=str(payload["slot"]),
             pull=bool(payload.get("pull")),
+            persist_start=True,
         )
         result = {"bot_run_id": run.id, "status": run.status, "state": (run.outputs or {}).get("state")}
     with session_scope(settings) as db:
