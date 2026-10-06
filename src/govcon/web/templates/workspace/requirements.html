@@ -9,7 +9,7 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Requirements <span class="label-ai">AI extracted</span></span>
-    <span class="text-sm text-muted">{{ requirements|length }} total</span>
+    <span class="text-sm text-muted">{{ requirements_total }} total</span>
   </div>
   <div class="table-wrap">
     <table>
@@ -54,5 +54,12 @@
       </tbody>
     </table>
   </div>
+  {% if requirements_pages > 1 %}
+  <nav class="d-flex gap-2 align-center mt-2" aria-label="Requirement pages">
+    {% if requirements_page > 1 %}<a class="btn btn-secondary" href="?tab={{ active_tab }}&amp;requirements_page={{ requirements_page - 1 }}">Previous</a>{% endif %}
+    <span>Showing {{ requirements_start }}–{{ requirements_end }} of {{ requirements_total }} · Page {{ requirements_page }} of {{ requirements_pages }}</span>
+    {% if requirements_page < requirements_pages %}<a class="btn btn-secondary" href="?tab={{ active_tab }}&amp;requirements_page={{ requirements_page + 1 }}">Next</a>{% endif %}
+  </nav>
+  {% endif %}
 </div>
 {% endif %}

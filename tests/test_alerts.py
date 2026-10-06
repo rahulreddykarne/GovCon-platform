@@ -26,7 +26,14 @@ from govcon.cli import app
 from govcon.config import Settings
 from govcon.matching.engine import run_matching
 from govcon.matching.watchlists import create_watchlist
-from govcon.models import AuditEvent, Match, Notification, Opportunity, OpportunityEvent, Watchlist
+from govcon.models import (
+    AuditEvent,
+    Match,
+    Notification,
+    Opportunity,
+    OpportunityEvent,
+    Watchlist,
+)
 
 runner = CliRunner()
 NOW = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)

@@ -1,4 +1,5 @@
 <!-- Overview tab -->
+{% from "workspace/_decision_display.html" import items_of, pct, engine_badge %}
 {% include "workspace/_preparation.html" %}
 <div class="workspace-layout">
   <div>
@@ -22,7 +23,7 @@
         {% if opp.nsn %}
         <dt>NSN</dt><dd>{{ opp.nsn }}</dd>
         {% endif %}
-        {% if opp.quantity %}
+        {% if opp.quantity is not none %}
         <dt>Quantity</dt><dd>{{ opp.quantity }} {{ opp.unit or "" }}</dd>
         {% endif %}
         {% if opp.agency_path %}
@@ -32,13 +33,13 @@
         {% if pursuit %}
         <dt>Stage</dt>
         <dd><span class="badge badge-primary">{{ pursuit.stage|replace('_',' ') }}</span></dd>
-        {% if pursuit.sourcing_cost %}
+        {% if pursuit.sourcing_cost is not none %}
         <dt>Sourcing Cost</dt><dd>${{ "%.2f"|format(pursuit.sourcing_cost|float) }}</dd>
         {% endif %}
-        {% if pursuit.quote_price %}
+        {% if pursuit.quote_price is not none %}
         <dt>Quote Price</dt><dd>${{ "%.2f"|format(pursuit.quote_price|float) }}</dd>
         {% endif %}
-        {% if pursuit.margin_pct %}
+        {% if pursuit.margin_pct is not none %}
         <dt>Margin</dt><dd>{{ pursuit.margin_pct }}%</dd>
         {% endif %}
         {% endif %}
@@ -50,21 +51,21 @@
     {% if bid_decision %}
     <div class="card">
       <div class="card-header">
-        <span class="card-title">AI Bid Decision <span class="label-ai">AI</span></span>
+        <span class="card-title">Bid Decision {{ engine_badge(decision_package_analysis) }}</span>
       </div>
       <div class="d-flex gap-2 align-center mb-1">
         <span class="badge badge-{% if bid_decision.recommendation == 'bid' %}success{% elif bid_decision.recommendation == 'no_bid' %}danger{% else %}warning{% endif %}" style="font-size:14px; padding:4px 12px;">
           {{ bid_decision.recommendation|replace('_',' ')|upper }}
         </span>
-        {% if bid_decision.recommendation_score %}
-        <span class="text-muted">Confidence: {{ "%.0f"|format(bid_decision.recommendation_score|float) }}%</span>
+        {% if bid_decision.recommendation_score is not none %}
+        <span class="text-muted">Confidence: {{ pct(bid_decision.recommendation_score) }}</span>
         {% endif %}
       </div>
       {% if bid_decision.strengths %}
-        <p><strong>Strengths:</strong> {{ bid_decision.strengths|tojson if bid_decision.strengths is not string else bid_decision.strengths }}</p>
+        <p><strong>Strengths:</strong></p><ul>{{ items_of(bid_decision.strengths) }}</ul>
       {% endif %}
       {% if bid_decision.risks %}
-        <p class="mt-1"><strong>Risks:</strong> {{ bid_decision.risks|tojson if bid_decision.risks is not string else bid_decision.risks }}</p>
+        <p class="mt-1"><strong>Risks:</strong></p><ul>{{ items_of(bid_decision.risks) }}</ul>
       {% endif %}
     </div>
     {% endif %}
@@ -95,3 +96,5 @@
     {% endif %}
   </div>
 </div>
+
+{% include "workspace/_source_details.html" %}

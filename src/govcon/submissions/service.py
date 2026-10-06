@@ -10,7 +10,6 @@ arbitrary government portals.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import UTC, date, datetime, timedelta
@@ -20,18 +19,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
-from govcon.compliance.matrix import close_undetected_findings, record_run, upsert_open_finding
-from govcon.workflow.invalidation import invalidate_submission_readiness, lock_one, lock_opportunity
-from govcon.compliance.matrix import active_requirements
+from govcon.compliance.matrix import (
+    active_requirements,
+    close_undetected_findings,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.config import Settings, get_settings
 from govcon.models import (
-    Opportunity,
     Proposal,
-    ProposalVersion,
     Pursuit,
     Requirement,
     Submission,
     User,
+)
+from govcon.workflow.invalidation import (
+    invalidate_submission_readiness,
+    lock_one,
+    lock_opportunity,
 )
 
 logger = logging.getLogger("govcon.submissions.service")
@@ -210,7 +215,7 @@ def generate_submission_package(
         finding = upsert_open_finding(session, opportunity_id=opportunity_id, finding_type="submission_destination_conflict", severity="critical", description="Conflicting submission destinations or methods require human resolution", detected_by="submission_destination", detector_version="v1", source_refs=info["destination_conflicts"], blocks_submission=True)
         kept.add(finding.id)
     deadline_conflicts = dict(info["deadline_conflicts"])
-    if _deadline_disagrees(opp.response_deadline, info["extracted_deadline_dates"]):
+    if opp.response_deadline is not None and _deadline_disagrees(opp.response_deadline, info["extracted_deadline_dates"]):
         deadline_conflicts["opportunity_deadline"] = [opp.response_deadline.isoformat(), *info["extracted_deadline_dates"]]
     if deadline_conflicts:
         finding = upsert_open_finding(
@@ -244,7 +249,7 @@ def generate_submission_package(
     elif submission.status in FROZEN_SUBMISSION_STATUSES:
         # The instructions a submission was made under are part of its record.
         logger.info("submission %s is %s; instructions are not regenerated", submission.id, submission.status)
-        return _summary(submission, info, list(_file_list(submission.required_files) or []), _identify_missing_documents(opp, submission, requirements))
+        return _summary(submission, info, list(_file_list(submission.required_files) or []), _identify_missing_documents(submission, requirements))
 
     # Every instruction is recomputed from the current source: a value kept
     # from an earlier solicitation revision would let pre-flight validate
@@ -299,7 +304,7 @@ def generate_submission_package(
         entity_id=submission.id,
         new_value={"required_files": required_files, "changed": changed, "deadline_conflicts": deadline_conflicts},
     )
-    return _summary(submission, info, required_files, _identify_missing_documents(opp, submission, requirements))
+    return _summary(submission, info, required_files, _identify_missing_documents(submission, requirements))
 
 
 def _file_list(raw: Any) -> list[str] | None:
@@ -332,7 +337,6 @@ def _summary(submission: Submission, info: dict[str, Any], required_files: list[
 
 
 def _identify_missing_documents(
-    opp: Opportunity,
     submission: Submission,
     requirements: list[Requirement],
 ) -> list[str]:
@@ -364,7 +368,6 @@ def get_submission_workspace(
     requirements = active_requirements(session, opportunity_id=opportunity_id)
 
     missing = _identify_missing_documents(
-        session.get(Opportunity, opportunity_id),
         submission,
         requirements,
     ) if submission else ["No submission record — run generate first"]

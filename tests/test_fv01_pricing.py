@@ -3,12 +3,13 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from test_sourcing_company import db as db
+from test_sourcing_company import opportunity, user
 
 from govcon.config import get_settings
 from govcon.intelligence.ai_analyses import _REQUESTS
 from govcon.models import Pursuit
 from govcon.sourcing.records import get_or_create_supplier, record_quote
-from test_sourcing_company import db, opportunity, user
 
 
 def quote(db, opp, *, quantity="500", unit="PR", nsn=None, total=None):

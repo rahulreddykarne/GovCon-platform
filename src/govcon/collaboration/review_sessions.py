@@ -43,7 +43,11 @@ from govcon.workflow.invalidation import (
     lock_opportunity,
 )
 from govcon.workflow.source_revision import current_source_revision, is_stale, stamp_of
-from govcon.workflow.transitions import InvalidTransition, can_transition, require_transition
+from govcon.workflow.transitions import (
+    InvalidTransition,
+    can_transition,
+    require_transition,
+)
 
 
 class ReviewWorkflowError(RuntimeError):
@@ -138,6 +142,13 @@ def complete_assignment(
         "no_bid",
     }:
         raise ValueError("unknown review action")
+    recommendation = "needs_more_info" if recommendation == "needs_info" else recommendation
+    if recommendation not in {None, "bid", "no_bid", "needs_more_info"}:
+        raise ValueError("unknown review recommendation")
+    if action == "no_bid":
+        if recommendation not in {None, "no_bid"}:
+            raise ValueError("the no_bid action requires a no_bid recommendation")
+        recommendation = "no_bid"
     user = session.get(User, user_id)
     if user is None or not user.is_active:
         raise ReviewWorkflowError("an active reviewer account is required")
@@ -412,6 +423,8 @@ def finalize_approval(
     action: str,
     expected_version: int,
     override_reason: str | None = None,
+    no_bid_reason: str | None = None,
+    no_bid_category: str | None = None,
 ) -> ReviewSession:
     """Set the final human approval action for a reviewed opportunity.
 
@@ -535,7 +548,8 @@ def finalize_approval(
     if action == "return_for_review":
         _reopen_for_return(session, opportunity_id=opportunity_id, actor_id=actor.id)
     _sync_pursuit_stage(
-        session, opportunity_id=opportunity_id, action=action, approved_at=now, actor_id=actor.id
+        session, opportunity_id=opportunity_id, action=action, approved_at=now, actor_id=actor.id,
+        no_bid_reason=no_bid_reason, no_bid_category=no_bid_category,
     )
 
     updates: dict[str, Any] = {
@@ -977,6 +991,8 @@ def _sync_pursuit_stage(
     action: str,
     approved_at: datetime,
     actor_id: int | None = None,
+    no_bid_reason: str | None = None,
+    no_bid_category: str | None = None,
 ) -> None:
     target = _PURSUIT_TARGETS[action]
     lock_opportunity(session, opportunity_id)
@@ -999,6 +1015,18 @@ def _sync_pursuit_stage(
         pursuit.approved_to_bid_at = approved_at
     else:
         pursuit.approved_to_bid_at = None
+    if action == "no_bid":
+        from govcon.learning.outcomes import record_outcome
+
+        actor = session.get(User, actor_id) if actor_id else None
+        if actor is None:
+            raise ReviewWorkflowError("recording a no-bid outcome requires an approver")
+        record_outcome(session, opportunity_id=opportunity_id, outcome="no_bid", actor=actor,
+                       no_bid_reason=(no_bid_reason or "").strip() or None,
+                       no_bid_category=no_bid_category)
+    elif old_stage == "no_bid":
+        pursuit.outcome_at = None
+        pursuit.outcome_notes = None
     session.flush()
     if old_stage != target:
         record_audit(

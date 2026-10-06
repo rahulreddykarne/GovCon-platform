@@ -21,7 +21,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import PreparedCall, prepare_structured_call, run_structured_prompt
+from govcon.ai.structured import (
+    PreparedCall,
+    prepare_structured_call,
+    run_structured_prompt,
+)
 from govcon.compliance.matrix import active_requirements
 from govcon.config import Settings, get_settings
 from govcon.intelligence.competitors import competitor_summary
@@ -215,7 +219,10 @@ def _pricing_request(session: Session, opportunity_id: int, settings: Settings) 
             "pricing analysis"
         )
     comps = recent_award_comps(session, nsn=opp.nsn, psc_code=opp.psc_code, limit=25)
-    quantity = opp.quantity if opp.quantity and opp.quantity > 0 else None
+    from govcon.sourcing.product_facts import effective_product_facts
+
+    facts = effective_product_facts(session, opp)
+    quantity = facts.quantity if facts.quantity is not None and facts.quantity > 0 else None
     markup = ((quote_price - cost) / cost * 100) if quote_price is not None and cost else None
     inputs = {
         "quote_price_total": _num(quote_price),
@@ -223,7 +230,8 @@ def _pricing_request(session: Session, opportunity_id: int, settings: Settings) 
         "sourcing_cost_source": cost_source,
         "markup_on_cost_pct": _num(markup),
         "quantity": _num(quantity),
-        "unit": opp.unit,
+        "unit": facts.unit,
+        "product_facts_analysis_id": facts.source_analysis_id,
         "proposed_unit_price": _num(quote_price / quantity) if quote_price is not None and quantity else None,
         "unit_cost": _num(cost / quantity) if cost is not None and quantity else None,
         "note": "Arithmetic is computed by the application; markup_on_cost_pct = (price - cost) / cost.",

@@ -1,23 +1,33 @@
 """Regression tests for outcome, package, review and scheduler integrity."""
+import hashlib
+import json
+import zipfile
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
-import hashlib
-import json
 from types import SimpleNamespace
 from uuid import uuid4
-import zipfile
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError, DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from govcon.models import (
-    AIAnalysis, Match, Opportunity, OutcomeCorrection, OutcomeFeedback,
-    PackageManifest, Proposal, ProposalVersion, Pursuit, Requirement,
-    ReviewAssignment, SchedulerJobRun, Submission, Watchlist,
+    AIAnalysis,
+    Match,
+    Opportunity,
+    OutcomeCorrection,
+    OutcomeFeedback,
+    Proposal,
+    ProposalVersion,
+    Pursuit,
+    Requirement,
+    ReviewAssignment,
+    SchedulerJobRun,
+    Submission,
+    Watchlist,
 )
 
 
@@ -66,8 +76,8 @@ def test_outcome_specific_fields_and_dates():
 
 
 def test_outcome_upsert_keeps_full_immutable_actor_history(db):
-    from govcon.learning.outcomes import record_outcome
     from govcon.learning.analytics import outcome_analytics
+    from govcon.learning.outcomes import record_outcome
     opp = opportunity(db)
     submitted(db, opp)
     user = actor(db)
@@ -104,8 +114,8 @@ def test_won_requires_real_submission_and_cannot_change_terminal_outcome(db):
 
 
 def test_supplier_denominator_and_amendment_count(db, monkeypatch):
+    from govcon.learning.analytics import avg_cycle_times, reliable_suppliers
     from govcon.learning.outcomes import record_outcome
-    from govcon.learning.analytics import reliable_suppliers, avg_cycle_times
     user = actor(db)
     for outcome in ("won", "lost"):
         opp = opportunity(db)
@@ -127,8 +137,8 @@ def test_conflicting_destinations_are_not_guessed(key):
 
 
 def test_conflict_finding_and_unique_submission(db):
-    from govcon.submissions.service import generate_submission_package
     from govcon.compliance.matrix import open_findings
+    from govcon.submissions.service import generate_submission_package
     opp = opportunity(db)
     pursuit = Pursuit(opportunity_id=opp.id, stage="drafting")
     db.add(pursuit)
@@ -144,8 +154,12 @@ def test_conflict_finding_and_unique_submission(db):
 
 def test_manifest_checklist_completed_actions_and_changed_content(db, tmp_path):
     from govcon.compliance.deterministic import PackageFile, SubmissionPackage
-    from govcon.submissions.manifest import assemble_package, current_package, verify_package
     from govcon.submissions.checklist import generate_final_checklist
+    from govcon.submissions.manifest import (
+        assemble_package,
+        current_package,
+        verify_package,
+    )
     opp = opportunity(db)
     sub = submitted(db, opp)
     sub.required_files = {"files": ["SF30.pdf"]}
@@ -175,8 +189,8 @@ def test_spreadsheet_formula_prefixes_escaped(value):
 
 
 def test_zip_contains_supporting_files_hashes_pdf_and_fails_on_generation_error(db, tmp_path, monkeypatch):
-    from govcon.proposals.export import export_submission_zip
     from govcon.compliance.deterministic import PackageFile, SubmissionPackage
+    from govcon.proposals.export import export_submission_zip
     from govcon.submissions.manifest import assemble_package
     opp = opportunity(db)
     sub = submitted(db, opp)
@@ -239,7 +253,7 @@ def test_displayed_midpoint(low, high, expected):
 
 
 def test_embedding_rebuilds_changed_source_and_model_and_uses_active_matches(db):
-    from govcon.enrich.embeddings import run_embedding_job, build_watchlist_profiles
+    from govcon.enrich.embeddings import build_watchlist_profiles, run_embedding_job
     class Provider:
         model_version = "model-v1"
         def embed(self, text):
@@ -275,7 +289,7 @@ def test_embedding_model_identity_tracks_resolved_commit():
 
 def test_scheduler_lock_excludes_another_worker_and_recovers_stale_runs(upgraded_engine, monkeypatch):
     from govcon.config import get_settings
-    from govcon.scheduler.chains import ChainDef, run_chain, _chain_lock_key
+    from govcon.scheduler.chains import ChainDef, _chain_lock_key, run_chain
     settings = get_settings()
     lock_key = _chain_lock_key("midday_check")
     with upgraded_engine.connect() as connection:
@@ -319,7 +333,10 @@ def test_persistent_scheduler_jobs_are_serializable_and_preserve_due_times(upgra
 
 
 def test_single_policy_honors_explicit_second_review_without_configured_triggers(db, monkeypatch):
-    from govcon.collaboration.review_sessions import ensure_review_session, recalculate_quorum
+    from govcon.collaboration.review_sessions import (
+        ensure_review_session,
+        recalculate_quorum,
+    )
     monkeypatch.setenv("REVIEW_CONDITIONAL_TRIGGERS", "")
     opp = opportunity(db)
     review = ensure_review_session(db, opportunity_id=opp.id)
@@ -331,7 +348,11 @@ def test_single_policy_honors_explicit_second_review_without_configured_triggers
 
 
 def test_dual_reviewer_cannot_self_approve(db):
-    from govcon.collaboration.review_sessions import ensure_review_session, finalize_approval, ReviewWorkflowError
+    from govcon.collaboration.review_sessions import (
+        ReviewWorkflowError,
+        ensure_review_session,
+        finalize_approval,
+    )
     opp = opportunity(db)
     user = actor(db)
     review = ensure_review_session(db, opportunity_id=opp.id)
@@ -344,11 +365,14 @@ def test_dual_reviewer_cannot_self_approve(db):
 
 def test_multiple_summary_rows_return_latest_after_rerun(db):
     from govcon.ai.analysis_types import AnalysisType
-    from govcon.enrich.summarize import run_solicitation_analysis, SCHEMA_VERSION
-    from govcon.workflow.source_revision import SOURCE_REVISION_KEY, current_source_revision
+    from govcon.enrich.summarize import SCHEMA_VERSION, run_solicitation_analysis
+    from govcon.workflow.source_revision import (
+        SOURCE_REVISION_KEY,
+        current_source_revision,
+    )
     opp = opportunity(db)
     for value in ("first", "latest"):
-        row = AIAnalysis(opportunity_id=opp.id, analysis_type=AnalysisType.SOLICITATION_SUMMARY, schema_version=SCHEMA_VERSION, context_manifest={SOURCE_REVISION_KEY: current_source_revision(db, opp.id)}, output_json={"value": value})
+        row = AIAnalysis(opportunity_id=opp.id, analysis_type=AnalysisType.SOLICITATION_SUMMARY, schema_version=SCHEMA_VERSION, context_manifest={SOURCE_REVISION_KEY: current_source_revision(db, opp.id)}, output_json={"summary": f"{value} valid synthetic summary"})
         db.add(row)
         db.flush()
     assert run_solicitation_analysis(db, opp).id == row.id
@@ -357,6 +381,7 @@ def test_multiple_summary_rows_return_latest_after_rerun(db):
 def test_migration_preserves_legacy_duplicates_and_roundtrips(upgraded_engine):
     import importlib.util
     from pathlib import Path
+
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     path = Path(__file__).parents[1] / "alembic/versions/01a2b3c4d5e6_outcomes_packages_embeddings.py"
@@ -402,6 +427,7 @@ def test_migration_preserves_legacy_duplicates_and_roundtrips(upgraded_engine):
 
 def test_concurrent_upserts_keep_one_outcome_and_submission(upgraded_engine):
     from concurrent.futures import ThreadPoolExecutor
+
     from govcon.learning.outcomes import record_outcome
     from govcon.submissions.service import generate_submission_package
     with Session(upgraded_engine, expire_on_commit=False) as db:

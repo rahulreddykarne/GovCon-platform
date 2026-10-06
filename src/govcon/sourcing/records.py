@@ -175,9 +175,10 @@ def parse_quote_table(data: bytes, filename: str) -> list[dict[str, Any]]:
     if name.endswith(".csv"):
         rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
     elif name.endswith(".xlsx"):
+        from zipfile import BadZipFile
+
         from openpyxl import load_workbook
         from openpyxl.utils.exceptions import InvalidFileException
-        from zipfile import BadZipFile
 
         workbook = None
         try:
@@ -238,7 +239,7 @@ def record_quote(session: Session, *, opportunity_id: int, supplier_id: int, act
             if value is None and line.get("unit_price") is not None and line.get("quantity") is not None:
                 value = Decimal(str(line["unit_price"])) * Decimal(str(line["quantity"]))
             extended.append(value)
-        total = sum(extended, Decimal(0)) if all(v is not None for v in extended) else None
+        total = sum((v for v in extended if v is not None), Decimal(0)) if all(v is not None for v in extended) else None
     validity = _date(valid_until, "valid_until")
     if source and source.get("source_sha256"):
         existing = session.scalar(select(SupplierQuote).where(
@@ -305,28 +306,40 @@ def quote_records(session: Session, opportunity_id: int) -> list[dict[str, Any]]
     return records
 
 
-def lowest_current_total(session: Session, opportunity_id: int) -> SupplierQuote | None:
+def usable_quote_totals(session: Session, opportunity_id: int) -> list[SupplierQuote]:
+    from govcon.sourcing.product_facts import effective_product_facts
+
     opportunity = session.get(Opportunity, opportunity_id)
+    facts = effective_product_facts(session, opportunity) if opportunity is not None else None
     priced = []
-    for quote in current_quotes(session, opportunity_id):
+    quotes = current_quotes(session, opportunity_id)
+    lines_by_quote: dict[int, list[SupplierQuoteLine]] = {}
+    for line in session.scalars(select(SupplierQuoteLine).where(SupplierQuoteLine.quote_id.in_([q.id for q in quotes]))):
+        lines_by_quote.setdefault(line.quote_id, []).append(line)
+    for quote in quotes:
         if quote.total_price is None or opportunity is None:
             continue
-        lines = list(session.scalars(select(SupplierQuoteLine).where(SupplierQuoteLine.quote_id == quote.id)))
+        lines = lines_by_quote.get(quote.id, [])
         if lines:
-            if opportunity.quantity is None or any(line.quantity is None for line in lines):
+            if facts is None or facts.quantity is None or any(line.quantity is None for line in lines):
                 continue
-            if sum((line.quantity for line in lines), Decimal(0)) != opportunity.quantity:
+            if sum((line.quantity for line in lines if line.quantity is not None), Decimal(0)) != facts.quantity:
                 continue
-            if not opportunity.unit or any((line.unit or "").strip().upper() != opportunity.unit.strip().upper()
+            if not facts.unit or any((line.unit or "").strip().upper() != facts.unit
                                            for line in lines):
                 continue
-            if opportunity.nsn and any(line.nsn and canonical_nsn(line.nsn) != canonical_nsn(opportunity.nsn)
+            if facts.nsn and any(line.nsn and canonical_nsn(line.nsn) != canonical_nsn(facts.nsn)
                                        for line in lines):
                 continue
         elif quote.extraction_method != "manual":
             continue
         priced.append(quote)
-    return min(priced, key=lambda q: q.total_price, default=None)
+    return priced
+
+
+def lowest_current_total(session: Session, opportunity_id: int) -> SupplierQuote | None:
+    quotes = usable_quote_totals(session, opportunity_id)
+    return min(quotes, key=lambda quote: quote.total_price or Decimal(0)) if quotes else None
 
 
 def sourcing_revision(session: Session, opportunity_id: int) -> str:
@@ -341,12 +354,14 @@ def sourcing_revision(session: Session, opportunity_id: int) -> str:
 def draft_rfq(session: Session, *, opportunity_id: int, supplier_id: int | None, actor: User) -> RfqDraft:
     """Draft a request for quote from the opportunity's own facts. It is never sent."""
     from govcon.compliance.matrix import active_requirements
+    from govcon.sourcing.product_facts import effective_product_facts
 
     require_permission(actor, "review")
     opp = session.get(Opportunity, opportunity_id)
     if opp is None:
         raise SourcingError("opportunity not found")
     supplier = session.get(Supplier, supplier_id) if supplier_id else None
+    facts = effective_product_facts(session, opp)
     needs = [r for r in active_requirements(session, opportunity_id)
              if (r.requirement_type or "") in SOURCING_REQUIREMENT_TYPES]
     lines = [
@@ -355,9 +370,11 @@ def draft_rfq(session: Session, *, opportunity_id: int, supplier_id: int | None,
         f"We are preparing a quote for {opp.agency_path or 'a federal buyer'}"
         f"{' solicitation ' + opp.solicitation_number if opp.solicitation_number else ''}: {opp.title}.",
         "Please quote the following:",
-        f"- NSN: {opp.nsn or 'not stated'}",
-        f"- Quantity: {opp.quantity if opp.quantity is not None else 'not stated'} {opp.unit or ''}".rstrip(),
+        f"- NSN: {facts.nsn or 'not stated'}",
+        f"- Quantity: {facts.quantity if facts.quantity is not None else 'not stated'} {facts.unit or ''}".rstrip(),
     ]
+    if facts.source_analysis_id is not None:
+        lines.append("Verify extracted product facts against the solicitation before sending this request.")
     if needs:
         lines.append("Requirements from the solicitation:")
         lines += [f"- {r.requirement_text}" for r in needs[:25]]

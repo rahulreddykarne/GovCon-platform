@@ -1,0 +1,34 @@
+{% if can_approve and submission.status not in ('submitted', 'confirmed', 'withdrawn') %}
+<details class="mt-2">
+  <summary>Assemble or replace package files</summary>
+  <p>Upload the final files you will submit. Download the proposal from its tab first. Replacing files requires a new preflight.</p>
+  <form method="post" enctype="multipart/form-data" action="/workspace/{{ opp.id }}/submission/package/assemble">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="hidden" name="expected_proposal_version" value="{{ proposal.version }}">
+    <input type="hidden" name="expected_submission_version" value="{{ submission.version }}">
+    <label>Package files (up to 20 files, 20 MB each, 50 MB total)<input type="file" name="files" multiple required></label>
+    <label>Proposal filename<input name="proposal_filename" required></label>
+    <label>Pricing filenames, separated by commas<input name="pricing_filenames"></label>
+    <label>Signed filenames, separated by commas<input name="signed_filenames"></label>
+    <label>Optional form IDs and page counts: one line per file, filename,form ID,page count<textarea name="file_details" rows="3" placeholder="sf1449.pdf,SF1449,4"></textarea></label>
+    <label>Amendment numbers acknowledged, separated by commas<input name="amendments_acknowledged"></label>
+    <label>Pricing: one line per CLIN, quantity, unit price<textarea name="pricing_rows" rows="3" placeholder="0001,2,100.00"></textarea></label>
+    <label><input type="checkbox" name="representations_complete" value="yes"> Required representations completed</label>
+    <label><input type="checkbox" name="certifications_complete" value="yes"> Required certifications completed</label>
+    <label>If you edited or signed the proposal file, confirm that its content matches the current proposal version and explain your review (at least 10 characters)<textarea name="content_review_reason" rows="2"></textarea></label>
+    <button class="btn btn-primary">Assemble package</button>
+  </form>
+</details>
+<form method="post" action="/workspace/{{ opp.id }}/submission/package/preflight" class="mt-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <input type="hidden" name="expected_proposal_version" value="{{ proposal.version }}">
+  <input type="hidden" name="expected_submission_version" value="{{ submission.version }}">
+  <button class="btn btn-secondary">Run preflight on assembled files</button>
+</form>
+<form method="post" action="/workspace/{{ opp.id }}/submission/package/export" class="mt-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <input type="hidden" name="expected_proposal_version" value="{{ proposal.version }}">
+  <input type="hidden" name="expected_submission_version" value="{{ submission.version }}">
+  <button class="btn btn-secondary" name="format" value="zip">Download assembled ZIP</button>
+</form>
+{% endif %}

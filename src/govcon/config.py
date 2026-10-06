@@ -6,10 +6,10 @@ command needs them, not when this module is imported.
 
 from __future__ import annotations
 
-from functools import lru_cache
 from contextvars import ContextVar
+from functools import _CacheInfo, lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal, Protocol, cast
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     ai_max_input_tokens_per_opportunity: int = Field(default=120_000, ge=1)
     ai_max_input_tokens_per_call: int = Field(default=48_000, ge=1)
     ai_max_output_tokens_per_call: int = Field(default=8_192, ge=1)
+    # Source text per extraction/summary call. Kept apart from the per-call input
+    # limit: single-call steps (reconciliation, contradictions) need a high limit,
+    # while smaller source batches keep long answers under the output cap.
+    ai_source_batch_bytes: int = Field(default=24_000, ge=2_000)
     ai_max_provider_retries: int = Field(default=2, ge=0, le=5)
     ai_max_cost_usd_per_opportunity: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     # Operator-supplied upper rate covering input/output, caching, and fallback
@@ -197,6 +201,7 @@ class Settings(BaseSettings):
         "jev_min_confidence",
         "jev_human_review_threshold",
         "ai_max_cost_usd_per_opportunity",
+        "ai_budget_usd_per_million_tokens",
         "compliance_escalation_min_value",
         "compliance_high_confidence_threshold",
         "compliance_low_confidence_threshold",
@@ -277,10 +282,20 @@ def _default_settings() -> Settings:
     return Settings()
 
 
-def get_settings() -> Settings:
+class _SettingsGetter(Protocol):
+    """Context-aware getter with the default getter's cache controls."""
+
+    cache_clear: Callable[[], None]
+    cache_info: Callable[[], _CacheInfo]
+
+    def __call__(self) -> Settings: ...
+
+
+def _read_settings() -> Settings:
     return settings_context.get() or _default_settings()
 
 
 # Preserve the public cache management interface used by CLI/tests.
+get_settings = cast(_SettingsGetter, _read_settings)
 get_settings.cache_clear = _default_settings.cache_clear
 get_settings.cache_info = _default_settings.cache_info

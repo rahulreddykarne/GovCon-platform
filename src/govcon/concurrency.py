@@ -6,9 +6,9 @@ a version it has not read.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import update
+from sqlalchemy import CursorResult, update
 from sqlalchemy.orm import Session
 
 
@@ -34,11 +34,13 @@ def apply_versioned_update(
         raise StaleRecordError(instance.version, expected_version)
     previous = {key: getattr(instance, key) for key in changes}
     table = instance.__table__
-    result = session.execute(
+    # A Core UPDATE returns CursorResult; Session's general annotation also
+    # covers ORM query results, which do not expose rowcount.
+    result = cast(CursorResult[Any], session.execute(
         update(table)
         .where(table.c.id == instance.id, table.c.version == expected_version)
         .values(**changes, version=expected_version + 1)
-    )
+    ))
     if result.rowcount != 1:
         session.expire(instance)
         session.refresh(instance)

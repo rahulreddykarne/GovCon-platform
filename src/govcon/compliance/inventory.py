@@ -15,12 +15,22 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from govcon.compliance.matrix import close_undetected_findings, record_run, upsert_open_finding
+from govcon.compliance.matrix import (
+    close_undetected_findings,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory, InventoryWarning, SourceDocument
-from govcon.models import ComplianceRun, FilePage, Opportunity, OpportunityEvent, OpportunitySnapshot, StoredFile
+from govcon.models import (
+    ComplianceRun,
+    FilePage,
+    Opportunity,
+    OpportunityEvent,
+    StoredFile,
+)
 
 INVENTORY_VERSION = "document_inventory.v1"
 
@@ -110,9 +120,9 @@ def document_from_file(
     files extracted before pages were stored are re-read from their bytes.
     ``latest_snapshot_id`` is accepted for backward compatibility and unused.
     """
+    from govcon.config import get_settings
     from govcon.enrich.extract import extract_pdf_pages, extract_text
     from govcon.enrich.storage import get_store
-    from govcon.config import get_settings
 
     text = row.extracted_text
     page_texts: list[str] | None = None

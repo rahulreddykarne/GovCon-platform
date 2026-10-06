@@ -39,6 +39,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+    "ruff==0.16.10",
+    "mypy==2.4.0",
+    "types-setuptools==84.0.0.20260812",
+    "types-openpyxl==3.1.5.20260827",
+    "types-reportlab==5.0.0.20260911",
 ]
 
 [project.scripts]
@@ -56,3 +61,15 @@ build_py = "govcon._build.BuildPy"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --tb=short"
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E9", "F", "I"]
+
+[tool.mypy]
+python_version = "3.12"
+show_error_codes = true
+pretty = false
+mypy_path = "$MYPY_CONFIG_FILE_DIR/.quality/stubs"

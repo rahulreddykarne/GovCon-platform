@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from govcon.models import Award, Match, Opportunity, OutcomeFeedback, Watchlist
 from govcon.matching.eligibility import ELIGIBLE_STATUSES, pursuit_eligibility
+from govcon.models import Match, Opportunity, Watchlist
 
 if TYPE_CHECKING:
     from govcon.enrich.embeddings import EmbeddingProvider

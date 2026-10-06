@@ -11,8 +11,16 @@ import httpx2
 import pytest
 
 from govcon.ai.gateway import AIGatewayBlocked
-from govcon.ai.providers import NoProviderConfigured, get_provider, resolve_provider_model
-from govcon.ai.providers.anthropic import FALLBACK_BETA, JSON_INSTRUCTION, AnthropicProvider
+from govcon.ai.providers import (
+    NoProviderConfigured,
+    get_provider,
+    resolve_provider_model,
+)
+from govcon.ai.providers.anthropic import (
+    FALLBACK_BETA,
+    JSON_INSTRUCTION,
+    AnthropicProvider,
+)
 from govcon.ai.providers.base import CompletionResult, ProviderAPIError, ProviderRefusal
 from govcon.ai.providers.deepseek import DeepSeekProvider, parse_json_response
 from govcon.ai.providers.openai import OpenAIProvider
@@ -45,7 +53,7 @@ def _call(provider, **overrides):
 # ── Anthropic ──
 
 
-def _message(text: str = '{"ok": true}', *, model: str = "claude-opus-5", stop_reason: str = "end_turn", **extra) -> dict:
+def _message(text: str = '{"ok": true}', *, model: str = "claude-sonnet-5-5", stop_reason: str = "end_turn", **extra) -> dict:
     return {
         "id": "msg_test",
         "type": "message",
@@ -84,7 +92,7 @@ def test_anthropic_request_shape_and_result() -> None:
     result = _call(provider, max_tokens=None)
     assert isinstance(result, CompletionResult)
     assert result.content == '{"ok": true}'  # the thinking block is not part of the answer
-    assert (result.provider, result.model, result.finish_reason) == ("anthropic", "claude-opus-5", "end_turn")
+    assert (result.provider, result.model, result.finish_reason) == ("anthropic", "claude-sonnet-5-5", "end_turn")
     assert result.usage == {"input_tokens": 120, "output_tokens": 30, "cache_read_input_tokens": 0}
     assert parse_json_response(result) == {"ok": True}
 
@@ -94,7 +102,7 @@ def test_anthropic_request_shape_and_result() -> None:
     assert "anthropic-version" in request.headers
     assert FALLBACK_BETA in request.headers.get("anthropic-beta", "")
     body = json.loads(request.content)
-    assert body["model"] == "claude-opus-5"
+    assert body["model"] == "claude-sonnet-5-5"
     assert body["max_tokens"] == 16000
     assert body["system"].endswith(JSON_INSTRUCTION)
     assert body["messages"] == [{"role": "user", "content": "Solicitation text"}]
@@ -240,7 +248,7 @@ def test_factory_refuses_missing_keys_and_unknown_names(name: str) -> None:
 def test_resolve_provider_model_applies_defaults() -> None:
     settings = _settings(deepseek_model="deepseek-v4-pro")
     assert resolve_provider_model(settings) == ("deepseek", "deepseek-v4-pro")
-    assert resolve_provider_model(settings, provider_name="anthropic") == ("anthropic", "claude-opus-5")
+    assert resolve_provider_model(settings, provider_name="anthropic") == ("anthropic", "claude-sonnet-5-5")
     assert resolve_provider_model(settings, provider_name="openai", model="gpt-5-mini") == ("openai", "gpt-5-mini")
 
 
@@ -292,3 +300,31 @@ def test_secondary_validator_independence_helper() -> None:
         "secondary_validator_not_independent"
     }
     assert independence_warnings(settings, "anthropic", None, code="secondary_validator_not_independent", what="x") == []
+
+
+def _sse(text: str, *, model: str = "claude-opus-5-5") -> httpx2.Response:
+    events = [
+        ("message_start", {"type": "message_start", "message": {
+            "id": "msg_s", "type": "message", "role": "assistant", "model": model, "content": [],
+            "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 120, "output_tokens": 1}}}),
+        ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}}),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        ("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                           "usage": {"output_tokens": 30}}),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+    body = "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events)
+    return httpx2.Response(200, content=body.encode(), headers={"content-type": "text/event-stream"})
+
+
+@pytest.mark.parametrize("model, fallback", [("claude-opus-5-5", True), ("claude-sonnet-5", False)])
+def test_anthropic_streams_large_outputs(model, fallback) -> None:
+    """A 65,536-token cap would outlive the HTTP timeout as one blocking request."""
+    provider, seen = _anthropic(lambda r: _sse('{"ok": true}', model=model), model=model)
+    result = _call(provider, max_tokens=65_536)
+    body = json.loads(seen[0].content)
+    assert body["stream"] is True and body["max_tokens"] == 65_536
+    assert ("fallbacks" in body) is fallback
+    assert result.content == '{"ok": true}' and result.finish_reason == "end_turn" and result.model == model
+    assert result.usage["output_tokens"] == 30

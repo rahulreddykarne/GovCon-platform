@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SourceRef(BaseModel):
@@ -17,6 +17,14 @@ class SourceRef(BaseModel):
     page: int | None = None
     section: str | None = None
     quote: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _label_only(cls, value: object) -> object:
+        # Models cite non-file inputs (e.g. "AWARDS_JSON") as a bare string; keep
+        # it as the section label. It names no file, so it never counts as a
+        # verified citation.
+        return {"section": value} if isinstance(value, str) else value
 
 
 class LineItem(BaseModel):
@@ -96,6 +104,8 @@ class MissingInfo(BaseModel):
 class SolicitationAnalysisV1(BaseModel):
     """Schema for solicitation_analysis.v1 output."""
 
+    model_config = ConfigDict(extra="forbid")
+
     summary: str | None = None
     items: list[LineItem] = Field(default_factory=list)
     key_dates: list[KeyDate] = Field(default_factory=list)
@@ -113,6 +123,22 @@ class SolicitationAnalysisV1(BaseModel):
     missing_information: list[MissingInfo] = Field(default_factory=list)
     source_refs: list[SourceRef] = Field(default_factory=list)
     clauses: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _requires_content(self) -> SolicitationAnalysisV1:
+        if not _has_analysis_content(self.model_dump(mode="json")):
+            raise ValueError("solicitation analysis must contain useful facts or explicit missing information")
+        return self
+
+
+def _has_analysis_content(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(_has_analysis_content(item) for key, item in value.items() if key != "source_refs")
+    if isinstance(value, list):
+        return any(_has_analysis_content(item) for item in value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None
 
 
 class ReviewEvidenceItem(BaseModel):

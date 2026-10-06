@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from govcon.collaboration.users import invite_user
 from govcon.mcp import operations as mcp_ops
-from govcon.mcp.serialize import compact_opportunity, failure, success, truncate_text
+from govcon.mcp.serialize import compact_opportunity, failure, truncate_text
 from govcon.mcp.server import mcp, update_match
 from govcon.models import Award, BidDecision, Match, Opportunity, Pursuit, Watchlist
 

@@ -5,23 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GovCon{% endblock %}</title>
   <link rel="stylesheet" href="/static/govcon.css">
-  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" defer></script>
+  <script src="/static/vendor/htmx.min.js" defer></script>
 </head>
 <body class="app-shell">
 
 <header class="top-bar">
   <a class="brand" href="/">GovCon</a>
-  <nav class="d-flex gap-1 align-center">
-    <a href="/"          {% if active_page == 'inbox'     %}class="active"{% endif %}>Inbox</a>
-    <a href="/search"    {% if active_page == 'search'    %}class="active"{% endif %}>Search</a>
-    <a href="/pipeline"  {% if active_page == 'pipeline'  %}class="active"{% endif %}>Pipeline</a>
-    <a href="/watchlists"{% if active_page == 'watchlists'%}class="active"{% endif %}>Watchlists</a>
-    <a href="/vendors"   {% if active_page == 'vendors'   %}class="active"{% endif %}>Vendors</a>
-    <a href="/suppliers" {% if active_page == 'suppliers' %}class="active"{% endif %}>Suppliers</a>
-    <a href="/ops"       {% if active_page == 'ops'       %}class="active"{% endif %}>Ops</a>
-    <a href="/settings"  {% if active_page == 'settings'  %}class="active"{% endif %}>Settings</a>
-    <a href="/learning"  {% if active_page == 'learning'  %}class="active"{% endif %}>Learning</a>
-    <a href="/notifications" {% if active_page == 'notifications' %}class="active"{% endif %}>Notifications</a>
+  <nav class="d-flex gap-1 align-center" aria-label="Main navigation">
+    {% for key, path, label in [('inbox', '/', 'Inbox'), ('pipeline', '/pipeline', 'Pipeline'), ('search', '/search', 'Search'), ('watchlists', '/watchlists', 'Watchlists'), ('suppliers', '/suppliers', 'Suppliers'), ('learning', '/learning', 'Insights'), ('admin', '/admin', 'Admin')] %}
+    <a href="{{ path }}" {% if active_page == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
   </nav>
   <span class="spacer"></span>
   <div class="user-badge">
@@ -29,9 +22,7 @@
       <span>{{ current_user.display_name }}</span>
       <span class="role-badge">{{ current_user.role }}</span>
       {% set notif_count = unread_notification_count|default(0) %}
-      {% if notif_count > 0 %}
-      <a href="/notifications" style="color:#fff; font-size:12px;">[{{ notif_count }}]</a>
-      {% endif %}
+      <a href="/notifications" class="notification-bell" aria-label="Notifications: {{ notif_count }} unread"><span aria-hidden="true">&#128276;</span>{% if notif_count %}<span>{{ notif_count }}</span>{% endif %}</a>
       <form method="post" action="/logout" style="margin:0;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <button type="submit" class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.7);">Logout</button>
@@ -41,19 +32,8 @@
 </header>
 
 <main class="main-content">
-  {% if request is defined and request %}
-    {% set flash_error = request.query_params.get('error') %}
-    {% set flash_notice = request.query_params.get('notice') %}
-    {% if flash_error %}<div class="alert alert-error" role="alert">{{ flash_error }}</div>{% endif %}
-    {% if flash_notice %}<div class="alert alert-success" role="status">{{ flash_notice }}</div>{% endif %}
-  {% endif %}
-  {% with messages = get_flashed_messages() if get_flashed_messages is defined else [] %}
-    {% if messages %}
-      {% for msg in messages %}
-        <div class="alert alert-info">{{ msg }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
+  {% if flash_error %}<div class="alert alert-error" role="alert">{{ flash_error }}</div>{% endif %}
+  {% if flash_notice %}<div class="alert alert-success" role="status">{{ flash_notice }}</div>{% endif %}
 
   {% block content %}{% endblock %}
 </main>

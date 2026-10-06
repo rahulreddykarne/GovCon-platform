@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
-from govcon.models import OutcomeFeedback, Opportunity, Pursuit
+from govcon.models import Opportunity, OutcomeFeedback, Pursuit
 
 # Minimum wins required before a win profile is built or win-pattern claims are made
 WIN_PROFILE_MINIMUM = 3
@@ -27,7 +27,12 @@ def current_outcome_ids():
 
 
 def current_outcomes():
-    return OutcomeFeedback.id.in_(current_outcome_ids())
+    reopened_no_bid = select(Pursuit.id).where(
+        Pursuit.id == OutcomeFeedback.pursuit_id, Pursuit.stage != "no_bid",
+    ).correlate(OutcomeFeedback).exists()
+    return OutcomeFeedback.id.in_(current_outcome_ids()) & (
+        (OutcomeFeedback.outcome != "no_bid") | ~reopened_no_bid
+    )
 
 
 @dataclass
@@ -248,7 +253,7 @@ def common_competitors(session: Session, limit: int = 10) -> list[ReasonCount]:
         .order_by(desc("cnt"))
         .limit(limit)
     ).all()
-    return [ReasonCount(reason=name, count=cnt) for name, cnt in rows]
+    return [ReasonCount(reason=name, count=cnt) for name, cnt in rows if name is not None]
 
 
 def reliable_suppliers(session: Session, limit: int = 10) -> list[SupplierRow]:
@@ -300,6 +305,7 @@ def avg_cycle_times(session: Session) -> dict[str, float | None]:
     for pursuit, opp in pursuits:
         try:
             posted = opp.posted_date
+            posted_dt: datetime | None
             if isinstance(posted, date) and not isinstance(posted, datetime):
                 posted_dt = datetime(posted.year, posted.month, posted.day, tzinfo=timezone.utc)
             else:
@@ -309,6 +315,8 @@ def avg_cycle_times(session: Session) -> dict[str, float | None]:
             if posted_dt.tzinfo is None:
                 posted_dt = posted_dt.replace(tzinfo=timezone.utc)
             submitted = pursuit.submitted_at
+            if submitted is None:
+                continue
             if submitted.tzinfo is None:
                 submitted = submitted.replace(tzinfo=timezone.utc)
             delta = submitted - posted_dt

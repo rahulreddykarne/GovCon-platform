@@ -52,7 +52,7 @@ class FetchResult:
 
 def system_resolver(host: str) -> list[str]:
     infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    return sorted({info[4][0] for info in infos})
+    return sorted({str(info[4][0]) for info in infos})
 
 
 def _address_allowed(address: str) -> bool:
@@ -155,7 +155,9 @@ def _fetch_once(
     for _hop in range(max_redirects + 1):
         check_url(current, resolver=resolver, allow_http=allow_http)
         send_params = params if params and urlsplit(current).hostname == first_host else None
-        request = client.build_request("GET", current, params=send_params)
+        # Merge, never replace: SAM's noticedesc URL carries its noticeid in the query.
+        target = httpx.URL(current).copy_merge_params(send_params) if send_params else current
+        request = client.build_request("GET", target)
         response = client.send(request, stream=True, follow_redirects=False)
         try:
             if response.is_redirect:

@@ -25,6 +25,14 @@ from sqlalchemy.orm import Session
 
 from govcon.config import Settings
 from govcon.models import Task
+from govcon.tasks.errors import TaskCancelled
+
+
+def required_opportunity_id(value: int | None) -> int:
+    """An opportunity-scoped handler cannot process a removed target."""
+    if value is None:
+        raise TaskCancelled("the task's opportunity was removed or is missing")
+    return value
 
 
 @dataclass

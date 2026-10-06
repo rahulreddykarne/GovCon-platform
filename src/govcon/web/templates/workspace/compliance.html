@@ -1,7 +1,7 @@
 <!-- Compliance tab -->
 {% if not compliance_run %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. Run <code>govcon compliance run --opportunity-id {{ opp.id }}</code>.</p>
+  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. <a href="/workspace/{{ opp.id }}?tab=overview#preparation">Prepare now on Overview</a>.</p>
 </div>
 {% else %}
 <div class="card">
@@ -35,11 +35,9 @@
 
 </div>
 
-<!-- Requirements detail -->
-{% if requirements %}
-  {% include "workspace/requirements.html" %}
 {% endif %}
-{% endif %}
+
+{% include "workspace/requirements.html" %}
 
 {% if preflight_run %}
 <div class="card">

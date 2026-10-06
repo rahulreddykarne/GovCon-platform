@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 HARD_RULE_CONFIG = {
     "max_delivery_slip_days": 0,
     "critical_deadline_days": 2,

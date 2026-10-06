@@ -34,7 +34,6 @@ from govcon.compliance.matrix import active_requirements
 from govcon.compliance.metrics import coverage_summary
 from govcon.compliance.proposal_coverage import check_proposal_coverage
 from govcon.compliance.submission_preflight import (
-    ReadinessBlocked,
     move_to_ready_to_submit,
     readiness_blockers,
 )
@@ -50,16 +49,18 @@ from govcon.models import (
     Submission,
     User,
 )
-from govcon.proposals.ai_review import run_proposal_red_team
 from govcon.proposals.drafting import draft_proposal
 from govcon.proposals.versions import (
     ProposalWorkflowError,
     create_proposal_version,
     get_sections_for_version,
-    latest_proposal_version,
 )
 from govcon.submissions.service import generate_submission_package
-from govcon.workflow.invalidation import invalidate_submission_readiness, lock_one, lock_opportunity
+from govcon.workflow.invalidation import (
+    invalidate_submission_readiness,
+    lock_one,
+    lock_opportunity,
+)
 from govcon.workflow.source_revision import current_source_revision, is_stale, stamp_of
 from govcon.workflow.transitions import (
     APPROVABLE_PROPOSAL_STATUSES,
@@ -114,6 +115,7 @@ def generate_proposal(
     settings = settings or get_settings()
     _generation_target(session, opportunity_id)
 
+    provider: str | None
     if skip_ai:
         draft_result = _build_placeholder_draft(session, opportunity_id)
         provider = "placeholder"
@@ -213,7 +215,7 @@ def publish_generated_proposal(
     session.flush()
 
     # Run coverage validation (deterministic pass only in this step)
-    requirements = active_requirements(session, opportunity_id=opportunity_id)
+    active_requirements(session, opportunity_id=opportunity_id)
     coverage = check_proposal_coverage(
         session,
         opportunity_id,
@@ -264,8 +266,7 @@ def _build_placeholder_draft(session: Session, opportunity_id: int) -> dict[str,
     sections: list[dict[str, Any]] = []
     global_blockers: list[str] = []
 
-    opp = session.get(Opportunity, opportunity_id)
-    sol_num = (opp.solicitation_number or str(opportunity_id)) if opp else str(opportunity_id)
+    session.get(Opportunity, opportunity_id)
 
     for section_key in ["cover_letter", "executive_summary", "technical_response"]:
         reqs_for_section = [
@@ -373,7 +374,6 @@ def get_proposal_workspace(
         blocking_issues.append(f"{mandatory_missing} mandatory requirement(s) block submission")
 
     current_version: ProposalVersion | None = None
-    coverage_result: dict | None = None
     sections: list = []
 
     if proposal and proposal.current_version_id:
@@ -669,8 +669,13 @@ def record_submission_confirmation(
                 f"the recorded submission time {when.isoformat()} is after the response deadline {deadline.isoformat()}"
             )
 
-    from govcon.submissions.manifest import current_package, manifest_hash, proposal_artifact_problems, verify_package
     from govcon.compliance.matrix import latest_run
+    from govcon.submissions.manifest import (
+        current_package,
+        manifest_hash,
+        proposal_artifact_problems,
+        verify_package,
+    )
     package = current_package(session, submission)
     if package is None or verify_package(package):
         raise ProposalWorkflowError("the assembled submission package is missing or changed; re-run pre-flight")

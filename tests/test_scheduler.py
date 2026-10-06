@@ -15,10 +15,7 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from typing import Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -27,7 +24,12 @@ from typer.testing import CliRunner
 from govcon.cli import app
 from govcon.db import session_scope
 from govcon.models import IngestionRun, SchedulerJobRun
-from govcon.scheduler.chains import CHAIN_DEFINITIONS, ALL_CHAIN_NAMES, ChainDef, run_chain
+from govcon.scheduler.chains import (
+    ALL_CHAIN_NAMES,
+    CHAIN_DEFINITIONS,
+    ChainDef,
+    run_chain,
+)
 from govcon.scheduler.jobs import StepResult
 
 runner = CliRunner()
@@ -227,7 +229,7 @@ class TestJobsRun:
         assert run.steps_completed is not None
 
     def test_run_failed_chain_exits_1(self):
-        settings = _settings()
+        _settings()
         from govcon.scheduler.jobs import StepResult
 
         def always_fail(session, settings=None):
@@ -373,7 +375,7 @@ class TestIndependentChains:
 class TestRunVisibility:
     def test_completed_run_persisted_to_db(self):
         settings = _settings()
-        result = run_chain("midday_check", settings, trigger="test_visibility")
+        run_chain("midday_check", settings, trigger="test_visibility")
 
         with session_scope(settings) as db:
             run = db.scalars(

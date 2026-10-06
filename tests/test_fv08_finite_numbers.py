@@ -4,10 +4,18 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from test_sourcing_company import client as client
+from test_sourcing_company import db as db
+from test_sourcing_company import opportunity, user
 
 from govcon.models import SupplierQuote
-from govcon.sourcing.records import SourcingError, _decimal, get_or_create_supplier, import_catalog_csv, parse_quote_table
-from test_sourcing_company import client, db, opportunity, user
+from govcon.sourcing.records import (
+    SourcingError,
+    _decimal,
+    get_or_create_supplier,
+    import_catalog_csv,
+    parse_quote_table,
+)
 
 
 @pytest.mark.parametrize("value,expected", [(None, None), ("", None), (" ", None), (0, Decimal(0)),

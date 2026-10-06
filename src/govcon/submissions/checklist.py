@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.compliance.matrix import active_requirements
-from govcon.compliance.metrics import coverage_summary
+from govcon.compliance.metrics import coverage_summary, false_satisfied
 from govcon.models import (
     Opportunity,
     Proposal,
@@ -65,17 +65,21 @@ def generate_final_checklist(
 
     # Mandatory coverage
     mandatory_missing = summary.get("mandatory_missing", 0)
-    if mandatory_missing == 0:
+    mandatory = [r for r in requirements if r.mandatory is not False and r.status not in {"not_applicable", "superseded"}]
+    mandatory_unresolved = sum(r.status != "satisfied" or false_satisfied(r) for r in mandatory)
+    if not requirements:
+        items.append(_item("Mandatory requirements", "unknown", "No requirement inventory is available"))
+    elif mandatory_unresolved == 0:
         items.append(_item(
             "Mandatory requirements",
             "ready",
-            f"All {summary.get('mandatory_total', 0)} mandatory requirements satisfied",
+            f"All {len(mandatory)} applicable mandatory requirements satisfied",
         ))
     else:
         items.append(_item(
             "Mandatory requirements",
             "blocked",
-            f"{mandatory_missing} of {summary.get('mandatory_total', 0)} mandatory requirements not satisfied",
+            f"{mandatory_unresolved} of {len(mandatory)} mandatory requirements not satisfied",
         ))
 
     # Critical requirements
@@ -174,8 +178,9 @@ def generate_final_checklist(
         "overall": overall,
         "items": items,
         "mandatory_total": summary.get("mandatory_total", 0),
-        "mandatory_satisfied": summary.get("mandatory_satisfied", 0),
+        "mandatory_satisfied": len(mandatory) - mandatory_unresolved,
         "mandatory_missing": mandatory_missing,
+        "mandatory_unresolved": mandatory_unresolved,
         "critical_unresolved": critical_unresolved,
         "stale_count": len(stale),
     }
@@ -193,7 +198,7 @@ def generate_step_by_step_instructions(
     proposal = session.scalars(
         select(Proposal).where(Proposal.opportunity_id == opportunity_id)
     ).first()
-    opp = session.get(Opportunity, opportunity_id)
+    session.get(Opportunity, opportunity_id)
 
     steps: list[dict[str, Any]] = []
     checklist = generate_final_checklist(session, opportunity_id=opportunity_id)
@@ -218,7 +223,7 @@ def generate_step_by_step_instructions(
     })
 
     method = submission.submission_method if submission else None
-    if method and "email" in method.lower():
+    if submission is not None and method and "email" in method.lower():
         steps.append({
             "step": 3,
             "title": "Send submission email",
@@ -228,7 +233,7 @@ def generate_step_by_step_instructions(
             ),
             "status": "pending",
         })
-    elif method and "portal" in method.lower():
+    elif submission is not None and method and "portal" in method.lower():
         steps.append({
             "step": 3,
             "title": "Upload via portal",

@@ -26,9 +26,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
-from govcon.compliance.matrix import active_requirements, record_run, upsert_open_finding
+from govcon.ai.structured import (
+    StructuredCallError,
+    checked_output,
+    run_structured_prompt,
+)
+from govcon.compliance.matrix import (
+    active_requirements,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory, SourceDocument
+from govcon.compliance.schemas import AmendmentAnalysisV1
 from govcon.compliance.text import split_sentences
 from govcon.config import Settings, get_settings
 from govcon.models import OpportunityEvent, ProposalSection, Requirement, ReviewSession
@@ -96,7 +105,8 @@ def diff_inventory(prior_files: list[dict[str, Any]], inventory: Inventory) -> I
     for doc in inventory.documents:
         if doc.file_id in prior_ids:
             continue
-        diff.new_file_ids.append(doc.file_id)
+        if doc.file_id is not None:
+            diff.new_file_ids.append(doc.file_id)
         previous = prior_by_name.get((doc.filename or "").lower())
         # A failed download (no content) records a fetch problem; it does not
         # replace the version already in the inventory.
@@ -247,12 +257,12 @@ def run_amendment_revalidation(
                 settings=settings,
             )
             added = 0
-            for change in result.output.changes:
+            for change in checked_output(result.output, AmendmentAnalysisV1).changes:
                 for rid in change.affected_requirement_ids:
                     if rid in prior:
                         reasons.setdefault(rid, []).append(f"amendment analysis: {change.change_type}")
                         added += 1
-            ai_summary = {"status": "complete", "ai_analysis_id": result.analysis.id, "material": result.output.material, "stale_marks_added": added}
+            ai_summary = {"status": "complete", "ai_analysis_id": result.analysis.id, "material": checked_output(result.output, AmendmentAnalysisV1).material, "stale_marks_added": added}
         except StructuredCallError as exc:
             warnings.append({"code": f"amendment_ai_{exc.reason}", "severity": "medium", "message": exc.detail})
             ai_summary = {"status": "failed", "reason": exc.reason}
@@ -306,6 +316,7 @@ def run_amendment_revalidation(
                 compliance_run_id=run.id,
             )
     if impact["review_reopen_required"]:
+        assert review is not None  # reopen is only required for an existing review
         upsert_open_finding(
             session,
             opportunity_id=opportunity_id,

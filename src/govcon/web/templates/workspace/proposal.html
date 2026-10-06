@@ -6,10 +6,19 @@
   {% if proposal and proposal.status in ('draft', 'ai_generated', 'red_teamed', 'final_approved', 'returned_for_fix') %}
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Proposal <span class="label-ai">AI generated</span></span>
+      <span class="card-title">Proposal{% if proposal_version and proposal_version.provider and proposal_version.provider != 'placeholder' %} <span class="label-ai">AI generated</span>{% endif %}</span>
       <span class="badge badge-{% if proposal.status == 'final_approved' %}success{% elif proposal.status == 'red_teamed' %}primary{% else %}secondary{% endif %}">{{ proposal.status|replace('_',' ') }}</span>
     </div>
     {% if proposal_version %}
+      {% if can_edit_proposal %}
+      <form method="post" action="/workspace/{{ opp.id }}/submission/package/export" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <input type="hidden" name="expected_proposal_version" value="{{ proposal.version }}">
+        <button class="btn btn-secondary" name="format" value="docx">Download DOCX</button>
+        <button class="btn btn-secondary" name="format" value="pdf">Download PDF</button>
+        <button class="btn btn-secondary" name="format" value="xlsx">Download coverage XLSX</button>
+      </form>
+      {% endif %}
       <pre style="font-size:12px; background:var(--color-bg); padding:0.75rem; border-radius:var(--radius); overflow:auto; max-height:500px; white-space:pre-wrap;">{{ proposal_version.full_text or "(generating…)" }}</pre>
     {% endif %}
 
@@ -45,12 +54,35 @@
       <button type="submit" name="decision" value="RETURN_FOR_FIX" class="btn btn-secondary">Return for Fix (revokes approval)</button>
     </form>
     {% elif proposal.status in ('draft', 'returned_for_fix') %}
-    <p class="text-muted mt-2">This version must be red-teamed or regenerated before it can be approved.</p>
+    <p class="text-muted mt-2">Edit the sections below, then run a red-team review before approval.</p>
     {% endif %}
 
     <!-- Red team -->
     {% if proposal.red_team_analysis_id %}
     <div class="alert alert-info mt-2">AI red-team review complete.</div>
+    {% endif %}
+    {% if can_edit_proposal and proposal_version %}
+    <details class="mt-2" {% if proposal.status == 'returned_for_fix' %}open{% endif %}>
+      <summary>Edit proposal sections</summary>
+      <p>Saving creates a new version and resets approval. Earlier versions remain available.</p>
+      <form method="post" action="/workspace/{{ opp.id }}/proposal/revise">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <input type="hidden" name="expected_version" value="{{ proposal.version }}">
+        {% for section in proposal_sections %}
+        <label for="section_{{ section.id }}">{{ section.heading or section.section_key or 'Section' }}</label>
+        <textarea id="section_{{ section.id }}" name="section_{{ section.id }}" rows="8">{{ section.content or '' }}</textarea>
+        {% endfor %}
+        <label for="change_summary">What changed?</label>
+        <input id="change_summary" name="change_summary" maxlength="1000">
+        <button class="btn btn-primary" name="action" value="save">Save revision</button>
+      </form>
+    </details>
+    <form method="post" action="/workspace/{{ opp.id }}/proposal/revise" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="expected_version" value="{{ proposal.version }}">
+      <button class="btn btn-secondary" name="action" value="red_team">Run red-team review</button>
+      {% if can_approve %}<button class="btn btn-secondary" name="action" value="regenerate_without_ai" onclick="return confirm('Create a replacement draft without AI? Earlier versions will be preserved and approval will reset.');">Create replacement draft without AI</button>{% endif %}
+    </form>
     {% endif %}
   </div>
   {% else %}

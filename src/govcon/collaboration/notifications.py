@@ -7,7 +7,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
-from govcon.models import Notification
+from govcon.models import Notification, User
 
 logger = logging.getLogger("govcon.collaboration.notifications")
 
@@ -78,7 +78,7 @@ def notify(
 
 
 def _queue_email(session: Session, row: Notification, settings: Settings) -> None:
-    from govcon.models import NotificationDelivery, User
+    from govcon.models import NotificationDelivery
     from govcon.tasks import queue
 
     user = session.get(User, row.user_id)

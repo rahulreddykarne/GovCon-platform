@@ -6,13 +6,19 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
+from test_sourcing_company import client as client
+from test_sourcing_company import db as db
+from test_sourcing_company import opportunity, user
 from typer.testing import CliRunner
 
 from govcon.cli import app
 from govcon.db import session_scope
 from govcon.models import AuditEvent, SupplierQuote, SupplierQuoteLine
-from govcon.sourcing.records import get_or_create_supplier, record_quote, sourcing_revision
-from test_sourcing_company import client, db, opportunity, user
+from govcon.sourcing.records import (
+    get_or_create_supplier,
+    record_quote,
+    sourcing_revision,
+)
 
 CSV = b"description,quantity,unit,unit_price\nGloves,500,PR,2.00\n"
 
@@ -106,6 +112,7 @@ def test_concurrent_document_records_share_one_quote(db):
 
 def test_concurrent_cli_upload_with_new_supplier_keeps_one_supplier_and_quote(db, tmp_path, monkeypatch):
     import time
+
     from govcon import cli
     from govcon.config import get_settings
     from govcon.models import Supplier

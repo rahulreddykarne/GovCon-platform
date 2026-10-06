@@ -10,14 +10,24 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from test_web_ui import _make_user
+from web_client import CsrfTestClient
 
 from govcon.db import session_scope
-from govcon.models import AppSetting, AuditEvent, Match, Opportunity, Pursuit, ReviewAssignment, ReviewSession, Task, Watchlist
+from govcon.models import (
+    AppSetting,
+    AuditEvent,
+    Match,
+    Opportunity,
+    Pursuit,
+    ReviewAssignment,
+    ReviewSession,
+    Task,
+    Watchlist,
+)
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
 from govcon.workflow.preparation import PREPARATION_TASK, STEPS
-from test_web_ui import _make_user
-from web_client import CsrfTestClient
 
 
 @pytest.fixture()
@@ -83,11 +93,12 @@ def test_every_entry_point_creates_the_same_pursuit_and_preparation(db, client, 
                 opportunity_id=opp.id, watchlist_id=wl.id, status="new", active=True)
             db.add(match)
             db.commit()
-            assert client.post("/inbox/action", data={"match_id": match.id, "action": "pursuing"}).status_code == 200
+            assert client.post("/inbox/action", data={"match_id": match.id, "action": "pursuing"}).status_code == 303
         elif entry == "workspace":
             assert client.post(f"/opp/{opp.id}/start-workspace").status_code == 303
         elif entry == "cli":
             from typer.testing import CliRunner
+
             from govcon.cli import app
             result = CliRunner().invoke(app, ["pursuit", "start", "--opportunity-id", str(opp.id), "--actor-email", user.email])
             assert result.exit_code == 0, result.output

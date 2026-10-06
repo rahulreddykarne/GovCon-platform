@@ -9,12 +9,30 @@ import pytest
 DEFAULT_DATABASE_URL = "postgresql+psycopg://govcon:govcon@localhost:5432/govcon"
 os.environ.setdefault("DATABASE_URL", DEFAULT_DATABASE_URL)
 
+# Tests never use a developer's .env: its real API keys would turn offline
+# tests into paid provider calls. Settings built in-process skip the file, and
+# blank credentials (env beats .env) cover subprocesses started from the checkout.
+_LIVE_CREDENTIALS = (
+    "SAM_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "JEV_API_KEY",
+    "SMTP_HOST", "SMTP_USER", "SMTP_PASS",
+)
+for _name in _LIVE_CREDENTIALS:
+    os.environ[_name] = ""
+
+from govcon.config import Settings as _Settings  # noqa: E402
+
+_Settings.model_config["env_file"] = None
+
 
 @pytest.fixture(autouse=True)
 def _clear_settings_cache(monkeypatch):
     from govcon.config import get_settings
 
     get_settings.cache_clear()
+    # Re-blank per test: a test that pops a credential from os.environ would
+    # otherwise let later subprocesses read the real key from .env.
+    for name in _LIVE_CREDENTIALS:
+        monkeypatch.setenv(name, "")
     # Existing fixtures exercise offline replay/bootstrap with synthetic data.
     # Candidate behavioral enforcement is tested separately with explicit True.
     monkeypatch.setenv("PROMPT_REQUIRE_BEHAVIORAL_EVALUATION", "false")
@@ -46,9 +64,11 @@ def database_url():
         yield configured
         return
     from uuid import uuid4
+
     import psycopg
     from psycopg import sql
     from sqlalchemy.engine import make_url
+
     from govcon.db import dispose_engines
     url = make_url(configured)
     name = "govcon_test_" + uuid4().hex
@@ -80,7 +100,6 @@ def upgraded_engine(database_url: str):
 
     get_settings.cache_clear()
     from alembic import command
-
     from govcon.cli import alembic_config
 
     command.upgrade(alembic_config(), "head")

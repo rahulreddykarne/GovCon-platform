@@ -29,7 +29,7 @@ from govcon.collaboration.ai_comment_review import (
 )
 from govcon.collaboration.assignments import assign_reviewer
 from govcon.collaboration.comments import add_comment
-from govcon.collaboration.users import PermissionDenied, require_permission
+from govcon.collaboration.users import require_permission
 from govcon.compliance.matrix import active_requirements
 from govcon.compliance.metrics import coverage_summary
 from govcon.concurrency import StaleRecordError, apply_versioned_update
@@ -41,7 +41,6 @@ from govcon.mcp.context import current_actor
 from govcon.mcp.serialize import compact_opportunity, json_safe, success, truncate_text
 from govcon.models import (
     AIAnalysis,
-    Award,
     BidDecision,
     Match,
     Opportunity,
@@ -387,7 +386,7 @@ def op_get_compliance_matrix(
     summary = coverage_summary(requirements)
     rows = []
     for req in requirements:
-        text_value = req.requirement_text
+        text_value: str | None = req.requirement_text
         if not include_requirement_text:
             text_value = truncate_text(text_value, limit=240)
         rows.append(
@@ -437,7 +436,10 @@ def op_get_proposal(
         select(Proposal).where(Proposal.opportunity_id == opportunity_id)
     ).first()
     if proposal and proposal.current_version_id and include_full_text:
-        from govcon.proposals.versions import get_sections_for_version, latest_proposal_version
+        from govcon.proposals.versions import (
+            get_sections_for_version,
+            latest_proposal_version,
+        )
 
         version = latest_proposal_version(session, proposal.id)
         sections = get_sections_for_version(session, proposal.current_version_id)
@@ -461,7 +463,11 @@ def op_submission_status(session: Session, opportunity_id: int) -> dict[str, Any
 
 
 def op_learning_summary(session: Session, *, opportunity_id: int | None = None) -> dict[str, Any]:
-    from govcon.learning.analytics import WIN_PROFILE_MINIMUM, outcome_analytics, similar_past_outcomes
+    from govcon.learning.analytics import (
+        WIN_PROFILE_MINIMUM,
+        outcome_analytics,
+        similar_past_outcomes,
+    )
     from govcon.learning.outcomes import outcome_to_dict
 
     if opportunity_id is not None:
@@ -634,7 +640,11 @@ def op_update_pursuit(
 ) -> dict[str, Any]:
     """Edit pre-submission working facts; edits revoke dependent decisions."""
     actor = current_actor(session, "review")
-    from govcon.workflow.commercial import LOCKED_STAGES, invalidate_commercial_decisions, validated_commercial_changes
+    from govcon.workflow.commercial import (
+        LOCKED_STAGES,
+        invalidate_commercial_decisions,
+        validated_commercial_changes,
+    )
     from govcon.workflow.invalidation import lock_one
     lock_one(session, select(Opportunity).where(Opportunity.id == opportunity_id))
     pursuit = lock_one(session, select(Pursuit).where(Pursuit.opportunity_id == opportunity_id))
@@ -813,7 +823,12 @@ def op_record_outcome(
     debrief_notes: str | None = None,
     lessons_learned: str | None = None,
 ) -> dict[str, Any]:
-    from govcon.learning.outcomes import TERMINAL_OUTCOMES, NO_BID_CATEGORIES, record_outcome, outcome_to_dict
+    from govcon.learning.outcomes import (
+        NO_BID_CATEGORIES,
+        TERMINAL_OUTCOMES,
+        outcome_to_dict,
+        record_outcome,
+    )
 
     # Validate early (before actor lookup) so errors are clear
     if outcome not in TERMINAL_OUTCOMES:

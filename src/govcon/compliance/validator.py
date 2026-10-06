@@ -25,7 +25,11 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
+from govcon.ai.structured import (
+    StructuredCallError,
+    checked_output,
+    run_structured_prompt,
+)
 from govcon.compliance.extractor import independence_warnings
 from govcon.compliance.matrix import (
     active_requirements,
@@ -38,6 +42,7 @@ from govcon.compliance.matrix import (
     upsert_open_finding,
 )
 from govcon.compliance.records import RESOLVED_STATUSES
+from govcon.compliance.schemas import ComplianceValidationV1
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement, RequirementEvidence
 from govcon.security.classification import DataClassification
@@ -112,7 +117,7 @@ def _ai_validate(
         warnings.append({"code": f"{label}_{exc.reason}", "severity": "medium", "message": f"{label} unavailable: {exc.detail}"})
         return {}
     out: dict[int, dict[str, Any]] = {}
-    for item in result.output.validations:
+    for item in checked_output(result.output, ComplianceValidationV1).validations:
         if item.requirement_id not in by_id:
             warnings.append({"code": f"{label}_unknown_requirement", "severity": "low", "message": f"ignored validation for unknown requirement {item.requirement_id}"})
             continue
@@ -267,22 +272,22 @@ def run_jev_routing(
     routed_review: list[int] = []
     for item in execution.result.get("requirement_decisions", []):
         rid = item.get("requirement_id")
-        req = by_id.get(rid) if isinstance(rid, int) else None
-        if req is None:
+        decided_requirement = by_id.get(rid) if isinstance(rid, int) else None
+        if decided_requirement is None:
             continue
-        validation = dict(req.validation or {})
-        if item.get("blocks_submission") and req.status not in RESOLVED_STATUSES:
+        validation = dict(decided_requirement.validation or {})
+        if item.get("blocks_submission") and decided_requirement.status not in RESOLVED_STATUSES:
             validation["jev_blocks_submission"] = True
-            req.blocks_submission = True
-            added_blocks.append(req.id)
+            decided_requirement.blocks_submission = True
+            added_blocks.append(decided_requirement.id)
         if item.get("human_interpretation_required"):
             validation["jev_human_interpretation"] = True
-            if req.status == "satisfied" and not validation.get("override"):
-                req.status = "needs_review"
-                req.status_reason = "decision layer requires human interpretation"
-                req.version = (req.version or 1) + 1
-                routed_review.append(req.id)
-        req.validation = validation
+            if decided_requirement.status == "satisfied" and not validation.get("override"):
+                decided_requirement.status = "needs_review"
+                decided_requirement.status_reason = "decision layer requires human interpretation"
+                decided_requirement.version = (decided_requirement.version or 1) + 1
+                routed_review.append(decided_requirement.id)
+        decided_requirement.validation = validation
     for req in requirements:
         if req.blocks_submission != prior_blocks[req.id]:
             req.version = (req.version or 1) + 1

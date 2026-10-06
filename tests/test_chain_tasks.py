@@ -140,6 +140,7 @@ def test_scheduler_fire_queues_one_task_per_slot(monkeypatch):
 
 def test_jobs_run_records_the_run_through_a_task():
     from typer.testing import CliRunner
+
     from govcon.cli import app
     result = CliRunner().invoke(app, ["jobs", "run", "midday_check"])
     assert result.exit_code == 0 and "status: succeeded" in result.output

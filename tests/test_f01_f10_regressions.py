@@ -23,7 +23,14 @@ from sqlalchemy.orm import Session
 from govcon.compliance.deterministic import PackageFile, SubmissionPackage
 from govcon.config import Settings
 from govcon.enrich.attachment_refs import AttachmentRef
-from govcon.models import Opportunity, OpportunityEvent, Pursuit, Requirement, StoredFile, Submission
+from govcon.models import (
+    Opportunity,
+    OpportunityEvent,
+    Pursuit,
+    Requirement,
+    StoredFile,
+    Submission,
+)
 
 NOW = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 URL = "https://files.example.test/rfq.pdf"
@@ -118,7 +125,11 @@ def test_f01_waiting_event_is_handled_with_a_newer_event_for_the_same_opportunit
 
 
 def test_f01_retry_backoff_doubles_and_is_capped() -> None:
-    from govcon.workflow.invalidation import RETRY_MAX_SECONDS, retry_delay, retry_not_due
+    from govcon.workflow.invalidation import (
+        RETRY_MAX_SECONDS,
+        retry_delay,
+        retry_not_due,
+    )
 
     assert retry_delay(0) == timedelta(0)
     assert retry_delay(1) == timedelta(minutes=5)
@@ -253,7 +264,10 @@ def test_f04_described_file_without_content_fails_integrity(tmp_path) -> None:
 
 
 def test_f04_preflight_fails_a_planning_manifest() -> None:
-    from govcon.compliance.submission_preflight import collect_instructions, preflight_items
+    from govcon.compliance.submission_preflight import (
+        collect_instructions,
+        preflight_items,
+    )
 
     ins = collect_instructions(Opportunity(response_deadline=NOW + timedelta(days=2)), [], None, [])
     package = SubmissionPackage(files=[PackageFile("proposal.pdf", role="proposal", sha256="0" * 64, size_bytes=123)])
@@ -407,8 +421,8 @@ def test_f07_different_models_are_two_methods() -> None:
 
 def test_f07_same_model_extraction_passes_are_not_independent_confirmation() -> None:
     from govcon.compliance.pipeline import passes_independent
-    from govcon.compliance.records import Candidate
     from govcon.compliance.reconciler import reconcile
+    from govcon.compliance.records import Candidate
 
     def candidates():
         quote = "Delivery shall be made within 30 days."
@@ -428,8 +442,8 @@ def test_f07_same_model_extraction_passes_are_not_independent_confirmation() -> 
 
 
 def test_f07_merge_keeps_flags_consistent_with_independence() -> None:
-    from govcon.compliance.records import Candidate
     from govcon.compliance.reconciler import _merge_into, reconcile
+    from govcon.compliance.records import Candidate
 
     quote = "Delivery shall be made within 30 days."
     [canonical] = reconcile([Candidate(f"{p}-1", p, "Deliver within 30 days", supporting_quote=quote, source_file_id=1, citation_verified=True)
@@ -556,7 +570,11 @@ def test_f09_conflicting_deadlines_and_time_zones_block_instead_of_choosing() ->
 
 
 def test_f09_same_zone_spellings_and_matching_dates_are_not_conflicts() -> None:
-    from govcon.submissions.service import _deadline_disagrees, _extract_submission_info, _parse_date
+    from govcon.submissions.service import (
+        _deadline_disagrees,
+        _extract_submission_info,
+        _parse_date,
+    )
 
     info = _extract_submission_info([_submission_req(deadline_timezone="ET", deadline="October 20, 2026"),
                                      _submission_req(deadline_timezone="EST", deadline="2026-10-20T17:00:00-04:00"),
@@ -579,7 +597,10 @@ def test_f09_submitted_record_is_not_rewritten() -> None:
 
 
 def test_f09_preflight_rejects_stale_recorded_instructions() -> None:
-    from govcon.compliance.submission_preflight import collect_instructions, preflight_items
+    from govcon.compliance.submission_preflight import (
+        collect_instructions,
+        preflight_items,
+    )
 
     deadline = NOW + timedelta(days=4)
     submission = Submission(recipient_email="old@example.org", submission_deadline=deadline - timedelta(days=3),
@@ -603,7 +624,10 @@ def _type_rule(rid: int, types: list[str], text: str = "", rtype: str = "formatt
 
 
 def _file_types(reqs: list[Requirement], files: list[PackageFile]) -> dict:
-    from govcon.compliance.submission_preflight import collect_instructions, preflight_items
+    from govcon.compliance.submission_preflight import (
+        collect_instructions,
+        preflight_items,
+    )
 
     ins = collect_instructions(Opportunity(response_deadline=NOW + timedelta(days=2)), reqs, None, [])
     items = preflight_items(ins, SubmissionPackage(files=files), reqs, [], inventory_complete=True, coverage_ok=True, now=NOW)

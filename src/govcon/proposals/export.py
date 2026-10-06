@@ -19,7 +19,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.models import (
-    ComplianceFinding,
     Opportunity,
     Proposal,
     ProposalSection,
@@ -52,7 +51,6 @@ def export_proposal_docx(
     title = (opp.title or f"Proposal #{pv.proposal_id}") if opp else f"Proposal #{pv.proposal_id}"
 
     from docx import Document
-    from docx.shared import Pt
 
     doc = Document()
     doc.add_heading(title, 0)
@@ -77,13 +75,18 @@ def export_proposal_docx(
 def export_proposal_pdf(session: Session, *, proposal_version_id: int) -> bytes:
     """Render proposal text with automatic wrapping and pagination."""
     from xml.sax.saxutils import escape
+
     from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
     pv = session.get(ProposalVersion, proposal_version_id)
     if pv is None:
         raise ValueError(f"ProposalVersion {proposal_version_id} not found")
     proposal = session.get(Proposal, pv.proposal_id)
+    if proposal is None:
+        raise ValueError(f"Proposal {pv.proposal_id} not found")
     opp = session.get(Opportunity, proposal.opportunity_id)
+    if opp is None:
+        raise ValueError(f"Opportunity {proposal.opportunity_id} not found")
     styles = getSampleStyleSheet()
     story = [Paragraph(escape(opp.title or "Proposal"), styles["Title"]), Paragraph(f"Version {pv.version_number}", styles["Normal"]), Spacer(1, 12)]
     for section in get_sections_for_version(session, pv.id):
@@ -143,7 +146,7 @@ def export_coverage_xlsx(
 ) -> bytes:
     """Export requirement-to-proposal coverage as XLSX."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Font, PatternFill
 
     from govcon.proposals.versions import version_for_opportunity
 
@@ -154,11 +157,10 @@ def export_coverage_xlsx(
             select(Requirement).where(Requirement.opportunity_id == opportunity_id)
         ).all()
     )
-    sections = get_sections_for_version(session, proposal_version_id)
-    section_map = {s.section_key: s for s in sections}
+    get_sections_for_version(session, proposal_version_id)
 
     wb = Workbook()
-    ws = wb.active
+    ws = wb.worksheets[0]
     ws.title = "Coverage"
 
     headers = [
@@ -226,10 +228,14 @@ def export_submission_zip(
     opp = session.get(Opportunity, opportunity_id)
     sol_num = (opp.solicitation_number or str(opportunity_id)) if opp else str(opportunity_id)
 
-    from govcon.compliance.deterministic import PackageFile, SubmissionPackage, required_files_present
+    from govcon.compliance.deterministic import (
+        PackageFile,
+        SubmissionPackage,
+        required_files_present,
+    )
+    from govcon.compliance.matrix import active_requirements
     from govcon.submissions.manifest import current_package, verify_package
     from govcon.submissions.service import _extract_submission_info
-    from govcon.compliance.matrix import active_requirements
     if _extract_submission_info(active_requirements(session, opportunity_id))["destination_conflicts"]:
         raise ValueError("submission_destination_conflict: resolve conflicting destinations before exporting")
     assembled = current_package(session, submission) if submission else None
@@ -258,8 +264,8 @@ def export_submission_zip(
         ):
             if enabled and name.casefold() not in {n.casefold() for n in artifacts}:
                 artifacts[name] = generate()
-    required = submission.required_files if submission else None
-    required = required.get("files", []) if isinstance(required, dict) else (required or [])
+    required_spec = submission.required_files if submission else None
+    required: list[str] = required_spec.get("files", []) if isinstance(required_spec, dict) else (required_spec or [])
     export_files = [PackageFile(name=name, form_id=next((f.form_id for f in assembled.files if f.name == name), None) if assembled else None) for name in artifacts]
     if required:
         result = required_files_present(required, SubmissionPackage(files=export_files))

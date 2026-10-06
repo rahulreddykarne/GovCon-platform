@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import time
-from decimal import Decimal
 from dataclasses import dataclass
+from decimal import Decimal
 
-from sqlalchemy import func, select, text
+from sqlalchemy import Connection, Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings
@@ -49,7 +49,7 @@ def input_bound(system_prompt: str, user_prompt: str) -> int:
 
 @dataclass
 class Reservation:
-    engine: object
+    engine: Engine | Connection
     id: int
     rate: Decimal | None
     cost: Decimal | None
@@ -59,6 +59,8 @@ class Reservation:
         usage = usage if isinstance(usage, dict) else {}
         with Session(self.engine) as db, db.begin():
             row = db.get(AICallUsage, self.id, with_for_update=True)
+            if row is None:
+                raise RuntimeError("AI usage reservation no longer exists; review budget accounting before retrying")
             if row.status != "reserved":
                 return
             row.status = "succeeded" if result is not None else "failed"
@@ -89,7 +91,7 @@ class Reservation:
 
 def reserve(session: Session | None, *, opportunity_id: int | None, settings: Settings,
             system_prompt: str, user_prompt: str, purpose: str, provider: str,
-            model: str | None = None, engine=None) -> Reservation | None:
+            model: str | None = None, engine: Engine | Connection | None = None) -> Reservation | None:
     """Reserve one attempt. ``engine`` serves callers that hold no session.
 
     Workers pass ``engine`` so provider calls run with no business transaction
@@ -106,6 +108,8 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
             raise AIBudgetExceeded("Persistent budget accounting requires a database session.")
         return None  # Explicit offline evaluations still obey per-call limits.
     if engine is None:
+        if session is None:
+            raise AIBudgetExceeded("Persistent budget accounting requires a database session.")
         bind = session.get_bind()
         engine = getattr(bind, "engine", bind)
     cost = Decimal(tokens + settings.ai_max_output_tokens_per_call) * rate / 1_000_000 if rate is not None else None
@@ -127,7 +131,9 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
             if totals[0] + tokens > settings.ai_max_input_tokens_per_opportunity * share:
                 raise AIBudgetExceeded("Opportunity input budget exhausted, including previous calls and retries." + kept)
             if settings.ai_max_cost_usd_per_opportunity is not None:
-                previous_cost = Decimal(totals[2]) + Decimal(totals[3]) * rate / 1_000_000
+                if rate is None or cost is None:
+                    raise AIBudgetExceeded("A dollar budget requires AI_BUDGET_USD_PER_MILLION_TOKENS covering all enabled models.")
+                previous_cost = Decimal(totals[2] or 0) + Decimal(totals[3]) * rate / 1_000_000
                 if previous_cost + cost > Decimal(str(settings.ai_max_cost_usd_per_opportunity)) * share:
                     raise AIBudgetExceeded("Opportunity dollar budget exhausted, including pending reservations." + kept)
         row = AICallUsage(opportunity_id=opportunity_id, purpose=purpose, provider=provider,
@@ -141,6 +147,7 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
 
 def _retryable(exc: Exception) -> bool:
     import httpx
+
     from govcon.ai.providers.base import ProviderAPIError
     statuses = {408, 409, 429, 500, 502, 503, 504}
     if isinstance(exc, ProviderAPIError):

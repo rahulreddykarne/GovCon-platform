@@ -1,16 +1,16 @@
 """Build and install a wheel, then start it outside the checkout."""
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
+from conftest import NO_DB
 from psycopg import sql
 from sqlalchemy.engine import make_url
 
-from conftest import NO_DB
 from govcon.paths import repo_root
 
 
@@ -42,6 +42,9 @@ assert ScriptDirectory.from_config(alembic_config()).get_current_head()
 with TestClient(create_app(settings)) as client:
     assert client.get('/login').status_code == 200
     assert client.get('/static/govcon.css').status_code == 200
+    assert client.get('/static/workspace.js').status_code == 200
+    assert client.get('/static/vendor/htmx.min.js').status_code == 200
+    assert client.get('/static/vendor/LICENSE.htmx').status_code == 200
 from govcon.compliance.regression import default_fixture_root
 assert (default_fixture_root() / 'baseline_metrics.json').is_file()
 if sys.argv[2] == 'database':

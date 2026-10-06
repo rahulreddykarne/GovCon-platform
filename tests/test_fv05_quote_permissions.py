@@ -4,13 +4,15 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
+from test_sourcing_company import client as client
+from test_sourcing_company import db as db
+from test_sourcing_company import opportunity, user
 from typer.testing import CliRunner
 
 from govcon.cli import app
 from govcon.models import Supplier, SupplierQuote
 from govcon.sourcing.intake import receive_quote_file
 from govcon.sourcing.records import get_or_create_supplier, record_quote
-from test_sourcing_company import client, db, opportunity, user
 
 CSV = b"description,quantity,unit,unit_price\nGloves,500,PR,2.00\n"
 

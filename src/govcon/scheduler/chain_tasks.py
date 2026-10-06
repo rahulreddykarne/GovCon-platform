@@ -119,8 +119,8 @@ def run_chain_task(settings: Settings, claim: queue.Claim, heartbeat) -> str:
         chain_name = (task.payload or {}).get("chain_name")
         trigger = (task.payload or {}).get("trigger") or "scheduler"
         completed = list((task.checkpoint or {}).get("completed_steps") or [])
-    chain_def = chains.CHAIN_DEFINITIONS.get(chain_name)
-    if chain_def is None:
+    chain_def = chains.CHAIN_DEFINITIONS.get(chain_name) if isinstance(chain_name, str) else None
+    if not isinstance(chain_name, str) or chain_def is None:
         with session_scope(settings) as db:
             queue.fail_terminal(db, queue.guard_publish(db, claim), f"unknown chain {chain_name!r}",
                                 next_action="Remove the task; the chain no longer exists.", settings=settings)

@@ -1,23 +1,35 @@
 """Regression coverage for the attached production findings F11--F20."""
 
+import re
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-import re
 from unittest.mock import Mock
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from govcon.ai.structured import StructuredCallError, resolve_prompt
 from govcon.config import Settings
 from govcon.models import (
-    AIAnalysis, AuditEvent, Match, Opportunity, OpportunityEvent, PromptRegistryEntry,
-    Proposal, ProposalVersion, Pursuit, ReviewSession, StoredFile, Submission, User, Watchlist,
+    AIAnalysis,
+    AuditEvent,
+    Match,
+    Opportunity,
+    OpportunityEvent,
+    PromptRegistryEntry,
+    Proposal,
+    ProposalVersion,
+    Pursuit,
+    ReviewSession,
+    StoredFile,
+    Submission,
+    User,
+    Watchlist,
 )
 from govcon.web.app import create_app
 
@@ -48,16 +60,18 @@ def user(db, role="approver"):
 
 
 def web_session(monkeypatch, db, actor):
-    from govcon.web import routes
+    from govcon.web.routes import accounts, common, discovery, proposals, reviews
 
     @contextmanager
     def scope(*args, **kwargs):
         yield db
 
-    monkeypatch.setattr(routes, "session_scope", scope)
-    monkeypatch.setattr(routes, "_require_login", lambda request: actor)
-    monkeypatch.setattr(routes, "_current_user", lambda request: None)
-    monkeypatch.setattr(routes, "_unread_count", lambda actor: 0)
+    for module in (accounts, common, discovery, proposals, reviews):
+        monkeypatch.setattr(module, "session_scope", scope)
+    for module in (discovery, proposals, reviews):
+        monkeypatch.setattr(module, "_require_login", lambda request: actor)
+    monkeypatch.setattr(accounts, "_current_user", lambda request: None)
+    monkeypatch.setattr(common, "_unread_count", lambda actor: 0)
 
 
 def token(client):
@@ -95,8 +109,9 @@ def test_f12_pipeline_renders_actual_progress(db, monkeypatch, stage):
         response = client.get("/pipeline")
     assert response.status_code == 200
     columns = {c["key"]: c["cards"] for c in response.context["columns"]}
-    assert any(card["opp_id"] == opp.id for card in columns[stage])
-    assert all(card["opp_id"] != opp.id for card in columns["bid_approved"])
+    column = "closed" if stage in {"won", "lost", "cancelled"} else "ready" if stage in {"ready_to_submit", "submitted"} else "drafting"
+    assert any(card["opp_id"] == opp.id and card["stage"] == stage for card in columns[column])
+    assert all(card["opp_id"] != opp.id for key, cards in columns.items() if key != column for card in cards)
 
 
 @pytest.mark.parametrize("fields,valid", [
@@ -108,10 +123,9 @@ def test_f12_pipeline_renders_actual_progress(db, monkeypatch, stage):
     ([("win_margin_pct", "nan")], False),
 ])
 def test_f13_actual_outcome_route_rejects_bad_money(db, monkeypatch, fields, valid):
-    from govcon.web import routes
     web_session(monkeypatch, db, user(db))
     record = Mock()
-    monkeypatch.setattr(routes, "record_outcome", record)
+    monkeypatch.setattr("govcon.web.routes.proposals.record_outcome", record)
     with TestClient(create_app(), follow_redirects=False) as client:
         csrf = token(client)
         response = client.post("/workspace/1/record-outcome", content=urlencode([
@@ -138,8 +152,8 @@ def test_f14_registry_denial_never_falls_back(db):
 
 
 def test_f14_absence_requires_explicit_bootstrap(db):
-    from govcon.prompting.registry import PromptRegistryAbsent
     from govcon.ai import structured
+    from govcon.prompting.registry import PromptRegistryAbsent
     with pytest.MonkeyPatch.context() as mp:
         def absent(*args, **kwargs):
             raise PromptRegistryAbsent("registry is not synchronized")
@@ -183,16 +197,16 @@ def test_f14_solicitation_analysis_obeys_registry_denial(db, monkeypatch):
 def test_f15_each_primary_drafts_with_ai_after_web_approval(db, monkeypatch, primary):
     """Approval queues generation (ADR-062); the task drafts with AI for any configured primary."""
     from types import SimpleNamespace
+
     from govcon.tasks.handlers import proposal as handler
     from govcon.tasks.registry import StepContext
-    from govcon.web import routes
     settings = Settings(_env_file=None, ai_primary_provider=primary, **{f"{primary}_api_key": "test-key"})
     # Clear keys inherited from the environment so the test only configures the primary.
     for name in {"deepseek", "anthropic", "openai"} - {primary}:
         setattr(settings, f"{name}_api_key", None)
     monkeypatch.setattr("govcon.config.get_settings", lambda: settings)
     web_session(monkeypatch, db, user(db))
-    monkeypatch.setattr(routes, "finalize_approval", Mock())
+    monkeypatch.setattr("govcon.web.routes.reviews.finalize_approval", Mock())
     with TestClient(create_app(settings), follow_redirects=False) as client:
         response = client.post("/workspace/1/approve", data={
             "csrf_token": token(client), "decision": "approve_to_bid", "expected_version": "1",
@@ -227,8 +241,8 @@ def test_f15_source_change_defaults_to_configured_primary(db, monkeypatch, prima
 def test_f15_proposal_versions_record_actual_provider_and_model(db, monkeypatch):
     from govcon.ai.structured import StructuredCallResult
     from govcon.compliance.schemas import ProposalDraftV1
-    from govcon.proposals.service import generate_proposal
     from govcon.prompting.registry import load_prompt_from_disk
+    from govcon.proposals.service import generate_proposal
     opp = opportunity(db)
     db.add_all([Pursuit(opportunity_id=opp.id, stage="bid_approved"),
                 ReviewSession(opportunity_id=opp.id, status="approved_to_bid", final_approval_status="approved_to_bid")])
@@ -244,7 +258,10 @@ def test_f15_proposal_versions_record_actual_provider_and_model(db, monkeypatch)
 
 @pytest.mark.parametrize("time_text", ["25:99", "24:00", "13:00 pm", "00:00 am", "12:60", "9:99am", "12:00xm", "9999hours", "1:23amjunk"])
 def test_f16_malformed_times_return_unknown_with_source(time_text):
-    from govcon.compliance.deterministic import deadline_timezone_consistent, parse_source_deadline
+    from govcon.compliance.deterministic import (
+        deadline_timezone_consistent,
+        parse_source_deadline,
+    )
     values = {"response_deadline_date": "2027-01-15", "response_deadline_time": time_text, "deadline_timezone": "ET"}
     assert parse_source_deadline("2027-01-15", time_text, "ET") is None
     result = deadline_timezone_consistent(values, datetime(2027, 1, 15))
@@ -253,8 +270,11 @@ def test_f16_malformed_times_return_unknown_with_source(time_text):
 
 def test_f16_boundaries_and_naive_datetimes():
     from govcon.compliance.deterministic import (
-        deadline_not_passed, deadline_timezone_consistent, parse_source_deadline,
-        submission_before_deadline, SubmissionPackage,
+        SubmissionPackage,
+        deadline_not_passed,
+        deadline_timezone_consistent,
+        parse_source_deadline,
+        submission_before_deadline,
     )
     assert parse_source_deadline("2027-01-15", "12am", "UTC").hour == 0
     assert parse_source_deadline("2027-01-15", "12pm", "UTC").hour == 12
@@ -339,9 +359,9 @@ def test_f17_submitted_corrections_are_authorized_and_append_only(db):
 
 @pytest.mark.parametrize("origin", ["https://attacker.example", "http://testserver:8080", "http://testserver:0", "https://testserver", "null", "http://testserver.evil.test"])
 def test_f18_foreign_login_origins_rejected_before_auth(monkeypatch, origin):
-    monkeypatch.setattr("govcon.web.routes._current_user", lambda request: None)
+    monkeypatch.setattr("govcon.web.routes.accounts._current_user", lambda request: None)
     authenticate = Mock()
-    monkeypatch.setattr("govcon.web.routes.authenticate", authenticate)
+    monkeypatch.setattr("govcon.web.routes.accounts.authenticate", authenticate)
     with TestClient(create_app(Settings(_env_file=None)), follow_redirects=False) as client:
         response = client.post("/login", data={"csrf_token": token(client), "email": "a@b.test", "password": "password"}, headers={"Origin": origin})
     assert response.status_code == 403
@@ -350,7 +370,7 @@ def test_f18_foreign_login_origins_rejected_before_auth(monkeypatch, origin):
 
 
 def test_f18_tokens_required_and_bound_to_session(monkeypatch):
-    monkeypatch.setattr("govcon.web.routes._current_user", lambda request: None)
+    monkeypatch.setattr("govcon.web.routes.accounts._current_user", lambda request: None)
     with TestClient(create_app(Settings(_env_file=None)), follow_redirects=False) as client:
         csrf = token(client)
         assert client.post("/logout", data={}, headers={"Origin": "http://testserver"}).status_code == 403
@@ -364,9 +384,8 @@ def test_f18_tokens_required_and_bound_to_session(monkeypatch):
 
 
 def test_f18_https_cookies_and_ttls(db, monkeypatch):
-    from govcon.web import routes
     web_session(monkeypatch, db, user(db))
-    monkeypatch.setattr(routes, "authenticate", lambda *args: user(db))
+    monkeypatch.setattr("govcon.web.routes.accounts.authenticate", lambda *args: user(db))
     settings = Settings(_env_file=None, session_ttl_hours=2)
     with TestClient(create_app(settings), base_url="https://testserver", follow_redirects=False) as client:
         csrf = token(client)
@@ -380,12 +399,12 @@ def test_f18_https_cookies_and_ttls(db, monkeypatch):
 
 def test_f18_login_throttle_is_bounded(monkeypatch):
     from govcon.web.security import LoginThrottle
-    monkeypatch.setattr("govcon.web.routes._current_user", lambda request: None)
+    monkeypatch.setattr("govcon.web.routes.accounts._current_user", lambda request: None)
     @contextmanager
     def scope():
         yield Mock()
-    monkeypatch.setattr("govcon.web.routes.session_scope", scope)
-    monkeypatch.setattr("govcon.web.routes.authenticate", Mock(return_value=None))
+    monkeypatch.setattr("govcon.web.routes.accounts.session_scope", scope)
+    monkeypatch.setattr("govcon.web.routes.accounts.authenticate", Mock(return_value=None))
     settings = Settings(_env_file=None, login_attempt_limit=2)
     with TestClient(create_app(settings), follow_redirects=False) as client:
         csrf = token(client)

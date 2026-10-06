@@ -1,15 +1,16 @@
 """Catalog callers retain good rows and report malformed rows."""
 from uuid import uuid4
-from urllib.parse import unquote_plus
 
 import pytest
 from sqlalchemy import select
+from test_sourcing_company import client as client
+from test_sourcing_company import db as db
+from test_sourcing_company import user
 from typer.testing import CliRunner
 
 from govcon.cli import app
 from govcon.models import CatalogImport, Product, Supplier
 from govcon.sourcing.records import get_or_create_supplier, import_catalog_csv
-from test_sourcing_company import client, db, user
 
 
 def catalog_input():
@@ -24,7 +25,7 @@ def import_through(entry, db, client, tmp_path, data):
         client.cookies.set("govcon_session", token)
         response = client.post("/suppliers", data={"name": name}, files={"catalog_file": ("catalog.csv", data, "text/csv")})
         assert response.status_code == 303
-        output = unquote_plus(response.headers["location"])
+        output = client.get(response.headers["location"]).text
     elif entry == "cli":
         path = tmp_path / "catalog.csv"
         path.write_bytes(data)

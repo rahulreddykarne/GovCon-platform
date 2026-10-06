@@ -180,6 +180,7 @@ def _refresh(opp: Opportunity, provider: EmbeddingProvider) -> list[float] | Non
         opp.embedding_model = _model_id(provider)
         opp.embedding_dimension = _EMBEDDING_DIM
         opp.embedding_source_hash = _source_hash(text)
+    assert opp.embedding is not None  # fresh or just generated above
     return list(opp.embedding)
 
 
@@ -265,7 +266,9 @@ def build_watchlist_profiles(
         matched = session.scalars(select(Opportunity).join(Match, Match.opportunity_id == Opportunity.id).where(Match.watchlist_id == wl.id, Match.active.is_(True)).order_by(Opportunity.id)).all()
         matched_vectors = [v for opp in matched if (v := _refresh(opp, provider)) is not None]
         if matched_vectors:
-            vectors.append(_mean_pool(matched_vectors))
+            pooled = _mean_pool(matched_vectors)
+            assert pooled is not None  # the input list is nonempty
+            vectors.append(pooled)
         wl.embedding = vectors[0] if len(vectors) == 1 else _mean_pool(vectors) or [0.0] * _EMBEDDING_DIM
         wl.embedding_updated_at = datetime.now(UTC)
         wl.embedding_model = _model_id(provider)

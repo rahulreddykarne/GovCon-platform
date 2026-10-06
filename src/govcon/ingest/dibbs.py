@@ -50,7 +50,8 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, time as clock_time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as clock_time
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
@@ -65,13 +66,13 @@ from tenacity import wait_exponential
 from govcon.config import Settings, get_settings
 from govcon.http import build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
-from govcon.models import IngestionRun, Opportunity
 from govcon.ingest.snapshots import (
     NormalizedOpportunity,
     canonical_content_hash,
     description_hash,
     upsert_opportunity,
 )
+from govcon.models import IngestionRun, Opportunity
 
 logger = logging.getLogger("govcon.ingest.dibbs")
 
@@ -544,8 +545,8 @@ def last_ingested_index_date(session: Session) -> date | None:
 
 def _catchup_urls(links: list[str], last: date | None) -> list[str]:
     """Listed indexes newer than ``last``, oldest first; the newest alone when none are."""
-    dated = [(posted_date_from_name(Path(urlparse(url).path).name), url) for url in links]
-    dated = [(posted, url) for posted, url in dated if posted is not None]
+    dated = [(posted, url) for url in links
+             if (posted := posted_date_from_name(Path(urlparse(url).path).name)) is not None]
     if not dated:
         return links[:1]
     newest = max(dated)[1]

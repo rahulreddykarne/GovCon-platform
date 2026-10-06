@@ -6,8 +6,8 @@
 <article class="card">
   <h2>{{ item.title }}{% if item.unread %} · Unread{% endif %}{% if item.needs_ack %} · Action required{% elif item.acknowledged_at %} · Acknowledged{% endif %}</h2>
   <time>{{ item.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time>
-  <pre style="white-space: pre-wrap; overflow-wrap: anywhere">{{ item.payload }}</pre>
-  {% if item.opportunity_id %}<a href="/workspace/{{ item.opportunity_id }}">Open workspace</a>{% endif %}
+  <p>{{ item.sentence }}</p>
+  <a href="{{ item.target }}">Open details</a>
   {% if item.needs_ack %}
   <form method="post" action="/notifications/{{ item.id }}/acknowledge">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

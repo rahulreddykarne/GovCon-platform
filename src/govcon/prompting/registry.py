@@ -15,7 +15,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from govcon.models import PromptRegistryEntry
-from govcon.prompting.loader import PromptAsset, iter_markdown_prompts, load_markdown_prompt
+from govcon.prompting.loader import (
+    PromptAsset,
+    iter_markdown_prompts,
+    load_markdown_prompt,
+)
 
 logger = logging.getLogger("govcon.prompting.registry")
 
@@ -366,7 +370,7 @@ def _verify_includes(session: Session, asset: PromptAsset, prompt_root: Path) ->
     for name in _parse_includes(asset.metadata.get("includes", "")):
         fragment = _resolve_include(name, prompt_root)
         if fragment is None:
-            continue  # the renderer skips a missing include as well
+            raise PromptRegistryDenied(f"required shared include {name!r} is missing or cannot be loaded")
         recorded = session.scalar(
             select(PromptRegistryEntry.prompt_hash).where(
                 PromptRegistryEntry.prompt_name == fragment.name,

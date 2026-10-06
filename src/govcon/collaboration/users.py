@@ -191,9 +191,12 @@ def user_for_token(session: Session, raw_token: str) -> User | None:
     return user
 
 
+def can(user: User, action: str) -> bool:
+    return action in _PERMISSIONS.get(user.role, frozenset())
+
+
 def require_permission(user: User, action: str) -> None:
-    allowed = _PERMISSIONS.get(user.role, frozenset())
-    if action not in allowed:
+    if not can(user, action):
         raise PermissionDenied(f"role {user.role} cannot {action}")
 
 

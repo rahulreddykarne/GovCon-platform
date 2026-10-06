@@ -358,7 +358,16 @@ def test_malformed_company_facts_fail_clearly(db, tmp_path):
 # ── 5. async routes keep database and file work off the event loop ───────────
 
 def test_upload_and_form_routes_do_no_database_work_on_the_event_loop(db, client, monkeypatch):
-    from govcon.web import routes
+    from importlib import import_module
+
+    from govcon.web.routes import (
+        accounts,
+        common,
+        proposals,
+        settings,
+        sourcing,
+    )
+    watchlists = import_module("govcon.web.routes.watchlists")
 
     _, token = _make_user(db, f"r3-owner-{uuid4().hex}@example.test", "owner")
     client.cookies.set("govcon_session", token)
@@ -366,7 +375,7 @@ def test_upload_and_form_routes_do_no_database_work_on_the_event_loop(db, client
     db.add(Pursuit(opportunity_id=opp.id, stage="submitted", submitted_at=datetime.now(UTC)))
     db.commit()
     where: list[str] = []
-    real = routes.session_scope
+    real = common.session_scope
 
     @contextmanager
     def tracking(*args, **kwargs):
@@ -378,7 +387,8 @@ def test_upload_and_form_routes_do_no_database_work_on_the_event_loop(db, client
         with real(*args, **kwargs) as session:
             yield session
 
-    monkeypatch.setattr(routes, "session_scope", tracking)
+    for module in (accounts, common, proposals, settings, sourcing, watchlists):
+        monkeypatch.setattr(module, "session_scope", tracking)
     posts = [
         (f"/workspace/{opp.id}/record-outcome", {"data": {"outcome": "no_bid", "no_bid_reason": "r3 probe"}}),
         ("/watchlists/new", {"data": {"name": f"R3 {uuid4().hex[:6]}"}}),

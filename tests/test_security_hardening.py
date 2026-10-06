@@ -16,7 +16,6 @@ Acceptance criteria (§24):
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -29,7 +28,7 @@ from govcon.ai.gateway import (
     authorize_external_call,
     external_call_allowed,
 )
-from govcon.audit import record_audit, scrub
+from govcon.audit import scrub
 from govcon.config import Settings
 from govcon.logging import configure_logging, redact
 from govcon.security.classification import DataClassification, classify

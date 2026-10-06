@@ -1,8 +1,7 @@
 """Resource, AI-policy and recipient boundaries from F29–F33."""
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
 import json
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -57,10 +56,11 @@ def test_f29_pool_reused_under_concurrent_load(database_url, upgraded_engine):
 
 
 def test_f29_request_settings_reach_nested_services(monkeypatch, database_url, upgraded_engine):
+    from fastapi.testclient import TestClient
+
     from govcon.config import get_settings
     from govcon.db import current_settings, session_scope
     from govcon.web.app import create_app
-    from fastapi.testclient import TestClient
     configured = settings(database_url=database_url, session_ttl_hours=7)
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://invalid@127.0.0.1:1/global_must_not_be_used")
     get_settings.cache_clear()
@@ -247,10 +247,10 @@ def test_f30_exhausted_opportunity_budget_lists_the_unread_pages(db, monkeypatch
 @pytest.mark.parametrize("classification", [DataClassification.PROPRIETARY, DataClassification.FCI, DataClassification.CUI])
 def test_f33_local_documents_block_all_structured_calls(db, monkeypatch, tmp_path, classification):
     from govcon.ai.structured import StructuredCallError
+    from govcon.compliance.extractor import run_ai_pass
+    from govcon.compliance.inventory import load_inventory
     from govcon.enrich.attachments import process_local_file
     from govcon.enrich.summarize import run_solicitation_analysis
-    from govcon.compliance.inventory import load_inventory
-    from govcon.compliance.extractor import run_ai_pass
     configured = settings(ai_external_allowed_for_proprietary=False, ai_external_allowed_for_fci=False, ai_external_allowed_for_cui=False)
     setup_prompt(db, configured)
     opp = opportunity(db)
@@ -285,6 +285,7 @@ def test_f33_reimport_cannot_downgrade_metadata_or_keep_cache_current(db, tmp_pa
 
 def test_f33_unknown_legacy_metadata_is_blocked_until_explicit_reingest(db, monkeypatch, tmp_path):
     from hashlib import sha256
+
     from govcon.ai.structured import StructuredCallError
     from govcon.enrich.attachments import process_local_file
     configured = settings(ai_external_allowed_for_proprietary=True, ai_external_allowed_for_fci=True, ai_external_allowed_for_cui=True)
@@ -344,10 +345,11 @@ def test_f33_decision_backends_cannot_send_controlled_source_data(db, monkeypatc
 
 
 def test_f32_inbox_and_mark_read_only_for_recipient(upgraded_engine, database_url):
-    from govcon.collaboration.users import invite_user, create_session
-    from govcon.collaboration.notifications import notify
-    from govcon.web.app import create_app
     from web_client import CsrfTestClient
+
+    from govcon.collaboration.notifications import notify
+    from govcon.collaboration.users import create_session, invite_user
+    from govcon.web.app import create_app
     configured = settings(database_url=database_url)
     with Session(upgraded_engine) as db:
         recipient = invite_user(db, email=uuid4().hex+"@synthetic.test", display_name="Recipient", password="safe fixture password", role="reviewer")
@@ -363,7 +365,10 @@ def test_f32_inbox_and_mark_read_only_for_recipient(upgraded_engine, database_ur
         assert client.get("/notifications", follow_redirects=False).status_code == 303
         client.cookies.set("govcon_session", token)
         response = client.get("/notifications")
-        assert response.status_code == 200 and "Assigned synthetic review" in response.text and "Synthetic amendment" in response.text
+        assert response.status_code == 200 and "You have been assigned to review" in response.text and "The solicitation changed materially" in response.text
+        assert f'action="/notifications/{own_id}/acknowledge"' in response.text
+        assert f'action="/notifications/{private_id}/read"' not in response.text
+        assert f'action="/notifications/{private_id}/acknowledge"' not in response.text
         assert "Other recipient only" not in response.text and "<script>unsafe</script>" not in response.text
         assert client.post(f"/notifications/{private_id}/read").status_code == 404
         assert client.post(f"/notifications/{own_id}/read", follow_redirects=False).status_code == 303
@@ -423,8 +428,8 @@ def test_f31_injection_leak_in_extra_output_field_never_certifies_candidate(monk
 
 def test_f33_live_benchmark_requires_source_classification_before_provider(monkeypatch):
     from govcon.ai.structured import StructuredCallError
-    from govcon.compliance.regression import _live_candidates
     from govcon.compliance.records import Inventory, SourceDocument
+    from govcon.compliance.regression import _live_candidates
     doc = SourceDocument(file_id=1, filename="synthetic.txt", url=None, sha256=None, downloaded_at=None,
         snapshot_id=None, document_type="solicitation", mime_type="text/plain", text="Synthetic controlled fixture", classification="CUI", source_origin="synthetic")
     def forbidden(*args, **kwargs):

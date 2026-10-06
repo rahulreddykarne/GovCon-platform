@@ -16,8 +16,15 @@ from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
 from govcon.collaboration.users import require_permission
-from govcon.models import AIAnalysis, Opportunity, OutcomeCorrection, OutcomeFeedback, Pursuit, Submission, User
 from govcon.learning.schemas import OUTCOME_SCHEMAS
+from govcon.models import (
+    Opportunity,
+    OutcomeCorrection,
+    OutcomeFeedback,
+    Pursuit,
+    Submission,
+    User,
+)
 from govcon.workflow.invalidation import lock_one
 from govcon.workflow.transitions import InvalidTransition, require_transition
 
@@ -157,6 +164,14 @@ def record_outcome(
             raise ValueError("award_date cannot precede submission")
 
     now = datetime.now(UTC)
+    if outcome == "cancelled":
+        from govcon.tasks.queue import cancel_active
+
+        cancel_active(
+            session, opportunity_id=opportunity_id,
+            task_types=("opportunity_preparation", "proposal_generation", "ai_analysis", "quote_extraction", "reviewer_comment_validation"),
+            reason="The pursuit was cancelled.",
+        )
     row = session.scalar(
         select(OutcomeFeedback)
         .where(OutcomeFeedback.opportunity_id == opportunity_id)

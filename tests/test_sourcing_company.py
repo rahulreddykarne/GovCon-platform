@@ -13,6 +13,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from test_web_ui import _make_user
+from web_client import CsrfTestClient
 
 from govcon.db import session_scope
 from govcon.models import (
@@ -23,7 +25,6 @@ from govcon.models import (
     Product,
     RfqDraft,
     StoredFile,
-    Supplier,
     SupplierProduct,
     SupplierQuote,
     SupplierQuoteLine,
@@ -32,8 +33,6 @@ from govcon.models import (
 )
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
-from test_web_ui import _make_user
-from web_client import CsrfTestClient
 
 
 @pytest.fixture()
@@ -103,8 +102,8 @@ def test_catalog_import_validates_rows_and_upserts(db):
 # ── quotes feed the analyses ─────────────────────────────────────────────────
 
 def test_csv_quote_from_the_web_feeds_supplier_and_pricing_inputs(db, client):
-    from govcon.intelligence.ai_analyses import _REQUESTS
     from govcon.config import get_settings
+    from govcon.intelligence.ai_analyses import _REQUESTS
     opp = opportunity(db)
     _, token = user(db)
     client.cookies.set("govcon_session", token)
@@ -131,9 +130,13 @@ def test_csv_quote_from_the_web_feeds_supplier_and_pricing_inputs(db, client):
 
 
 def test_expired_quotes_are_not_used(db):
-    from govcon.intelligence.ai_analyses import AnalysisInputMissing, _REQUESTS
     from govcon.config import get_settings
-    from govcon.sourcing.records import get_or_create_supplier, record_quote, sourcing_revision
+    from govcon.intelligence.ai_analyses import _REQUESTS, AnalysisInputMissing
+    from govcon.sourcing.records import (
+        get_or_create_supplier,
+        record_quote,
+        sourcing_revision,
+    )
     opp = opportunity(db)
     actor, _ = user(db)
     with session_scope() as s:
@@ -207,7 +210,11 @@ def test_pdf_quote_waits_without_authorization_then_is_read(db, client, monkeypa
 
 def test_only_an_owner_grants_and_revokes_ai_sharing(db, client):
     from govcon.collaboration.users import PermissionDenied
-    from govcon.sourcing.records import SourcingError, active_authorization, grant_authorization
+    from govcon.sourcing.records import (
+        SourcingError,
+        active_authorization,
+        grant_authorization,
+    )
     approver, _ = user(db, "approver")
     with pytest.raises(PermissionDenied), session_scope() as s:
         grant_authorization(s, provider="openai", days=30, reason="Not allowed for approvers", actor=s.get(User, approver.id))
@@ -254,14 +261,17 @@ def _vendor(expiration: date, status="Active"):
 
 
 def test_registration_refresh_overlays_facts_and_alerts_before_expiry(db, monkeypatch):
-    from govcon.company.registration import overlay_registration, refresh_company_registration
+    from govcon.company.registration import (
+        overlay_registration,
+        refresh_company_registration,
+    )
     from govcon.config import Settings
     uei = f"T{uuid4().hex[:11].upper()}"
     approver, _ = user(db, "approver")
-    expires = date.today() + timedelta(days=45)
+    now = datetime(2026, 10, 6, 0, 30, tzinfo=UTC)
+    expires = now.date() + timedelta(days=45)
     monkeypatch.setattr("govcon.ingest.sam_entities.ensure_vendor", lambda *a, **k: (_vendor(expires), True))
     configured = Settings(_env_file=None, company_uei=uei, sam_api_key="test")
-    now = datetime.now(UTC)
     with session_scope() as s:
         result = refresh_company_registration(s, settings=configured, now=now)
     assert result.status == "refreshed" and result.expiration_date == expires and result.alerted

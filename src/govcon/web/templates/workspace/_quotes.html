@@ -13,7 +13,15 @@
           <td>{{ q.valid_until or 'not stated' }}</td>
           <td>{{ q.lines }}</td>
           <td><small>{{ q.method }}{% if q.filename %} · {{ q.filename }}{% endif %}</small></td>
-          <td>{% if q.current %}current{% else %}<span class="text-danger">expired</span>{% endif %}</td>
+          <td>{% if q.current %}current{% else %}<span class="text-danger">{{ 'expired' if q.status == 'active' else q.status }}</span>{% endif %}
+            {% if q.can_use and pursuit and can_run_analysis %}
+            <form method="post" action="/workspace/{{ opp.id }}/quotes/{{ q.id }}/use">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <input type="hidden" name="expected_version" value="{{ pursuit.version }}">
+              <button class="btn btn-secondary btn-sm">Use this quote</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% if q.notes %}<tr><td colspan="6" class="text-sm text-muted">{{ q.notes }}</td></tr>{% endif %}
         {% endfor %}
@@ -24,7 +32,7 @@
   <p class="text-muted">No supplier quotes recorded.</p>
   {% endif %}
   {% for t in quote_tasks %}
-  <div class="alert {% if t.status in ('failed', 'waiting_for_input') %}alert-error{% else %}alert-info{% endif %}" role="status">
+  <div class="alert {% if t.status in ('failed', 'waiting_for_input') %}alert-error{% else %}alert-info{% endif %}" role="status" data-progress-key="quote-{{ t.id }}">
     Reading {{ (t.payload or {}).get('source_filename') }}: {{ t.status|replace('_', ' ') }}.
     {% if t.last_error and t.status != 'succeeded' %}{{ t.last_error }}{% endif %}
     {% if t.blocker_next_action %}<div class="mt-1"><strong>Next action:</strong> {{ t.blocker_next_action }}</div>{% endif %}

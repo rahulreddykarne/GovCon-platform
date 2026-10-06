@@ -18,7 +18,11 @@ from govcon.decision.provider import (
     DecisionProviderUnavailable,
     ProviderDecision,
 )
-from govcon.decision.providers import JevDecisionProvider, LLMDecisionProvider, RuleDecisionProvider
+from govcon.decision.providers import (
+    JevDecisionProvider,
+    LLMDecisionProvider,
+    RuleDecisionProvider,
+)
 from govcon.decision.rules import (
     apply_hard_rule_override,
     confidence_to_score,
@@ -26,6 +30,17 @@ from govcon.decision.rules import (
     evaluate_hard_rules,
 )
 from govcon.decision.schemas import PreliminaryRecommendation, validate_bundle_result
+from govcon.decision.signals import (
+    Signals,
+    amendment_signal,
+    capability_signal,
+    competition_signals,
+    eligibility_signals,
+    load_company_profile,
+    pricing_signals,
+    sourcing_signals,
+    supplier_lead_time_signal,
+)
 from govcon.ingest.snapshots import canonical_content_hash, json_safe
 from govcon.intelligence.competitors import competitor_summary
 from govcon.matching.pricing import recent_award_comps
@@ -40,24 +55,12 @@ from govcon.models import (
     ReviewSession,
     StoredFile,
 )
-from govcon.decision.signals import (
-    Signals,
-    amendment_signal,
-    capability_signal,
-    competition_signals,
-    eligibility_signals,
-    load_company_profile,
-    pricing_signals,
-    supplier_lead_time_signal,
-    sourcing_signals,
-)
 from govcon.workflow.source_revision import (
     SOURCE_REVISION_KEY,
     current_source_revision,
     is_stale,
     stamp_of,
 )
-
 
 logger = logging.getLogger("govcon.decision.engine")
 
@@ -210,7 +213,10 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
     sourcing_signals(latest_pursuit, signals)
     supplier_lead_time_signal(session, opportunity_id, signals)
     capability_signal(session, opportunity, profile, signals)
-    pricing_signals(opportunity, latest_pursuit, award_comps, signals)
+    from govcon.sourcing.product_facts import product_facts_from_summary
+
+    product_facts = product_facts_from_summary(opportunity, latest_summary)
+    pricing_signals(opportunity, latest_pursuit, award_comps, signals, product_quantity=product_facts.quantity)
     competition_signals(comp_summary, signals)
     amendment_signal(session, opportunity_id, amendment_count, signals)
     sig = signals.values
@@ -326,7 +332,10 @@ def run_decision_bundle(
     settings = settings or get_settings()
     definition = bundle_definition(bundle_name)
     state = state or build_decision_state(session, opportunity_id)
-    from govcon.security.classification import DataClassification, opportunity_classification
+    from govcon.security.classification import (
+        DataClassification,
+        opportunity_classification,
+    )
     state = dict(state)
     state["data_classification"] = opportunity_classification(session, opportunity_id, DataClassification.PROPRIETARY).value
     state["budget_opportunity_id"] = opportunity_id

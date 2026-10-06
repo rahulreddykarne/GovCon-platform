@@ -9,11 +9,11 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from alembic import command
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 from typer.testing import CliRunner
 
+from alembic import command
 from govcon.audit import record_audit
 from govcon.cli import alembic_config, app
 from govcon.collaboration.notifications import notify

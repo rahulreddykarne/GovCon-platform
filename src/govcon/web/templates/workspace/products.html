@@ -24,7 +24,7 @@
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No product/supplier analysis yet. Add a supplier quote above (or record a supplier on the pursuit), then
-  {{ ai.run_button(opp.id, "supplier", "Run supplier analysis", can_run_analysis) }}</p>
+  <div class="text-muted text-center" style="padding:2rem 0;">No product/supplier analysis yet. Add a supplier quote above (or record a supplier on the pursuit), then
+  {{ ai.run_button(opp.id, "supplier", "Run supplier analysis", can_run_analysis) }}</div>
 </div>
 {% endif %}

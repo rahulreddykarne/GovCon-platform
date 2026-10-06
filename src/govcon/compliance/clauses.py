@@ -19,7 +19,11 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from govcon.compliance.matrix import active_requirements, record_run, upsert_open_finding
+from govcon.compliance.matrix import (
+    active_requirements,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory
 from govcon.compliance.text import ClauseReference, find_clause_references, normalize_ws
 from govcon.models import ClauseLibraryEntry, Requirement
@@ -116,6 +120,7 @@ def run_clause_validation(session: Session, opportunity_id: int, inventory: Inve
     library = {
         (row.clause_family, row.clause_number): row
         for row in session.scalars(select(ClauseLibraryEntry)).all()
+        if row.clause_family is not None and row.clause_number is not None
     }
     references: list[tuple[ClauseReference, int | None]] = []
     for doc in inventory.documents:

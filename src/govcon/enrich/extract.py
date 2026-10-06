@@ -14,7 +14,7 @@ import logging
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from govcon.enrich.ocr import OcrConfig
@@ -87,6 +87,13 @@ class PageText:
     source: str = "native"  # native | ocr | none
     confidence: float | None = None
     label: str | None = None
+
+
+class _PageCoverage(TypedDict):
+    page_count: int
+    pages: list[PageText]
+    ocr_pages: list[int]
+    ocr_failed_pages: list[dict]
 
 
 class ExtractionResult:
@@ -190,15 +197,15 @@ def _extract_pdf(data: bytes, limits: ExtractionLimits = DEFAULT_LIMITS,
 
         candidates = [p.page_no for p in pages if len(p.text.strip()) < ocr.min_native_chars]
         read, failed = ocr_pdf_pages(data, candidates, ocr)
-        for page_no, page in read.items():
-            pages[page_no - 1] = PageText(page_no, page.text, "ocr", page.confidence)
+        for page_no, ocr_page in read.items():
+            pages[page_no - 1] = PageText(page_no, ocr_page.text, "ocr", ocr_page.confidence)
             ocr_pages.append(page_no)
         # A page that keeps some native text is readable; only blank pages count as failed.
         ocr_failed = [{"page": page_no, "reason": reason} for page_no, reason in sorted(failed.items())
                       if not pages[page_no - 1].text.strip()]
 
     full_text = "\n\n".join(p.text for p in pages)
-    extras = {"page_count": total_pages, "pages": pages, "ocr_pages": sorted(ocr_pages), "ocr_failed_pages": ocr_failed}
+    extras: _PageCoverage = {"page_count": total_pages, "pages": pages, "ocr_pages": sorted(ocr_pages), "ocr_failed_pages": ocr_failed}
     if not full_text.strip():
         reason = f"; OCR: {ocr_failed[0]['reason']}" if ocr_failed else ""
         return ExtractionResult(None, "partial", f"PDF contained no extractable text (may need OCR){reason}", **extras)

@@ -102,6 +102,10 @@ def classify(exc: BaseException) -> Outcome:
         if exc.reason == "no_provider":
             return Outcome("block", exc, "waiting_for_input", "owner",
                            "Configure an AI provider key, then retry.")
+        if exc.reason == "output_truncated":
+            return Outcome("fail", exc, owner_role="owner",
+                           next_action="Raise AI_MAX_OUTPUT_TOKENS_PER_CALL (reasoning models spend part of it "
+                                       "thinking), restart the worker, then retry the task.")
         if exc.reason in ("schema_error", "render_error"):
             return Outcome("fail", exc, owner_role="owner",
                            next_action="Fix the prompt registry entry for this task, then retry.")

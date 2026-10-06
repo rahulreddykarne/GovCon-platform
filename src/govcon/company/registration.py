@@ -119,6 +119,10 @@ def overlay_registration(session: Session, facts: dict[str, Any], *, settings: S
             "note": f"SAM registration data is {age.days} days old; treated as unknown until refreshed",
         }
     else:
+        # Missing fields in the latest authoritative lookup are unknown,
+        # not permission to retain a previous positive assertion.
+        for name in ("sam_registration_status", "sam_expiration_date"):
+            merged.pop(name, None)
         values = {
             "legal_name": row.legal_name,
             "cage_code": row.cage_code,

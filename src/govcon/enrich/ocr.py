@@ -105,7 +105,9 @@ def ocr_pdf_pages(pdf_bytes: bytes, page_numbers: list[int], config: OcrConfig) 
     import pypdfium2 as pdfium
     import pytesseract
 
-    pytesseract.pytesseract.tesseract_cmd = resolve_tesseract(config.tesseract_cmd)
+    command = resolve_tesseract(config.tesseract_cmd)
+    assert command is not None  # ocr_available verified this cached resolution
+    pytesseract.pytesseract.tesseract_cmd = command
     allowed = page_numbers[: config.max_pages]
     for page in page_numbers[config.max_pages:]:
         failed[page] = f"over the OCR limit of {config.max_pages} pages per file"
@@ -116,8 +118,8 @@ def ocr_pdf_pages(pdf_bytes: bytes, page_numbers: list[int], config: OcrConfig) 
     try:
         for page_no in allowed:
             try:
-                page = document[page_no - 1]
-                image = page.render(scale=config.dpi / 72).to_pil()
+                rendered_page = document[page_no - 1]
+                image = rendered_page.render(scale=config.dpi / 72).to_pil()
                 data = pytesseract.image_to_data(image, lang=config.lang, output_type=pytesseract.Output.DICT)
                 text, confidence = _page_text(data)
             except Exception as exc:

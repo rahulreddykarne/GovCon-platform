@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call, external_call_allowed
+from govcon.ai.gateway import (
+    AIGatewayBlocked,
+    authorize_external_call,
+    external_call_allowed,
+)
 from govcon.config import Settings, get_settings
 from govcon.logging import configure_logging, redact
 from govcon.security.classification import DataClassification, classify
@@ -113,3 +117,11 @@ def test_portal_secrets_are_rejected() -> None:
     with pytest.raises(SecretStorageError):
         reject_database_secret("browser_session_token")
     reject_database_secret("session_token_hash")
+
+
+def test_env_example_loads_as_shipped() -> None:
+    """README says `cp .env.example .env`; every blank value in it must mean unset."""
+    example = Path(__file__).resolve().parent.parent / ".env.example"
+    settings = Settings(_env_file=example)
+    assert settings.ai_budget_usd_per_million_tokens is None
+    assert settings.ai_max_cost_usd_per_opportunity is None

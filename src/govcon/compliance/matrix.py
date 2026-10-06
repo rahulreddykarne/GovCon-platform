@@ -709,7 +709,7 @@ def compliance_matrix(session: Session, opportunity_id: int, *, filters: list[st
     }
     rows: list[dict[str, Any]] = []
     for req in requirements:
-        row = _matrix_row(req, evidence.get(req.id, []), files.get(req.source_file_id))
+        row = _matrix_row(req, evidence.get(req.id, []), files.get(req.source_file_id) if req.source_file_id is not None else None)
         if _row_matches(row, filters):
             rows.append(row)
     return rows

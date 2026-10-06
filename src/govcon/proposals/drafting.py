@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.structured import (
     PreparedCall,
-    StructuredCallError,
     StructuredCallResult,
     prepare_structured_call,
     run_structured_prompt,
@@ -30,7 +29,6 @@ from govcon.ai.structured import (
 from govcon.compliance.matrix import active_requirements
 from govcon.config import Settings, get_settings
 from govcon.models import (
-    AIAnalysis,
     Opportunity,
     Pursuit,
     Requirement,

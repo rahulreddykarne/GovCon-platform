@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.schemas import ReviewerCommentValidationV1
 from govcon.ai.structured import StructuredCallError, run_structured_prompt
-from govcon.compliance.metrics import coverage_counts
 from govcon.compliance.matrix import active_requirements, open_findings
+from govcon.compliance.metrics import coverage_counts
 from govcon.matching.pricing import recent_award_comps
 from govcon.models import AIAnalysis, Pursuit, ReviewComment, ReviewSession
 from govcon.security.classification import DataClassification
@@ -27,10 +27,10 @@ class AICommentValidationError(RuntimeError):
         return f"{self.reason}: {self.detail}"
 
 
-def validate_comment_with_ai(
+def comment_validation_variables(
     session: Session, *, comment: ReviewComment
-) -> ReviewerCommentValidationV1:
-    variables = {
+) -> dict[str, Any]:
+    return {
         "REVIEWER_COMMENT_JSON": {
             "comment_id": comment.id,
             "topic": comment.topic,
@@ -54,6 +54,12 @@ def validate_comment_with_ai(
             session, opportunity_id=comment.opportunity_id
         ),
     }
+
+
+def validate_comment_with_ai(
+    session: Session, *, comment: ReviewComment
+) -> ReviewerCommentValidationV1:
+    variables = comment_validation_variables(session, comment=comment)
     try:
         result = run_structured_prompt(
             session,

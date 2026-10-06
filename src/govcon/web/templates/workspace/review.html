@@ -77,9 +77,20 @@
     <form method="post" action="/workspace/{{ opp.id }}/approve">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <input type="hidden" name="expected_version" value="{{ review_session.version }}">
+      {% if review_session.completed_review_count < review_session.required_review_count %}
       <div class="form-group">
         <label for="override_reason">Override reason (only when approving without quorum)</label>
         <textarea id="override_reason" name="override_reason" rows="2"></textarea>
+      </div>
+      {% endif %}
+      <div class="form-group">
+        <label for="no_bid_category">No-bid category (when deciding not to bid)</label>
+        <select id="no_bid_category" name="no_bid_category">
+          <option value="">Unspecified</option>
+          {% for category in no_bid_categories %}<option value="{{ category }}">{{ category|replace('_', ' ')|capitalize }}</option>{% endfor %}
+        </select>
+        <label for="no_bid_reason">No-bid reason</label>
+        <textarea id="no_bid_reason" name="no_bid_reason" rows="2"></textarea>
       </div>
       <div class="d-flex gap-1 flex-wrap">
         <button type="submit" name="decision" value="approve_to_bid" class="btn btn-success">Approve to Bid</button>
@@ -140,16 +151,23 @@
     </div>
     <div class="body">{{ c.body }}</div>
     {% if c.ai_position %}
-    <div class="ai-validation">
+    <div class="ai-validation" data-progress-key="comment-{{ c.id }}">
       AI: <span class="badge badge-ai">{{ c.ai_position }}</span>
       {% if c.ai_reason %} — {{ c.ai_reason }}{% endif %}
+    </div>
+    {% elif comment_tasks.get(c.id) %}
+    {% set validation_task = comment_tasks[c.id] %}
+    <div class="ai-validation" role="status" data-progress-key="comment-{{ c.id }}">
+      AI check: {{ validation_task.status|replace('_', ' ') }}.
+      {% if validation_task.blocker_next_action %}{{ validation_task.blocker_next_action }}{% endif %}
+      {% if validation_task.status == 'failed' %}{{ validation_task.last_error or 'Check the task on Admin.' }}{% endif %}
     </div>
     {% endif %}
   </div>
   {% endfor %}
 
   <!-- Add comment form -->
-  {% if can_review %}
+  {% if can_comment %}
   <form method="post" action="/workspace/{{ opp.id }}/comment" class="mt-2">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <div class="form-group">
@@ -161,7 +179,7 @@
         <option value="">— recommendation —</option>
         <option value="bid">Bid</option>
         <option value="no_bid">No bid</option>
-        <option value="needs_info">Needs more info</option>
+        <option value="needs_more_info">Needs more info</option>
       </select>
       <button type="submit" class="btn btn-primary">Post Comment</button>
     </div>
@@ -186,7 +204,6 @@
         <option value="approve_continue">Complete review</option>
         <option value="request_second_review">Request second review</option>
         <option value="return_for_ai_analysis">Return for AI analysis</option>
-        <option value="no_bid">Recommend no bid</option>
       </select>
       <select name="recommendation" aria-label="Recommendation">
         <option value="bid">Bid</option>

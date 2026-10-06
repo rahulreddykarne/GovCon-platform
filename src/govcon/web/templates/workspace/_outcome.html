@@ -1,0 +1,125 @@
+    <!-- Structured outcome recording form (Phase 15) -->
+    {% if can_approve and outcome_options %}
+    <div class="card" style="margin-top:1rem; border:1px solid var(--color-border);">
+      <div class="card-header">
+        <span class="card-title">Record Outcome</span>
+        <span class="text-muted" style="font-size:12px;">Structured capture — used for analytics and future learning</span>
+      </div>
+      <form method="post" action="/workspace/{{ opp.id }}/record-outcome" id="outcome-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <div class="d-flex gap-1 align-center flex-wrap" style="margin-bottom:0.5rem;">
+          <select name="outcome" id="outcome-select" required onchange="showOutcomeFields(this.value)" style="width:180px;">
+            <option value="">Select outcome…</option>
+            {% for value, label in outcome_options %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Won fields -->
+        <div id="fields-won" style="display:none;">
+          <div class="d-flex gap-1 flex-wrap" style="margin-top:0.5rem;">
+            <div>
+              <label style="font-size:12px; font-weight:600;">Award Value ($)</label>
+              <input type="number" name="award_amount" placeholder="e.g. 95000" style="width:140px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Win Margin (%)</label>
+              <input type="number" name="win_margin_pct" value="{{ pursuit.margin_pct if pursuit.margin_pct is not none and 0 <= pursuit.margin_pct <= 100 else '' }}" min="0" max="100" step="0.1" placeholder="e.g. 18.5" style="width:120px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Supplier</label>
+              <input type="text" name="win_supplier" value="{{ pursuit.supplier or '' }}" placeholder="Supplier name" style="width:180px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Delivery Terms</label>
+              <input type="text" name="win_delivery_terms" placeholder="e.g. FOB Dest, Net 30" style="width:180px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Proposal Version</label>
+              <input type="text" name="win_proposal_version" value="{{ 'v' ~ outcome_proposal_version if outcome_proposal_version else '' }}" placeholder="e.g. v3" style="width:120px;">
+            </div>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Key Strengths / Win Reason</label>
+            <textarea name="win_reason" rows="2" placeholder="What made this bid successful?" style="width:100%;"></textarea>
+          </div>
+        </div>
+
+        <!-- Lost fields -->
+        <div id="fields-lost" style="display:none;">
+          <div class="d-flex gap-1 flex-wrap" style="margin-top:0.5rem;">
+            <div>
+              <label style="font-size:12px; font-weight:600;">Winner / Awardee</label>
+              <input type="text" name="awarded_vendor_name" placeholder="Company name" style="width:200px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Award Amount ($)</label>
+              <input type="number" name="award_amount" placeholder="If known" style="width:140px;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600;">Known Winning Price ($)</label>
+              <input type="number" name="known_winning_price" placeholder="If different" style="width:160px;">
+            </div>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Suspected/Known Loss Reason</label>
+            <select name="loss_reason">
+              <option value="">Select if known…</option>
+              <option value="pricing">Pricing too high</option>
+              <option value="technical">Technical / compliance issue</option>
+              <option value="incumbent">Incumbent advantage</option>
+              <option value="sourcing">Sourcing / supply chain</option>
+              <option value="deadline">Missed deadline</option>
+              <option value="strategic">Strategic withdrawal</option>
+              <option value="other">Other</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Government Feedback / Debrief</label>
+            <textarea name="government_feedback" rows="2" placeholder="Paste debrief text or summary (strongest evidence — distinguish from speculation)" style="width:100%;"></textarea>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <label style="font-size:12px; font-weight:600;">Debrief Notes</label>
+            <textarea name="debrief_notes" rows="2" placeholder="Additional notes from debrief" style="width:100%;"></textarea>
+          </div>
+        </div>
+
+        <!-- Lessons learned (always visible when outcome selected) -->
+        <div id="fields-common" style="display:none; margin-top:0.5rem;">
+          <label style="font-size:12px; font-weight:600;">Lessons Learned</label>
+          <textarea name="lessons_learned" rows="2" placeholder="What would you do differently?" style="width:100%;"></textarea>
+        </div>
+
+        <div style="margin-top:0.75rem;">
+          <button type="submit" class="btn btn-primary">Record Outcome</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+    function showOutcomeFields(outcome) {
+      ['won', 'lost'].forEach(function(o) {
+        var el = document.getElementById('fields-' + o);
+        if (el) {
+          el.style.display = (outcome === o) ? '' : 'none';
+          el.querySelectorAll('input, select, textarea').forEach(function(field) {
+            field.disabled = outcome !== o;
+          });
+        }
+      });
+      var common = document.getElementById('fields-common');
+      if (common) common.style.display = outcome ? '' : 'none';
+    }
+    showOutcomeFields(document.getElementById('outcome-select').value);
+    </script>
+    {% endif %}
+
+    {% if pursuit and pursuit.stage in ('won','lost','no_bid','cancelled') %}
+    <div class="alert alert-success mt-2" style="background:var(--color-bg-card); border:1px solid var(--color-border); padding:0.75rem; font-size:13px;">
+      Outcome recorded: <strong>{{ pursuit.stage }}</strong>
+      {% if pursuit.outcome_at %} on {{ pursuit.outcome_at.strftime('%Y-%m-%d') }}{% endif %}
+      {% if pursuit.outcome_notes %} — {{ pursuit.outcome_notes[:200] }}{% endif %}
+    </div>
+    {% endif %}

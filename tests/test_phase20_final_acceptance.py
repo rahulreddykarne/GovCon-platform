@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -206,7 +205,7 @@ class TestAppendixDDoD:
 
     def test_dod_7_pricing_analysis_schema_registered(self) -> None:
         """DoD 7 — pricing_analysis.v1 schema is in SCHEMA_REGISTRY."""
-        from govcon.ai.schemas import PricingAnalysisV1, SCHEMA_REGISTRY
+        from govcon.ai.schemas import SCHEMA_REGISTRY, PricingAnalysisV1
 
         assert "pricing_analysis.v1" in SCHEMA_REGISTRY
         assert SCHEMA_REGISTRY["pricing_analysis.v1"] is PricingAnalysisV1
@@ -299,7 +298,7 @@ class TestAppendixDDoD:
         assert callable(assign_reviewer)
         assert callable(list_assignments)
 
-        from govcon.models import ReviewAssignment, ReviewSession
+        from govcon.models import ReviewSession
 
         rs_cols = {c.name for c in ReviewSession.__table__.columns}
         assert "review_policy" in rs_cols  # 'single' | 'dual' | 'conditional'
@@ -598,7 +597,6 @@ class TestFeatureChecklist:
         """Versioned prompt library: source-controlled prompts + registry (Phase 7+)."""
         from govcon.models import PromptRegistryEntry
         from govcon.prompting.loader import iter_markdown_prompts
-        from govcon.prompting.registry import sync_prompts
 
         assert PromptRegistryEntry.__table__ is not None
         assets = iter_markdown_prompts(PROMPT_ROOT)
@@ -847,7 +845,7 @@ class TestNewSchemas:
 
     def test_market_analysis_schema_in_schema_registry(self) -> None:
         """market_analysis.v1 is registered in SCHEMA_REGISTRY."""
-        from govcon.ai.schemas import MarketAnalysisV1, SCHEMA_REGISTRY
+        from govcon.ai.schemas import SCHEMA_REGISTRY, MarketAnalysisV1
 
         assert "market_analysis.v1" in SCHEMA_REGISTRY
         assert SCHEMA_REGISTRY["market_analysis.v1"] is MarketAnalysisV1

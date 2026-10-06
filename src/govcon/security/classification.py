@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,7 +32,7 @@ def strictest_classification(*values: DataClassification | str | None) -> DataCl
 def opportunity_classification(session: Session, opportunity_id: int, declared: DataClassification) -> DataClassification:
     # Retained historical documents can still contribute to derived content.
     from govcon.models import StoredFile
-    classes = session.scalars(select(StoredFile.classification).where(StoredFile.opportunity_id == opportunity_id)).all()
+    classes = list(session.scalars(select(StoredFile.classification).where(StoredFile.opportunity_id == opportunity_id)).all())
     classes += [row.classification for row in session.new.union(session.dirty)
                 if isinstance(row, StoredFile) and row.opportunity_id == opportunity_id]
     return strictest_classification(declared, *classes)

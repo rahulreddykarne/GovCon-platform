@@ -135,7 +135,9 @@ class ValidationContext:
 
 
 def parse_source_deadline(date_text: str | None, time_text: str | None, tz_text: str | None) -> datetime | None:
-    if not all(isinstance(value, str) and value.strip() for value in (date_text, time_text, tz_text)):
+    if not isinstance(date_text, str) or not isinstance(time_text, str) or not isinstance(tz_text, str):
+        return None
+    if not all(value.strip() for value in (date_text, time_text, tz_text)):
         return None
     zone = _TZ.get(tz_text) or _TZ.get(tz_text.upper()) or _TZ.get(tz_text.title())
     if zone is None:
@@ -308,7 +310,8 @@ def quantities_accounted(required: dict[str, int], package: SubmissionPackage | 
     if package is None or package.pricing_rows is None:
         return _result("quantities_accounted", "unknown", "pricing rows not provided")
     offered = {str(r.get("clin", "")).upper(): r.get("quantity") for r in package.pricing_rows}
-    mismatched = {c: {"required": q, "offered": offered.get(c.upper())} for c, q in required.items() if offered.get(c.upper()) is not None and float(offered[c.upper()]) != float(q)}
+    mismatched = {c: {"required": q, "offered": value} for c, q in required.items()
+                  if (value := offered.get(c.upper())) is not None and float(value) != float(q)}
     unknown = [c for c in required if offered.get(c.upper()) is None]
     if mismatched:
         return _result("quantities_accounted", "fail", f"quantity mismatch: {mismatched}", mismatched=mismatched)

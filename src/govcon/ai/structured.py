@@ -25,24 +25,38 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.budget import AIBudgetExceeded, complete_with_budget
+from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
 from govcon.ai.schemas import SCHEMA_REGISTRY
 from govcon.config import Settings, get_settings
 from govcon.models import AIAnalysis
 from govcon.prompting.loader import PromptAsset
-from govcon.prompting.registry import PromptRegistryAbsent, load_prompt, load_prompt_from_disk
-from govcon.prompting.renderer import PromptRenderError, render_system_prompt, render_user_context
-from govcon.security.classification import DataClassification, opportunity_classification
+from govcon.prompting.registry import (
+    PromptRegistryAbsent,
+    load_prompt,
+    load_prompt_from_disk,
+)
+from govcon.prompting.renderer import (
+    PromptRenderError,
+    render_system_prompt,
+    render_user_context,
+)
+from govcon.security.classification import (
+    DataClassification,
+    opportunity_classification,
+)
 
 logger = logging.getLogger("govcon.ai.structured")
+
+# Provider stop reasons meaning "ran out of output tokens" (OpenAI/DeepSeek, Anthropic).
+_TRUNCATED = frozenset({"length", "max_tokens"})
 
 
 class StructuredCallError(RuntimeError):
@@ -57,8 +71,19 @@ class StructuredCallError(RuntimeError):
 @dataclass(frozen=True)
 class StructuredCallResult:
     output: BaseModel
-    analysis: AIAnalysis | None
+    # Even offline calls build an analysis; only its persistence/ID is deferred.
+    analysis: AIAnalysis
     prompt: PromptAsset
+
+
+_Output = TypeVar("_Output", bound=BaseModel)
+
+
+def checked_output(output: BaseModel, schema: type[_Output]) -> _Output:
+    """Require the schema a consumer expects, including registry misconfiguration."""
+    if not isinstance(output, schema):
+        raise StructuredCallError("schema_error", f"expected {schema.__name__}, received {type(output).__name__}")
+    return output
 
 
 def resolve_prompt(session: Session | None, prompt_name: str, settings: Settings) -> PromptAsset:
@@ -265,9 +290,17 @@ def execute_prepared_call(
             data = parse_json_response(result)
             validated = prepared.schema_cls.model_validate(data)
         except (json.JSONDecodeError, ValueError, ValidationError) as exc:
-            last_error = StructuredCallError("invalid_output", f"attempt {attempt + 1}: {type(exc).__name__}")
             # Never log the provider response body; it can echo sensitive input.
             logger.warning("structured output rejected prompt=%s attempt=%d: %s", prepared.prompt.name, attempt + 1, type(exc).__name__)
+            if getattr(result, "finish_reason", None) in _TRUNCATED:
+                # The same request stops at the same cap; another attempt only spends tokens.
+                raise StructuredCallError(
+                    "output_truncated",
+                    f"the provider stopped at the {settings.ai_max_output_tokens_per_call}-token output limit "
+                    "before finishing (a reasoning model's thinking counts against it); raise "
+                    "AI_MAX_OUTPUT_TOKENS_PER_CALL and retry",
+                ) from exc
+            last_error = StructuredCallError("invalid_output", f"attempt {attempt + 1}: {type(exc).__name__}")
             continue
         return ExecutedCall(output=validated, result=result, reservation=reservation)
 

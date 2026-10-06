@@ -25,7 +25,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.compliance.matrix import active_requirements, record_run
-from govcon.compliance.records import CanonicalRequirement, Candidate, max_severity
+from govcon.compliance.records import Candidate, CanonicalRequirement, max_severity
 from govcon.compliance.text import containment, jaccard, normalize_ws, numbers, tokens
 from govcon.models import Requirement
 
@@ -231,6 +231,8 @@ def apply_ai_hints(canonicals: list[CanonicalRequirement], groups: list[dict[str
         if len(members) < 2:
             continue
         relationship = group.get("relationship")
+        if not isinstance(relationship, str):
+            continue
         flag = {"duplicate": "ai_possible_duplicate", "conflicting": "ai_possible_conflict", "possible_supersession": "ai_possible_supersession", "uncertain": "ai_uncertain_relationship"}.get(relationship)
         if not flag:
             continue

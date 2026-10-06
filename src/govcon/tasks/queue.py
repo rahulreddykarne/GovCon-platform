@@ -25,9 +25,9 @@ import json
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select, text
+from sqlalchemy import CursorResult, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -110,7 +110,10 @@ def enqueue(
     )
     new_id = session.scalar(stmt)
     if new_id is not None:
-        return session.get(Task, new_id, populate_existing=True), True
+        created = session.get(Task, new_id, populate_existing=True)
+        if created is None:
+            raise RuntimeError("inserted task could not be loaded")
+        return created, True
     existing = session.scalar(
         select(Task).where(Task.dedup_key == key, Task.status.not_in(TERMINAL_TASK_STATUSES))
     )
@@ -217,7 +220,7 @@ def renew_lease(session: Session, claim_: Claim, lease_seconds: int) -> bool:
         ),
         {"id": claim_.task_id, "lease": lease_seconds, "worker": claim_.worker_id, "token": claim_.token},
     )
-    return result.rowcount == 1
+    return cast(CursorResult, result).rowcount == 1
 
 
 def guard_publish(session: Session, claim_: Claim) -> Task:

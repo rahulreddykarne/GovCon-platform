@@ -32,3 +32,11 @@ dist/
 build/
 .coverage
 htmlcov/
+
+# Live-data directories used by the local .env (DATA_DIR/OUTBOX_DIR/LOG_DIR)
+data-live/
+outbox-live/
+logs-live/
+
+# Generated local code-analysis graphs and caches
+graphify-out/

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 import atexit
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from threading import RLock
 
 from sqlalchemy import create_engine, text

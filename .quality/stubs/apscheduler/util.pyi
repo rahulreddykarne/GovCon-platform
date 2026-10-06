@@ -1,0 +1,3 @@
+class _Undefined: ...
+
+undefined: _Undefined

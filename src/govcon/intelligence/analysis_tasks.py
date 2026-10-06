@@ -71,10 +71,13 @@ def latest_analysis_tasks(session: Session, opportunity_id: int) -> dict[str, Ta
     latest: dict[str, Task] = {}
     rows = session.scalars(
         select(Task)
-        .where(Task.task_type == ANALYSIS_TASK, Task.opportunity_id == opportunity_id)
+        .where(Task.task_type == ANALYSIS_TASK, Task.opportunity_id == opportunity_id,
+               Task.payload["kind"].astext.in_(ANALYSIS_KINDS))
         .order_by(Task.id.desc())
         .limit(50)
     )
     for task in rows:
-        latest.setdefault((task.payload or {}).get("kind"), task)
+        kind = (task.payload or {}).get("kind")
+        if isinstance(kind, str):
+            latest.setdefault(kind, task)
     return latest

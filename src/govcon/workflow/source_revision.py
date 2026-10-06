@@ -59,16 +59,26 @@ def current_source_revision(session: Session, opportunity_id: int) -> str | None
         for file_id, url, sha, status, active in rows
         if active
     )
-    basis = {"opportunity_id": opportunity_id, "raw_hash": opportunity.raw_hash, "attachments": current}
-    policy = sorted((row.id, row.classification, row.source_origin) for row in session.scalars(
+    basis: dict[str, Any] = {"opportunity_id": opportunity_id, "raw_hash": opportunity.raw_hash, "attachments": current}
+    stored = list(session.scalars(
         select(StoredFile).where(StoredFile.opportunity_id == opportunity_id)
-    ) if row.classification != "PUBLIC")
+    ))
+    policy = sorted((row.id, row.classification, row.source_origin) for row in stored if row.classification != "PUBLIC")
+    # OCR repair changes readable sources without changing the PDF bytes.
+    ocr_text = sorted((row.id, hashlib.sha256((row.extracted_text or "").encode("utf-8")).hexdigest())
+                      for row in stored if row.active and row.ocr_pages)
+    if ocr_text:
+        basis["ocr_text"] = ocr_text
     if policy:
         basis["document_policy"] = policy
     value = REVISION_PREFIX + hashlib.sha256(json.dumps(basis, sort_keys=True).encode("utf-8")).hexdigest()
-    legacy_basis = {"opportunity_id": opportunity_id, "raw_hash": opportunity.raw_hash, "files": sorted(sha or "" for _, _, sha, _, _ in rows)}
+    legacy_basis: dict[str, Any] = {"opportunity_id": opportunity_id, "raw_hash": opportunity.raw_hash, "files": sorted(sha or "" for _, _, sha, _, _ in rows)}
     if policy:
         legacy_basis["document_policy"] = policy
+    if ocr_text:
+        # OCR repair must also invalidate pre-v2 caches with unchanged PDF bytes.
+        # Old OCR-derived caches may refresh once when this guard is introduced.
+        legacy_basis["ocr_text"] = ocr_text
     legacy = hashlib.sha256(json.dumps(legacy_basis, sort_keys=True).encode("utf-8")).hexdigest()
     return SourceRevision(value, legacy)
 

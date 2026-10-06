@@ -11,71 +11,46 @@
     </div>
   </div>
   <div class="d-flex gap-1 flex-wrap">
-    <a href="/opp/{{ opp.id }}" class="btn btn-secondary btn-sm">← Opportunity</a>
+    {% if not pursuit and can(current_user, "review") %}
+    <form method="post" action="/opp/{{ opp.id }}/start-workspace">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-primary btn-sm">Pursue</button>
+    </form>
+    {% endif %}
     {% if primary_source_url %}
     <a href="{{ primary_source_url }}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">Source ↗</a>
     {% endif %}
   </div>
 </div>
 
-<!-- Tab bar -->
 <nav class="tab-bar">
-  {% set cur = active_tab %}
-  <a href="?tab=overview"       {% if cur == 'overview'       %}class="active"{% endif %}>Overview</a>
-  <a href="?tab=ai_decision"    {% if cur == 'ai_decision'    %}class="active"{% endif %}>AI Decision Package</a>
-  <a href="?tab=requirements"   {% if cur == 'requirements'   %}class="active"{% endif %}>Requirements</a>
-  <a href="?tab=market"         {% if cur == 'market'         %}class="active"{% endif %}>Market Intelligence</a>
-  <a href="?tab=awards"         {% if cur == 'awards'         %}class="active"{% endif %}>Historical Awards</a>
-  <a href="?tab=products"       {% if cur == 'products'       %}class="active"{% endif %}>Products &amp; Suppliers</a>
-  <a href="?tab=pricing"        {% if cur == 'pricing'        %}class="active"{% endif %}>Pricing</a>
-  <a href="?tab=competitors"    {% if cur == 'competitors'    %}class="active"{% endif %}>Competitors</a>
-  <a href="?tab=compliance"     {% if cur == 'compliance'     %}class="active"{% endif %}>Compliance</a>
-  <a href="?tab=review"         {% if cur == 'review'         %}class="active"{% endif %}>Collaborative Review</a>
-  <a href="?tab=proposal"       {% if cur == 'proposal'       %}class="active"{% endif %}>Proposal</a>
-  <a href="?tab=submission"     {% if cur == 'submission'     %}class="active"{% endif %}>Submission</a>
-  <a href="?tab=activity"       {% if cur == 'activity'       %}class="active"{% endif %}>Activity</a>
+  {% for key, label in workspace_tabs %}
+  <a href="/workspace/{{ opp.id }}?tab={{ key }}" {% if active_tab == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
 </nav>
-
-<!-- Tab content -->
+<div id="progress-feedback" class="alert alert-info" role="status" hidden><span></span> <button class="btn btn-secondary btn-sm" onclick="window.location.reload()">Refresh results</button></div>
+<div id="workspace-content" data-progress-url="/workspace/{{ opp.id }}/progress" data-progress-revision="{{ progress.revision }}" data-progress-active="{{ 'true' if progress.active else 'false' }}">
 {% if active_tab == 'overview' %}
   {% include "workspace/overview.html" %}
-
-{% elif active_tab == 'ai_decision' %}
-  {% include "workspace/ai_decision.html" %}
-
-{% elif active_tab == 'requirements' %}
-  {% include "workspace/requirements.html" %}
-
-{% elif active_tab == 'market' %}
-  {% include "workspace/market.html" %}
-
-{% elif active_tab == 'awards' %}
-  {% include "workspace/awards.html" %}
-
-{% elif active_tab == 'products' %}
-  {% include "workspace/products.html" %}
-
-{% elif active_tab == 'pricing' %}
-  {% include "workspace/pricing.html" %}
-
-{% elif active_tab == 'competitors' %}
-  {% include "workspace/competitors.html" %}
-
 {% elif active_tab == 'compliance' %}
   {% include "workspace/compliance.html" %}
-
+{% elif active_tab == 'market' %}
+  {% include "workspace/market.html" %}
+  <details class="card"><summary>Historical Awards</summary>{% include "workspace/awards.html" %}</details>
+  <details class="card"><summary>Competitors</summary>{% include "workspace/competitors.html" %}</details>
+{% elif active_tab == 'sourcing' %}
+  {% include "workspace/products.html" %}
+  {% include "workspace/pricing.html" %}
 {% elif active_tab == 'review' %}
+  {% include "workspace/ai_decision.html" %}
   {% include "workspace/review.html" %}
-
-{% elif active_tab == 'proposal' %}
-  {% include "workspace/proposal.html" %}
-
 {% elif active_tab == 'submission' %}
+  {% include "workspace/proposal.html" %}
   {% include "workspace/submission.html" %}
-
 {% elif active_tab == 'activity' %}
   {% include "workspace/activity.html" %}
-
 {% endif %}
+</div>
+<script src="/static/workspace.js" defer></script>
 
 {% endblock %}

@@ -30,20 +30,27 @@ from govcon.ingest.dibbs import (
     DibbsError,
     dibbs_return_deadline,
     federal_holidays,
-    last_ingested_index_date,
-    next_business_day,
     fetch_consented,
     index_file_url,
     index_links,
     ingest_index_bytes,
     ingest_index_file,
+    last_ingested_index_date,
+    next_business_day,
     parse_index,
     pull_dibbs_index,
 )
 from govcon.ingest.snapshots import canonical_content_hash, upsert_opportunity
 from govcon.matching.engine import run_matching
 from govcon.matching.watchlists import create_watchlist
-from govcon.models import Contact, IngestionRun, Match, Opportunity, OpportunityEvent, OpportunitySnapshot
+from govcon.models import (
+    Contact,
+    IngestionRun,
+    Match,
+    Opportunity,
+    OpportunityEvent,
+    OpportunitySnapshot,
+)
 
 runner = CliRunner()
 FIXTURE = Path(__file__).parent / "fixtures" / "dibbs" / "in260925.txt"

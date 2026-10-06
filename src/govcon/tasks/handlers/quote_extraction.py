@@ -20,12 +20,23 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import PreparedCall, execute_prepared_call, persist_structured_result, prepare_structured_call
+from govcon.ai.structured import (
+    PreparedCall,
+    execute_prepared_call,
+    persist_structured_result,
+    prepare_structured_call,
+)
 from govcon.db import shared_session_factory
 from govcon.models import Task, User
 from govcon.security.classification import DataClassification
 from govcon.tasks.errors import TaskBlocked, TaskFailedPermanently
-from govcon.tasks.registry import Step, StepContext, TaskHandler, register
+from govcon.tasks.registry import (
+    Step,
+    StepContext,
+    TaskHandler,
+    register,
+    required_opportunity_id,
+)
 
 QUOTE_EXTRACTION_TASK = "quote_extraction"
 _AUTH_ACTION = (
@@ -74,7 +85,7 @@ def _extract_prepare(session: Session, task: Task, ctx: StepContext) -> _Call:
                           owner_role="owner", next_action=_AUTH_ACTION)
     text = ((task.checkpoint or {}).get("data") or {}).get("read", {}).get("text") or ""
     return _Call(prepared=prepare_structured_call(
-        session, opportunity_id=task.opportunity_id, prompt_name="supplier_quote_extraction",
+        session, opportunity_id=required_opportunity_id(task.opportunity_id), prompt_name="supplier_quote_extraction",
         analysis_type=AnalysisType.QUOTE_EXTRACTION, variables={"QUOTE_TEXT": text},
         context_manifest={"source_sha256": ctx.payload.get("source_sha256"),
                           "source_filename": ctx.payload.get("source_filename")},
@@ -102,7 +113,7 @@ def _extract_publish(session: Session, task: Task, call: _Call, ctx: StepContext
     actor = session.get(User, task.created_by_user_id) if task.created_by_user_id else None
     payload = ctx.payload
     quote = record_quote(
-        session, opportunity_id=task.opportunity_id, supplier_id=payload["supplier_id"], actor=actor, method="ai",
+        session, opportunity_id=required_opportunity_id(task.opportunity_id), supplier_id=payload["supplier_id"], actor=actor, method="ai",
         lines=lines, total_price=output.total_price,
         valid_until=payload.get("valid_until") or _iso_date(output.valid_until),
         source={k: payload.get(k) for k in ("source_filename", "source_sha256", "source_key")},

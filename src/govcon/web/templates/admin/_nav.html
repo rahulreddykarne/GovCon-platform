@@ -1,0 +1,5 @@
+<nav class="tab-bar" aria-label="Admin sections">
+  <a href="/admin?section=operations" {% if admin_section == 'operations' %}class="active"{% endif %}>Operations</a>
+  <a href="/admin?section=settings" {% if admin_section == 'settings' %}class="active"{% endif %}>Settings</a>
+  {% if can(current_user, "manage_users") %}<a href="/admin?section=users" {% if admin_section == 'users' %}class="active"{% endif %}>Users</a>{% endif %}
+</nav>

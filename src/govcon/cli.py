@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import pathlib as _pathlib
+import sys
 
 import typer
-from alembic import command
 from alembic.config import Config
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from alembic import command
 from govcon.config import ConfigError, Settings, get_settings
 from govcon.db import check_connectivity, make_engine, session_scope
 from govcon.logging import configure_logging, redact
@@ -131,7 +131,7 @@ def _bootstrap() -> None:
 @app.command("status")
 def status() -> None:
     """Print DB connectivity, schema revision, row counts, and last job run results."""
-    from sqlalchemy import func, text
+    from sqlalchemy import func
 
     try:
         settings = _settings()
@@ -149,7 +149,7 @@ def status() -> None:
     typer.echo(f"schema_revision: {revision}")
 
     try:
-        from govcon.models import IngestionRun, Opportunity, SchedulerJobRun
+        from govcon.models import Opportunity, SchedulerJobRun
         from govcon.scheduler.chains import CHAIN_DEFINITIONS
 
         with session_scope(settings) as db:
@@ -175,7 +175,7 @@ def status() -> None:
                     ts = last_run.started_at.strftime("%Y-%m-%d %H:%M UTC") if last_run.started_at else "?"
                     counts = ""
                     if last_run.row_counts:
-                        totals = {}
+                        totals: dict[str, int] = {}
                         for step_counts in last_run.row_counts.values():
                             for k, v in step_counts.items():
                                 totals[k] = totals.get(k, 0) + (v or 0)
@@ -339,8 +339,14 @@ def ingest_sam(
 ) -> None:
     """Ingest SAM.gov opportunities. The default window is the last 3 days."""
     import json as _json
+
     from govcon.ingest.runs import IngestStats, finish_run, start_run
-    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, ingest_opportunity_records, pull_sam_opportunities
+    from govcon.ingest.sam_opportunities import (
+        SamApiError,
+        assert_search_window,
+        ingest_opportunity_records,
+        pull_sam_opportunities,
+    )
     from govcon.logging import redact
 
     if file:
@@ -436,7 +442,12 @@ def ingest_dibbs(
     """Ingest one DIBBS daily index file. Re-running an unchanged file does not add snapshots."""
     from pathlib import Path
 
-    from govcon.ingest.dibbs import DibbsError, ingest_index_file, parse_user_date, pull_dibbs_index
+    from govcon.ingest.dibbs import (
+        DibbsError,
+        ingest_index_file,
+        parse_user_date,
+        pull_dibbs_index,
+    )
     from govcon.ingest.runs import IngestStats, finish_run, start_run
     from govcon.logging import redact
 
@@ -517,8 +528,8 @@ def ingest_usaspending(
         ingest_award_records,
         load_search_document,
         parse_user_date,
-        plan_pull,
         plan_details,
+        plan_pull,
         pull_usaspending,
     )
     from govcon.logging import redact
@@ -1296,13 +1307,17 @@ def enrich_intelligence(
     if run_once(settings, task_id=task_id) is None:
         wait_for(settings, task_id, timeout=1800)
     with session_scope(settings) as session:
-        task = session.get(Task, task_id)
-        if task.status != "succeeded":
-            typer.echo(f"analysis task {task_id} is {task.status}: {task.last_error or ''}", err=True)
-            if task.blocker_next_action:
-                typer.echo(f"next action: {task.blocker_next_action}", err=True)
+        completed_task = session.get(Task, task_id)
+        if completed_task is None:
+            typer.echo(f"analysis task {task_id} is no longer available", err=True)
             raise typer.Exit(code=1)
-        typer.echo(f"analysis_id: {task.result['analysis_id']}")
+        if completed_task.status != "succeeded":
+            typer.echo(f"analysis task {task_id} is {completed_task.status}: {completed_task.last_error or ''}", err=True)
+            if completed_task.blocker_next_action:
+                typer.echo(f"next action: {completed_task.blocker_next_action}", err=True)
+            raise typer.Exit(code=1)
+        assert completed_task.result is not None  # successful analysis publishes a result
+        typer.echo(f"analysis_id: {completed_task.result['analysis_id']}")
 
 
 @enrich_app.command("process")
@@ -1539,8 +1554,12 @@ def prompts_render(
 ) -> None:
     """Render a prompt's system prompt and optionally a user context from a fixture."""
     import json as _json
+
     from govcon.prompting.loader import iter_markdown_prompts
-    from govcon.prompting.renderer import render_system_prompt, render_user_context, required_variables
+    from govcon.prompting.renderer import (
+        render_system_prompt,
+        render_user_context,
+    )
 
     settings = _settings()
     prompt_root = settings.resolved_prompt_root()
@@ -1586,6 +1605,7 @@ def prompts_diff(
 ) -> None:
     """Show a unified diff between two prompt versions."""
     import difflib
+
     from govcon.prompting.loader import iter_markdown_prompts
     from govcon.prompting.renderer import render_system_prompt
 
@@ -1643,6 +1663,7 @@ def prompts_eval(
 ) -> None:
     """Replay deterministic fixtures, or explicitly evaluate candidate model behavior."""
     import json as _json
+
     from govcon.prompting.evaluation import run_activation_gate
     from govcon.prompting.loader import iter_markdown_prompts
 
@@ -1650,7 +1671,10 @@ def prompts_eval(
     prompt_root = settings.resolved_prompt_root()
 
     if suite == "compliance":
-        from govcon.compliance.regression import default_fixture_root, run_benchmark_suite
+        from govcon.compliance.regression import (
+            default_fixture_root,
+            run_benchmark_suite,
+        )
 
         froot = _pathlib.Path(fixture_dir) if fixture_dir else default_fixture_root()
         result = run_benchmark_suite(froot, live=live, settings=settings)
@@ -1991,7 +2015,10 @@ def review_approve(
     ),
 ) -> None:
     """Finalize the human approval gate decision after collaborative review."""
-    from govcon.collaboration.review_sessions import ensure_review_session, finalize_approval
+    from govcon.collaboration.review_sessions import (
+        ensure_review_session,
+        finalize_approval,
+    )
     from govcon.collaboration.users import PermissionDenied
 
     settings = _compliance_settings()
@@ -2318,10 +2345,12 @@ def compliance_preflight(
     if settings is None:
         return
     with session_scope(settings) as session:
+        assembled: SubmissionPackage | None
         if package:
             assembled = SubmissionPackage.from_dict(_load_json_file(package) or {})
         else:
             from sqlalchemy import select
+
             from govcon.models import Submission
             from govcon.submissions.manifest import current_package
             submission = session.scalar(select(Submission).where(Submission.opportunity_id == opportunity_id))
@@ -2348,7 +2377,10 @@ def compliance_ready(
 ) -> None:
     """Move the pursuit to ready_to_submit only when no compliance blocker remains."""
     from govcon.collaboration.users import PermissionDenied
-    from govcon.compliance.submission_preflight import ReadinessBlocked, move_to_ready_to_submit
+    from govcon.compliance.submission_preflight import (
+        ReadinessBlocked,
+        move_to_ready_to_submit,
+    )
 
     settings = _compliance_settings()
     if settings is None:
@@ -2429,6 +2461,7 @@ def proposal_status(
 ) -> None:
     """Show the proposal workspace for the final approver."""
     import json as _json
+
     from govcon.proposals.service import get_proposal_workspace
 
     settings = _settings()
@@ -2455,8 +2488,9 @@ def proposal_red_team(
 ) -> None:
     """Run the red-team AI reviewer against a proposal version."""
     import json as _json
-    from govcon.proposals.ai_review import run_proposal_red_team
+
     from govcon.ai.structured import StructuredCallError
+    from govcon.proposals.ai_review import run_proposal_red_team
 
     settings = _settings()
     try:
@@ -2498,9 +2532,9 @@ def proposal_approve(
     expected_version: int | None = typer.Option(None, help="Proposal version you reviewed (default: current)."),
 ) -> None:
     """APPROVE FOR SUBMISSION: mark proposal final-approved and advance pursuit to ready_to_submit."""
-    from govcon.proposals.service import finalize_proposal
-    from govcon.compliance.submission_preflight import ReadinessBlocked
     from govcon.collaboration.users import PermissionDenied
+    from govcon.compliance.submission_preflight import ReadinessBlocked
+    from govcon.proposals.service import finalize_proposal
 
     settings = _settings()
     try:
@@ -2532,8 +2566,8 @@ def proposal_return(
     expected_version: int | None = typer.Option(None, help="Proposal version you reviewed (default: current)."),
 ) -> None:
     """RETURN FOR FIX: return the proposal for additional work."""
-    from govcon.proposals.service import finalize_proposal
     from govcon.collaboration.users import PermissionDenied
+    from govcon.proposals.service import finalize_proposal
 
     settings = _settings()
     try:
@@ -2559,8 +2593,8 @@ def proposal_cancel(
     expected_version: int | None = typer.Option(None, help="Proposal version you reviewed (default: current)."),
 ) -> None:
     """CANCEL BID: cancel the pursuit."""
-    from govcon.proposals.service import finalize_proposal
     from govcon.collaboration.users import PermissionDenied
+    from govcon.proposals.service import finalize_proposal
 
     settings = _settings()
     try:
@@ -2587,8 +2621,10 @@ def proposal_export(
 ) -> None:
     """Export the current proposal version (DOCX/XLSX) or the full submission package (ZIP)."""
     import pathlib
-    from govcon.models import Proposal
+
     from sqlalchemy import select as _select
+
+    from govcon.models import Proposal
 
     settings = _settings()
     with session_scope(settings) as session:
@@ -2644,6 +2680,7 @@ def submission_assemble(
     """Hash assembled files and record completed actions in an immutable manifest."""
     import json
     from pathlib import Path
+
     from govcon.compliance.deterministic import SubmissionPackage
     from govcon.submissions.manifest import assemble_package
     package = SubmissionPackage.from_dict(json.loads(Path(package_json).read_text(encoding="utf-8")))
@@ -2660,6 +2697,7 @@ def submission_package(
 ) -> None:
     """Generate or refresh the submission package from solicitation evidence."""
     import json as _json
+
     from govcon.submissions.service import generate_submission_package
 
     settings = _settings()
@@ -2685,6 +2723,7 @@ def submission_checklist(
 ) -> None:
     """Show the final submission checklist."""
     import json as _json
+
     from govcon.submissions.checklist import generate_final_checklist
 
     settings = _settings()
@@ -2706,6 +2745,7 @@ def submission_instructions(
 ) -> None:
     """Show step-by-step submission instructions."""
     import json as _json
+
     from govcon.submissions.checklist import generate_step_by_step_instructions
 
     settings = _settings()
@@ -2726,6 +2766,7 @@ def submission_email_draft(
 ) -> None:
     """Generate a draft submission email."""
     import json as _json
+
     from govcon.submissions.email_adapter import draft_submission_email
 
     settings = _settings()
@@ -2769,8 +2810,8 @@ def submission_correct_commercial(
     notes: str | None = typer.Option(None),
 ) -> None:
     """Append a correction to submitted facts without rewriting the offer."""
-    from govcon.workflow.commercial import record_commercial_correction
     from govcon.collaboration.users import PermissionDenied
+    from govcon.workflow.commercial import record_commercial_correction
     changes = {key: value for key, value in {
         "quote_price": quote_price, "sourcing_cost": sourcing_cost, "supplier": supplier, "notes": notes
     }.items() if value is not None}
@@ -2795,9 +2836,9 @@ def submission_confirm(
     expected_version: int | None = typer.Option(None, help="Submission version you reviewed (default: current)."),
 ) -> None:
     """Record that the human has submitted and has a confirmation number."""
+    from govcon.collaboration.users import PermissionDenied
     from govcon.models import Submission
     from govcon.proposals.service import record_submission_confirmation
-    from govcon.collaboration.users import PermissionDenied
 
     settings = _settings()
     try:
@@ -2911,7 +2952,6 @@ def semantic_recommendations(
 @jobs_app.command("list")
 def jobs_list() -> None:
     """List all configured scheduler job chains with their schedule and last run status."""
-    from sqlalchemy import func
 
     from govcon.models import SchedulerJobRun
     from govcon.scheduler.chains import CHAIN_DEFINITIONS
@@ -3017,10 +3057,13 @@ def _run_chain_task(job: str, settings: Settings):
     if run_once(settings, task_id=task_id) is None:
         wait_for(settings, task_id, timeout=4 * 3600)
     with session_scope(settings) as session:
-        task = session.get(Task, task_id)
-        result = chain_result_from_task(task)
+        completed_task = session.get(Task, task_id)
+        if completed_task is None:
+            typer.echo(f"task {task_id} is no longer available", err=True)
+            return None
+        result = chain_result_from_task(completed_task)
         if result is None:
-            typer.echo(f"task {task_id} ended {task.status}: {task.last_error or 'no result'}", err=True)
+            typer.echo(f"task {task_id} ended {completed_task.status}: {completed_task.last_error or 'no result'}", err=True)
         return result
 
 
@@ -3286,6 +3329,9 @@ def pursuit_prepare(
         wait_for(settings, task_id, timeout=4 * 3600)
     with session_scope(settings) as session:
         view = preparation_view(session.get(Task, task_id))
+        if view is None:
+            typer.echo(f"preparation task {task_id} is no longer available", err=True)
+            raise typer.Exit(code=1)
         typer.echo(f"status: {view['task'].status}")
         for step in view["steps"]:
             typer.echo(f"  {step['name']}: {step['state']} {step['data'] or ''}".rstrip())
@@ -3316,7 +3362,11 @@ def sourcing_import_catalog(
     actor_email: str = typer.Option(..., help="Reviewer, approver or owner email."),
 ) -> None:
     """Import a supplier catalog CSV (ADR-071)."""
-    from govcon.sourcing.records import SourcingError, get_or_create_supplier, import_catalog_csv
+    from govcon.sourcing.records import (
+        SourcingError,
+        get_or_create_supplier,
+        import_catalog_csv,
+    )
 
     settings = _task_settings()
     if settings is None:
@@ -3361,8 +3411,11 @@ def sourcing_add_quote(
             intake = receive_quote_file(session, opportunity_id=opportunity_id, supplier_id=row.id,
                                         data=file.read_bytes(), filename=file.name, valid_until=valid_until,
                                         actor=actor, settings=settings)
-            message = (f"quote_id: {intake.quote.id}" if intake.quote is not None
-                       else f"queued for AI reading as task {intake.task.id}")
+            if intake.quote is not None:
+                message = f"quote_id: {intake.quote.id}"
+            else:
+                assert intake.task is not None  # intake returns a recorded quote or a queued task
+                message = f"queued for AI reading as task {intake.task.id}"
     except (SourcingError, ValueError, PermissionDenied) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc

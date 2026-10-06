@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import TypedDict
 
 import httpx
 from sqlalchemy import select
@@ -461,6 +462,11 @@ def plan_details(plan: PullPlan, *, trigger: str | None = None) -> dict:
     return details
 
 
+class _PullCodes(TypedDict):
+    psc_codes: tuple[str, ...]
+    naics_codes: tuple[str, ...]
+
+
 def plan_pull(
     session: Session,
     *,
@@ -477,7 +483,7 @@ def plan_pull(
     """
     today = today or datetime.now(timezone.utc).date()
     psc_now, naics_now = collect_watchlist_codes(session)
-    codes = {"psc_codes": tuple(psc_now), "naics_codes": tuple(naics_now)}
+    codes: _PullCodes = {"psc_codes": tuple(psc_now), "naics_codes": tuple(naics_now)}
     if start is not None or end is not None:
         if start is None or end is None:
             raise ValueError("window start and end must be provided together")
@@ -593,7 +599,9 @@ def iter_search_pages(
                 )
         previous_ids = page_ids
         yield objects
-        meta = payload.get("page_metadata") if isinstance(payload.get("page_metadata"), dict) else {}
+        meta = payload.get("page_metadata")
+        if not isinstance(meta, dict):
+            meta = {}
         if not objects or not meta.get("hasNext"):
             return
     raise UsaSpendingError(f"USAspending search exceeded {MAX_PAGES} pages")

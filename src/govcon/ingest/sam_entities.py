@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 from tenacity import wait_exponential
 from tenacity.wait import wait_base
@@ -109,8 +108,12 @@ def parse_entity_record(record: dict) -> ParsedEntity | None:
     if _opt_out(registration.get("legalBusinessName")):
         return None
 
-    core = record.get("coreData") if isinstance(record.get("coreData"), dict) else {}
-    assertions = record.get("assertions") if isinstance(record.get("assertions"), dict) else {}
+    core = record.get("coreData")
+    if not isinstance(core, dict):
+        core = {}
+    assertions = record.get("assertions")
+    if not isinstance(assertions, dict):
+        assertions = {}
     business_types = core.get("businessTypes") if isinstance(core.get("businessTypes"), dict) else None
 
     naics_codes = _list_of_codes(assertions.get("naicsList"), "naicsCode", "naicsDescription")

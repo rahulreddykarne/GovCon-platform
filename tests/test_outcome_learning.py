@@ -419,7 +419,6 @@ class TestMCPOutcome:
 
     def test_mcp_learning_summary_global(self, session: Session):
         # Seed some data first
-        prefix = uuid4().hex[:4]
         for _ in range(3):
             opp = _opp(session, psc="6515")
             _pursuit(session, opp.id)

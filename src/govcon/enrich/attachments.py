@@ -5,7 +5,10 @@ The downloader accepts only normalised ``AttachmentRef`` values
 
 - fetches through ``safe_fetch`` (HTTPS, public addresses only on every
   redirect, streamed with a byte cap); the SAM ``api_key`` is added only for
-  SAM API hosts and never stored or logged;
+  SAM API hosts and never stored or logged. A DIBBS RFQ PDF is fetched
+  through the consent banner and must be PDF bytes; a SAM notice
+  description is unwrapped from its JSON into plain text
+  (``govcon.enrich.source_documents``);
 - names the file from ``Content-Disposition`` (else the ref or URL), types it
   from ``Content-Type``, reduces the name to a safe basename, and stores the
   bytes content-addressed inside the opportunity folder, written atomically
@@ -30,7 +33,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.message import Message
 from pathlib import Path
-from govcon.security.classification import DataClassification, strictest_classification
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
@@ -38,13 +40,19 @@ from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
-from govcon.enrich.attachment_refs import AttachmentRef, attachment_refs_for
+from govcon.enrich.attachment_refs import (
+    DIBBS_RFQ_PDF,
+    SAM_DESCRIPTION,
+    AttachmentRef,
+    attachment_refs_for,
+)
 from govcon.enrich.extract import ExtractionResult, extract_text, guess_mime_type
 from govcon.enrich.safe_fetch import FetchError, Resolver, safe_fetch
 from govcon.http import build_client
-from govcon.logging import redact
 from govcon.ingest.snapshots import current_snapshot_id
+from govcon.logging import redact
 from govcon.models import FilePage, Opportunity, StoredFile
+from govcon.security.classification import DataClassification, strictest_classification
 
 logger = logging.getLogger("govcon.enrich.attachments")
 
@@ -70,31 +78,40 @@ def download_attachments(
     settings = settings or get_settings()
     refs = attachment_refs_for(opportunity)
     snapshot_id = latest_snapshot_id(session, opportunity.id)
-    results: list[StoredFile] = []
-    if refs:
+    reused = current_sam_versions(session, opportunity.id, refs, snapshot_id)
+    for row_id in reused.values():
+        row = session.get(StoredFile, row_id)
+        if row is not None and needs_ocr_retry(row, settings) and row.local_path:
+            from govcon.enrich.ocr import ocr_config
+            from govcon.enrich.storage import get_store
+
+            data = get_store(settings).read(row.local_path)
+            if data is not None and hashlib.sha256(data).hexdigest() == row.sha256:
+                update_extraction(session, row, extract_text(
+                    data, row.mime_type or "", row.filename or "", ocr=ocr_config(settings)
+                ))
+    current: dict[str, int] = dict(reused)
+    to_fetch = [ref for ref in refs if ref.url not in reused]
+    if to_fetch:
         own_client = client is None
         client = client or build_client(settings, timeout=60.0)
         try:
-            for ref in refs:
-                results.append(
-                    _download_one(
-                        session,
-                        opportunity,
-                        ref,
-                        settings=settings,
-                        client=client,
-                        resolver=resolver,
-                        snapshot_id=snapshot_id,
-                    )
-                )
+            for ref in to_fetch:
+                row = _download_one(session, opportunity, ref, settings=settings, client=client,
+                                    resolver=resolver, snapshot_id=snapshot_id)
+                current[ref.url] = row.id
         finally:
             if own_client:
                 client.close()
-    else:
+    elif not refs:
         logger.info("opportunity %s lists no attachments", opportunity.id)
-    current = {ref.url: row.id for ref, row in zip(refs, results)}
     reconcile_attachment_versions(session, opportunity, refs, current=current)
-    return results
+    files: list[StoredFile] = []
+    for ref in refs:
+        stored = session.get(StoredFile, current[ref.url])
+        assert stored is not None, "attachment disappeared during reconciliation"
+        files.append(stored)
+    return files
 
 
 def latest_snapshot_id(session: Session, opportunity_id: int) -> int | None:
@@ -281,15 +298,100 @@ class FetchedAttachment:
     extraction: ExtractionResult | None = None
 
 
-def known_versions(session: Session, opportunity_id: int, refs: list[AttachmentRef]) -> dict[str, set[str]]:
+def current_sam_versions(
+    session: Session, opportunity_id: int, refs: list[AttachmentRef], snapshot_id: int | None
+) -> dict[str, int]:
+    """SAM-hosted documents already stored for the notice's current snapshot: ``url -> row id``.
+
+    SAM content changes only with a new notice version (a new snapshot), and
+    every SAM API download spends the key's daily quota; re-fetching them on
+    each preparation run hit HTTP 429 and blocked the inventory on 2026-10-05.
+    These rows are reused instead of fetched again.
+    """
+    urls = [ref.url for ref in refs if (urlsplit(ref.url).hostname or "").lower() in SAM_API_HOSTS]
+    if snapshot_id is None or not urls:
+        return {}
+    rows = session.execute(
+        select(StoredFile.url, StoredFile.id)
+        .where(StoredFile.opportunity_id == opportunity_id, StoredFile.url.in_(urls),
+               StoredFile.sha256.is_not(None), StoredFile.snapshot_id == snapshot_id)
+        .order_by(StoredFile.id)
+    )
+    return {url: row_id for url, row_id in rows if url is not None}  # the latest stored version wins
+
+
+def needs_ocr_retry(row: StoredFile, settings: Settings) -> bool:
+    """A retained PDF whose unreadable pages may now be read by OCR."""
+    is_pdf = row.mime_type == "application/pdf" or (row.filename or "").lower().endswith(".pdf")
+    return bool(settings.ocr_enabled and is_pdf and row.sha256 and (
+        row.ocr_failed_pages or not (row.extracted_text or "").strip()
+    ))
+
+
+def update_extraction(session: Session, row: StoredFile, extraction: ExtractionResult) -> None:
+    """Repair extraction in place; byte identity and classification stay intact."""
+    from govcon.workflow.invalidation import lock_one
+
+    # Take the parent lock before flushing caller changes to the file, matching
+    # preparation's parent-before-child order. Refresh only after that flush so
+    # concurrent repairs see the latest pages without discarding new metadata.
+    with session.no_autoflush:
+        parent_id = session.scalar(select(Opportunity.id).where(Opportunity.id == row.opportunity_id)
+                                   .with_for_update(key_share=True))
+    if parent_id is None:
+        raise ValueError("Cannot repair a file whose opportunity no longer exists")
+    refreshed = lock_one(session, select(StoredFile).where(StoredFile.id == row.id))
+    if refreshed is None:
+        raise ValueError("Cannot repair a file that no longer exists")
+    row = refreshed
+    if row.extracted_text and not extraction.text:
+        return
+    if extraction.pages:
+        from govcon.enrich.extract import DEFAULT_LIMITS, PageText, _cap_text
+
+        pages = {page.page_no: page for page in extraction.pages}
+        restored = False
+        for previous in session.scalars(select(FilePage).where(FilePage.file_id == row.id)):
+            if previous.text and previous.text.strip() and not (pages.get(previous.page_no) and pages[previous.page_no].text.strip()):
+                pages[previous.page_no] = PageText(
+                    previous.page_no, previous.text, previous.text_source,
+                    float(previous.ocr_confidence) if previous.ocr_confidence is not None else None, previous.label,
+                )
+                restored = True
+        if restored:
+            ordered = [pages[number] for number in sorted(pages)]
+            complete = len(ordered) == extraction.page_count and all(page.text.strip() for page in ordered)
+            complete = complete and "truncated" not in (extraction.error or "").lower()
+            extraction = _cap_text(ExtractionResult(
+                "\n\n".join(page.text for page in ordered),
+                "success" if complete else extraction.status,
+                None if complete else extraction.error,
+                page_count=extraction.page_count, pages=ordered,
+                ocr_pages=[page.page_no for page in ordered if page.source == "ocr"],
+                ocr_failed_pages=[item for item in extraction.ocr_failed_pages
+                                  if not isinstance(item.get("page"), int) or not pages.get(item["page"]) or not pages[item["page"]].text.strip()],
+            ), DEFAULT_LIMITS)
+    row.extracted_text = extraction.text
+    row.extraction_status = extraction.status
+    row.extraction_error = extraction.error
+    write_pages(session, row, extraction)
+    session.flush()
+
+
+def known_versions(
+    session: Session, opportunity_id: int, refs: list[AttachmentRef], *,
+    settings: Settings | None = None, retry_ocr: bool = True,
+) -> dict[str, set[str]]:
     """SHA-256 of every stored version of each listed URL."""
     urls = [ref.url for ref in refs]
     known: dict[str, set[str]] = {url: set() for url in urls}
-    for url, sha in session.execute(
-        select(StoredFile.url, StoredFile.sha256)
+    settings = settings or get_settings()
+    for row in session.scalars(
+        select(StoredFile)
         .where(StoredFile.opportunity_id == opportunity_id, StoredFile.url.in_(urls), StoredFile.sha256.is_not(None))
     ):
-        known[url].add(sha)
+        if (not retry_ocr or not needs_ocr_retry(row, settings)) and row.url and row.sha256:
+            known[row.url].add(row.sha256)
     return known
 
 
@@ -304,28 +406,38 @@ def fetch_attachment(
 ) -> FetchedAttachment:
     """Fetch, store and extract one ref (OCR included). Opens no database session."""
     from govcon.enrich.ocr import ocr_config
+    from govcon.enrich.source_documents import fetch_dibbs_pdf, sam_description_text
 
+    origin = ref.source_metadata.get("origin")
+    max_bytes = int(settings.attachment_max_mb) * 1024 * 1024
     try:
-        fetched = safe_fetch(
-            client,
-            ref.url,
-            max_bytes=int(settings.attachment_max_mb) * 1024 * 1024,
-            resolver=resolver,
-            allow_http=settings.attachment_allow_http,
-            params=_sam_params(ref.url, settings),
-        )
+        if origin == DIBBS_RFQ_PDF:
+            fetched = fetch_dibbs_pdf(client, ref.url, max_bytes=max_bytes,
+                                      interval=settings.dibbs_request_interval_seconds)
+        else:
+            fetched = safe_fetch(
+                client,
+                ref.url,
+                max_bytes=max_bytes,
+                resolver=resolver,
+                allow_http=settings.attachment_allow_http,
+                params=_sam_params(ref.url, settings),
+            )
+        data, content_type = fetched.content, fetched.content_type
+        if origin == SAM_DESCRIPTION:
+            # The notice text, unwrapped from SAM's JSON, is the document.
+            data, content_type = sam_description_text(data).encode("utf-8"), "text/plain"
     except FetchError as exc:
         message = redact(f"download failed: {exc}", settings.secret_values())
         logger.warning("attachment download failed for opportunity %s: %s", opportunity_id, message)
         return FetchedAttachment(ref, error=message)
 
-    data = fetched.content
     sha = hashlib.sha256(data).hexdigest()
     if sha in known_shas:
         return FetchedAttachment(ref, sha=sha, known=True)
 
     guessed = filename_from_headers(fetched.content_disposition) or ref.filename or _url_basename(ref.url)
-    mime = _mime_type(fetched.content_type, sanitize_filename(guessed))
+    mime = _mime_type(content_type, sanitize_filename(guessed))
     filename = choose_filename(ref, fetched.content_disposition, mime)
     try:
         local_path: str | None = str(store_bytes(data, sha, opportunity_id, filename, settings))
@@ -349,6 +461,9 @@ def record_fetched(
         # These bytes were just retrieved again: the inventory's freshness check
         # compares source changes with the latest successful download.
         existing.downloaded_at = datetime.now(UTC)
+        if fetched.extraction is not None:
+            existing.local_path = fetched.local_path or existing.local_path
+            update_extraction(session, existing, fetched.extraction)
         session.flush()
         return existing
     if fetched.known or fetched.extraction is None:
@@ -386,7 +501,7 @@ def _download_one(
     snapshot_id: int | None,
 ) -> StoredFile:
     """Download one ref and persist it as an attachment version (or a failure row)."""
-    known = known_versions(session, opportunity.id, [ref])[ref.url]
+    known = known_versions(session, opportunity.id, [ref], settings=settings)[ref.url]
     fetched = fetch_attachment(ref, opportunity_id=opportunity.id, known_shas=known, settings=settings,
                                client=client, resolver=resolver)
     return record_fetched(session, opportunity, fetched, snapshot_id=snapshot_id)
@@ -427,6 +542,9 @@ def process_local_file(
         )
     ).scalars().first()
     if existing is not None:
+        if needs_ocr_retry(existing, get_settings()):
+            existing.local_path = str(file_path)
+            update_extraction(session, existing, extraction)
         if existing.classification == DataClassification.UNKNOWN.value:
             # Re-ingest is the explicit classification step for legacy files.
             existing.classification = classification.value

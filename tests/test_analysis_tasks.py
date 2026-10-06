@@ -8,13 +8,13 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
+from test_intelligence_analyses import FakeProvider, _opp, _token
+from web_client import CsrfTestClient
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.models import AIAnalysis, Pursuit, Task
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
-from test_intelligence_analyses import FakeProvider, _opp, _token
-from web_client import CsrfTestClient
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +24,7 @@ def synced_prompts(upgraded_engine):
     Per test, so it runs after conftest relaxes the behavioral-evaluation gate.
     """
     from pathlib import Path
+
     from govcon.prompting.registry import sync_prompts
     with Session(upgraded_engine) as session:
         sync_prompts(session, Path(__file__).parent.parent / "src" / "govcon" / "prompts")
@@ -60,8 +61,9 @@ def test_request_queues_and_worker_runs_the_analysis(db, client):
     token = _token(db, "reviewer")
     with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()):
         first = client.post(f"/workspace/{opp.id}/analyze/market", cookies={"govcon_session": token})
+        assert first.status_code == 303 and "notice=" in first.headers["location"]
         again = client.post(f"/workspace/{opp.id}/analyze/market", cookies={"govcon_session": token})
-        assert "queued" in first.headers["location"] and "already" in again.headers["location"]
+        assert "already queued" in client.get(again.headers["location"], cookies={"govcon_session": token}).text
         [task] = tasks_for(db, opp.id)
         assert task.status == "queued" and task.payload == {"kind": "market"}
         assert analyses(db, opp.id, AnalysisType.MARKET) == [], "the request does not call the AI"
@@ -80,7 +82,7 @@ def test_missing_inputs_are_refused_before_queueing(db, client):
     db.commit()
     token = _token(db, "reviewer")
     response = client.post(f"/workspace/{opp.id}/analyze/supplier", cookies={"govcon_session": token})
-    assert "error=" in response.headers["location"] and "supplier" in response.headers["location"]
+    assert "supplier" in client.get(response.headers["location"], cookies={"govcon_session": token}).text
     assert tasks_for(db, opp.id) == []
 
 
@@ -111,12 +113,13 @@ def test_policy_block_is_reported_at_once(db, client):
     db.commit()
     token = _token(db, "reviewer")
     response = client.post(f"/workspace/{opp.id}/analyze/pricing", cookies={"govcon_session": token})
-    assert "blocked_by_policy" in response.headers["location"]
+    assert "blocked_by_policy" in client.get(response.headers["location"], cookies={"govcon_session": token}).text
     assert tasks_for(db, opp.id) == []
 
 
 def test_cli_queues_and_runs_the_analysis(db):
     from typer.testing import CliRunner
+
     from govcon.cli import app
     opp = _opp(db)
     db.commit()

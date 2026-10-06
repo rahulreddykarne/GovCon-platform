@@ -48,4 +48,4 @@ class CancelledFeedback(Feedback):
     outcome: Literal["cancelled"]
 
 
-OUTCOME_SCHEMAS = {"won": WonFeedback, "lost": LostFeedback, "no_bid": NoBidFeedback, "cancelled": CancelledFeedback}
+OUTCOME_SCHEMAS: dict[str, type[Feedback]] = {"won": WonFeedback, "lost": LostFeedback, "no_bid": NoBidFeedback, "cancelled": CancelledFeedback}

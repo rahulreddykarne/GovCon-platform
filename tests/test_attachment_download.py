@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from govcon.compliance.inventory import build_document_inventory
 from govcon.config import Settings
-from govcon.enrich.attachment_refs import AttachmentRef, attachment_refs_for, resource_link_urls
+from govcon.enrich.attachment_refs import (
+    AttachmentRef,
+    attachment_refs_for,
+    resource_link_urls,
+)
 from govcon.enrich.attachments import (
     DOWNLOAD_FAILED,
     choose_filename,
@@ -23,7 +27,12 @@ from govcon.enrich.attachments import (
     sanitize_filename,
     store_bytes,
 )
-from govcon.enrich.extract import ExtractionLimits, check_zip_container, extract_text, ExtractionLimitExceeded
+from govcon.enrich.extract import (
+    ExtractionLimitExceeded,
+    ExtractionLimits,
+    check_zip_container,
+    extract_text,
+)
 from govcon.enrich.safe_fetch import FetchBlocked, FetchTooLarge, check_url, safe_fetch
 from govcon.ingest.sam_opportunities import ingest_opportunity_records
 from govcon.models import Opportunity, OpportunitySnapshot, Requirement, StoredFile
@@ -102,10 +111,15 @@ def test_refs_normalise_every_variant(session) -> None:
     assert refs[1].filename == "SOW.docx"
 
 
-def test_dibbs_opportunities_yield_no_refs(session) -> None:
-    opp = _opp(session, links={"ui": "https://www.dibbs.bsm.dla.mil/RFQ/RfqRec.aspx?sn=X", "package": "https://dibbs2.bsm.dla.mil/Downloads/RFQ/Archive/ca260925.zip"})
+def test_dibbs_rows_list_their_rfq_pdf_never_the_daily_package(session) -> None:
+    links = {"ui": "https://www.dibbs.bsm.dla.mil/RFQ/RfqRec.aspx?sn=X", "package": "https://dibbs2.bsm.dla.mil/Downloads/RFQ/Archive/ca260925.zip"}
+    opp = _opp(session, links=links)
     opp.source = "dibbs"
-    assert attachment_refs_for(opp) == []
+    assert attachment_refs_for(opp) == []  # no DLA solicitation number: nothing to fetch
+    opp.solicitation_number = "SPE1C127T0007"
+    [ref] = attachment_refs_for(opp)
+    assert ref.url == "https://dibbs2.bsm.dla.mil/Downloads/RFQ/7/SPE1C127T0007.PDF"
+    assert ref.filename == "SPE1C127T0007.pdf" and ref.source_metadata["origin"] == "dibbs_rfq_pdf"
 
 
 def test_sam_ingest_keeps_object_shaped_resource_links() -> None:
@@ -369,21 +383,131 @@ def test_realistic_sam_attachment_flows_into_compliance(session, tmp_path: Path)
     snapshot_id = session.scalar(select(OpportunitySnapshot.id).where(OpportunitySnapshot.opportunity_id == opp.id))
     assert opp.links["attachments"] == [file_url]
 
+    description_route = "https://api.sam.gov/prod/opportunities/v1/noticedesc"
     files = download_attachments(
         session,
         opp,
         settings=_settings(tmp_path),
-        client=_client({file_url: _pdf_response("SPE4A6-26-Q-0042 Solicitation.pdf")}),
+        client=_client({file_url: _pdf_response("SPE4A6-26-Q-0042 Solicitation.pdf"),
+                        description_route: httpx.Response(200, json={"description": "<p>Nitrile gloves.</p>"})}),
         resolver=public_resolver,
     )
-    assert len(files) == 1
+    assert [f.filename for f in files] == ["SPE4A6-26-Q-0042 Solicitation.pdf", "SAM notice description.txt"]
     stored = files[0]
     assert stored.extraction_status == "success" and stored.snapshot_id == snapshot_id
     assert stored.filename == "SPE4A6-26-Q-0042 Solicitation.pdf"
 
     result = run_compliance_pipeline(session, opp.id, use_ai=False)
-    assert result["inventory"]["documents"] == 1
+    assert result["inventory"]["documents"] == 2
     requirements = session.scalars(select(Requirement).where(Requirement.opportunity_id == opp.id)).all()
     assert requirements, "the downloaded solicitation produced no requirements"
     assert any(r.source_file_id == stored.id for r in requirements)
     assert all(r.source_snapshot_id in (None, snapshot_id) for r in requirements)
+
+
+# ── source documents the feeds point to (SAM descriptions, DIBBS RFQ PDFs) ──
+
+DESCRIPTION_URL = "https://api.sam.gov/prod/opportunities/v1/noticedesc?noticeid=abc123"
+
+
+def test_sam_notice_lists_its_description_and_dla_rfq_pdf(session) -> None:
+    opp = _opp(session, links={"description": DESCRIPTION_URL})
+    opp.solicitation_number = "SPE4A727T0080"
+    refs = attachment_refs_for(opp)
+    assert [(r.source_metadata["origin"], r.url) for r in refs] == [
+        ("sam_description", DESCRIPTION_URL),
+        ("dibbs_rfq_pdf", "https://dibbs2.bsm.dla.mil/Downloads/RFQ/0/SPE4A727T0080.PDF"),
+    ]
+    # A notice with its own SAM attachments carries its documents: no DIBBS guess.
+    opp.links = {"description": DESCRIPTION_URL, "attachments": ["https://api.sam.gov/x/files/a1/download"]}
+    assert [r.source_metadata["origin"] for r in attachment_refs_for(opp)] == ["links.attachments", "sam_description"]
+    # Not a DLA solicitation number: no DIBBS address is invented.
+    opp.links, opp.solicitation_number = {"description": DESCRIPTION_URL}, "W912DY-26-R-0001"
+    assert [r.source_metadata["origin"] for r in attachment_refs_for(opp)] == ["sam_description"]
+
+
+def test_sam_description_keeps_its_notice_id_and_is_stored_as_text(session, tmp_path: Path) -> None:
+    opp = _opp(session, links={"description": DESCRIPTION_URL})
+    seen: list[httpx.Request] = []
+    body = {"description": "<p>Line 0001 Qty 103&nbsp;EA</p><ul><li>Approved sources: 18350 218229</li></ul>"}
+    [row] = download_attachments(
+        session, opp, settings=_settings(tmp_path),
+        client=_client({"https://api.sam.gov/prod/opportunities/v1/noticedesc": httpx.Response(200, json=body)}, seen),
+        resolver=public_resolver,
+    )
+    assert seen[0].url.params["noticeid"] == "abc123"  # the key is merged in, not swapped for the query
+    assert seen[0].url.params["api_key"] == "sam-test-key-123456"
+    assert row.extraction_status == "success" and row.mime_type == "text/plain"
+    assert row.extracted_text == "Line 0001 Qty 103 EA\nApproved sources: 18350 218229"
+    assert row.url == DESCRIPTION_URL and "api_key" not in row.url
+    assert row.classification == "PUBLIC" and row.source_origin == "government_feed"
+
+
+def _dibbs_client(final: httpx.Response) -> httpx.Client:
+    """DIBBS: the banner until consent is posted, then ``final``."""
+    from test_dibbs import WARNING_HTML
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return final if request.method == "POST" else httpx.Response(200, text=WARNING_HTML)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _dibbs_opp(session):
+    opp = _opp(session)
+    opp.source, opp.solicitation_number = "dibbs", "SPE1C127T0007"
+    return opp
+
+
+def test_dibbs_rfq_pdf_is_fetched_through_the_consent_banner_and_read(session, tmp_path: Path) -> None:
+    pdf = httpx.Response(200, content=FIXTURE_PDF.read_bytes(), headers={"content-type": "application/pdf"})
+    [row] = download_attachments(session, _dibbs_opp(session), client=_dibbs_client(pdf),
+                                 settings=_settings(tmp_path, dibbs_request_interval_seconds=0))
+    assert row.extraction_status == "success" and row.mime_type == "application/pdf"
+    assert row.filename == "SPE1C127T0007.pdf" and row.page_count and row.extracted_text
+
+
+@pytest.mark.parametrize("final, reason", [
+    (httpx.Response(200, text="<html><h1>File was not found</h1></html>"), "web page instead of the solicitation PDF"),
+    (httpx.Response(404, text="missing"), "no solicitation PDF at this address"),
+])
+def test_a_dibbs_page_that_is_not_the_pdf_is_a_recorded_failure(session, tmp_path: Path, final, reason) -> None:
+    [row] = download_attachments(session, _dibbs_opp(session), client=_dibbs_client(final),
+                                 settings=_settings(tmp_path, dibbs_request_interval_seconds=0))
+    assert row.extraction_status == DOWNLOAD_FAILED and row.sha256 is None
+    assert reason in row.extraction_error
+
+
+def test_sam_documents_stored_for_the_current_notice_version_are_not_fetched_again(session, tmp_path: Path) -> None:
+    """Re-fetching unchanged SAM documents spent the API quota (HTTP 429) and blocked the inventory."""
+    notice = f"reuse-{uuid4().hex}"
+    file_url = f"https://api.sam.gov/prod/opportunities/v3/resources/files/{uuid4().hex}/download"
+    record = {
+        "noticeId": notice, "title": "Valve", "solicitationNumber": "W912DY-26-Q-0001",
+        "postedDate": "2026-09-20", "type": "Solicitation", "active": "Yes",
+        "responseDeadLine": "2027-01-15T14:00:00-05:00",
+        "description": "https://api.sam.gov/prod/opportunities/v1/noticedesc?noticeid=" + notice,
+        "resourceLinks": [file_url],
+    }
+    ingest_opportunity_records(session, [record])
+    opp = session.scalar(select(Opportunity).where(Opportunity.source_id == notice))
+    first = download_attachments(session, opp, settings=_settings(tmp_path), resolver=public_resolver, client=_client({
+        file_url: _pdf_response(),
+        "https://api.sam.gov/prod/opportunities/v1/noticedesc": httpx.Response(200, json={"description": "Valve, 3 EA."}),
+    }))
+    assert all(row.sha256 for row in first)
+    # A later re-fetch failed and left an active failure row for the description.
+    stale = StoredFile(opportunity_id=opp.id, url=record["description"], extraction_status=DOWNLOAD_FAILED,
+                       extraction_error="download failed: HTTP 429", classification="PUBLIC",
+                       source_origin="government_feed", active=True)
+    session.add(stale)
+    session.flush()
+
+    seen: list[httpx.Request] = []
+    again = download_attachments(session, opp, settings=_settings(tmp_path), resolver=public_resolver,
+                                 client=_client({}, seen))  # every request would 404
+    assert seen == []
+    assert [row.id for row in again] == [row.id for row in first]
+    session.refresh(stale)
+    assert stale.active is False
+    assert build_document_inventory(session, opp.id)[0].complete

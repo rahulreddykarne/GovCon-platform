@@ -21,13 +21,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
+from govcon.ai.structured import (
+    StructuredCallError,
+    checked_output,
+    run_structured_prompt,
+)
 from govcon.compliance.matrix import (
     active_requirements,
     add_evidence,
@@ -35,9 +39,21 @@ from govcon.compliance.matrix import (
     record_run,
     upsert_open_finding,
 )
-from govcon.compliance.text import containment, numbers, quote_in_text, split_sentences, tokens
+from govcon.compliance.schemas import ProposalCoverageV1
+from govcon.compliance.text import (
+    containment,
+    numbers,
+    quote_in_text,
+    split_sentences,
+    tokens,
+)
 from govcon.config import Settings, get_settings
-from govcon.models import ProposalSection, ProposalVersion, Requirement, RequirementEvidence
+from govcon.models import (
+    ProposalSection,
+    ProposalVersion,
+    Requirement,
+    RequirementEvidence,
+)
 from govcon.security.classification import DataClassification
 
 COVERAGE_VERSION = "proposal_coverage.v1"
@@ -132,6 +148,12 @@ def content_issue(text: str, key_values: dict[str, Any], content: str, passages:
     return None
 
 
+class _CoverageLocation(TypedDict):
+    section_id: int | None
+    section_key: str | None
+    excerpt: str | None
+
+
 def scan_coverage(req_id: Any, text: str, key_values: dict[str, Any], sections: list[SectionView], *, full: float, partial: float) -> CoverageResult:
     """Pure deterministic coverage of one requirement.
 
@@ -154,7 +176,7 @@ def scan_coverage(req_id: Any, text: str, key_values: dict[str, Any], sections: 
     claimed = [s for _, _, m, s in scored if m]
     sentences = split_sentences(best.content) or ([best.content[:300]] if best.content.strip() else [])
     excerpt = max(sentences, key=lambda s: containment(wanted, tokens(s)))[:500] if sentences else None
-    base = dict(section_id=best.section_id, section_key=best.section_key, excerpt=excerpt)
+    base: _CoverageLocation = dict(section_id=best.section_id, section_key=best.section_key, excerpt=excerpt)
     if overlap >= full:
         # Idioms are neutralised before splitting so "No. 3" is not cut into a bare "No.".
         passages = [s for s in split_sentences(_AFFIRMATIVE_IDIOMS.sub(" ", best.content)) if wanted & tokens(s)]
@@ -234,7 +256,7 @@ def check_proposal_coverage(
                 context_manifest={"proposal_version_id": proposal_version_id, "requirement_ids": [r.id for r in requirements]},
                 settings=settings,
             )
-            for item in ai.output.coverage:
+            for item in checked_output(ai.output, ProposalCoverageV1).coverage:
                 current = results.get(item.requirement_id)
                 if current is None:
                     continue

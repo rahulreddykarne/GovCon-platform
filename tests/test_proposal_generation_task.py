@@ -19,8 +19,11 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+import test_web_ui
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
+from test_web_ui import _make_user
+from web_client import CsrfTestClient
 
 from govcon.models import (
     AuditEvent,
@@ -36,9 +39,6 @@ from govcon.tasks import queue
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
 from govcon.workflow.proposal_generation import PROPOSAL_TASK
-import test_web_ui
-from test_web_ui import _make_user
-from web_client import CsrfTestClient
 
 
 @pytest.fixture()
@@ -227,7 +227,7 @@ def test_ac4_retry_requeues_and_generates_once(db, client, monkeypatch):
         AuditEvent.opportunity_id == opp.id, AuditEvent.action_type == "proposal_generation_retried"))
     assert retried.user_id == actor.id and retried.new_value["outcome"] == "queued"
     again = client.post(f"/workspace/{opp.id}/proposal/retry", data={"expected_version": review.version})
-    assert "already+queued" in again.headers["location"] or "already%20queued" in again.headers["location"]
+    assert "already queued" in client.get(again.headers["location"]).text
     drain(opportunity_id=opp.id)
     assert counts(db, opp.id) == (1, 1, 1)
     statuses = [t.status for t in tasks_for(db, opp.id)]
@@ -265,7 +265,7 @@ def test_ac4_retry_refusals_change_nothing(db, client, monkeypatch, problem):
         db.expire_all()
         data["expected_version"] = db.get(ReviewSession, review.id).version
     elif problem == "stale_package":
-        monkeypatch.setattr("govcon.web.routes.decision_package_is_stale", lambda *a, **k: True)
+        monkeypatch.setattr("govcon.web.routes.proposals.decision_package_is_stale", lambda *a, **k: True)
     before_audit, before_tasks = audit_actions(db, opp.id), [(t.id, t.status) for t in tasks_for(db, opp.id)]
     response = client.post(f"/workspace/{opp.id}/proposal/retry", data=data)
     assert response.status_code == 303 and "error=" in response.headers["location"]

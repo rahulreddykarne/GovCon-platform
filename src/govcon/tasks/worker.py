@@ -21,7 +21,7 @@ from govcon.config import Settings, get_settings
 from govcon.db import session_scope
 from govcon.models import Task
 from govcon.tasks import queue
-from govcon.tasks.errors import TaskFailedPermanently, classify
+from govcon.tasks.errors import TaskFailedPermanently, TaskSuperseded, classify
 from govcon.tasks.registry import StepContext, get_handler
 
 logger = logging.getLogger(__name__)
@@ -84,12 +84,14 @@ def _record_outcome(settings: Settings, claim: queue.Claim, exc: BaseException) 
         with session_scope(settings) as db:
             task = queue.guard_publish(db, claim)
             if outcome.kind == "block":
+                assert outcome.status is not None and outcome.owner_role is not None and outcome.next_action is not None
                 queue.block(db, task, status=outcome.status, reason=str(exc),
                             owner_role=outcome.owner_role, next_action=outcome.next_action,
                             resume_at=outcome.resume_at, settings=settings)
             elif outcome.kind == "cancel":
                 queue.cancel(db, task, reason=str(exc), superseded_by=outcome.superseded_by)
             elif outcome.kind == "supersede":
+                assert isinstance(exc, TaskSuperseded)
                 # Cancel first: the replacement may share no key, but the
                 # active-task index must never see both as active.
                 queue.cancel(db, task, reason=str(exc))
@@ -101,6 +103,7 @@ def _record_outcome(settings: Settings, claim: queue.Claim, exc: BaseException) 
                 )
                 task.superseded_by_task_id = replacement.id
             elif outcome.kind == "fail":
+                assert outcome.owner_role is not None
                 queue.fail_terminal(db, task, exc, owner_role=outcome.owner_role,
                                     next_action=outcome.next_action, settings=settings)
             else:

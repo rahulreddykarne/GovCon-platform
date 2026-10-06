@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
@@ -138,6 +137,7 @@ def _final_approve(session: Session, opp_id: int, approver: User) -> Proposal:
     generate_proposal(session, opportunity_id=opp_id, actor=approver, skip_ai=True)
     proposal = session.scalar(select(Proposal).where(Proposal.opportunity_id == opp_id))
     from hashlib import sha256
+
     from govcon.compliance.deterministic import PackageFile, SubmissionPackage
     from govcon.compliance.matrix import record_run
     from govcon.proposals.export import export_proposal_docx
@@ -324,7 +324,10 @@ def test_proposal_drafting_is_sent_as_proprietary_and_blocked(session) -> None:
 
 
 def test_reviewer_comment_validation_is_blocked_by_default(session) -> None:
-    from govcon.collaboration.ai_comment_review import AICommentValidationError, validate_comment_with_ai
+    from govcon.collaboration.ai_comment_review import (
+        AICommentValidationError,
+        validate_comment_with_ai,
+    )
 
     opp = _opp(session)
     reviewer = _user(session, "reviewer")

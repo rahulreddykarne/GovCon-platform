@@ -1,6 +1,6 @@
 <!-- Automatic preparation (ADR-067) -->
 {% if pursuit %}
-<div class="card" id="preparation">
+<div class="card" id="preparation" data-progress-key="preparation">
   <div class="card-header">
     <span class="card-title">Preparation</span>
     {% if preparation %}
@@ -41,7 +41,7 @@
     <button type="submit" class="btn btn-secondary btn-sm">{{ 'Re-run preparation' if preparation else 'Prepare now' }}</button>
   </form>
   {% elif preparation and preparation.active %}
-  <p class="text-sm text-muted">Running in the background; reload to see progress.</p>
+  <p class="text-sm text-muted">Running in the background; progress updates automatically.</p>
   {% endif %}
 </div>
 {% endif %}

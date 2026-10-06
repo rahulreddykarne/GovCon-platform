@@ -25,7 +25,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
+from govcon.ai.structured import (
+    StructuredCallError,
+    checked_output,
+    run_structured_prompt,
+)
 from govcon.audit import record_audit
 from govcon.collaboration.users import require_permission
 from govcon.compliance import deterministic as det
@@ -39,11 +43,23 @@ from govcon.compliance.matrix import (
     upsert_open_finding,
 )
 from govcon.compliance.records import RESOLVED_STATUSES, ValidatorResult
+from govcon.compliance.schemas import SubmissionPreflightAIV1
 from govcon.concurrency import apply_versioned_update
 from govcon.config import Settings, get_settings
-from govcon.models import Opportunity, Pursuit, Requirement, ReviewSession, Submission, User
+from govcon.models import (
+    Opportunity,
+    Pursuit,
+    Requirement,
+    ReviewSession,
+    Submission,
+    User,
+)
 from govcon.security.classification import DataClassification
-from govcon.workflow.source_revision import SOURCE_REVISION_KEY, current_source_revision, is_stale
+from govcon.workflow.source_revision import (
+    SOURCE_REVISION_KEY,
+    current_source_revision,
+    is_stale,
+)
 from govcon.workflow.transitions import InvalidTransition, require_transition
 
 PREFLIGHT_VERSION = "submission_preflight.v1"
@@ -165,11 +181,15 @@ def requirement_state_hash(requirements: list[Requirement]) -> str:
 
 
 def collect_instructions(opportunity: Opportunity, requirements: list[Requirement], submission: Submission | None, known_amendments: list[str]) -> Instructions:
-    from govcon.submissions.service import _deadline_disagrees, _extract_submission_info, _file_list
+    from govcon.submissions.service import (
+        _deadline_disagrees,
+        _extract_submission_info,
+        _file_list,
+    )
     info = _extract_submission_info(requirements)
     conflicts = info["destination_conflicts"]
     deadline_conflicts = dict(info["deadline_conflicts"])
-    if _deadline_disagrees(opportunity.response_deadline, info["extracted_deadline_dates"]):
+    if opportunity.response_deadline is not None and _deadline_disagrees(opportunity.response_deadline, info["extracted_deadline_dates"]):
         deadline_conflicts["opportunity_deadline"] = [opportunity.response_deadline.isoformat(), *info["extracted_deadline_dates"]]
     stale_fields: list[str] = []
     if submission is not None and submission.status not in {"submitted", "confirmed", "withdrawn"}:
@@ -281,10 +301,10 @@ def preflight_items(
     else:
         items.append(_item("signed_documents", status=na, reason=na_reason))
 
-    for check, field, rtypes in (("representations", "representations_complete", {"representation"}), ("certifications", "certifications_complete", {"certification", "set_aside"})):
+    for check, field_name, rtypes in (("representations", "representations_complete", {"representation"}), ("certifications", "certifications_complete", {"certification", "set_aside"})):
         if types & rtypes:
-            value = getattr(package, field)
-            items.append(_item(check, status={True: "pass", False: "fail", None: "unknown"}[value], reason=f"{field} = {value}"))
+            value = getattr(package, field_name)
+            items.append(_item(check, status={True: "pass", False: "fail", None: "unknown"}[value], reason=f"{field_name} = {value}"))
         else:
             items.append(_item(check, status=na, reason=na_reason))
 
@@ -391,8 +411,8 @@ def run_submission_preflight(
                 context_manifest={"requirement_ids": [r.id for r in requirements], "proposal_version_id": package.proposal_version_id},
                 settings=settings,
             )
-            ai_issues = [i.model_dump() for i in ai.output.issues]
-            ai_summary = {"status": "complete", "ai_analysis_id": ai.analysis.id, "ai_status": ai.output.status, "unresolved": ai.output.unresolved}
+            ai_issues = [i.model_dump() for i in checked_output(ai.output, SubmissionPreflightAIV1).issues]
+            ai_summary = {"status": "complete", "ai_analysis_id": ai.analysis.id, "ai_status": checked_output(ai.output, SubmissionPreflightAIV1).status, "unresolved": checked_output(ai.output, SubmissionPreflightAIV1).unresolved}
         except StructuredCallError as exc:
             warnings.append({"code": f"preflight_ai_{exc.reason}", "severity": "medium", "message": exc.detail})
             ai_summary = {"status": "failed", "reason": exc.reason}
@@ -497,7 +517,12 @@ def readiness_blockers(session: Session, opportunity_id: int) -> list[dict[str, 
             blockers.append({"kind": "preflight", "id": preflight.id, "description": "compliance matrix changed after the latest pre-flight; re-run pre-flight"})
         if is_stale(preflight.output_json.get(SOURCE_REVISION_KEY), current_source_revision(session, opportunity_id)):
             blockers.append({"kind": "preflight", "id": preflight.id, "description": "the solicitation source changed after the latest pre-flight; re-run pre-flight"})
-        from govcon.submissions.manifest import current_package, manifest_hash, proposal_artifact_problems, verify_package
+        from govcon.submissions.manifest import (
+            current_package,
+            manifest_hash,
+            proposal_artifact_problems,
+            verify_package,
+        )
         submission = session.scalar(select(Submission).where(Submission.opportunity_id == opportunity_id))
         package = current_package(session, submission) if submission else None
         if package is None or manifest_hash(package.manifest()) != manifest_hash(preflight.output_json.get("package") or {}):
@@ -507,7 +532,9 @@ def readiness_blockers(session: Session, opportunity_id: int) -> list[dict[str, 
             blockers.append({"kind": "package_integrity", "id": preflight.id, "description": "; ".join(problems)})
         if submission is not None and preflight.output_json.get("instructions"):
             saved = preflight.output_json["instructions"]
-            current = collect_instructions(session.get(Opportunity, opportunity_id), requirements, submission, saved.get("known_amendments", [])).as_dict()
+            opportunity = session.get(Opportunity, opportunity_id)
+            assert opportunity is not None, "pre-flight opportunity no longer exists"
+            current = collect_instructions(opportunity, requirements, submission, saved.get("known_amendments", [])).as_dict()
             if current != saved:
                 blockers.append({"kind": "package_integrity", "id": preflight.id, "description": "submission instructions changed after pre-flight; re-run pre-flight"})
     return blockers

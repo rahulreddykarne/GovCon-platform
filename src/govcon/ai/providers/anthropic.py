@@ -26,6 +26,8 @@ from typing import Any
 
 import anthropic
 import httpx2
+from anthropic.types import Message
+from anthropic.types.beta import BetaMessage
 
 from govcon.ai.gateway import authorize_external_call
 from govcon.ai.providers.base import CompletionResult, ProviderAPIError, ProviderRefusal
@@ -34,13 +36,16 @@ from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.ai.providers.anthropic")
 
-DEFAULT_MODEL = "claude-opus-5"
+DEFAULT_MODEL = "claude-sonnet-5-5"
 DEFAULT_MAX_TOKENS = 16000
 REQUEST_TIMEOUT_SECONDS = 300.0
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 # Models whose safety classifiers can decline a request and that accept
 # ``fallbacks: "default"``.
-FALLBACK_MODELS = frozenset({"claude-opus-5", "claude-fable-5", "claude-fable-5-1"})
+FALLBACK_MODELS = frozenset({"claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5", "claude-fable-5", "claude-fable-5-1"})
+# Larger outputs are streamed: a non-streaming request that long can outlive
+# the HTTP timeout (SDK guidance). The final message is the same either way.
+STREAM_ABOVE_MAX_TOKENS = DEFAULT_MAX_TOKENS
 JSON_INSTRUCTION = "\n\nRespond with a single JSON object only: no prose before or after it and no code fences."
 
 
@@ -100,9 +105,17 @@ class AnthropicProvider:
         use_fallback = use_model in FALLBACK_MODELS and self._settings.anthropic_refusal_fallback
 
         start = time.monotonic()
+        response: Message | BetaMessage
         try:
-            if use_fallback:
+            stream = request["max_tokens"] > STREAM_ABOVE_MAX_TOKENS
+            if use_fallback and stream:
+                with self._client.beta.messages.stream(**request, betas=[FALLBACK_BETA], fallbacks="default") as events:
+                    response = events.get_final_message()
+            elif use_fallback:
                 response = self._client.beta.messages.create(**request, betas=[FALLBACK_BETA], fallbacks="default")
+            elif stream:
+                with self._client.messages.stream(**request) as events:
+                    response = events.get_final_message()
             else:
                 response = self._client.messages.create(**request)
         except anthropic.APIStatusError as exc:
@@ -123,7 +136,7 @@ class AnthropicProvider:
             raise ProviderRefusal(self.name, served_model, category)
 
         # Thinking and fallback blocks carry no answer text; keep text blocks only.
-        content = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
+        content = "".join(block.text for block in response.content if block.type == "text")
         return CompletionResult(
             content=content,
             model=served_model,

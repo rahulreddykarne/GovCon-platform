@@ -10,8 +10,7 @@ import pathlib
 import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from govcon.config import Settings, get_settings
@@ -21,8 +20,13 @@ _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    from govcon.web.security import LoginThrottle, csrf_cookie_middleware, protect_mutation
     from govcon.db import dispose_engines, settings_scope
+    from govcon.web.security import (
+        LoginThrottle,
+        PackageUploadLimitMiddleware,
+        csrf_cookie_middleware,
+        protect_mutation,
+    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -43,6 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with settings_scope(settings):
             return await call_next(request)
 
+    app.add_middleware(PackageUploadLimitMiddleware)
+
     # Static files
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
@@ -50,32 +56,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from govcon.web.routes import (
         admin_invite_get,
         admin_invite_post,
+        ai_sharing_save,
         inbox,
         inbox_action,
         learning,
         login_get,
         login_post,
         logout_post,
-        notifications,
         notification_acknowledge,
         notification_read,
+        notifications,
         opp_detail,
         opp_start_workspace,
         ops,
-        workspace_outcome_suggestion,
-        ai_sharing_save,
-        suppliers_page,
-        suppliers_save,
-        workspace_add_quote,
-        workspace_pursuit_facts,
-        workspace_draft_rfq,
-        settings_page,
-        settings_save,
-        workspace_prepare,
         ops_task_action,
         pipeline,
         search,
+        settings_page,
+        settings_save,
+        suppliers_page,
+        suppliers_save,
         vendors,
+        watchlist_delete,
         watchlist_edit_get,
         watchlist_edit_post,
         watchlist_new_get,
@@ -84,16 +86,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         watchlist_toggle,
         watchlists,
         workspace,
+        workspace_add_quote,
         workspace_approve,
         workspace_assign_reviewer,
         workspace_comment,
         workspace_complete_review,
+        workspace_draft_rfq,
+        workspace_outcome_suggestion,
+        workspace_prepare,
         workspace_proposal_approve,
         workspace_proposal_retry,
         workspace_proposal_status,
+        workspace_pursuit_facts,
         workspace_record_outcome,
         workspace_run_analysis,
         workspace_submission_approve,
+        workspace_use_quote,
     )
 
     # Auth
@@ -116,6 +124,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/opp/{opp_id}/start-workspace", opp_start_workspace, methods=["POST"])
 
     # Workspace
+    from govcon.web.package_actions import workspace_package_action
+    from govcon.web.progress import workspace_progress
+    from govcon.web.workspace_actions import workspace_proposal_revise
+
+    app.add_api_route("/workspace/{opp_id}/proposal/revise", workspace_proposal_revise, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/progress", workspace_progress, methods=["GET"])
+    app.add_api_route("/workspace/{opp_id}/submission/package/{action}", workspace_package_action, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}",                    workspace,                  methods=["GET"])
     app.add_api_route("/workspace/{opp_id}/comment",            workspace_comment,          methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/assign",             workspace_assign_reviewer,  methods=["POST"])
@@ -139,6 +154,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/watchlists/{wl_id}/edit",       watchlist_edit_post, methods=["POST"])
     app.add_api_route("/watchlists/{wl_id}/toggle",     watchlist_toggle,    methods=["POST"])
     app.add_api_route("/watchlists/{wl_id}/rebuild",    watchlist_rebuild,   methods=["POST"])
+    app.add_api_route("/watchlists/{wl_id}/delete", watchlist_delete, methods=["POST"])
 
     # Vendors
     app.add_api_route("/vendors", vendors, methods=["GET"])
@@ -153,6 +169,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/suppliers", suppliers_page, methods=["GET"])
     app.add_api_route("/suppliers", suppliers_save, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/quotes", workspace_add_quote, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/quotes/{quote_id}/use", workspace_use_quote, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/pursuit-facts", workspace_pursuit_facts, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/rfq", workspace_draft_rfq, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/prepare", workspace_prepare, methods=["POST"])
@@ -162,6 +179,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/learning", learning, methods=["GET"])
 
     # Admin
+    from govcon.web.admin import admin_page, admin_user_action
+
+    app.add_api_route("/admin", admin_page, methods=["GET"])
+    app.add_api_route("/admin/users/{user_id}/{action}", admin_user_action, methods=["POST"])
     app.add_api_route("/admin/users/invite", admin_invite_get,  methods=["GET"])
     app.add_api_route("/admin/users/invite", admin_invite_post, methods=["POST"])
 

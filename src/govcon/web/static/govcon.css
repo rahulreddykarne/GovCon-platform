@@ -407,3 +407,18 @@ tr:hover td { background: rgba(13,110,253,.04); }
 .cls-public      { color: var(--color-success); font-size: 11px; }
 .cls-proprietary { color: #664d03; font-size: 11px; }
 .cls-unknown     { color: var(--color-muted); font-size: 11px; }
+
+/* The seven-section shell keeps navigation usable on narrow screens. */
+.top-bar { flex-wrap: wrap; }
+.top-bar nav { flex-wrap: wrap; }
+.notification-bell { color: #fff; text-decoration: none; white-space: nowrap; }
+.analysis-progress { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+fieldset.form-group { border: 1px solid var(--color-border); border-radius: var(--radius); padding: .75rem; }
+fieldset.form-group label { display: inline-flex; gap: .4rem; align-items: center; margin-right: 1rem; }
+fieldset.form-group input[type="checkbox"] { width: auto; }
+#progress-feedback[hidden] { display: none; }
+@media (max-width: 760px) {
+  .workspace-layout { grid-template-columns: 1fr; }
+  .top-bar .spacer { display: none; }
+  .user-badge { flex-wrap: wrap; }
+}

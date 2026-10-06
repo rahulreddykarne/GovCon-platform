@@ -17,11 +17,21 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from govcon.ai.structured import PreparedCall, execute_prepared_call, persist_structured_result
+from govcon.ai.structured import (
+    PreparedCall,
+    execute_prepared_call,
+    persist_structured_result,
+)
 from govcon.db import shared_session_factory
 from govcon.models import Task, User
 from govcon.tasks.errors import TaskBlocked, TaskCancelled, TaskSuperseded
-from govcon.tasks.registry import Step, StepContext, TaskHandler, register
+from govcon.tasks.registry import (
+    Step,
+    StepContext,
+    TaskHandler,
+    register,
+    required_opportunity_id,
+)
 from govcon.workflow.proposal_generation import (
     PROPOSAL_TASK,
     GenerationNotAllowed,
@@ -45,13 +55,13 @@ class _Draft:
 def _current_inputs(session: Session, task: Task, ctx: StepContext) -> dict[str, Any]:
     """Check generation is still allowed and return the inputs as they are now."""
     try:
-        review = check_generation_allowed(session, task.opportunity_id)
+        review = check_generation_allowed(session, required_opportunity_id(task.opportunity_id))
     except GenerationNotAllowed as exc:
         if exc.kind == "stale_package":
             raise TaskBlocked(str(exc), owner_role="approver", next_action=_STALE_PACKAGE_ACTION) from exc
         raise TaskCancelled(str(exc)) from exc
     current = generation_inputs(
-        session, task.opportunity_id, review, without_ai=bool(ctx.payload.get("without_ai"))
+        session, required_opportunity_id(task.opportunity_id), review, without_ai=bool(ctx.payload.get("without_ai"))
     )
     if current != ctx.input_revision:
         raise TaskSuperseded(
@@ -71,7 +81,7 @@ def _prepare(session: Session, task: Task, ctx: StepContext) -> _Draft:
         return _Draft(inputs=inputs, prepared=None)
     return _Draft(
         inputs=inputs,
-        prepared=prepare_draft_call(session, opportunity_id=task.opportunity_id, settings=ctx.settings),
+        prepared=prepare_draft_call(session, opportunity_id=required_opportunity_id(task.opportunity_id), settings=ctx.settings),
     )
 
 
@@ -84,22 +94,26 @@ def _execute(draft: _Draft, ctx: StepContext) -> _Draft:
 
 def _publish(session: Session, task: Task, draft: _Draft, ctx: StepContext) -> None:
     from govcon.proposals.drafting import draft_output
-    from govcon.proposals.service import _build_placeholder_draft, publish_generated_proposal
+    from govcon.proposals.service import (
+        _build_placeholder_draft,
+        publish_generated_proposal,
+    )
     from govcon.submissions.service import generate_submission_package
 
     _current_inputs(session, task, ctx)  # nothing changed while drafting
     actor = session.get(User, task.created_by_user_id) if task.created_by_user_id else None
     if draft.executed is not None:
+        assert draft.prepared is not None  # execute only runs a prepared call
         draft_result = draft_output(persist_structured_result(session, draft.prepared, draft.executed))
         provider, model = draft_result.get("provider"), draft_result.get("model")
     else:
-        draft_result = _build_placeholder_draft(session, task.opportunity_id)
+        draft_result = _build_placeholder_draft(session, required_opportunity_id(task.opportunity_id))
         provider, model = "placeholder", None
     generated = publish_generated_proposal(
-        session, opportunity_id=task.opportunity_id, actor=actor, draft_result=draft_result,
+        session, opportunity_id=required_opportunity_id(task.opportunity_id), actor=actor, draft_result=draft_result,
         provider=provider, model=model, settings=ctx.settings,
     )
-    package = generate_submission_package(session, opportunity_id=task.opportunity_id, actor=actor)
+    package = generate_submission_package(session, opportunity_id=required_opportunity_id(task.opportunity_id), actor=actor)
     ctx.result = {
         "proposal_id": generated["proposal_id"],
         "version_id": generated["version_id"],

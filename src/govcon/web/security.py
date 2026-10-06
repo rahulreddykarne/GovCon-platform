@@ -1,16 +1,64 @@
 """Session-bound CSRF tokens, exact origin checks, and bounded login attempts."""
 
-from collections import OrderedDict
 import hashlib
 import hmac
 import secrets
-from threading import Lock
 import time
+from collections import OrderedDict
+from tempfile import SpooledTemporaryFile
+from threading import Lock
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
+from starlette.concurrency import run_in_threadpool
+from starlette.responses import PlainTextResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CSRF_COOKIE = "govcon_csrf"
+PACKAGE_UPLOAD_LIMIT = 50_000_000
+
+
+class PackageUploadLimitMiddleware:
+    """Bound the actual multipart stream before it is parsed or spooled."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].endswith("/submission/package/assemble"):
+            await self.app(scope, receive, send)
+            return
+        received = 0
+        # Reject oversize streams before calling the inner app. Exceptions from
+        # receive are wrapped by BaseHTTPMiddleware and cannot reliably become 413.
+        with SpooledTemporaryFile(max_size=1_000_000) as body:
+            while True:
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    return
+                chunk = message.get("body", b"")
+                received += len(chunk)
+                if received > PACKAGE_UPLOAD_LIMIT:
+                    await PlainTextResponse("Package uploads are limited to 50 MB including form data", status_code=413)(scope, receive, send)
+                    return
+                await run_in_threadpool(body.write, chunk)
+                if not message.get("more_body", False):
+                    break
+            body.seek(0)
+            remaining = received
+
+            async def bounded_receive() -> Message:
+                nonlocal remaining
+                if remaining < 0:
+                    return await receive()
+                chunk = await run_in_threadpool(body.read, 65_536)
+                remaining -= len(chunk)
+                more = remaining > 0
+                if not more:
+                    remaining = -1
+                return {"type": "http.request", "body": chunk, "more_body": more}
+
+            await self.app(scope, bounded_receive, send)
 
 
 def secure_cookies(request: Request) -> bool:
@@ -62,6 +110,12 @@ class LoginThrottle:
 async def protect_mutation(request: Request) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
+    if request.url.path.endswith("/submission/package/assemble"):
+        length = request.headers.get("content-length", "")
+        if not length.isascii() or not length.isdigit():
+            raise HTTPException(411, "Package uploads require a content length")
+        if int(length) > PACKAGE_UPLOAD_LIMIT:
+            raise HTTPException(413, "Package uploads are limited to 50 MB including form data")
     settings = request.app.state.settings
     target = _origin(settings.web_public_origin or str(request.base_url))
     origins = request.headers.getlist("origin")

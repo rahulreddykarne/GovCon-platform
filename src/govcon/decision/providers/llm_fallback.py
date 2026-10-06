@@ -6,9 +6,9 @@ import json
 from decimal import Decimal
 from typing import Any
 
+from govcon.ai.budget import complete_with_budget
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
-from govcon.ai.budget import complete_with_budget
 from govcon.config import Settings, get_settings
 from govcon.decision.provider import DecisionProviderUnavailable, ProviderDecision
 from govcon.security.classification import DataClassification

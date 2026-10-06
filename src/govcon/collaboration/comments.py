@@ -60,9 +60,13 @@ def add_comment(
     source_refs: dict | None = None,
     user_recommendation: str | None = None,
     validate_with_ai: bool = True,
+    defer_ai_validation: bool = False,
 ) -> ReviewComment:
     if not body or not body.strip():
         raise ValueError("comment body is required")
+    user_recommendation = "needs_more_info" if user_recommendation == "needs_info" else user_recommendation
+    if user_recommendation not in {None, "bid", "no_bid", "needs_more_info"}:
+        raise ValueError("unknown comment recommendation")
     assignment = assignment_for_user(
         session, opportunity_id=opportunity_id, user_id=user_id
     )
@@ -83,26 +87,12 @@ def add_comment(
     session.flush()
 
     if validate_with_ai and is_substantive_comment(row.body):
-        try:
-            validation = validate_comment_with_ai(session, comment=row)
-            apply_ai_validation_to_comment(row, validation)
-        except AICommentValidationError as exc:
-            row.ai_position = None
-            row.ai_confidence = None
-            row.ai_reason = f"AI validation failed ({exc.reason}): {exc.detail}"
-            row.ai_supporting_evidence = None
-            row.ai_contradicting_evidence = None
-            row.ai_missing_information = None
-            row.ai_suggested_action = None
+        if defer_ai_validation:
+            from govcon.collaboration.comment_tasks import queue_comment_validation
+
+            queue_comment_validation(session, comment=row)
         else:
-            if row.ai_position == "insufficient_evidence":
-                notify(
-                    session,
-                    user_id=user_id,
-                    opportunity_id=opportunity_id,
-                    notification_type="ai_flagged_comment_needs_evidence",
-                    payload={"comment_id": row.id},
-                )
+            _validate_inline(session, row, user_id=user_id, opportunity_id=opportunity_id)
 
     _notify_other_reviewers(session, assignment, row)
     record_audit(
@@ -121,6 +111,29 @@ def add_comment(
     )
     session.flush()
     return row
+
+
+def _validate_inline(session: Session, row: ReviewComment, *, user_id: int, opportunity_id: int) -> None:
+    try:
+        validation = validate_comment_with_ai(session, comment=row)
+        apply_ai_validation_to_comment(row, validation)
+    except AICommentValidationError as exc:
+        row.ai_position = None
+        row.ai_confidence = None
+        row.ai_reason = f"AI validation failed ({exc.reason}): {exc.detail}"
+        row.ai_supporting_evidence = None
+        row.ai_contradicting_evidence = None
+        row.ai_missing_information = None
+        row.ai_suggested_action = None
+    else:
+        if row.ai_position == "insufficient_evidence":
+            notify(
+                session,
+                user_id=user_id,
+                opportunity_id=opportunity_id,
+                notification_type="ai_flagged_comment_needs_evidence",
+                payload={"comment_id": row.id},
+            )
 
 
 def revise_comment(

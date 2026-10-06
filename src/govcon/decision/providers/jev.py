@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-import math
 import json
+import math
 import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
 
-from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.budget import AIBudgetExceeded, reserve
+from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.config import Settings, get_settings
 from govcon.decision.bundles import bundle_definition
-from govcon.decision.provider import DecisionProviderInvalidResponse, DecisionProviderUnavailable, ProviderDecision
+from govcon.decision.provider import (
+    DecisionProviderInvalidResponse,
+    DecisionProviderUnavailable,
+    ProviderDecision,
+)
 from govcon.security.classification import DataClassification
 
 DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai"
@@ -133,7 +137,9 @@ class JevDecisionProvider:
             raise DecisionProviderInvalidResponse("JEV response model is not a string")
         normalized = _normalize_answers(questions, answers)
         confidence = _aggregate_confidence(answers)
-        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        usage = data.get("usage")
+        if not isinstance(usage, dict):
+            usage = {}
         cost = _parse_cost(usage.get("cost_usd"))
         return ProviderDecision(
             provider=self.name,

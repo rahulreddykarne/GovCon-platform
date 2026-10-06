@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from tenacity.wait import wait_base
 
 from govcon.config import Settings, get_settings
@@ -19,7 +26,7 @@ class RetryableStatus(Exception):
         super().__init__(f"retryable HTTP {response.status_code}")
 
 
-def build_client(settings: Settings | None = None, **overrides: object) -> httpx.Client:
+def build_client(settings: Settings | None = None, **overrides: Any) -> httpx.Client:
     settings = settings or get_settings()
     headers = {"User-Agent": settings.http_user_agent}
     extra_headers = overrides.pop("headers", None)
@@ -36,7 +43,7 @@ def request_with_retry(
     *,
     attempts: int = 3,
     wait: wait_base | None = None,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> httpx.Response:
     """Retry transport failures and 429/5xx responses with exponential backoff.
 

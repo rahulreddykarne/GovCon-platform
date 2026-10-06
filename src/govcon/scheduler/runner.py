@@ -40,6 +40,7 @@ def start_blocking_scheduler(settings, *, embedded_worker: bool = True) -> None:
     tasks, so a single ``govcon scheduler start`` keeps working as before.
     """
     from sqlalchemy import text
+
     from govcon.db import make_engine
     engine = make_engine(settings)
     try:
@@ -81,10 +82,9 @@ def _start_embedded_worker(settings):
 
 def _configured_scheduler(settings):
     """Build persistent schedules while preserving saved due times."""
+    from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
     from apscheduler.schedulers.blocking import BlockingScheduler
     from apscheduler.triggers.cron import CronTrigger
-    from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-
     from apscheduler.util import undefined
     store = SQLAlchemyJobStore(url=settings.require_database_url())
     scheduler = BlockingScheduler(timezone="UTC", jobstores={"default": store}, job_defaults={"max_instances": 1})
@@ -177,8 +177,9 @@ def _start_scheduler(settings, *, leader_connection) -> None:
     global _scheduler_settings
     _scheduler_settings = settings
     from threading import Event, Thread
-    from sqlalchemy import text
+
     from apscheduler.schedulers.base import SchedulerNotRunningError
+    from sqlalchemy import text
     scheduler = _configured_scheduler(settings)
     stopped = Event()
 

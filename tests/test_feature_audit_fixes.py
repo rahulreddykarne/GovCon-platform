@@ -1,26 +1,33 @@
 """Preservation and regression checks for the executed feature audit findings."""
 
-from datetime import UTC, datetime, timedelta
-from html.parser import HTMLParser
-import json
 import asyncio
+import json
 import os
+import re
 import shutil
 import subprocess
-import re
-import shlex
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from html.parser import HTMLParser
 from threading import Barrier
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-
-from govcon.models import AuditEvent, Match, Opportunity, Pursuit, ReviewAssignment, ReviewSession, Watchlist
-from govcon.web.app import create_app
 from test_web_ui import _make_user
 from web_client import CsrfTestClient
+
+from govcon.models import (
+    AuditEvent,
+    Match,
+    Opportunity,
+    Pursuit,
+    ReviewAssignment,
+    ReviewSession,
+    Watchlist,
+)
+from govcon.web.app import create_app
 
 
 @pytest.fixture()
@@ -54,7 +61,7 @@ def matched_opportunity(db, client, *, role="reviewer", stage=None):
 @pytest.mark.parametrize("action", ["seen", "dismissed", "reviewing"])
 def test_f1_preserves_other_match_actions(db, client, action):
     opp, match, actor, _ = matched_opportunity(db, client)
-    response = client.post("/inbox/action", data={"match_id": match.id, "action": action})
+    response = client.post("/inbox/action", data={"match_id": match.id, "action": action}, headers={"HX-Request": "true"})
     assert response.status_code == 200 and response.content == b""
     db.expire_all()
     assert db.get(Match, match.id).status == action
@@ -70,8 +77,9 @@ def test_f1_preserves_existing_pursuit(db, client, stage):
     original = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp.id))
     original_id, original_version = original.id, original.version
     for _ in range(2):
-        response = client.post("/inbox/action", data={"match_id": match.id, "action": "pursuing"})
+        response = client.post("/inbox/action", data={"match_id": match.id, "action": "pursuing"}, headers={"HX-Request": "true"})
         assert response.status_code == 200 and response.content == b""
+        assert response.headers["HX-Redirect"] == f"/workspace/{opp.id}"
     db.expire_all()
     pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp.id))
     assert (pursuit.id, pursuit.version, pursuit.stage, pursuit.notes) == (
@@ -94,8 +102,9 @@ def test_f1_preserves_triage_refusal(db, client, bad_request, code):
 def test_f1_pursue_creates_one_visible_workspace(db, client):
     opp, match, actor, _ = matched_opportunity(db, client)
     for _ in range(2):
-        response = client.post("/inbox/action", data={"match_id": match.id, "action": "pursuing"})
+        response = client.post("/inbox/action", data={"match_id": match.id, "action": "pursuing"}, headers={"HX-Request": "true"})
         assert response.status_code == 200 and response.content == b""
+        assert response.headers["HX-Redirect"] == f"/workspace/{opp.id}"
     db.expire_all()
     pursuits = db.scalars(select(Pursuit).where(Pursuit.opportunity_id == opp.id)).all()
     assert len(pursuits) == 1, "Pursue must create a workspace instead of hiding the opportunity"
@@ -118,8 +127,8 @@ def test_f2_preserves_review_start_permissions_and_read_only_get(db, client, rol
 
 def test_f2_preserves_existing_assignment_and_review_controls(db, client):
     opp, _, actor, _ = matched_opportunity(db, client, role="approver", stage="evaluating")
-    from govcon.collaboration.review_sessions import ensure_review_session
     from govcon.collaboration.assignments import assign_reviewer
+    from govcon.collaboration.review_sessions import ensure_review_session
     ensure_review_session(db, opportunity_id=opp.id)
     assign_reviewer(db, opportunity_id=opp.id, user_id=actor.id)
     db.commit()
@@ -161,6 +170,7 @@ def test_f2_empty_review_can_assign_first_reviewer(db, client):
 
 def ready_submission(db, client, tmp_path):
     from test_release_lifecycle import prepared_lifecycle
+
     from govcon.collaboration.users import create_session
     from govcon.compliance.submission_preflight import run_submission_preflight
     from govcon.models import Proposal, Submission, User
@@ -243,6 +253,7 @@ def test_f6_browser_local_time_records_correct_instant(db, client, tmp_path, loc
 
 def bid_tool(opportunity_id):
     from fastmcp import Client
+
     from govcon.mcp.server import mcp
     async def call():
         async with Client(mcp) as protocol:
@@ -270,7 +281,7 @@ def test_f8_preserves_analysis_without_runs_and_missing_errors(db, client):
 
 def test_f8_protocol_reads_real_decision_history(db, client):
     from govcon.config import Settings
-    from govcon.decision.engine import run_decision_bundle, list_decision_runs
+    from govcon.decision.engine import list_decision_runs, run_decision_bundle
     from govcon.models import BidDecision, DecisionRun
     opp, _, _, _ = matched_opportunity(db, client)
     db.add(BidDecision(opportunity_id=opp.id, recommendation="review", rules_result={}))
@@ -298,8 +309,8 @@ def stat_value(text, label):
 
 
 def matrix_fixture(db, client):
-    from govcon.models import Requirement
     from govcon.compliance.metrics import record_matrix_run
+    from govcon.models import Requirement
     opp, _, _, _ = matched_opportunity(db, client)
     for status in ("missing", "unknown", "needs_review"):
         db.add(Requirement(opportunity_id=opp.id, requirement_text=f"Synthetic {status} requirement",
@@ -368,8 +379,9 @@ def test_f5_preserves_confirmation_and_outcome_forms(db, client, tmp_path):
     page = client.get(f"/workspace/{opp.id}?tab=submission")
     assert f'action="/workspace/{opp.id}/record-outcome"' in page.text
     assert f'action="/workspace/{opp.id}/submission/approve"' not in page.text
-    for field in ("outcome", "win_reason", "loss_reason", "no_bid_reason", "lessons_learned"):
+    for field in ("outcome", "win_reason", "loss_reason", "lessons_learned"):
         assert f'name="{field}"' in page.text
+    assert '<option value="no_bid">' not in page.text
 
 
 def test_f5_preserves_unapproved_submission_gate(db, client):
@@ -381,7 +393,11 @@ def test_f5_preserves_unapproved_submission_gate(db, client):
 
 def test_f5_submission_renders_real_checklist_and_instructions(db, client, tmp_path):
     from markupsafe import escape
-    from govcon.submissions.checklist import generate_final_checklist, generate_step_by_step_instructions
+
+    from govcon.submissions.checklist import (
+        generate_final_checklist,
+        generate_step_by_step_instructions,
+    )
     opp, _, sub = ready_submission(db, client, tmp_path)
     page = client.get(f"/workspace/{opp.id}?tab=submission")
     assert "Submission Instructions" in page.text, "Render instructions from the existing instruction service"
@@ -424,6 +440,7 @@ def test_f5_portal_unknown_and_unsafe_instructions_are_visible_and_escaped(db, c
 def compliance_run_command():
     import click
     from typer.main import get_command
+
     from govcon.cli import compliance_app
     group = get_command(compliance_app)
     return group.get_command(click.Context(group), "run")
@@ -436,14 +453,11 @@ def test_f7_preserves_actual_compliance_cli_options():
         assert context.params["no_ai"] is True and context.params["force"] is True
 
 
-def test_f7_empty_compliance_command_is_accepted_by_cli(db, client):
+def test_f7_empty_compliance_links_to_preparation(db, client):
     opp, _, _, _ = matched_opportunity(db, client)
     page = client.get(f"/workspace/{opp.id}?tab=compliance")
-    displayed = re.search(r"<code>(govcon compliance run .*?)</code>", page.text).group(1)
-    words = shlex.split(displayed)
-    assert words[:3] == ["govcon", "compliance", "run"]
-    with compliance_run_command().make_context("run", words[3:]) as context:
-        assert context.params["opportunity_id"] == opp.id
+    assert f'href="/workspace/{opp.id}?tab=overview#preparation"' in page.text
+    assert "govcon compliance run" not in page.text
 
 
 def test_touched_workspace_tabs_render_real_ready_state_without_mutation(db, client, tmp_path):
@@ -472,11 +486,12 @@ def test_f1_concurrent_pursue_creates_only_one_workspace(db, client):
         with CsrfTestClient(create_app(), follow_redirects=False) as worker:
             worker.cookies.set("govcon_session", token)
             barrier.wait(timeout=10)
-            return worker.post("/inbox/action", data={"match_id": match_id, "action": "pursuing"})
+            return worker.post("/inbox/action", data={"match_id": match_id, "action": "pursuing"}, headers={"HX-Request": "true"})
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(pursue) for _ in range(2)]
         responses = [future.result(timeout=30) for future in futures]
     assert all(response.status_code == 200 and response.content == b"" for response in responses)
+    assert all(response.headers["HX-Redirect"] == f"/workspace/{opp.id}" for response in responses)
     db.expire_all()
     assert db.scalar(select(func.count()).select_from(Pursuit).where(Pursuit.opportunity_id == opp.id)) == 1
     assert db.scalar(select(func.count()).select_from(AuditEvent).where(

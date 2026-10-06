@@ -6,12 +6,11 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 from tenacity import wait_exponential
 from typer.testing import CliRunner
@@ -20,14 +19,17 @@ from govcon.cli import app
 from govcon.config import Settings
 from govcon.ingest.sam_entities import (
     SAM_ENTITY_URL,
-    SamEntityError,
     ensure_vendor,
     fetch_entity_payload,
     parse_entity_record,
 )
-from govcon.intelligence.competitors import competitor_summary, opportunity_office, top_awardees_for_office
+from govcon.intelligence.competitors import (
+    competitor_summary,
+    opportunity_office,
+    top_awardees_for_office,
+)
 from govcon.intelligence.contacts import search_contacts
-from govcon.intelligence.vendors import award_stats_for_uei, vendor_profile
+from govcon.intelligence.vendors import vendor_profile
 from govcon.models import Award, Contact, Opportunity, Vendor
 from govcon.paths import repo_root
 

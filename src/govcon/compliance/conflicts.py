@@ -15,6 +15,7 @@ instruction.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -23,9 +24,19 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
-from govcon.ai.structured import StructuredCallError, run_structured_prompt
-from govcon.compliance.matrix import active_requirements, close_undetected_findings, record_run, upsert_open_finding
+from govcon.ai.structured import (
+    StructuredCallError,
+    checked_output,
+    run_structured_prompt,
+)
+from govcon.compliance.matrix import (
+    active_requirements,
+    close_undetected_findings,
+    record_run,
+    upsert_open_finding,
+)
 from govcon.compliance.records import Inventory, SourceDocument
+from govcon.compliance.schemas import ContradictionDetectionV1
 from govcon.config import Settings, get_settings
 from govcon.models import Requirement
 from govcon.security.classification import DataClassification
@@ -261,57 +272,128 @@ def run_conflict_scan(
     return run.output_json | {"run_id": run.id}
 
 
+# Part failures confined to one answer; the scan moves on to the next part.
+_PART_LOCAL_FAILURES = frozenset({"invalid_output", "output_truncated", "provider_error"})
+
+
+def _requirement_payload(r) -> dict[str, Any]:
+    return {"requirement_id": r.id, "text": r.requirement_text, "type": r.requirement_type, "source_file_id": r.source_file_id,
+            "page": r.source_page, "quote": r.source_quote, "values": r.key_values}
+
+
+def contradiction_parts(requirements: list, max_bytes: int) -> list[list]:
+    """Requirements in parts that each fit one call.
+
+    Contradictions are between statements on the same topic, so requirements
+    are grouped by type and whole groups are packed together; only a type
+    larger than one part is split, and its halves are not compared with each
+    other. The deterministic scan still compares key values across all of them.
+    """
+    groups: dict[str, list] = {}
+    for r in requirements:
+        groups.setdefault(r.requirement_type or "other", []).append(r)
+    sized = {key: [(r, len(json.dumps(_requirement_payload(r), default=str))) for r in rows] for key, rows in groups.items()}
+    parts: list[list] = []
+    current: list = []
+    used = 0
+    for key in sorted(sized, key=lambda k: -sum(n for _, n in sized[k])):
+        rows = sized[key]
+        total = sum(n for _, n in rows)
+        if total > max_bytes:  # one type too large for a call: split it on its own
+            if current:
+                parts.append(current)
+                current, used = [], 0
+            chunk: list = []
+            chunk_used = 0
+            for r, n in rows:
+                if chunk and chunk_used + n > max_bytes:
+                    parts.append(chunk)
+                    chunk, chunk_used = [], 0
+                chunk.append(r)
+                chunk_used += n
+            parts.append(chunk)
+            continue
+        if current and used + total > max_bytes:
+            parts.append(current)
+            current, used = [], 0
+        current.extend(r for r, _ in rows)
+        used += total
+    if current:
+        parts.append(current)
+    return parts
+
+
 def _ai_conflicts(session, opportunity_id, inventory, requirements, docs, run_id, settings, warnings) -> dict[str, Any]:
     by_id = {r.id: r for r in requirements}
-    try:
-        result = run_structured_prompt(
-            session,
-            classification=DataClassification.PUBLIC,
-            opportunity_id=opportunity_id,
-            prompt_name="contradiction_detection",
-            analysis_type=AnalysisType.COMPLIANCE_REVIEW,
-            variables={
-                "REQUIREMENTS_JSON": [
-                    {"requirement_id": r.id, "text": r.requirement_text, "type": r.requirement_type, "source_file_id": r.source_file_id, "page": r.source_page, "quote": r.source_quote, "values": r.key_values}
-                    for r in requirements
-                ],
-                "DOCUMENT_INVENTORY_JSON": [d.manifest() for d in inventory.documents],
-            },
-            context_manifest={"requirement_ids": sorted(by_id), "files": [d.file_id for d in inventory.documents]},
-            settings=settings,
-        )
-    except StructuredCallError as exc:
-        warnings.append({"code": f"contradiction_ai_{exc.reason}", "severity": "medium", "message": exc.detail})
-        return {"status": "failed", "reason": exc.reason}
+    inventory_json = [d.manifest() for d in inventory.documents]
+    # Half the call's input limit for requirements; the rest covers the prompt,
+    # schema and document inventory.
+    max_bytes = max(min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity) // 2
+                    - len(json.dumps(inventory_json, default=str)), 2_000)
+    parts = contradiction_parts(requirements, max_bytes)
+    analysis_ids: list[int] = []
     raised = 0
-    for item in result.output.conflicts:
-        ids = [i for i in item.requirement_ids if i in by_id]
-        if len(ids) >= 2:
-            entries = [(_facts_for(by_id[i]), str(i)) for i in ids]
-            resolution, controlling, superseded, reason = resolve_precedence(entries, docs)
-            conflict = Conflict(
-                f"ai:{item.topic}",
-                [{"requirement": i, "value": next((s.value for s in item.statements if s.source_file_id == by_id[i].source_file_id), None), "file_id": by_id[i].source_file_id, "document_type": docs.get(by_id[i].source_file_id).document_type if docs.get(by_id[i].source_file_id) else None, "amendment_number": docs.get(by_id[i].source_file_id).amendment_number if docs.get(by_id[i].source_file_id) else None, "quote": by_id[i].source_quote} for i in ids],
-                resolution if resolution == "superseded" and item.precedence == "resolved_by_version" else "ambiguous",
-                controlling,
-                superseded,
-                reason,
-            )
-            apply_conflicts(session, opportunity_id, [conflict], run_id=run_id, detected_by="contradiction_detection_ai")
-        else:
-            upsert_open_finding(
+    failed_parts = 0
+    for index, part in enumerate(parts):
+        try:
+            result = run_structured_prompt(
                 session,
+                classification=DataClassification.PUBLIC,
                 opportunity_id=opportunity_id,
-                requirement_id=ids[0] if ids else None,
-                finding_type="possible_conflict",
-                severity=item.severity,
-                description=f"Possible conflict on {item.topic}: {item.description}",
-                detected_by="contradiction_detection_ai",
-                detector_version=f"{result.prompt.name}@{result.prompt.version}:{result.prompt.content_hash[:12]}",
-                source_refs={"statements": [s.model_dump() for s in item.statements]},
-                blocks_submission=False,
-                certainty="possible",
-                compliance_run_id=run_id,
+                prompt_name="contradiction_detection",
+                analysis_type=AnalysisType.COMPLIANCE_REVIEW,
+                variables={
+                    "REQUIREMENTS_JSON": [_requirement_payload(r) for r in part],
+                    "DOCUMENT_INVENTORY_JSON": inventory_json,
+                },
+                context_manifest={"requirement_ids": sorted(r.id for r in part), "part": index + 1, "parts": len(parts),
+                                  "files": [d.file_id for d in inventory.documents]},
+                settings=settings,
             )
-        raised += 1
-    return {"status": "complete", "ai_analysis_id": result.analysis.id, "conflicts_raised": raised}
+        except StructuredCallError as exc:
+            failed_parts += 1
+            warnings.append({"code": f"contradiction_ai_{exc.reason}", "severity": "medium",
+                             "message": f"part {index + 1} of {len(parts)}: {exc.detail}"})
+            if exc.reason in _PART_LOCAL_FAILURES:
+                continue
+            break  # budget, policy or prompt problems fail every later part the same way
+        analysis_ids.append(result.analysis.id)
+        for item in checked_output(result.output, ContradictionDetectionV1).conflicts:
+            _apply_ai_conflict(session, opportunity_id, item, by_id, docs, run_id, result.prompt)
+            raised += 1
+    if not analysis_ids:
+        return {"status": "failed", "reason": warnings[-1]["code"].removeprefix("contradiction_ai_"), "parts": len(parts)}
+    status = "complete" if failed_parts == 0 else "partial"
+    return {"status": status, "ai_analysis_id": analysis_ids[0], "ai_analysis_ids": analysis_ids,
+            "conflicts_raised": raised, "parts": len(parts), "parts_failed": failed_parts}
+
+
+def _apply_ai_conflict(session, opportunity_id, item, by_id, docs, run_id, prompt) -> None:
+    ids = [i for i in item.requirement_ids if i in by_id]
+    if len(ids) >= 2:
+        entries = [(_facts_for(by_id[i]), str(i)) for i in ids]
+        resolution, controlling, superseded, reason = resolve_precedence(entries, docs)
+        conflict = Conflict(
+            f"ai:{item.topic}",
+            [{"requirement": i, "value": next((s.value for s in item.statements if s.source_file_id == by_id[i].source_file_id), None), "file_id": by_id[i].source_file_id, "document_type": docs.get(by_id[i].source_file_id).document_type if docs.get(by_id[i].source_file_id) else None, "amendment_number": docs.get(by_id[i].source_file_id).amendment_number if docs.get(by_id[i].source_file_id) else None, "quote": by_id[i].source_quote} for i in ids],
+            resolution if resolution == "superseded" and item.precedence == "resolved_by_version" else "ambiguous",
+            controlling,
+            superseded,
+            reason,
+        )
+        apply_conflicts(session, opportunity_id, [conflict], run_id=run_id, detected_by="contradiction_detection_ai")
+        return
+    upsert_open_finding(
+        session,
+        opportunity_id=opportunity_id,
+        requirement_id=ids[0] if ids else None,
+        finding_type="possible_conflict",
+        severity=item.severity,
+        description=f"Possible conflict on {item.topic}: {item.description}",
+        detected_by="contradiction_detection_ai",
+        detector_version=f"{prompt.name}@{prompt.version}:{prompt.content_hash[:12]}",
+        source_refs={"statements": [s.model_dump() for s in item.statements]},
+        blocks_submission=False,
+        certainty="possible",
+        compliance_run_id=run_id,
+    )

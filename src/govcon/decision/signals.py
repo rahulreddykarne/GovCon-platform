@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from statistics import median
 from typing import Any
 
@@ -96,17 +98,26 @@ def eligibility_signals(
     sam = det.sam_registration_known(profile, opportunity.response_deadline)
     sam_value = _TRISTATE[sam.status]
     sam_source = "company_facts.sam_registration_status"
-    if sam_value is None and profile.get("uei"):
+    if sam_value is None and profile.get("uei") and not (profile.get("_provenance") or {}).get("sam_registration"):
         vendor = _own_vendor(session, str(profile["uei"]), settings)
         if vendor is not None and vendor.registration_status:
-            sam_value = vendor.registration_status.strip().lower() == "active"
             sam_source = "sam_entity_api (own UEI)"
+            registration = (vendor.raw or {}).get("entityRegistration") or {}
+            expiration = registration.get("registrationExpirationDate") if isinstance(registration, dict) else None
+            try:
+                sam = det.sam_registration_known(
+                    {"sam_registration_status": vendor.registration_status, "sam_expiration_date": expiration},
+                    opportunity.response_deadline or datetime.now(UTC),
+                )
+                sam_value = _TRISTATE[sam.status]
+            except (ValueError, TypeError):
+                sam_value = None
     signals.set(
         "sam_active",
         sam_value,
         source=sam_source,
         confidence="high" if sam_value is not None else "unknown",
-        detail=sam.reason if sam_source.startswith("company_facts") else None,
+        detail=sam.reason,
     )
 
     # Certifications: listed by the solicitation analysis ≠ held by the company.
@@ -135,14 +146,22 @@ def eligibility_signals(
 def _own_vendor(session: Session, uei: str, settings: Settings | None) -> Vendor | None:
     vendor = session.get(Vendor, uei.strip().upper())
     settings = settings or get_settings()
-    if vendor is None and settings.sam_api_key:
+    now = datetime.now(UTC)
+    max_age = timedelta(hours=min(settings.sam_vendor_cache_hours, settings.company_facts_max_age_days * 24))
+    fetched_at = vendor.fetched_at if vendor else None
+    if fetched_at is not None and fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=UTC)
+    fresh = fetched_at is not None and timedelta(0) <= now - fetched_at <= max_age
+    if not fresh and settings.sam_api_key:
         try:
             from govcon.ingest.sam_entities import ensure_vendor
 
-            vendor, _ = ensure_vendor(session, uei, settings=settings)
+            vendor, _ = ensure_vendor(session, uei, refresh=True, settings=settings)
         except Exception as exc:  # a lookup failure leaves registration unknown
             logger.warning("own SAM registration lookup failed: %s", type(exc).__name__)
             return None
+    elif not fresh:
+        return None
     return vendor
 
 
@@ -254,7 +273,8 @@ def capability_signal(session: Session, opportunity: Opportunity, profile: dict[
 
 
 def pricing_signals(
-    opportunity: Opportunity, pursuit: Pursuit | None, comps: list[PricePoint], signals: Signals
+    opportunity: Opportunity, pursuit: Pursuit | None, comps: list[PricePoint], signals: Signals,
+    *, product_quantity: Decimal | None = None,
 ) -> None:
     """Prices are compared per unit, and only with awards that state a unit price."""
     unit_prices = [float(p.unit_price) for p in comps if p.unit_price is not None]
@@ -268,7 +288,8 @@ def pricing_signals(
     )
     signals.values["historical_unit_price_count"] = len(unit_prices)
     signals.values["historical_median_award_total"] = float(median(totals)) if totals else None
-    quantity = float(opportunity.quantity) if opportunity.quantity and opportunity.quantity > 0 else None
+    resolved_quantity = product_quantity if product_quantity is not None else opportunity.quantity
+    quantity = float(resolved_quantity) if resolved_quantity is not None and resolved_quantity > 0 else None
     price = float(pursuit.quote_price) if pursuit and pursuit.quote_price is not None else None
     cost = float(pursuit.sourcing_cost) if pursuit and pursuit.sourcing_cost is not None else None
     signals.values["proposed_unit_price"] = round(price / quantity, 6) if price is not None and quantity else None

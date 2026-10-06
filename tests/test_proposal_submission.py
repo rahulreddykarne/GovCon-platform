@@ -21,7 +21,7 @@ import json
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -30,9 +30,7 @@ from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 from govcon.ai.providers.deepseek import DeepSeekResult
-from govcon.compliance.matrix import active_requirements
 from govcon.models import (
-    AIAnalysis,
     AuditEvent,
     ComplianceFinding,
     Notification,
@@ -189,7 +187,9 @@ def _user(session: Session, role: str = "approver") -> User:
 
 def _approved_pursuit(session: Session, opp: Opportunity) -> tuple[ReviewSession, Pursuit]:
     """Set up a fully approved_to_bid state with a pursuit."""
-    from govcon.collaboration.review_sessions import ensure_review_session, finalize_approval
+    from govcon.collaboration.review_sessions import (
+        ensure_review_session,
+    )
 
     review = ensure_review_session(session, opportunity_id=opp.id)
     # Set up pursuit
@@ -241,11 +241,11 @@ def _requirement(
 
 def test_generate_proposal_requires_approved_to_bid(session):
     """generate_proposal() raises ValueError when not approved_to_bid."""
-    from govcon.proposals.service import generate_proposal
     from govcon.collaboration.review_sessions import ensure_review_session
+    from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review = ensure_review_session(session, opportunity_id=opp.id)
+    ensure_review_session(session, opportunity_id=opp.id)
     pursuit = Pursuit(opportunity_id=opp.id, stage="evaluating")
     session.add(pursuit)
     session.flush()
@@ -325,8 +325,8 @@ def test_proposal_sections_have_requirement_ids(session):
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
-    req1 = _requirement(session, opp.id, req_type="technical", status="satisfied")
-    req2 = _requirement(session, opp.id, req_type="delivery", status="satisfied")
+    _requirement(session, opp.id, req_type="technical", status="satisfied")
+    _requirement(session, opp.id, req_type="delivery", status="satisfied")
 
     fake_provider = FakeProvider({"proposal_drafting": DRAFT_RESPONSE})
 
@@ -401,7 +401,10 @@ def test_submission_package_generated_from_requirements(session):
 
 def test_submission_instructions_from_checklist(session):
     """AC-3: checklist generates step-by-step submission instructions."""
-    from govcon.submissions.checklist import generate_step_by_step_instructions, generate_final_checklist
+    from govcon.submissions.checklist import (
+        generate_final_checklist,
+        generate_step_by_step_instructions,
+    )
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
@@ -457,7 +460,7 @@ def test_email_draft_generated(session):
 
 def test_missing_mandatory_blocks_ready(session):
     """AC-4: workspace shows NOT_READY when mandatory items are missing."""
-    from govcon.proposals.service import get_proposal_workspace, generate_proposal
+    from govcon.proposals.service import generate_proposal, get_proposal_workspace
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -473,7 +476,7 @@ def test_missing_mandatory_blocks_ready(session):
 
 def test_all_satisfied_shows_ready(session):
     """AC-4: workspace shows READY when all mandatory requirements satisfied."""
-    from govcon.proposals.service import get_proposal_workspace, generate_proposal
+    from govcon.proposals.service import generate_proposal, get_proposal_workspace
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -535,6 +538,7 @@ def test_export_coverage_xlsx(session):
 
     # Verify it's a valid Excel file
     import io
+
     from openpyxl import load_workbook
     wb = load_workbook(io.BytesIO(xlsx_bytes))
     ws = wb.active
@@ -572,8 +576,8 @@ def test_export_submission_zip(session):
 
 def test_final_approval_requires_approver_role(session):
     """AC-6: finalize_proposal() raises PermissionDenied for non-approver."""
-    from govcon.proposals.service import generate_proposal, finalize_proposal
     from govcon.collaboration.users import PermissionDenied
+    from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -595,8 +599,8 @@ def test_final_approval_requires_approver_role(session):
 
 def test_approve_for_submission_sets_final_approved(session):
     """AC-6: APPROVE_FOR_SUBMISSION goes through the compliance gate, then sets final_approved."""
-    from govcon.proposals.service import generate_proposal, finalize_proposal
     from govcon.compliance.submission_preflight import ReadinessBlocked
+    from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -640,7 +644,7 @@ def test_approve_for_submission_sets_final_approved(session):
 
 def test_return_for_fix_sets_returned_status(session):
     """AC-6: RETURN_FOR_FIX sets proposal.status=returned_for_fix."""
-    from govcon.proposals.service import generate_proposal, finalize_proposal
+    from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -661,7 +665,7 @@ def test_return_for_fix_sets_returned_status(session):
 
 def test_cancel_bid_sets_pursuit_cancelled(session):
     """AC-6: CANCEL_BID sets proposal.status=cancelled and pursuit.stage=cancelled."""
-    from govcon.proposals.service import generate_proposal, finalize_proposal
+    from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -683,7 +687,7 @@ def test_cancel_bid_sets_pursuit_cancelled(session):
 
 def test_final_approval_is_audited(session):
     """AC-6: finalize_proposal() writes an audit_event row."""
-    from govcon.proposals.service import generate_proposal, finalize_proposal
+    from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -739,6 +743,7 @@ def test_no_auto_submission_in_v1(session):
     assert submission.status == "preparing"
 
     from hashlib import sha256
+
     from govcon.compliance.deterministic import PackageFile, SubmissionPackage
     from govcon.compliance.matrix import record_run
     from govcon.proposals.export import export_proposal_docx
@@ -813,8 +818,8 @@ def test_no_auto_submission_in_v1(session):
 
 def test_red_team_runs_and_persists_findings(session):
     """Red-team: run_proposal_red_team() records critical findings as ComplianceFinding rows."""
-    from govcon.proposals.service import generate_proposal
     from govcon.proposals.ai_review import run_proposal_red_team
+    from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -858,8 +863,8 @@ def test_red_team_runs_and_persists_findings(session):
 
 def test_red_team_major_only_does_not_block(session):
     """Red-team: major findings do NOT create blocking ComplianceFinding rows."""
-    from govcon.proposals.service import generate_proposal
     from govcon.proposals.ai_review import run_proposal_red_team
+    from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
@@ -922,12 +927,12 @@ def test_every_regeneration_creates_new_version(session):
 
 def test_coverage_run_after_generation(session):
     """check_proposal_coverage() runs after generate_proposal() without error."""
-    from govcon.proposals.service import generate_proposal
     from govcon.compliance.proposal_coverage import check_proposal_coverage
+    from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
     review, pursuit = _approved_pursuit(session, opp)
-    req = _requirement(session, opp.id, req_type="technical", status="satisfied", response_required=True)
+    _requirement(session, opp.id, req_type="technical", status="satisfied", response_required=True)
 
     fake = FakeProvider({"proposal_drafting": DRAFT_RESPONSE})
 
@@ -947,7 +952,7 @@ def test_coverage_run_after_generation(session):
 
 def test_cli_proposal_status_shows_readiness(session, upgraded_engine):
     """CLI: govcon proposal status --opportunity-id shows readiness."""
-    import os
+
     from govcon.cli import app
     from govcon.proposals.service import generate_proposal
 

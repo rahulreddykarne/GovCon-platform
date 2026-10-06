@@ -12,7 +12,6 @@ No version can be added to a cancelled proposal or after submission.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -135,6 +134,7 @@ def create_proposal_version(
     old_status = proposal.status
     proposal.status = status_after
     proposal.current_version_id = pv.id
+    proposal.red_team_analysis_id = None
     proposal.version = (proposal.version or 1) + 1
     session.flush()
     record_audit(

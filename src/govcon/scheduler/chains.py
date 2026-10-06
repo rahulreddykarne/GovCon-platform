@@ -108,6 +108,7 @@ def _chain_lock_key(chain_name: str) -> int:
 def run_chain(chain_name: str, settings, *, trigger: str = "manual") -> "ChainResult":
     """Serialize each chain across workers; crashes automatically release locks."""
     from sqlalchemy import text
+
     from govcon.db import make_engine, session_scope
     from govcon.models import SchedulerJobRun
 
@@ -257,17 +258,17 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
     try:
         with session_scope(settings) as db:
             from sqlalchemy import select as sa_select
-            job_run = db.scalars(
+            completed_run = db.scalars(
                 sa_select(SchedulerJobRun).where(SchedulerJobRun.id == run_id)
             ).first()
-            if job_run is not None:
-                job_run.finished_at = finished_at
-                job_run.status = status
-                job_run.steps_completed = steps_completed
-                job_run.failed_step = failed_step
-                job_run.error = chain_error
-                job_run.row_counts = row_counts
-    except Exception as exc:
+            if completed_run is not None:
+                completed_run.finished_at = finished_at
+                completed_run.status = status
+                completed_run.steps_completed = steps_completed
+                completed_run.failed_step = failed_step
+                completed_run.error = chain_error
+                completed_run.row_counts = row_counts
+    except Exception:
         logger.exception("chain=%s: failed to update job_run id=%s", chain_name, run_id)
 
     return ChainResult(

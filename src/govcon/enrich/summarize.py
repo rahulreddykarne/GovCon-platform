@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import select
@@ -25,9 +26,17 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.config import Settings, get_settings
-from govcon.documents.chunking import Gap, SourceChunk, batch_chunks, chunks_for_pages, gaps_for, nbytes, render_batch
+from govcon.documents.chunking import (
+    Gap,
+    SourceChunk,
+    batch_chunks,
+    chunks_for_pages,
+    gaps_for,
+    nbytes,
+    render_batch,
+)
 from govcon.models import AIAnalysis, FilePage, Opportunity, StoredFile
-from govcon.security.classification import DataClassification, strictest_classification
+from govcon.security.classification import strictest_classification
 from govcon.workflow.source_revision import (
     SOURCE_REVISION_KEY,
     current_source_revision,
@@ -50,6 +59,7 @@ def run_solicitation_analysis(
     *,
     settings: Settings | None = None,
     force: bool = False,
+    refusals: list[str] | None = None,
 ) -> AIAnalysis | None:
     """Run structured solicitation analysis on an opportunity's attachments.
 
@@ -57,6 +67,9 @@ def run_solicitation_analysis(
     - No AI provider is configured (logs a warning)
     - No extracted text is available
     - Analysis already exists and ``force`` is False
+
+    When it returns ``None`` without a cached analysis, the reason is appended
+    to ``refusals`` (if given) so callers can show it.
 
     AI errors are logged but never alter source data.
     """
@@ -82,6 +95,14 @@ def run_solicitation_analysis(
             )
             existing = None
         if existing is not None:
+            from govcon.ai.schemas import SolicitationAnalysisV1
+
+            try:
+                SolicitationAnalysisV1.model_validate(existing.output_json)
+            except ValueError:
+                logger.info("cached solicitation analysis %d has no valid content; re-running", existing.id)
+                existing = None
+        if existing is not None:
             logger.info(
                 "solicitation analysis already exists for opportunity %d",
                 opportunity.id,
@@ -100,13 +121,24 @@ def run_solicitation_analysis(
 
     if not files:
         logger.info("no extracted text for opportunity %d", opportunity.id)
+        if refusals is not None:
+            refusals.append("no document text is available")
         return None
 
     context_manifest = _build_context_manifest(opportunity, files)
     context_manifest[SOURCE_REVISION_KEY] = source_revision
     chunks = _source_chunks(session, files)
+    if not chunks:
+        logger.info("no readable source text for opportunity %d", opportunity.id)
+        if refusals is not None:
+            refusals.append(
+                "no readable text was extracted; enable OCR and re-run preparation, "
+                "or import a readable copy of the solicitation"
+            )
+        return None
     header = _metadata_block(opportunity, files)
-    budget = min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity) // 2
+    budget = min(settings.ai_max_input_tokens_per_call // 2, settings.ai_max_input_tokens_per_opportunity // 2,
+                 settings.ai_source_batch_bytes)
     batches = batch_chunks(chunks, max(budget - nbytes(header) - 200, 2_000))
     classification = strictest_classification(*(f.classification for f in files))
     from govcon.ai.structured import (
@@ -145,6 +177,8 @@ def run_solicitation_analysis(
                     import warnings
                     warnings.warn("No AI provider configured; solicitation analysis skipped", AnalysisWarning, stacklevel=2)
                 logger.warning("solicitation analysis refused for opportunity %d: %s", opportunity.id, exc.reason)
+                if refusals is not None:
+                    refusals.append(f"{exc.reason}: {exc.detail}")
                 return None
             reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
             for rest in batches[index:]:
@@ -180,7 +214,7 @@ def run_solicitation_analysis(
     return analysis
 
 
-def _source_chunks(session: Session, files: list[StoredFile]) -> list[SourceChunk]:
+def _source_chunks(session: Session, files: Sequence[StoredFile]) -> list[SourceChunk]:
     """Cited chunks for every file: stored pages when present, else the whole text."""
     pages: dict[int, list[FilePage]] = {}
     for page in session.scalars(
@@ -279,7 +313,7 @@ def _merged_analysis(calls: list[tuple[Any, Any]], merged: dict[str, Any], manif
     return build_analysis(prepared, executed)
 
 
-def _metadata_block(opp: Opportunity, files: list[StoredFile]) -> str:
+def _metadata_block(opp: Opportunity, files: Sequence[StoredFile]) -> str:
     """Opportunity metadata and the document inventory, sent with every part."""
     meta = {
         "id": opp.id,
@@ -302,7 +336,7 @@ def _metadata_block(opp: Opportunity, files: list[StoredFile]) -> str:
     return "\n".join(lines)
 
 
-def _build_context_manifest(opp: Opportunity, files: list[StoredFile]) -> dict:
+def _build_context_manifest(opp: Opportunity, files: Sequence[StoredFile]) -> dict:
     """Build the context manifest for reproducibility."""
     return {
         "opportunity_id": opp.id,

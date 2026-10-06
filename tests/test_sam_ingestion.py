@@ -36,16 +36,11 @@ from govcon.ingest.sam_opportunities import (
     pull_sam_opportunities,
 )
 from govcon.models import (
-    ComplianceFinding,
-    ComplianceRun,
     Contact,
     IngestionRun,
-    Match,
     Opportunity,
     OpportunityEvent,
     OpportunitySnapshot,
-    Requirement,
-    RequirementEvidence,
 )
 
 runner = CliRunner()
@@ -619,3 +614,19 @@ def test_live_pull_yields_at_least_one_record(session: Session) -> None:
     assert stats.fetched >= 1
     stored = session.scalar(select(func.count()).select_from(Opportunity).where(Opportunity.source == "sam"))
     assert stored >= 1
+
+
+def test_notice_listing_one_contact_twice_is_ingested_with_one_contact(session: Session) -> None:
+    """A real notice named the same buyer as primary and secondary contact; it must not be skipped."""
+    _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})
+    record = _record()
+    primary = record["pointOfContact"][0]
+    record["pointOfContact"] = [primary, {**primary, "type": "secondary", "email": "Jesse.Jones@GSA.gov "}]
+    try:
+        stats = ingest_opportunity_records(session, [record])
+        session.commit()
+        assert stats.inserted == 1 and not stats.errors
+        contacts = session.scalars(select(Contact).where(Contact.email == "jesse.jones@gsa.gov")).all()
+        assert len(contacts) == 1 and contacts[0].contact_type == "secondary"
+    finally:
+        _purge(session, {PUBLISHED_NOTICE_ID}, {"jesse.jones@gsa.gov"})

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import uuid
 import warnings
 from pathlib import Path
@@ -386,7 +385,7 @@ class TestPromptSystem:
 
 
 class TestAIProvider:
-    def test_no_api_key_graceful_warning(self, upgraded_engine):
+    def test_no_api_key_graceful_warning(self, upgraded_engine, monkeypatch):
         """Acceptance: No API key = graceful warning."""
         from govcon.enrich.summarize import AnalysisWarning, run_solicitation_analysis
 
@@ -397,9 +396,8 @@ class TestAIProvider:
 
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                os.environ.pop("DEEPSEEK_API_KEY", None)
-                os.environ.pop("ANTHROPIC_API_KEY", None)
-                os.environ.pop("OPENAI_API_KEY", None)
+                for name in ("DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+                    monkeypatch.delenv(name, raising=False)
                 from govcon.config import get_settings
                 get_settings.cache_clear()
 

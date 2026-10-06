@@ -7,11 +7,9 @@
     <h1 class="page-title">Watchlists</h1>
     <div class="page-subtitle">Configure watchlists to filter matching opportunities</div>
   </div>
-  <a href="/watchlists/new" class="btn btn-primary">+ New Watchlist</a>
+  {% if can(current_user, "manage_watchlists") %}<a href="/watchlists/new" class="btn btn-primary">+ New Watchlist</a>{% endif %}
 </div>
 
-{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
-{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 
 {% if not watchlists %}
 <div class="card">
@@ -22,9 +20,10 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">
-      {{ wl.name }}
+      {{ wl.name }} <span class="badge badge-secondary">{{ match_counts.get(wl.id, 0) }} matches</span>
       {% if not wl.enabled %}<span class="badge badge-secondary">disabled</span>{% endif %}
     </span>
+    {% if can(current_user, "manage_watchlists") %}
     <div class="d-flex gap-1">
       <a href="/watchlists/{{ wl.id }}/edit" class="btn btn-secondary btn-sm">Edit</a>
       <form method="post" action="/watchlists/{{ wl.id }}/rebuild" style="display:contents;">
@@ -44,7 +43,12 @@
         <button type="submit" class="btn btn-primary btn-sm">Enable</button>
       </form>
       {% endif %}
+      <form method="post" action="/watchlists/{{ wl.id }}/delete" style="display:contents;" onsubmit="return confirm('Delete this watchlist and its matches? Existing pursuits will remain.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button class="btn btn-danger btn-sm">Delete</button>
+      </form>
     </div>
+    {% endif %}
   </div>
 
   <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:0.5rem; font-size:12px;">
@@ -54,10 +58,10 @@
     {% if wl.exclude_keywords %}<div><strong>Exclude:</strong> {{ wl.exclude_keywords|join(', ') }}</div>{% endif %}
     {% if wl.nsn_list %}<div><strong>NSNs:</strong> {{ wl.nsn_list|join(', ') }}</div>{% endif %}
     {% if wl.set_asides %}<div><strong>Set-asides:</strong> {{ wl.set_asides|join(', ') }}</div>{% endif %}
-    {% if wl.min_value or wl.max_value %}
+    {% if wl.min_value is not none or wl.max_value is not none %}
       <div><strong>Value:</strong>
-        {% if wl.min_value %}${{ "%.0f"|format(wl.min_value|float) }}{% endif %}
-        {% if wl.max_value %}–${{ "%.0f"|format(wl.max_value|float) }}{% endif %}
+        {% if wl.min_value is not none %}${{ "%.0f"|format(wl.min_value|float) }}{% endif %}
+        {% if wl.max_value is not none %}–${{ "%.0f"|format(wl.max_value|float) }}{% endif %}
       </div>
     {% endif %}
     {% if wl.notes %}<div style="grid-column:1/-1;"><em>{{ wl.notes }}</em></div>{% endif %}

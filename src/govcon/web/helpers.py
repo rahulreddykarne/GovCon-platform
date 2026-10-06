@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 
@@ -109,3 +109,52 @@ def primary_source_url(links: object) -> str | None:
                 return url
     entries = source_links(links)
     return entries[0]["url"] if entries else None
+
+
+_SOURCE_LABELS = {"sam": "SAM.gov", "dibbs": "DIBBS", "usaspending": "USAspending"}
+
+
+def _rule_phrase(name: str, evidence: dict) -> str | None:
+    """One passing watchlist rule in plain words; None for a rule with nothing to say."""
+    status = evidence.get("status")
+    if status == "unknown":
+        unknown = {"value": "value not stated", "deadline": "deadline not stated"}
+        return unknown.get(name, f"{name.replace('_', ' ')} unknown")
+    if name in ("psc", "naics"):
+        return f"{name.upper()} {evidence.get('opportunity')} (prefix {evidence.get('matched_prefix')})"
+    if name == "keywords":
+        return "keywords: " + ", ".join(evidence.get("matched") or [])
+    if name == "exclude_keywords":
+        return "no excluded keywords"
+    if name == "nsn":
+        return "NSN " + ", ".join(evidence.get("matched") or [])
+    if name == "set_asides":
+        return f"set-aside {evidence.get('opportunity')}"
+    if name == "sources":
+        source = evidence.get("opportunity") or ""
+        return f"source {_SOURCE_LABELS.get(source, source)}"
+    if name == "value":
+        return "value within range"
+    if name == "deadline":
+        days = evidence.get("days_remaining")
+        return f"{int(days)} days left (needs {evidence.get('min_days_configured')})" if days is not None else None
+    return name.replace("_", " ")
+
+
+def match_summary(matched_on: dict | None) -> str:
+    """The watchlist rules a match passed, e.g. ``PSC 7310 (prefix 73) · source DIBBS``.
+
+    ``matched_on`` is the engine's evidence: ``groups`` keyed by rule, with
+    ``passing_groups`` naming the rules that held. Rules left empty on the
+    watchlist (wildcards) are not shown. Rows stored before that format
+    are shown as flat ``key: value`` pairs.
+    """
+    if not matched_on:
+        return ""
+    groups = matched_on.get("groups")
+    if not isinstance(groups, dict):
+        parts = [f"{k}: {', '.join(map(str, v)) if isinstance(v, list) else v}" for k, v in matched_on.items() if v]
+        return " · ".join(parts[:3])
+    passing = matched_on.get("passing_groups") or []
+    phrases = [_rule_phrase(name, groups.get(name) or {}) for name in passing]
+    return " · ".join(p for p in phrases if p)

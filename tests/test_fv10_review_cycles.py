@@ -2,13 +2,14 @@
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
+from test_sourcing_company import db as db
+from test_sourcing_company import opportunity, user
 
 from govcon.collaboration.escalation import run_review_escalations
 from govcon.collaboration.review_sessions import ensure_review_session
 from govcon.config import Settings
 from govcon.models import Notification, ReviewAssignment
 from govcon.workflow.invalidation import reopen_review
-from test_sourcing_company import db, opportunity, user
 
 
 def review_fixture(db, status="assigned"):

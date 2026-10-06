@@ -28,19 +28,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from govcon.ai.analysis_types import AnalysisType
 from govcon.compliance.amendments import affected_requirement_reasons, change_sentences
 from govcon.compliance.conflicts import RequirementFacts, detect_conflicts
-from govcon.compliance.deterministic import SubmissionPackage, ValidationContext, validators_for
-from govcon.compliance.extractor import build_context, candidates_from_output, scan_requirements, structural_candidates
+from govcon.compliance.deterministic import (
+    SubmissionPackage,
+    ValidationContext,
+    validators_for,
+)
+from govcon.compliance.extractor import (
+    build_context,
+    candidates_from_output,
+    scan_requirements,
+    structural_candidates,
+)
 from govcon.compliance.inventory import analyze_inventory, classify_document
 from govcon.compliance.matrix import ValidationInputs, decide_status
 from govcon.compliance.metrics import rate, recall
 from govcon.compliance.reconciler import reconcile
-from govcon.compliance.records import CanonicalRequirement, Candidate, Inventory, SourceDocument
+from govcon.compliance.records import (
+    Candidate,
+    CanonicalRequirement,
+    Inventory,
+    SourceDocument,
+)
 from govcon.compliance.schemas import RequirementExtractionV1
 from govcon.compliance.text import quote_in_text
-from govcon.security.classification import DataClassification
 
 BENCHMARK_VERSION = "compliance_benchmark.v1"
 HIGHER_IS_BETTER = ("mandatory_recall", "critical_recall", "citation_accuracy", "canonical_citation_accuracy", "amendment_change_detection", "conflict_recall", "submission_file_completeness", "expected_status_accuracy")
@@ -144,13 +156,17 @@ def _live_candidates(inventory: Inventory, settings, candidate=None) -> list[Can
     from govcon.ai.providers import get_provider
     from govcon.ai.providers.deepseek import parse_json_response
     from govcon.ai.structured import enforce_prompt_policy
-    from govcon.security.classification import strictest_classification
+    from govcon.compliance.extractor import (
+        PASS_PROMPTS,
+        _amendment_json,
+        _inventory_json,
+    )
+    from govcon.config import get_settings
+    from govcon.db import session_scope
     from govcon.prompting.behavioral import evaluation_identity
     from govcon.prompting.registry import load_prompt_from_disk
     from govcon.prompting.renderer import render_system_prompt, render_user_context
-    from govcon.config import get_settings
-    from govcon.db import session_scope
-    from govcon.compliance.extractor import PASS_PROMPTS, _amendment_json, _inventory_json
+    from govcon.security.classification import strictest_classification
 
     settings = settings or get_settings()
     out: list[Candidate] = []
@@ -218,7 +234,7 @@ def run_case(case_dir: Path, *, live: bool = False, settings=None, candidate=Non
 
     stale: set[str] = set()
     if len(stages) > 1:
-        new_ids = {d.file_id for d in inventory.documents} - {d.file_id for d in base_inventory.documents}
+        new_ids = {d.file_id for d in inventory.documents if d.file_id is not None} - {d.file_id for d in base_inventory.documents if d.file_id is not None}
         base_keys = {c.key for c in base_canonicals}
 
         @dataclass

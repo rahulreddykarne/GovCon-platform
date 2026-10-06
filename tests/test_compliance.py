@@ -310,8 +310,8 @@ def test_passes_on_the_same_model_are_not_independent_confirmation(session, monk
 
 
 def test_reconciler_never_merges_conflicting_values_or_drops_candidates() -> None:
-    from govcon.compliance.records import Candidate
     from govcon.compliance.reconciler import reconcile
+    from govcon.compliance.records import Candidate
 
     a = Candidate("A-1", "A", "Deliver within 30 days", key_values={"delivery_days": 30}, supporting_quote="Delivery shall be made within 30 days.", source_file_id=1, citation_verified=True)
     b = Candidate("B-1", "B", "Deliver within 20 days", key_values={"delivery_days": 20}, supporting_quote="Delivery shall be made within 20 days.", source_file_id=2, citation_verified=True)
@@ -660,7 +660,11 @@ def test_proposal_coverage_is_checked_against_the_matrix(session) -> None:
 
 
 def test_preflight_blocks_ready_to_submit_and_override_is_audited(session, tmp_path) -> None:
-    from govcon.compliance.submission_preflight import ReadinessBlocked, move_to_ready_to_submit, run_submission_preflight
+    from govcon.compliance.submission_preflight import (
+        ReadinessBlocked,
+        move_to_ready_to_submit,
+        run_submission_preflight,
+    )
 
     o, ids = _dla_setup(session, with_amendment=True)
     _run(session, o, _dla_provider(ids))
@@ -671,9 +675,9 @@ def test_preflight_blocks_ready_to_submit_and_override_is_audited(session, tmp_p
     session.add(submission)
     session.flush()
     quote = tmp_path / "quote.docx"
+    from govcon.proposals.export import export_proposal_docx
     from govcon.proposals.service import get_or_create_proposal
     from govcon.proposals.versions import create_proposal_version
-    from govcon.proposals.export import export_proposal_docx
     proposal = get_or_create_proposal(session, opportunity_id=o.id, pursuit_id=pursuit.id)
     version = create_proposal_version(session, proposal_id=proposal.id, created_by="synthetic fixture",
                                      status_after="ai_generated", sections=[{"section_key":"quote", "content":"Fixture quote content"}])
@@ -739,7 +743,11 @@ def test_override_requirement_needs_role_reason_version_and_audit(session) -> No
 
 def test_ready_to_submit_succeeds_only_when_everything_is_green(session, tmp_path) -> None:
     from govcon.compliance.proposal_coverage import check_proposal_coverage
-    from govcon.compliance.submission_preflight import move_to_ready_to_submit, readiness_blockers, run_submission_preflight
+    from govcon.compliance.submission_preflight import (
+        move_to_ready_to_submit,
+        readiness_blockers,
+        run_submission_preflight,
+    )
     from govcon.compliance.validator import run_validation
 
     o = _opp(session, set_aside_code=None, response_deadline=datetime(2026, 10, 20, 21, 0, tzinfo=UTC))
@@ -831,10 +839,16 @@ def test_critical_recall_regression_blocks_release(tmp_path) -> None:
 
 
 def test_compliance_prompts_are_registry_managed_and_gated(session) -> None:
+    from govcon.config import get_settings
     from govcon.prompting.evaluation import run_activation_gate
     from govcon.prompting.loader import load_markdown_prompt
-    from govcon.prompting.registry import PromptActivationBlocked, activate_prompt, active_version, rollback_prompt, sync_prompts
-    from govcon.config import get_settings
+    from govcon.prompting.registry import (
+        PromptActivationBlocked,
+        activate_prompt,
+        active_version,
+        rollback_prompt,
+        sync_prompts,
+    )
 
     synced = sync_prompts(session, PROMPT_ROOT)
     for name in COMPLIANCE_PROMPTS:

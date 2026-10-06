@@ -45,6 +45,12 @@ jobs:
       - name: Verify installed wheel startup and database bootstrap
         run: python -m pytest tests/test_installed_artifact.py -q
 
+      - name: Require zero lint and type errors
+        run: python scripts/check_static.py
+
+      - name: Verify workspace progress preserves forms and retries failures
+        run: node --test tests/web_progress.test.cjs
+
       - name: Verify isolated release lifecycle and recovery
         run: python -m pytest tests/test_release_lifecycle.py tests/test_f29_f33_regressions.py -q
 
@@ -77,3 +83,9 @@ jobs:
       - name: Run tests (database tests skipped)
         run: |
           python -m pytest -q
+
+      - name: Require zero lint and type errors
+        run: python scripts/check_static.py
+
+      - name: Verify workspace progress preserves forms and retries failures
+        run: node --test tests/web_progress.test.cjs

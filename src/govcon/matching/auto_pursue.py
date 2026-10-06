@@ -94,6 +94,7 @@ def run_auto_pursue(session: Session, *, now: datetime | None = None) -> AutoPur
     approvers = list(session.scalars(select(User.id).where(User.is_active.is_(True), User.role.in_(("owner", "approver")))))
     done: set[int] = set()
     for match, opportunity in candidates:
+        assert match.rank_score is not None  # constrained by the query
         if opportunity.id in done:
             continue
         status, _reason = pursuit_eligibility(opportunity, now)

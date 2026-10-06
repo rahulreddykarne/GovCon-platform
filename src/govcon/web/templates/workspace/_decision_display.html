@@ -1,0 +1,16 @@
+{% macro items_of(value) %}
+{% set rows = value['items'] if value is mapping and 'items' in value else value %}
+{% if rows is string %}<li>{{ rows }}</li>{% else %}
+{% for row in rows or [] %}<li>{% if row is mapping %}{% for k, v in row|dictsort %}{{ k|replace('_', ' ') }}: {{ v|join(', ') if v is iterable and v is not string else v }}{% if not loop.last %} · {% endif %}{% endfor %}{% else %}{{ row }}{% endif %}</li>{% endfor %}
+{% endif %}
+{% endmacro %}
+{% macro pct(fraction) %}{{ "%.0f"|format(fraction|float * 100) }}%{% endmacro %}
+{% macro engine_badge(analysis) %}
+{% set output = analysis.output_json if analysis else {} %}
+{% set engines = (output.get('bundle_runs') or [])|map(attribute='provider')|unique|list %}
+{% if engines|select('in', ['jev', 'llm', 'deepseek', 'anthropic', 'openai'])|list %}
+<span class="label-ai">AI</span>
+{% elif engines and engines|reject('equalto', 'rules')|list|length == 0 %}
+<span class="badge badge-secondary" title="The built-in rules produced this package">Rules engine</span>
+{% else %}<span class="badge badge-secondary">Engine not recorded</span>{% endif %}
+{% endmacro %}

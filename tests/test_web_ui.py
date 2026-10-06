@@ -17,19 +17,18 @@ These tests use the real Postgres DB via the upgraded_engine fixture.
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from web_client import CsrfTestClient as TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from web_client import CsrfTestClient as TestClient
+from web_client import page_containing
 
 from govcon.models import (
     Match,
     Opportunity,
-    ReviewAssignment,
     ReviewComment,
     ReviewSession,
     User,
@@ -38,7 +37,6 @@ from govcon.models import (
 )
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +62,7 @@ def client(upgraded_engine):
 
 def _make_user(session: Session, email: str, role: str = "reviewer") -> tuple[User, str]:
     """Create a user and return (user, raw_token)."""
-    from govcon.collaboration.users import hash_password, create_session
+    from govcon.collaboration.users import create_session, hash_password
     existing = session.scalar(select(User).where(User.email == email))
     if existing:
         # clean old sessions
@@ -319,7 +317,7 @@ class TestInboxActions:
 
     def test_seen_action(self, client, db_session):
         resp = client.post("/inbox/action", data={"match_id": self.match.id, "action": "seen"}, cookies=self.cookies)
-        assert resp.status_code == 200
+        assert resp.status_code == 303
         db_session.expire(self.match)
         assert self.match.status == "seen"
 
@@ -327,7 +325,7 @@ class TestInboxActions:
         self.match.status = "new"
         db_session.commit()
         resp = client.post("/inbox/action", data={"match_id": self.match.id, "action": "dismissed"}, cookies=self.cookies)
-        assert resp.status_code == 200
+        assert resp.status_code == 303
         db_session.expire(self.match)
         assert self.match.status == "dismissed"
 
@@ -335,7 +333,7 @@ class TestInboxActions:
         self.match.status = "new"
         db_session.commit()
         resp = client.post("/inbox/action", data={"match_id": self.match.id, "action": "pursuing"}, cookies=self.cookies)
-        assert resp.status_code == 200
+        assert resp.status_code == 303
         db_session.expire(self.match)
         assert self.match.status == "pursuing"
 
@@ -400,7 +398,7 @@ class TestApprovalPermissions:
         db_session.commit()
 
         # Reviewer tries to approve — should be redirected (not crash, not approve)
-        resp = client.post(
+        client.post(
             f"/workspace/{opp.id}/approve",
             data={"decision": "approve_to_bid", "expected_version": rs.version},
             cookies={"govcon_session": token},
@@ -440,7 +438,7 @@ class TestApproveToGenerates:
     def _make_opp_for_generate(self, db_session, suffix: str):
         """Return (opp, pursuit, review_session, approver, token).
         Uses a random token to avoid unique constraint violations on re-runs."""
-        from govcon.models import Pursuit, ReviewSession
+        from govcon.models import Pursuit
         uid = secrets.token_hex(6)
         approver, token = _make_user(db_session, f"approve_gen_{suffix}_{uid}@example.com", "approver")
         opp = Opportunity(
@@ -538,7 +536,7 @@ class TestApproveToGenerates:
 
     def test_full_workflow_approve_then_record_outcome(self, client, db_session, tmp_path):
         """Full workflow: approve_to_bid → proposal final-approve → authorize submission → record won."""
-        from govcon.models import Proposal, Submission, Pursuit
+        from govcon.models import Proposal, Submission
         opp, pursuit, rs, approver, token = self._make_opp_for_generate(db_session, "A05")
 
         # Step 1: Approve to bid (auto-generates proposal + submission)
@@ -839,8 +837,8 @@ class TestSecurityRequirements:
     """AC: App defaults to localhost only. No secret values in rendered HTML."""
 
     def test_bind_host_defaults_to_loopback(self):
-        from govcon.web.app import bind_host
         from govcon.config import Settings
+        from govcon.web.app import bind_host
         s = Settings(database_url="postgresql+psycopg://x:x@localhost/x")
         assert bind_host(s) == "127.0.0.1"
 
@@ -852,8 +850,9 @@ class TestSecurityRequirements:
         assert b"$argon2" not in resp.content
 
     def test_public_bind_requires_explicit_opt_in(self):
-        from govcon.config import Settings
         import pytest
+
+        from govcon.config import Settings
         with pytest.raises(Exception):
             Settings(
                 database_url="postgresql+psycopg://x:x@localhost/x",
@@ -947,7 +946,84 @@ def test_alerted_match_stays_in_inbox_with_marker(client, db_session, tmp_path):
     db_session.refresh(match)
     assert match.status == "new" and match.alerted_at is not None
 
-    resp = client.get("/", cookies={"govcon_session": token})
+    resp = page_containing(client, "/", opp.title, cookies={"govcon_session": token})
     assert resp.status_code == 200
     assert opp.title in resp.text
     assert "Alerted" in resp.text
+
+
+def _engine_evidence(watchlist: Watchlist, opp: Opportunity) -> dict:
+    from govcon.matching.engine import evaluate_match
+
+    is_match, matched_on, _score = evaluate_match(watchlist, opp)
+    assert is_match
+    return matched_on
+
+
+def test_match_summary_names_only_the_rules_that_passed():
+    from govcon.web.helpers import match_summary
+
+    opp = Opportunity(source="dibbs", source_id="X", title="Valve assembly", psc_code="4820",
+                      status="open", response_deadline=datetime.now(UTC) + timedelta(days=20.5))
+    wl = Watchlist(name="Valves", psc_codes=["48"], keywords=["valve"], sources=["dibbs"], min_deadline_days=5)
+    summary = match_summary(_engine_evidence(wl, opp))
+    assert summary == "PSC 4820 (prefix 48) · keywords: valve · source DIBBS · 20 days left (needs 5)"
+
+
+def test_match_summary_of_a_sources_only_watchlist_has_no_raw_evidence():
+    from govcon.web.helpers import match_summary
+
+    opp = Opportunity(source="dibbs", source_id="X", title="Any item", psc_code="7310", status="open")
+    wl = Watchlist(name="Demo", sources=["sam", "dibbs", "usaspending"])
+    summary = match_summary(_engine_evidence(wl, opp))
+    assert summary == "source DIBBS"
+    assert "wildcard" not in summary and "{" not in summary
+
+
+def test_match_summary_marks_unknown_facts_and_keeps_legacy_rows():
+    from govcon.web.helpers import match_summary
+
+    opp = Opportunity(source="sam", source_id="X", title="Unpriced", status="open")
+    wl = Watchlist(name="Value", min_value=1000, min_deadline_days=3)
+    assert match_summary(_engine_evidence(wl, opp)) == "value not stated · deadline not stated"
+    assert match_summary({"psc": ["71"], "keywords": []}) == "psc: 71"
+    assert match_summary(None) == ""
+
+
+def test_inbox_shows_a_readable_match_summary(client, db_session):
+    user, token = _make_user(db_session, f"inbox_summary_{secrets.token_hex(4)}@example.com", "reviewer")
+    wl = Watchlist(name=f"Inbox summary WL {secrets.token_hex(4)}", enabled=True, psc_codes=["99"])
+    db_session.add(wl)
+    opp = _fresh_opp(db_session, "SUMMARY")
+    db_session.add(Match(opportunity_id=opp.id, watchlist_id=wl.id, status="new",
+                         matched_on=_engine_evidence(wl, opp)))
+    db_session.commit()
+
+    resp = page_containing(client, "/", opp.title, cookies={"govcon_session": token})
+    assert resp.status_code == 200
+    assert "Matched: PSC 9999 (prefix 99)" in resp.text
+    assert "wildcard" not in resp.text and "score_basis" not in resp.text
+
+
+def test_decision_tab_shows_package_lists_and_real_percentages(client, db_session):
+    """Lists are stored as {"items": [...]} and scores as 0-1 fractions; the tab must unwrap and scale them."""
+    import re
+
+    from govcon.decision.engine import run_preliminary_decision_package
+
+    user, token = _make_user(db_session, f"decision_tab_{secrets.token_hex(4)}@example.com", "reviewer")
+    opp = _fresh_opp(db_session, "DECISION")
+    package = run_preliminary_decision_package(db_session, opportunity_id=opp.id)
+    db_session.commit()
+    bid = package.bid_decision
+
+    page = client.get(f"/workspace/{opp.id}?tab=ai_decision", cookies={"govcon_session": token}).text
+    assert "<li>items</li>" not in page
+    for line in bid.missing_information["items"]:
+        assert f"<li>{line}</li>" in page
+    shown = lambda label: re.search(label + r'</div>\s*<div class="value[^"]*">\s*(\d+)%', page).group(1)
+    assert shown("Confidence") == f"{float(bid.recommendation_score) * 100:.0f}"
+    assert shown("Compliance Risk") == f"{(1 - float(bid.compliance_risk_score)) * 100:.0f}"
+    assert shown("Margin Score") == f"{float(bid.margin_score) * 100:.0f}"
+    assert "Rules engine" in page  # no JEV key in tests: the rules provider produced it
+    assert "source: opportunity" in page

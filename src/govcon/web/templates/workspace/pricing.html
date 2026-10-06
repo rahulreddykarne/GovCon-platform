@@ -1,6 +1,6 @@
 {% import "workspace/_ai_macros.html" as ai with context %}
 <!-- Pricing tab -->
-{% include "workspace/_pursuit_facts.html" %}
+
 {% if ai_pricing %}
 <div class="card">
   <div class="card-header">
@@ -19,19 +19,7 @@
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No pricing analysis yet. Record a quote price or sourcing cost, then
-  {{ ai.run_button(opp.id, "pricing", "Run pricing analysis", can_run_analysis) }}</p>
-</div>
-{% endif %}
-
-{% if pursuit and (pursuit.sourcing_cost or pursuit.quote_price) %}
-<div class="card">
-  <div class="card-header"><span class="card-title">Current Pursuit Pricing <span class="label-human">Human</span></span></div>
-  <dl class="key-val">
-    {% if pursuit.sourcing_cost %}<dt>Sourcing Cost</dt><dd>${{ "%.2f"|format(pursuit.sourcing_cost|float) }}</dd>{% endif %}
-    {% if pursuit.quote_price %}<dt>Quote Price</dt><dd>${{ "%.2f"|format(pursuit.quote_price|float) }}</dd>{% endif %}
-    {% if pursuit.margin_pct %}<dt>Margin</dt><dd>{{ pursuit.margin_pct }}%</dd>{% endif %}
-    {% if pursuit.supplier %}<dt>Supplier</dt><dd>{{ pursuit.supplier }}</dd>{% endif %}
-  </dl>
+  <div class="text-muted text-center" style="padding:2rem 0;">No pricing analysis yet. Record a quote price or sourcing cost, then
+  {{ ai.run_button(opp.id, "pricing", "Run pricing analysis", can_run_analysis) }}</div>
 </div>
 {% endif %}

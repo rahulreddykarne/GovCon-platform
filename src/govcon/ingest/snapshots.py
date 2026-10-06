@@ -311,26 +311,29 @@ def _insert_snapshot(session: Session, opportunity_id: int, item: NormalizedOppo
 def _upsert_contacts(session: Session, opportunity_id: int, item: NormalizedOpportunity) -> None:
     if not item.agency_path:
         return
+    # A notice may list one person twice (primary and secondary contact). The
+    # session does not autoflush, so the query below cannot see a contact added
+    # earlier in this loop; reuse it instead of inserting a duplicate.
+    added: dict[str, Contact] = {}
     for contact in item.contacts:
         email = contact.get("email")
         if not isinstance(email, str) or "@" not in email:
             continue
         normalized_email = email.strip().lower()
-        existing = session.scalar(
+        existing = added.get(normalized_email) or session.scalar(
             select(Contact).where(Contact.email == normalized_email, Contact.agency_path == item.agency_path)
         )
         if existing is None:
-            session.add(
-                Contact(
-                    name=contact.get("name"),
-                    email=normalized_email,
-                    phone=contact.get("phone"),
-                    title=contact.get("title"),
-                    agency_path=item.agency_path,
-                    contact_type=contact.get("contact_type"),
-                    first_seen_opportunity_id=opportunity_id,
-                )
+            added[normalized_email] = Contact(
+                name=contact.get("name"),
+                email=normalized_email,
+                phone=contact.get("phone"),
+                title=contact.get("title"),
+                agency_path=item.agency_path,
+                contact_type=contact.get("contact_type"),
+                first_seen_opportunity_id=opportunity_id,
             )
+            session.add(added[normalized_email])
             continue
         if contact.get("name"):
             existing.name = contact["name"]
@@ -358,7 +361,7 @@ def upsert_opportunity(session: Session, item: NormalizedOpportunity) -> str:
         _apply_current(row, item)
         session.add(row)
         session.flush()
-        snapshot = _insert_snapshot(session, row.id, item)
+        created_snapshot = _insert_snapshot(session, row.id, item)
         session.add(
             OpportunityEvent(
                 opportunity_id=row.id,
@@ -366,7 +369,7 @@ def upsert_opportunity(session: Session, item: NormalizedOpportunity) -> str:
                 field_name=None,
                 old_value=None,
                 new_value=_event_value(item.source_id),
-                snapshot_id=snapshot.id,
+                snapshot_id=created_snapshot.id,
             )
         )
         _upsert_contacts(session, row.id, item)

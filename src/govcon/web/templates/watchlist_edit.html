@@ -44,31 +44,45 @@
       <input type="text" id="nsn_list" name="nsn_list" value="{{ (wl.nsn_list|join(',')) if wl and wl.nsn_list else '' }}">
     </div>
 
-    <div class="form-group">
-      <label for="set_asides">Set-Asides (comma-separated codes)</label>
-      <input type="text" id="set_asides" name="set_asides" value="{{ (wl.set_asides|join(',')) if wl and wl.set_asides else '' }}">
-    </div>
+    <fieldset class="form-group">
+      <legend>Set-asides (leave all unchecked to include any)</legend>
+      {% set selected = wl.set_asides if wl and wl.set_asides else [] %}
+      {% set known = set_aside_options|map(attribute=0)|list %}
+      {% for value, label in set_aside_options %}
+      <label><input type="checkbox" name="set_asides" value="{{ value }}" {% if value in selected %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+      {% for value in selected if value not in known %}
+      <label><input type="checkbox" name="set_asides" value="{{ value }}" checked> {{ value }}</label>
+      {% endfor %}
+    </fieldset>
 
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
       <div class="form-group">
         <label for="min_value">Min Value ($)</label>
-        <input type="number" id="min_value" name="min_value" step="0.01" value="{{ wl.min_value if wl and wl.min_value else '' }}">
+        <input type="number" id="min_value" name="min_value" step="0.01" min="0" value="{{ wl.min_value if wl and wl.min_value is not none else '' }}">
       </div>
       <div class="form-group">
         <label for="max_value">Max Value ($)</label>
-        <input type="number" id="max_value" name="max_value" step="0.01" value="{{ wl.max_value if wl and wl.max_value else '' }}">
+        <input type="number" id="max_value" name="max_value" step="0.01" min="0" value="{{ wl.max_value if wl and wl.max_value is not none else '' }}">
       </div>
     </div>
 
     <div class="form-group">
       <label for="min_deadline_days">Min Deadline Days (from today)</label>
-      <input type="number" id="min_deadline_days" name="min_deadline_days" value="{{ wl.min_deadline_days if wl and wl.min_deadline_days else '' }}">
+      <input type="number" id="min_deadline_days" name="min_deadline_days" value="{{ wl.min_deadline_days if wl and wl.min_deadline_days is not none else '' }}" min="0" max="2147483647" step="1">
     </div>
 
-    <div class="form-group">
-      <label for="sources">Sources (comma-separated: sam, dibbs)</label>
-      <input type="text" id="sources" name="sources" value="{{ (wl.sources|join(',')) if wl and wl.sources else '' }}">
-    </div>
+    <fieldset class="form-group">
+      <legend>Sources (leave all unchecked to include any)</legend>
+      {% set selected = wl.sources if wl and wl.sources else [] %}
+      {% set known = source_options|map(attribute=0)|list %}
+      {% for value, label in source_options %}
+      <label><input type="checkbox" name="sources" value="{{ value }}" {% if value in selected %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+      {% for value in selected if value not in known %}
+      <label><input type="checkbox" name="sources" value="{{ value }}" checked> {{ value }}</label>
+      {% endfor %}
+    </fieldset>
 
     <div class="form-group">
       <label for="notes">Notes</label>

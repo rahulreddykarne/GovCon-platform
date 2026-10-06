@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Admin · Users · GovCon{% endblock %}
+{% block content %}
+{% include "admin/_nav.html" %}
+<div class="page-header"><h1 class="page-title">Users</h1><a href="/admin/users/invite" class="btn btn-primary">Invite User</a></div>
+{% for user in users %}
+<article class="card">
+  <h2>{{ user.display_name }} <span class="badge badge-secondary">{{ user.role }}</span>{% if not user.is_active %} · Inactive{% endif %}</h2>
+  <p>{{ user.email }}</p>
+  <div class="d-flex gap-1 flex-wrap">
+    <form method="post" action="/admin/users/{{ user.id }}/role" class="d-flex gap-1 align-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <label for="role-{{ user.id }}">Role</label>
+      <select id="role-{{ user.id }}" name="role">{% for role in roles %}<option value="{{ role }}" {% if role == user.role %}selected{% endif %}>{{ role|replace('_',' ') }}</option>{% endfor %}</select>
+      <button class="btn btn-secondary btn-sm">Change role</button>
+    </form>
+    <form method="post" action="/admin/users/{{ user.id }}/{{ 'deactivate' if user.is_active else 'activate' }}" onsubmit="return confirm('Change access for this account?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button class="btn btn-secondary btn-sm">{{ 'Deactivate' if user.is_active else 'Reactivate' }}</button>
+    </form>
+  </div>
+  <details class="mt-2"><summary>Reset password</summary>
+    <form method="post" action="/admin/users/{{ user.id }}/reset_password" class="d-flex gap-1 align-center mt-1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <label for="password-{{ user.id }}">New password</label>
+      <input id="password-{{ user.id }}" type="password" name="password" minlength="12" required autocomplete="new-password">
+      <button class="btn btn-secondary btn-sm">Reset password and revoke sessions</button>
+    </form>
+  </details>
+</article>
+{% endfor %}
+{% endblock %}

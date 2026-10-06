@@ -10,6 +10,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from test_web_ui import _make_user
+from web_client import CsrfTestClient
 
 from govcon.db import session_scope
 from govcon.models import (
@@ -22,8 +24,6 @@ from govcon.models import (
     Submission,
 )
 from govcon.web.app import create_app
-from test_web_ui import _make_user
-from web_client import CsrfTestClient
 
 OUR_UEI = "OURUEI123456"
 SUBMITTED = datetime.now(UTC) - timedelta(days=20)
@@ -179,8 +179,8 @@ def test_a_person_confirms_or_dismisses_the_suggestion(db, our_uei):
 # ── analytics refresh ────────────────────────────────────────────────────────
 
 def test_analytics_refresh_records_what_it_counted(db, monkeypatch):
-    from govcon.scheduler.jobs import step_analytics_refresh
     import govcon.learning.analytics as analytics
+    from govcon.scheduler.jobs import step_analytics_refresh
     real = analytics.outcome_analytics
     empty = SimpleNamespace(total_won=0, total_lost=0, total_no_bid=0)
     monkeypatch.setattr(analytics, "outcome_analytics", lambda session: empty)

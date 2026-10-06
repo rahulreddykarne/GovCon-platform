@@ -2,13 +2,19 @@
 {% if not bid_decision %}
 <div class="card">
   <p class="text-muted text-center" style="padding:2rem 0;">
-    No AI decision package yet. Run <code>govcon decision run --opp-id {{ opp.id }}</code> to generate.
+    No AI decision package yet. <a href="/workspace/{{ opp.id }}?tab=overview#preparation">Prepare now on Overview</a> to generate.
   </p>
 </div>
 {% else %}
+{# List fields are stored as {"items": [...]}; scores are fractions 0-1. #}
+{% from "workspace/_decision_display.html" import items_of, pct, engine_badge %}
+{% set dp = decision_package_analysis.output_json if decision_package_analysis else {} %}
+{% set engines = (dp.get('bundle_runs') or [])|map(attribute='provider')|unique|list %}
 <div class="card">
   <div class="card-header">
-    <span class="card-title">AI Bid Decision Package <span class="label-ai">AI</span></span>
+    <span class="card-title">Bid Decision Package
+      {{ engine_badge(decision_package_analysis) }}
+    </span>
     <span class="text-sm text-muted">{{ bid_decision.created_at.strftime('%Y-%m-%d %H:%M') if bid_decision.created_at else '' }}</span>
   </div>
 
@@ -19,83 +25,63 @@
         {{ bid_decision.recommendation|replace('_',' ')|upper }}
       </div>
     </div>
-    {% if bid_decision.recommendation_score %}
+    {% if bid_decision.recommendation_score is not none %}
     <div class="stat-card">
       <div class="label">Confidence</div>
-      <div class="value">{{ "%.0f"|format(bid_decision.recommendation_score|float) }}%</div>
+      <div class="value">{{ pct(bid_decision.recommendation_score) }}</div>
     </div>
     {% endif %}
-    {% if bid_decision.compliance_risk_score %}
+    {% if bid_decision.compliance_risk_score is not none %}
+    {# Stored inverted: 1.0 means low compliance risk. #}
+    {% set risk = 1 - bid_decision.compliance_risk_score|float %}
     <div class="stat-card">
       <div class="label">Compliance Risk</div>
-      <div class="value {% if bid_decision.compliance_risk_score|float > 70 %}danger{% elif bid_decision.compliance_risk_score|float > 40 %}primary{% else %}success{% endif %}">
-        {{ "%.0f"|format(bid_decision.compliance_risk_score|float) }}%
-      </div>
+      <div class="value {% if risk > 0.7 %}danger{% elif risk > 0.4 %}primary{% else %}success{% endif %}">{{ pct(risk) }}</div>
     </div>
     {% endif %}
-    {% if bid_decision.margin_score %}
+    {% if bid_decision.margin_score is not none %}
     <div class="stat-card">
       <div class="label">Margin Score</div>
-      <div class="value">{{ "%.0f"|format(bid_decision.margin_score|float) }}%</div>
+      <div class="value">{{ pct(bid_decision.margin_score) }}</div>
     </div>
     {% endif %}
   </div>
 
   {% if bid_decision.strengths %}
   <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem;">Strengths</h3>
-  <ul>
-    {% if bid_decision.strengths is iterable and bid_decision.strengths is not string %}
-      {% for s in bid_decision.strengths %}
-        <li>{{ s }}</li>
-      {% endfor %}
-    {% else %}
-      <li>{{ bid_decision.strengths }}</li>
-    {% endif %}
-  </ul>
+  <ul>{{ items_of(bid_decision.strengths) }}</ul>
   {% endif %}
 
   {% if bid_decision.risks %}
   <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem;">Risks</h3>
-  <ul>
-    {% if bid_decision.risks is iterable and bid_decision.risks is not string %}
-      {% for r in bid_decision.risks %}
-        <li>{{ r }}</li>
-      {% endfor %}
-    {% else %}
-      <li>{{ bid_decision.risks }}</li>
-    {% endif %}
-  </ul>
+  <ul>{{ items_of(bid_decision.risks) }}</ul>
   {% endif %}
 
   {% if bid_decision.missing_information %}
-  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem; color:var(--color-warning);">Missing Information <span class="label-ai">AI</span></h3>
-  <ul>
-    {% if bid_decision.missing_information is iterable and bid_decision.missing_information is not string %}
-      {% for mi in bid_decision.missing_information %}
-        <li>{{ mi }}</li>
-      {% endfor %}
-    {% else %}
-      <li>{{ bid_decision.missing_information }}</li>
-    {% endif %}
-  </ul>
+  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem; color:var(--color-warning);">Missing Information</h3>
+  <ul>{{ items_of(bid_decision.missing_information) }}</ul>
   {% endif %}
 
   {% if bid_decision.evidence %}
-  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem;">Evidence <span class="label-ai">AI</span></h3>
-  <pre style="font-size:12px; background:var(--color-bg); padding:0.75rem; border-radius:var(--radius); overflow:auto; max-height:300px;">{{ bid_decision.evidence|tojson(indent=2) }}</pre>
+  <h3 style="font-size:14px; font-weight:600; margin:1rem 0 0.5rem;">Evidence</h3>
+  <ul class="text-sm">{{ items_of(bid_decision.evidence) }}</ul>
   {% endif %}
 </div>
 
-{% if decision_package_analysis %}
+{% if dp %}
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Full Decision Package <span class="label-ai">AI</span></span>
+    <span class="card-title">Full Decision Package</span>
   </div>
-  {% set dp = decision_package_analysis.output_json %}
-  {% if dp.get('summary') %}<p>{{ dp['summary'] }}</p>{% endif %}
-  {% if dp.get('pricing_position') %}<p class="mt-1"><strong>Pricing position:</strong> {{ dp['pricing_position'] }}</p>{% endif %}
-  {% if dp.get('supplier_position') %}<p class="mt-1"><strong>Supplier position:</strong> {{ dp['supplier_position'] }}</p>{% endif %}
-  {% if dp.get('compliance_status') %}<p class="mt-1"><strong>Compliance:</strong> {{ dp['compliance_status'] }}</p>{% endif %}
+  <dl>
+    {% if dp.get('capability_fit', {}).get('level') %}<dt>Capability fit</dt><dd>{{ dp['capability_fit']['level'] }}</dd>{% endif %}
+    {% if dp.get('deadline_risk') %}<dt>Deadline risk</dt><dd>{{ dp['deadline_risk'] }}</dd>{% endif %}
+    {% if dp.get('execution_risk') %}<dt>Execution risk</dt><dd>{{ dp['execution_risk'] }}</dd>{% endif %}
+    {% set comp = dp.get('competition_incumbent_signals') or {} %}
+    {% if comp.get('competition_level') %}<dt>Competition</dt><dd>{{ comp['competition_level'] }}{% if comp.get('incumbent_advantage') %} (incumbent advantage: {{ comp['incumbent_advantage'] }}){% endif %}</dd>{% endif %}
+    {% if dp.get('next_state') %}<dt>Next step</dt><dd>{{ dp['next_state']|replace('_', ' ')|lower }}</dd>{% endif %}
+    {% if engines %}<dt>Produced by</dt><dd>{% for run in dp['bundle_runs'] %}{{ run.bundle_name|replace('_', ' ') }}: {{ run.provider }}{% if not loop.last %} · {% endif %}{% endfor %}</dd>{% endif %}
+  </dl>
 </div>
 {% endif %}
 

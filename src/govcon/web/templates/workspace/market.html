@@ -19,8 +19,8 @@
 </div>
 {% else %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No market intelligence analysis yet.
-  {{ ai.run_button(opp.id, "market", "Run market analysis", can_run_analysis) }}</p>
+  <div class="text-muted text-center" style="padding:2rem 0;">No market intelligence analysis yet.
+  {{ ai.run_button(opp.id, "market", "Run market analysis", can_run_analysis) }}</div>
 </div>
 {% endif %}
 

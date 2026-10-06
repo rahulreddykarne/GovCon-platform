@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -46,9 +45,7 @@ from govcon.matching.semantic import (
     win_profile_recommendations,
 )
 from govcon.mcp import operations as mcp_ops
-from govcon.mcp.serialize import success
-from govcon.models import Match, Opportunity, OutcomeFeedback, Pursuit, Watchlist
-
+from govcon.models import Match, Opportunity, OutcomeFeedback, Watchlist
 
 # ── mock embedding provider ───────────────────────────────────────────────────
 
@@ -218,7 +215,6 @@ def test_build_watchlist_profiles(session: Session):
 def test_semantic_match_no_keyword_overlap(session: Session):
     """AC-1: semantic search finds similar opportunity even with zero keyword overlap."""
     target_text = "cardiac implantable device stent procurement"
-    similar_text = "heart pump prosthetic vascular surgery"
 
     target_emb = _mock.embed(target_text)
     similar_emb = _similar_embedding(target_text, perturbation=0.0001)
@@ -310,7 +306,7 @@ def test_vector_search_executes_without_seqscan_error(session: Session):
 def test_ineligible_opportunity_flagged_in_results(session: Session):
     """AC-3: a closed/archived opportunity is returned but flagged as ineligible."""
     text_base = "specialized imaging equipment radiography"
-    open_emb = _similar_embedding(text_base, perturbation=0.0001)
+    _similar_embedding(text_base, perturbation=0.0001)
     closed_emb = _similar_embedding(text_base, perturbation=0.0002)
 
     source = Opportunity(

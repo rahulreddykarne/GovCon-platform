@@ -10,6 +10,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from test_web_ui import _complete_review, _make_user
+from web_client import CsrfTestClient, page_containing
 
 from govcon.db import session_scope
 from govcon.models import (
@@ -28,8 +30,6 @@ from govcon.models import (
 )
 from govcon.tasks.testing import drain
 from govcon.web.app import create_app
-from test_web_ui import _complete_review, _make_user
-from web_client import CsrfTestClient
 
 NOW = datetime.now(UTC)
 
@@ -121,7 +121,7 @@ def test_rank_step_ranks_active_matches_and_the_inbox_explains_it(db, client):
     assert ranked.rank_score is not None and ranked.ranked_at is not None and len(ranked.rank_factors) == 6
     _, token = _make_user(db, f"inbox-{uuid4().hex}@example.test", "reviewer")
     client.cookies.set("govcon_session", token)
-    page = client.get("/").text
+    page = page_containing(client, "/", opp.title).text
     assert f"Rank {float(ranked.rank_score):.0f}" in page and "Why this rank" in page
 
 
@@ -341,7 +341,11 @@ def dual_review(db, days):
     (3, "Owner turned the exception off.", False, False),
 ])
 def test_deadline_exception_allows_one_review_only_when_it_applies(db, monkeypatch, days, reason, enabled, approved):
-    from govcon.collaboration.review_sessions import ReviewWorkflowError, finalize_approval, recalculate_quorum
+    from govcon.collaboration.review_sessions import (
+        ReviewWorkflowError,
+        finalize_approval,
+        recalculate_quorum,
+    )
     from govcon.config import get_settings
     from govcon.models import User
     monkeypatch.setenv("REVIEW_OVERRIDE_ALLOWED", "false")

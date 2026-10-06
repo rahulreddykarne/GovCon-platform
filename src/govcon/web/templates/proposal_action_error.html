@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <p class="alert alert-error">{{ error }}</p>
+  {% if submitted_text %}
+  <p>Your submitted changes were not saved. Copy them before reloading the current proposal.</p>
+  {% for text in submitted_text %}<textarea rows="8" readonly>{{ text }}</textarea>{% endfor %}
+  {% endif %}
+  <a href="{{ target }}" class="btn btn-secondary">Return to the current proposal</a>
+</div>
+{% endblock %}

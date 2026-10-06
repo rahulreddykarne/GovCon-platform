@@ -9,9 +9,9 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
-from web_client import CsrfTestClient as TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from web_client import CsrfTestClient as TestClient
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.providers.deepseek import DeepSeekResult
@@ -44,6 +44,17 @@ class FakeProvider:
     def complete(self, *, purpose: str = "", model=None, **_kwargs):
         payload = {"market_analysis": MARKET, "supplier_analysis": SUPPLIER, "pricing_analysis": PRICING}[purpose]
         return DeepSeekResult(content=json.dumps(payload), model=model or "deepseek-flash", usage={}, latency_ms=1)
+
+
+@pytest.fixture(autouse=True)
+def synced_prompts(upgraded_engine):
+    """Per test: the registry must hold active prompts even when this file runs alone."""
+    from pathlib import Path
+
+    from govcon.prompting.registry import sync_prompts
+    with Session(upgraded_engine) as s:
+        sync_prompts(s, Path(__file__).parent.parent / "src" / "govcon" / "prompts")
+        s.commit()
 
 
 @pytest.fixture()
@@ -203,7 +214,8 @@ def test_pricing_tab_reports_a_policy_block_to_the_user(client, session) -> None
     session.commit()
     token = _token(session, "reviewer")
     resp = client.post(f"/workspace/{opp.id}/analyze/pricing", cookies={"govcon_session": token})
-    assert "error=" in resp.headers["location"] and "blocked_by_policy" in resp.headers["location"]
+    assert "error=" in resp.headers["location"]
+    assert "blocked_by_policy" in client.get(resp.headers["location"], cookies={"govcon_session": token}).text
     assert session.scalar(
         select(AIAnalysis).where(AIAnalysis.opportunity_id == opp.id, AIAnalysis.analysis_type == AnalysisType.PRICING)
     ) is None
@@ -239,3 +251,20 @@ def test_every_tab_renders_with_award_data(client, session) -> None:
     assert "$1,234,567.89" in awards
     vendor = client.get(f"/vendors?q={uei}", cookies={"govcon_session": token})
     assert vendor.status_code == 200 and "$1,234,568" in vendor.text
+
+
+def test_source_refs_given_as_bare_labels_validate_as_unverified_sections():
+    """DeepSeek cites input blocks ("AWARDS_JSON: ...") as strings; they must not fail the analysis."""
+    from pydantic import ValidationError
+
+    from govcon.ai.schemas import MarketAnalysisV1, SourceRef
+
+    output = MarketAnalysisV1.model_validate({
+        "source_refs": ["AWARDS_JSON: empty array", {"source_file_id": 7, "page": 2, "quote": "shall deliver"}],
+    })
+    label, cited = output.source_refs
+    assert label == SourceRef(section="AWARDS_JSON: empty array")
+    assert label.source_file_id is None and label.quote is None  # names no file: never a verified citation
+    assert cited.source_file_id == 7 and cited.page == 2
+    with pytest.raises(ValidationError):
+        MarketAnalysisV1.model_validate({"source_refs": [42]})  # anything else still fails closed

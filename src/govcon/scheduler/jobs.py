@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -53,7 +52,11 @@ class StepResult:
 def step_sam_ingest(session: Session, settings) -> StepResult:
     """Pull SAM.gov opportunities for the last 3 UTC days."""
     from govcon.ingest.runs import IngestStats, finish_run, start_run
-    from govcon.ingest.sam_opportunities import SamApiError, assert_search_window, pull_sam_opportunities
+    from govcon.ingest.sam_opportunities import (
+        SamApiError,
+        assert_search_window,
+        pull_sam_opportunities,
+    )
     from govcon.logging import redact
 
     run = start_run(session, "sched:sam_ingest")
@@ -236,7 +239,11 @@ def step_usaspending(session: Session, settings) -> StepResult:
 def step_embeddings(session: Session, settings) -> StepResult:
     """Generate embeddings for opportunities that lack them."""
     try:
-        from govcon.enrich.embeddings import build_watchlist_profiles, get_default_provider, run_embedding_job
+        from govcon.enrich.embeddings import (
+            build_watchlist_profiles,
+            get_default_provider,
+            run_embedding_job,
+        )
 
         provider = get_default_provider(settings.embedding_model)
         stats = run_embedding_job(session, provider, only_missing=True)
@@ -396,7 +403,10 @@ def step_archive_sweep(session: Session) -> StepResult:
 def step_cache_refresh(session: Session, settings) -> StepResult:
     """Refresh watchlist profile embeddings (cache refresh)."""
     try:
-        from govcon.enrich.embeddings import build_watchlist_profiles, get_default_provider
+        from govcon.enrich.embeddings import (
+            build_watchlist_profiles,
+            get_default_provider,
+        )
 
         provider = get_default_provider(settings.embedding_model)
         stats = build_watchlist_profiles(session, provider)

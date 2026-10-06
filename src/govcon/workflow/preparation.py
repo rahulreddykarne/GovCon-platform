@@ -37,7 +37,13 @@ from sqlalchemy.orm import Session
 from govcon.db import session_scope
 from govcon.models import FilePage, Opportunity, StoredFile, Task, User
 from govcon.tasks import queue
-from govcon.tasks.registry import Step, StepContext, TaskHandler, register
+from govcon.tasks.registry import (
+    Step,
+    StepContext,
+    TaskHandler,
+    register,
+    required_opportunity_id,
+)
 from govcon.workflow.source_revision import current_source_revision
 
 PREPARATION_TASK = "opportunity_preparation"
@@ -64,9 +70,9 @@ def queue_preparation(session: Session, *, opportunity_id: int, actor_user_id: i
 
 
 def _opportunity(session: Session, task: Task) -> Opportunity:
-    opportunity = session.get(Opportunity, task.opportunity_id)
+    opportunity = session.get(Opportunity, required_opportunity_id(task.opportunity_id))
     if opportunity is None:
-        raise ValueError(f"opportunity {task.opportunity_id} not found")
+        raise ValueError(f"opportunity {required_opportunity_id(task.opportunity_id)} not found")
     return opportunity
 
 
@@ -83,25 +89,37 @@ class _Documents:
     snapshot_id: int | None
     backfill: list[dict[str, Any]] = field(default_factory=list)
     fetched: list[Any] = field(default_factory=list)
+    # SAM documents already stored for the current notice version: reused, not re-fetched.
+    reused: dict[str, int] = field(default_factory=dict)
     extracted: dict[int, Any] = field(default_factory=dict)
 
 
 def _documents_prepare(session: Session, task: Task, ctx: StepContext) -> _Documents:
     from govcon.enrich.attachment_refs import attachment_refs_for
-    from govcon.enrich.attachments import known_versions, latest_snapshot_id
+    from govcon.enrich.attachments import (
+        current_sam_versions,
+        known_versions,
+        latest_snapshot_id,
+        needs_ocr_retry,
+    )
 
     opportunity = _opportunity(session, task)
     refs = attachment_refs_for(opportunity)
-    with_pages = select(FilePage.file_id).distinct()
+    settings = ctx.settings
+    with_pages = set(session.scalars(
+        select(FilePage.file_id).join(StoredFile).where(StoredFile.opportunity_id == opportunity.id).distinct()
+    ))
     backfill = [
         {"id": row.id, "local_path": row.local_path, "mime": row.mime_type, "filename": row.filename}
         for row in session.scalars(select(StoredFile).where(
             StoredFile.opportunity_id == opportunity.id, StoredFile.active.is_(True),
-            StoredFile.local_path.is_not(None), StoredFile.sha256.is_not(None), StoredFile.id.not_in(with_pages),
+            StoredFile.local_path.is_not(None), StoredFile.sha256.is_not(None),
         ))
+        if row.id not in with_pages or needs_ocr_retry(row, settings)
     ]
-    return _Documents(refs, known_versions(session, opportunity.id, refs),
-                      latest_snapshot_id(session, opportunity.id), backfill)
+    snapshot_id = latest_snapshot_id(session, opportunity.id)
+    return _Documents(refs, known_versions(session, opportunity.id, refs, settings=settings, retry_ocr=False), snapshot_id, backfill,
+                      reused=current_sam_versions(session, opportunity.id, refs, snapshot_id))
 
 
 def _documents_execute(docs: _Documents, ctx: StepContext) -> _Documents:
@@ -111,11 +129,11 @@ def _documents_execute(docs: _Documents, ctx: StepContext) -> _Documents:
     from govcon.enrich.storage import get_store
     from govcon.http import build_client
 
-    if docs.refs:
+    if any(ref.url not in docs.reused for ref in docs.refs):
         with build_client(ctx.settings, timeout=60.0) as client:
-            for ref in docs.refs:
+            for ref in (r for r in docs.refs if r.url not in docs.reused):
                 docs.fetched.append(fetch_attachment(
-                    ref, opportunity_id=ctx.opportunity_id, known_shas=docs.known.get(ref.url, set()),
+                    ref, opportunity_id=required_opportunity_id(ctx.opportunity_id), known_shas=docs.known.get(ref.url, set()),
                     settings=ctx.settings, client=client, resolver=None,
                 ))
     store = get_store(ctx.settings)
@@ -127,32 +145,34 @@ def _documents_execute(docs: _Documents, ctx: StepContext) -> _Documents:
 
 
 def _documents_publish(session: Session, task: Task, docs: _Documents, ctx: StepContext) -> None:
-    from govcon.enrich.attachments import reconcile_attachment_versions, record_fetched, write_pages
+    from govcon.enrich.attachments import (
+        reconcile_attachment_versions,
+        record_fetched,
+        update_extraction,
+    )
 
     opportunity = _opportunity(session, task)
     rows = [record_fetched(session, opportunity, fetched, snapshot_id=docs.snapshot_id) for fetched in docs.fetched]
-    reconcile_attachment_versions(session, opportunity, docs.refs,
-                                  current={ref.url: row.id for ref, row in zip(docs.refs, rows)})
+    current = {**docs.reused, **{fetched.ref.url: row.id for fetched, row in zip(docs.fetched, rows)}}
+    reconcile_attachment_versions(session, opportunity, docs.refs, current=current)
     for file_id, extraction in docs.extracted.items():
         row = session.get(StoredFile, file_id)
-        if row is not None:
-            row.extracted_text = extraction.text
-            row.extraction_status = extraction.status
-            row.extraction_error = extraction.error
-            write_pages(session, row, extraction)
+        if row is not None and row.active:
+            update_extraction(session, row, extraction)
     failed = [row.filename or row.url for row in rows if row.extraction_status == "download_failed"]
     ocr_pages = sum(len(row.ocr_pages or []) for row in rows) + sum(len(e.ocr_pages) for e in docs.extracted.values())
-    _note(ctx, files=len(rows), backfilled=len(docs.extracted), failed=failed, ocr_pages=ocr_pages)
+    _note(ctx, files=len(rows) + len(docs.reused), reused=len(docs.reused), backfilled=len(docs.extracted),
+          failed=failed, ocr_pages=ocr_pages)
 
 
 # ── 2. summary, 3. compliance, 5. decision: existing AI services ─────────────
 
 def _nothing(session: Session, task: Task, ctx: StepContext) -> None:
     ctx.payload["_preparation_claim"] = {
-        "task_id": task.id, "task_type": task.task_type, "opportunity_id": task.opportunity_id,
+        "task_id": task.id, "task_type": task.task_type, "opportunity_id": required_opportunity_id(task.opportunity_id),
         "token": task.claim_token, "worker_id": task.lease_owner,
     }
-    ctx.payload["_preparation_source_revision"] = str(current_source_revision(session, task.opportunity_id))
+    ctx.payload["_preparation_source_revision"] = str(current_source_revision(session, required_opportunity_id(task.opportunity_id)))
     return None
 
 
@@ -161,9 +181,10 @@ def _checkpoint_service(session: Session, ctx: StepContext, step: str, output: d
 
     task = queue.guard_publish(session, queue.Claim(**ctx.payload["_preparation_claim"]))
     # now() is fixed at this pass's start; the lease must still hold at commit.
-    if task.lease_expires_at <= session.scalar(select(func.clock_timestamp())):
+    now = session.scalar(select(func.clock_timestamp()))
+    if task.lease_expires_at is None or now is None or task.lease_expires_at <= now:
         raise queue.LeaseLost(f"task {ctx.task_id}: lease expired during preparation")
-    revision = str(current_source_revision(session, ctx.opportunity_id))
+    revision = str(current_source_revision(session, required_opportunity_id(ctx.opportunity_id)))
     if revision != ctx.payload["_preparation_source_revision"]:
         raise TaskSuperseded("source changed during preparation", input_revision={"source_revision": revision},
                              payload=dict(task.payload or {}))
@@ -199,10 +220,16 @@ def _summary_execute(_: None, ctx: StepContext) -> dict[str, Any]:
     from govcon.enrich.summarize import run_solicitation_analysis
 
     def service(db: Session) -> dict[str, Any]:
-        analysis = run_solicitation_analysis(db, db.get(Opportunity, ctx.opportunity_id), settings=ctx.settings)
+        refusals: list[str] = []
+        opportunity = db.get(Opportunity, required_opportunity_id(ctx.opportunity_id))
+        if opportunity is None:
+            from govcon.tasks.errors import TaskCancelled
+
+            raise TaskCancelled("the task's opportunity was removed")
+        analysis = run_solicitation_analysis(db, opportunity, settings=ctx.settings,
+                                             refusals=refusals)
         if analysis is None:
-            return {"analysis_id": None, "note": "No summary: no AI provider configured, the policy blocked the call, "
-                                                 "or no document text is available."}
+            return {"analysis_id": None, "note": "No summary: " + ("; ".join(refusals) or "the analysis did not run") + "."}
         gaps = (analysis.context_manifest or {}).get("coverage", {}).get("gaps") or []
         return {"analysis_id": analysis.id, "gaps": gaps}
 
@@ -217,7 +244,7 @@ def _compliance_execute(_: None, ctx: StepContext) -> dict[str, Any]:
     now = datetime.now(UTC)  # one clock for every pass, so passes build the same prompts
 
     def service(db: Session) -> dict[str, Any]:
-        result = run_compliance_pipeline(db, ctx.opportunity_id, use_ai=use_ai, settings=ctx.settings, now=now)
+        result = run_compliance_pipeline(db, required_opportunity_id(ctx.opportunity_id), use_ai=use_ai, settings=ctx.settings, now=now)
         return {"status": result["status"], "matrix_run_id": result.get("matrix_run_id")}
 
     return _run_service(ctx, "compliance", service)
@@ -227,7 +254,7 @@ def _decision_execute(_: None, ctx: StepContext) -> dict[str, Any]:
     from govcon.decision.engine import run_preliminary_decision_package
 
     def service(db: Session) -> dict[str, Any]:
-        package = run_preliminary_decision_package(db, opportunity_id=ctx.opportunity_id, settings=ctx.settings)
+        package = run_preliminary_decision_package(db, opportunity_id=required_opportunity_id(ctx.opportunity_id), settings=ctx.settings)
         return {"analysis_id": package.analysis.id, "recommendation": package.bid_decision.recommendation}
 
     return _run_service(ctx, "decision", service)
@@ -247,7 +274,7 @@ def _research_publish(session: Session, task: Task, _: None, ctx: StepContext) -
     outcomes: dict[str, str] = {}
     for kind in ANALYSIS_KINDS:
         try:
-            analysis_task, _created = queue_analysis(session, opportunity_id=task.opportunity_id, kind=kind,
+            analysis_task, _created = queue_analysis(session, opportunity_id=required_opportunity_id(task.opportunity_id), kind=kind,
                                                      actor_user_id=task.created_by_user_id, settings=ctx.settings)
             outcomes[kind] = f"queued as task {analysis_task.id}"
         except AnalysisInputMissing as exc:
@@ -264,7 +291,7 @@ def _review_publish(session: Session, task: Task, _: None, ctx: StepContext) -> 
     from govcon.collaboration.review_sessions import ensure_review_session
     from govcon.workflow.app_settings import REVIEWER_ASSIGNMENT, get_setting
 
-    review = ensure_review_session(session, opportunity_id=task.opportunity_id)
+    review = ensure_review_session(session, opportunity_id=required_opportunity_id(task.opportunity_id))
     policy = get_setting(session, REVIEWER_ASSIGNMENT)
     if review.status not in ("ready_for_review", "under_review", "pending"):
         _note(ctx, reviewers=[], note=f"review is already {review.status}; no assignment made")
@@ -281,9 +308,9 @@ def _review_publish(session: Session, task: Task, _: None, ctx: StepContext) -> 
         user = session.get(User, user_id)
         if user is None or not user.is_active:
             continue
-        existing = assignment_for_user(session, opportunity_id=task.opportunity_id, user_id=user_id)
+        existing = assignment_for_user(session, opportunity_id=required_opportunity_id(task.opportunity_id), user_id=user_id)
         if existing is None or existing.status not in {"assigned", "in_progress", "complete", "reopened"}:
-            assign_reviewer(session, opportunity_id=task.opportunity_id, user_id=user_id,
+            assign_reviewer(session, opportunity_id=required_opportunity_id(task.opportunity_id), user_id=user_id,
                             actor_user_id=task.created_by_user_id)
         assigned.append(user_id)
     note = None if assigned else "No active reviewers matched the Settings page; assign reviewers on the Review tab."
