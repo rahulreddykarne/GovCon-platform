@@ -45,3 +45,59 @@ The workflow line before this branch had the same inbox, search, pipeline, and s
 `/bots` lists the ten bots, the last orchestrator run (`waiting_approval` / `needs_decision`), and the pending bid recommendation. The run button was not used. Recording an approval was not clicked; that action only stores the human decision.
 
 ![Bots catalog and the pending demo approval](screenshots/after_bots.png)
+
+## Operate, learning, and the notice trace
+
+These shots are from the same local web process after `govcon db upgrade` to Alembic head `e7f8a9b0c1d2`. The database is the walkthrough database with the three sanitized demo notices. No page load called SAM, DIBBS, USAspending, DeepSeek, JEV, or Anthropic. The worker and the scheduler were not running, so those heartbeats stay Failed. Run, Record approval, Dismiss, Pursue, Save, and Rollback were not clicked.
+
+### Overview
+
+`/operate` shows stored counts: 1 decision waiting, 0 agents running, 3 new matches, and 2 of 12 checks healthy. Company strategy fields are listed as missing. The recent orchestrator run is `waiting_approval`.
+
+![Operate overview with stored counts and missing strategy fields](screenshots/operate_overview.png)
+
+### Agents
+
+`/operate/agents` lists the ten bots. Only the orchestrator has a stored run. The others say no run is stored.
+
+![Agent cards with the orchestrator selected](screenshots/operate_agents.png)
+
+### Architecture
+
+`/operate/architecture` draws the real stage order. Selecting Document opens the inspector (trigger, inputs, outputs, permissions, failure).
+
+![Architecture with the Document node selected](screenshots/operate_architecture.png)
+
+### Integrations and the model route
+
+`/operate/integrations` shows the route in use: analysis provider `deepseek`, model `deepseek-flash`, decision fallback `rules`, version label `settings` because no route row is saved. Health cards are local. On this process SAM and DeepSeek are not configured, the database and local embeddings are healthy, and the worker and scheduler have no heartbeat.
+
+![Model route form before any version is saved](screenshots/operate_integrations.png)
+
+![Integration health cards from local checks](screenshots/operate_integrations_health.png)
+
+### How GovCon works
+
+`/operate/how` follows `Sanitized demo — valve kit` (`DEMO-0001`). The notice is stored. Source files are not stored. Later bot stages are not run. The explanations are system text; the status comes from that notice.
+
+![Guided steps for the stored valve-kit notice](screenshots/operate_how.png)
+
+### Learning
+
+`/learning` shows outcome capture at 0 suggested, 0 confirmed, and 0 dismissed, because no suggestions are stored. The sanitized eval set has sample size 4 and 4 passed: sparse output, missing citations, contradictory delivery windows, and a missed blocker. Win rate is not computed because there is no recorded won or lost outcome.
+
+![Sanitized eval set with sample size 4](screenshots/learning_evals.png)
+
+![Win-rate formula with a sample size of zero](screenshots/learning_calculations.png)
+
+### Notice trace
+
+`/opp/1` includes "What ran on this notice". The notice is stored. Source files, document, matching, compliance, awards, amendment, bid/no-bid, and solicitation analysis are not run or not stored. The human decision is waiting.
+
+![Stage trace on the valve-kit workspace](screenshots/opportunity_trace.png)
+
+### Company strategy
+
+`/settings` shows the strategy fields still missing, the Pacific clocks, and external AI sharing off. Nothing was saved.
+
+![Settings company strategy fields left blank](screenshots/settings_strategy.png)

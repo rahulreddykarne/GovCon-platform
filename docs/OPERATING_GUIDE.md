@@ -23,6 +23,13 @@ Three processes, plus Postgres 15 (or 16) already listening on `127.0.0.1:5433`:
 
 The scripts do not print `DATABASE_URL` or API keys. If Postgres is not accepting connections on the port you pass, they stop.
 
+`Invoke-GovConLiveChecks.ps1` prints whether SAM, DeepSeek, JEV, Anthropic, OpenAI, and SMTP are present or absent, then reads `GET /health`. It does not print values. Without `-Live` it does not call SAM or DeepSeek. With `-Live` it prints only an HTTP status code for those two. It does not probe JEV, because a decision package can contain company data.
+
+```powershell
+.\scripts\windows\Invoke-GovConLiveChecks.ps1 -WebPort 8001
+.\scripts\windows\Invoke-GovConLiveChecks.ps1 -WebPort 8001 -Live
+```
+
 ## Clocks
 
 The scheduler uses `America/Los_Angeles`, so the same local hour holds in Pacific Daylight Time and Pacific Standard Time.
@@ -44,6 +51,8 @@ A missed run still fires once if you open the laptop within 18 hours (36 hours f
 
 - `/operate` — overview, agents, the architecture diagram, and integration health from stored rows. The overview lists company-strategy fields that are still blank.
 - `/operate/how` — the same stages, followed on one stored notice. A workspace overview lists those stages for that notice.
+- `/operate/integrations` — local health cards and the saved model route. Saving a route does not call a provider and does not change AI sharing. Rollback restores an earlier saved version. With no saved row, the process settings are used. The known-good analysis route is DeepSeek `deepseek-flash`. If that provider is configured and the saved analysis provider is not, the page says it fell back.
+- `/learning` — outcome suggestions already stored, the four-case sanitized eval set, and the win-rate and margin formulas. The eval set is computed on each page load. It is not a sample of live notices.
 - `/settings` — clocks, workflow choices, and the company strategy. A blank strategy field stays missing. It is not guessed.
 - `/` — new matches, pending bot decisions, and whether health checks need you.
 - `/bots` — each bot's last run, evidence, and the approvals queue.
