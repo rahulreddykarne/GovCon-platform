@@ -48,6 +48,24 @@
   </div>
 
   <div>
+    {% if stage_trace %}
+    <div class="card stage-trace">
+      <div class="card-header"><span class="card-title">What ran on this notice</span></div>
+      <ol>
+        {% for stage in stage_trace %}
+        <li>
+          {% if not loop.first %}<span class="flow-arrow down" aria-hidden="true">↓</span>{% endif %}
+          <div>
+            <strong>{{ stage.title }}</strong>
+            <span class="tag {{ stage.tag }}">{{ stage.status }}</span>
+            <p class="text-sm text-muted">{{ stage.detail }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% endif %}
+
     {% if bid_decision %}
     <div class="card">
       <div class="card-header">

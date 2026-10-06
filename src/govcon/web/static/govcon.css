@@ -423,6 +423,18 @@ fieldset.form-group input[type="checkbox"] { width: auto; }
   .user-badge { flex-wrap: wrap; }
 }
 
+.stage-trace ol { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
+.stage-trace li { display: flex; flex-direction: column; gap: 0.15rem; }
+.stage-trace .tag {
+  display: inline-block; margin-left: 0.35rem; border-radius: 999px; padding: 0.05rem 0.45rem;
+  font-size: 11px; font-weight: 600; background: #e5f2ff; color: #0b6bcb;
+}
+.stage-trace .tag.good { background: #e5f6ec; color: #0f5132; }
+.stage-trace .tag.warn { background: #fff4e0; color: #8a5a00; }
+.stage-trace .tag.bad { background: #fdecec; color: #842029; }
+.stage-trace .tag.info { background: #e5f2ff; color: #0b6bcb; }
+.stage-trace .flow-arrow { color: #339cff; font-weight: 700; }
+
 /* Mission control. Scoped so the rest of the app keeps its existing chrome. */
 .mission {
   --mission-primary: #339cff;
