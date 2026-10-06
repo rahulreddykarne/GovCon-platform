@@ -867,7 +867,7 @@ def _run_consolidated_review(
             assignments=assignments,
             comments=comments,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001  boundary must record any failure
         ai_output = consolidated
 
     state = build_decision_state(session, review.opportunity_id)

@@ -93,7 +93,7 @@ def _queue_email(session: Session, row: Notification, settings: Settings) -> Non
     )
 
 
-def acknowledge(session: Session, *, notification_id: int, user: "User") -> Notification:
+def acknowledge(session: Session, *, notification_id: int, user: User) -> Notification:
     """Record that the user has seen and accepted an action-required notification."""
     from datetime import UTC, datetime
 

@@ -176,7 +176,8 @@ def _refresh(opp: Opportunity, provider: EmbeddingProvider) -> list[float] | Non
         opp.embedding_source_hash = None
         return None
     if not _fresh(opp, provider, text):
-        opp.embedding = _vector(provider, text)
+        vector = _vector(provider, text)
+        opp.embedding = vector
         opp.embedding_model = _model_id(provider)
         opp.embedding_dimension = _EMBEDDING_DIM
         opp.embedding_source_hash = _source_hash(text)

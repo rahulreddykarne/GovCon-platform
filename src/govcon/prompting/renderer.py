@@ -116,7 +116,7 @@ def _resolve_include(name: str, prompt_root: Path) -> PromptAsset | None:
     if candidate.exists():
         try:
             return load_markdown_prompt(candidate)
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             logger.warning("failed to load include %s from %s", name, candidate)
             return None
 
@@ -124,7 +124,8 @@ def _resolve_include(name: str, prompt_root: Path) -> PromptAsset | None:
     for path in prompt_root.rglob(f"{base}.md"):
         try:
             return load_markdown_prompt(path)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001  boundary must record any failure
+            logger.warning("failed to load include %s from %s: %s", name, path, exc)
             continue
     logger.warning("include %s not found under %s", name, prompt_root)
     return None

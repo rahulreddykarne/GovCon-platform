@@ -39,6 +39,7 @@ responses already recorded.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import logging
 from collections import Counter, defaultdict
@@ -46,15 +47,14 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import Any
 
+import httpx
 from sqlalchemy import Integer, event, inspect
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("govcon.ai.replay")
-
-T = TypeVar("T")
 
 _active: ContextVar[Recorder | None] = ContextVar("govcon_ai_recorder", default=None)
 # Deadlock detected, serialization failure.
@@ -79,7 +79,7 @@ class CallNeeded(BaseException):
 @dataclass
 class _Outcome:
     value: Any = None
-    error: Exception | None = None
+    error: BaseException | None = None
 
 
 class Recorder:
@@ -104,7 +104,7 @@ class Recorder:
         self._position = 0
         self._ids_used = Counter()
 
-    def call(self, request: Any, perform: Callable[[], T]) -> T:
+    def call[T](self, request: Any, perform: Callable[[], T]) -> T:
         """Answer ``request`` from the record, or stop the pass to make the call."""
         digest = hashlib.sha256(
             json.dumps(request, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
@@ -159,6 +159,47 @@ class Recorder:
     def record_id(self, table: str, value: int) -> None:
         self._ids[table].append(value)
         self._ids_used[table] += 1
+
+    def snapshot(self) -> dict[str, Any]:
+        """JSON-safe copy of the record, so a crashed worker can resume it."""
+        outcomes: list[dict[str, Any]] = []
+        for digest, occurrence in self._order:
+            outcome = self._outcomes[(digest, occurrence)]
+            outcomes.append({
+                "digest": digest,
+                "occurrence": occurrence,
+                "value": None if outcome.error is not None else _freeze(outcome.value),
+                "error": _freeze_error(outcome.error) if outcome.error is not None else None,
+            })
+        return {
+            "max_divergences": self.max_divergences,
+            "max_calls": self.max_calls,
+            "divergences": self.divergences,
+            "calls_made": self.calls_made,
+            "live": self.live,
+            "outcomes": outcomes,
+            "ids": {table: list(values) for table, values in self._ids.items()},
+        }
+
+    @classmethod
+    def restore(cls, payload: dict[str, Any] | None, *, max_divergences: int = 3, max_calls: int = 500) -> Recorder:
+        recorder = cls(
+            max_divergences=int((payload or {}).get("max_divergences", max_divergences)),
+            max_calls=int((payload or {}).get("max_calls", max_calls)),
+        )
+        if not payload:
+            return recorder
+        recorder.divergences = int(payload.get("divergences") or 0)
+        recorder.calls_made = int(payload.get("calls_made") or 0)
+        recorder.live = bool(payload.get("live"))
+        for table, values in (payload.get("ids") or {}).items():
+            recorder._ids[str(table)] = [int(value) for value in values]
+        for item in payload.get("outcomes") or []:
+            key = (str(item["digest"]), int(item["occurrence"]))
+            error = _thaw_error(item.get("error")) if item.get("error") else None
+            recorder._outcomes[key] = _Outcome(value=None if error else _thaw(item.get("value")), error=error)
+            recorder._order.append(key)
+        return recorder
 
 
 def active_recorder() -> Recorder | None:
@@ -217,18 +258,24 @@ def _retryable_conflict(exc: BaseException) -> bool:
     return isinstance(exc, DBAPIError) and getattr(exc.orig, "sqlstate", None) in _RETRYABLE_SQLSTATES
 
 
-def run_recorded(  # noqa: UP047 - TypeVar keeps mypy's older target parsing this module
-    run_pass: Callable[[], T], *, max_divergences: int = 3, max_calls: int = 500
+def run_recorded[T](
+    run_pass: Callable[[], T],
+    *,
+    max_divergences: int = 3,
+    max_calls: int = 500,
+    restore: dict[str, Any] | None = None,
+    persist: Callable[[dict[str, Any]], None] | None = None,
 ) -> T:
     """Run ``run_pass`` until a pass completes with every AI call answered.
 
     ``run_pass`` must open and close its own transaction, so a stopped pass
     rolls back before the call is made, and should open it under
-    :func:`stable_ids`.
+    :func:`stable_ids`. ``persist`` is called after each out-of-transaction
+    call so the record survives a worker crash. ``restore`` is that record.
     """
     if _active.get() is not None:
         raise RuntimeError("recorded runs cannot be nested")
-    recorder = Recorder(max_divergences=max_divergences, max_calls=max_calls)
+    recorder = Recorder.restore(restore, max_divergences=max_divergences, max_calls=max_calls)
     conflicts = 0
     while True:
         token = _active.set(recorder)
@@ -248,3 +295,103 @@ def run_recorded(  # noqa: UP047 - TypeVar keeps mypy's older target parsing thi
             _active.reset(token)
         if pending is not None:
             recorder.perform(pending)
+            if persist is not None:
+                persist(recorder.snapshot())
+
+
+def _freeze(value: Any) -> Any:
+    from govcon.ai.budget import Reservation
+    from govcon.ai.providers.base import CompletionResult
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, tuple):
+        return {"__replay__": "tuple", "items": [_freeze(item) for item in value]}
+    if isinstance(value, list):
+        return {"__replay__": "list", "items": [_freeze(item) for item in value]}
+    if isinstance(value, dict):
+        return {str(key): _freeze(item) for key, item in value.items()}
+    if isinstance(value, CompletionResult):
+        return {
+            "__replay__": "completion",
+            "content": value.content,
+            "model": value.model,
+            "provider": value.provider,
+            "usage": dict(value.usage or {}),
+            "latency_ms": value.latency_ms,
+            "finish_reason": value.finish_reason,
+        }
+    if isinstance(value, Reservation):
+        return {"__replay__": "reservation"}
+    if isinstance(value, httpx.Response):
+        return {
+            "__replay__": "http_response",
+            "status_code": value.status_code,
+            "body": value.content.decode("utf-8", "replace"),
+        }
+    raise TypeError(f"AI replay cannot store a {type(value).__name__}")
+
+
+def _thaw(value: Any) -> Any:
+    from govcon.ai.providers.base import CompletionResult
+
+    if not isinstance(value, dict) or "__replay__" not in value:
+        if isinstance(value, dict):
+            return {key: _thaw(item) for key, item in value.items()}
+        return value
+    kind = value["__replay__"]
+    if kind == "tuple":
+        return tuple(_thaw(item) for item in value["items"])
+    if kind == "list":
+        return [_thaw(item) for item in value["items"]]
+    if kind == "completion":
+        return CompletionResult(
+            content=value["content"], model=value["model"], provider=value["provider"],
+            usage=dict(value.get("usage") or {}), latency_ms=int(value.get("latency_ms") or 0),
+            finish_reason=value.get("finish_reason"),
+        )
+    if kind == "reservation":
+        return _RestoredReservation()
+    if kind == "http_response":
+        body = value.get("body") or ""
+        return httpx.Response(int(value["status_code"]), content=body.encode("utf-8"))
+    raise TypeError(f"AI replay cannot restore {kind}")
+
+
+class _RestoredReservation:
+    """A budget reservation that already finished before the worker crashed."""
+
+    def finish(self, result: Any = None) -> None:
+        return None
+
+
+def _freeze_error(exc: BaseException) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "__replay__": "error",
+        "qualname": f"{type(exc).__module__}.{type(exc).__qualname__}",
+        "message": str(exc)[:500],
+    }
+    for name in ("provider", "status_code", "model", "category"):
+        if hasattr(exc, name):
+            payload[name] = getattr(exc, name)
+    return payload
+
+
+def _thaw_error(payload: dict[str, Any]) -> BaseException:
+    qualname = str(payload.get("qualname") or "RuntimeError")
+    module_name, _, class_name = qualname.rpartition(".")
+    cls: type[BaseException] | None = None
+    if module_name:
+        try:
+            cls = getattr(importlib.import_module(module_name), class_name)
+        except (ImportError, AttributeError):
+            cls = None
+    message = str(payload.get("message") or "recorded provider error")
+    if cls is not None and issubclass(cls, BaseException):
+        try:
+            if class_name == "ProviderAPIError":
+                return cls(str(payload.get("provider") or "provider"), payload.get("status_code"))
+            return cls(message)
+        except Exception:  # noqa: BLE001  boundary must record any failure
+            logger.warning("could not restore recorded error %s", qualname)
+    return RuntimeError(message)

@@ -26,6 +26,7 @@ database work, not AI calls.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -45,6 +46,8 @@ from govcon.tasks.registry import (
     required_opportunity_id,
 )
 from govcon.workflow.source_revision import current_source_revision
+
+logger = logging.getLogger("govcon.workflow.preparation")
 
 PREPARATION_TASK = "opportunity_preparation"
 STEPS = ("documents", "summary", "compliance", "research", "decision", "review")
@@ -213,7 +216,30 @@ def _run_service(ctx: StepContext, step: str, service: Callable[[Session], dict[
             ctx.checkpoint_data = checkpoint_data  # a stopped pass leaves no notes behind
             raise
 
-    return run_recorded(one_pass)
+    def persist(snapshot: dict[str, Any]) -> None:
+        try:
+            with session_scope(ctx.settings) as db:
+                task = db.get(Task, ctx.task_id)
+                if task is None or task.status not in {"running", "retrying"}:
+                    return
+                checkpoint = dict(task.checkpoint or {})
+                replays = dict(checkpoint.get("ai_replay") or {})
+                replays[step] = snapshot
+                checkpoint["ai_replay"] = replays
+                task.checkpoint = checkpoint
+        except Exception:
+            logger.exception("task %s: could not persist the AI replay record for %s", ctx.task_id, step)
+
+    restored = None
+    with session_scope(ctx.settings) as db:
+        task = db.get(Task, ctx.task_id)
+        if task is not None:
+            restored = ((task.checkpoint or {}).get("ai_replay") or {}).get(step)
+    return run_recorded(
+        one_pass,
+        restore=restored if isinstance(restored, dict) else None,
+        persist=persist,
+    )
 
 
 def _summary_execute(_: None, ctx: StepContext) -> dict[str, Any]:

@@ -68,8 +68,16 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E9", "F", "I"]
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer's documented API is a function call in the default. B008 stays enabled
+# for every other call. Harmless while bugbear itself is not selected.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
 [tool.mypy]
 python_version = "3.12"
 show_error_codes = true
 pretty = false
-mypy_path = "$MYPY_CONFIG_FILE_DIR/.quality/stubs"
+warn_unused_ignores = true
+warn_redundant_casts = true
+# PR 26 stubs plus the workflow branch stubs. Colon-separated, type-checker only.
+mypy_path = "$MYPY_CONFIG_FILE_DIR/stubs:$MYPY_CONFIG_FILE_DIR/.quality/stubs"

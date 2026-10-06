@@ -69,7 +69,7 @@ def _parse_date(value: str | None) -> date | None:
     for candidate in (" ".join(words[:3]), words[0]):
         for fmt in _DATE_FORMATS:
             try:
-                return datetime.strptime(candidate, fmt).date()
+                return datetime.strptime(candidate, fmt).replace(tzinfo=UTC).date()
             except ValueError:
                 continue
     return None
@@ -343,9 +343,12 @@ def _identify_missing_documents(
     """Identify mandatory documents not yet assembled."""
     missing: list[str] = []
     for req in requirements:
-        if req.requirement_type in {"signature", "amendment_acknowledgment"} and req.mandatory:
-            if req.status not in {"satisfied", "not_applicable"}:
-                missing.append(f"Requirement {req.id}: {req.requirement_text[:80]}")
+        if (
+            req.requirement_type in {"signature", "amendment_acknowledgment"}
+            and req.mandatory
+            and req.status not in {"satisfied", "not_applicable"}
+        ):
+            missing.append(f"Requirement {req.id}: {req.requirement_text[:80]}")
     if not submission.submission_method:
         missing.append("Submission method not determined")
     if not submission.submission_destination and not submission.recipient_email:

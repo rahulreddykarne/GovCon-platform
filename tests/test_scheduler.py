@@ -276,12 +276,11 @@ class TestChainAbortOnFailure:
         patched_fns["sam_ingest"] = step_fail
         patched_fns["dibbs_ingest"] = step_should_not_run
 
-        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched_fns):
-            with patch(
-                "govcon.scheduler.chains.CHAIN_DEFINITIONS",
-                {"morning_ingest": custom_chain},
-            ):
-                result = run_chain("morning_ingest", settings, trigger="test")
+        with (
+            patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched_fns),
+            patch("govcon.scheduler.chains.CHAIN_DEFINITIONS", {"morning_ingest": custom_chain}),
+        ):
+            result = run_chain("morning_ingest", settings, trigger="test")
 
         assert result.failed
         assert result.failed_step == "sam_ingest"
@@ -324,12 +323,11 @@ class TestChainAbortOnFailure:
         patched["cache_refresh"] = step_fail
         patched["analytics_refresh"] = step_never
 
-        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
-            with patch(
-                "govcon.scheduler.chains.CHAIN_DEFINITIONS",
-                {"sunday_sweep": custom_chain},
-            ):
-                result = run_chain("sunday_sweep", settings, trigger="test")
+        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched), patch(
+            "govcon.scheduler.chains.CHAIN_DEFINITIONS",
+            {"sunday_sweep": custom_chain},
+        ):
+            result = run_chain("sunday_sweep", settings, trigger="test")
 
         assert result.failed
         assert "archive_sweep" in result.steps_completed
@@ -638,9 +636,8 @@ class TestSoftIngestSteps:
             coverage=DibbsCoverage(records=10, nsn=9, quantity=10),
             index_name="in260925.txt",
         )
-        with session_scope(_settings()) as db:
-            with patch("govcon.ingest.dibbs.pull_dibbs_index", return_value=fake):
-                result = step_dibbs_ingest(db, _settings())
+        with session_scope(_settings()) as db, patch("govcon.ingest.dibbs.pull_dibbs_index", return_value=fake):
+            result = step_dibbs_ingest(db, _settings())
         assert result.status == "completed_with_errors"
         assert not result.failed
 

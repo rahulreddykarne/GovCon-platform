@@ -230,6 +230,13 @@ class Settings(BaseSettings):
                 "WEB_BIND_HOST refuses a public bind. "
                 "Set WEB_BIND_ALLOW_PUBLIC=true only when that exposure is intentional."
             )
+        if host in _PUBLIC_BIND_HOSTS and self.web_bind_allow_public:
+            secret = self.web_csrf_secret or ""
+            if len(secret) < 32:
+                raise ValueError(
+                    "A public bind requires WEB_CSRF_SECRET of at least 32 characters "
+                    "so session tokens stay valid across processes."
+                )
         return self
 
     def require_database_url(self) -> str:

@@ -38,7 +38,7 @@ def test_current_authorized_cli_upload_contract(db, tmp_path, role):
     assert result.exit_code == 0, result.output
     assert "quote_id:" in result.output
     quote = db.scalar(select(SupplierQuote).where(SupplierQuote.opportunity_id == opp.id))
-    assert quote.total_price == Decimal("1000") and quote.entered_by_user_id == actor.id
+    assert quote.total_price == Decimal(1000) and quote.entered_by_user_id == actor.id
 
 
 @pytest.mark.parametrize("role", ["reviewer", "approver", "owner"])
@@ -48,7 +48,7 @@ def test_current_authorized_direct_intake(db, role):
     supplier = supplier_for(db, actor)
     intake = receive_quote_file(db, opportunity_id=opp.id, supplier_id=supplier.id, data=CSV,
                                filename="quote.csv", valid_until=None, actor=actor)
-    assert intake.task is None and intake.quote.total_price == Decimal("1000")
+    assert intake.task is None and intake.quote.total_price == Decimal(1000)
     db.rollback()
 
 

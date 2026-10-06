@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +59,7 @@ def seed_clause_library(session: Session, path: Path = SEED_PATH) -> int:
         stmt = pg_insert(ClauseLibraryEntry).values(**values, active=True)
         stmt = stmt.on_conflict_do_update(
             constraint="uq_clause_library_family_number",
-            set_={k: stmt.excluded[k] for k in values if k not in {"clause_family", "clause_number"}} | {"updated_at": datetime.now()},
+            set_={k: stmt.excluded[k] for k in values if k not in {"clause_family", "clause_number"}} | {"updated_at": datetime.now(UTC)},
         )
         session.execute(stmt)
         count += 1

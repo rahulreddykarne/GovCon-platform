@@ -88,8 +88,8 @@ def _opportunity(session: Session, **overrides) -> Opportunity:
         "naics_code": "541512",
         "set_aside_code": "SBA",
         "response_deadline": datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
-        "estimated_value_min": Decimal("25000"),
-        "estimated_value_max": Decimal("25000"),
+        "estimated_value_min": Decimal(25000),
+        "estimated_value_max": Decimal(25000),
         "links": {"ui": "https://sam.gov/opp/alert-1/view"},
         "raw": {"fixture": True},
     }
@@ -116,7 +116,7 @@ def _match(session: Session, opportunity: Opportunity, watchlist: Watchlist, **o
     values = {
         "opportunity_id": opportunity.id,
         "watchlist_id": watchlist.id,
-        "score": Decimal("1"),
+        "score": Decimal(1),
         "matched_on": {"score_basis": "rule_hits"},
         "status": "new",
     }
@@ -135,7 +135,7 @@ def test_calendar_days_and_estimated_value_and_source_link() -> None:
     assert calendar_days_remaining(datetime(2026, 10, 1, 12, tzinfo=UTC), NOW) == 5
     assert calendar_days_remaining(None, NOW) is None
     assert format_estimated_value(None, None) is None
-    assert format_estimated_value(Decimal("10"), Decimal("20")) == "10–20"
+    assert format_estimated_value(Decimal(10), Decimal(20)) == "10–20"
     assert format_estimated_value(Decimal("25000.00"), None) == "25000"
     assert source_link({"ui": "javascript:alert(1)", "self": [{"href": "https://sam.gov/opp/9/view"}]}) == (
         "https://sam.gov/opp/9/view"

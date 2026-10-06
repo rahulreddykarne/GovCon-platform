@@ -83,10 +83,23 @@
 <div class="card" id="registration">
   <div class="card-header"><span class="card-title">Our SAM registration</span></div>
   {% if registration %}
-  <p>{{ registration.legal_name or registration.uei }} — UEI {{ registration.uei }}{% if registration.cage_code %}, CAGE {{ registration.cage_code }}{% endif %}.
+  {% set freshness = registration.freshness_status or 'unknown' %}
+  <p>{{ registration.legal_name or registration.uei }} — UEI {{ registration.uei }}{% if freshness == 'fresh' and registration.cage_code %}, CAGE {{ registration.cage_code }}{% endif %}.
+  {% if freshness == 'fresh' %}
   Status: <strong>{{ registration.registration_status or 'unknown' }}</strong>;
-  expires {{ registration.expiration_date or 'unknown' }}.
-  <span class="text-muted text-sm">Refreshed {{ registration.refreshed_at.strftime('%Y-%m-%d %H:%M') }} UTC from SAM.gov, daily by the midday job.</span></p>
+  expires {{ registration.expires_at or registration.expiration_date or 'unknown' }}.
+  {% elif freshness == 'expired' %}
+  Status: <strong>expired</strong>. The stored expiration is not a current active registration.
+  {% elif freshness == 'failed' %}
+  Status: <strong>unknown</strong>. The last SAM refresh failed{% if registration.last_error %}: {{ registration.last_error }}{% endif %}.
+  {% elif freshness == 'stale' %}
+  Status: <strong>unknown</strong>. The last SAM refresh is stale.
+  {% else %}
+  Status: <strong>unknown</strong>.
+  {% endif %}
+  <span class="text-muted text-sm">Freshness {{ freshness }}.
+  Fetched {{ registration.fetched_at.strftime('%Y-%m-%d %H:%M') if registration.fetched_at else 'never' }} UTC;
+  source updated {{ registration.source_updated_at.strftime('%Y-%m-%d %H:%M') if registration.source_updated_at else 'unknown' }} UTC.</span></p>
   {% else %}
   <p class="text-muted">Not refreshed yet. Set COMPANY_UEI (or uei in the company facts file) and SAM_API_KEY; the midday job refreshes it daily.</p>
   {% endif %}

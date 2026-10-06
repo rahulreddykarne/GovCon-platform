@@ -539,9 +539,13 @@ def inputs_for(
         if e.verification_status == "verified"
     ]
     override = validation.get("override")
-    if override and requirement.amendment_changed_at and override.get("at"):
-        if datetime.fromisoformat(override["at"]) < requirement.amendment_changed_at:
-            override = None
+    if (
+        override
+        and requirement.amendment_changed_at
+        and override.get("at")
+        and datetime.fromisoformat(override["at"]) < requirement.amendment_changed_at
+    ):
+        override = None
     deterministic = list(validation.get("deterministic") or []) + list(validation.get("proposal_coverage_checks") or [])
     revalidated = bool(fresh) or any(d.get("status") in {"pass", "fail"} for d in deterministic)
     return ValidationInputs(

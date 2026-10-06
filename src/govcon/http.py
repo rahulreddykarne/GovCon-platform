@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
@@ -26,14 +27,20 @@ class RetryableStatus(Exception):
         super().__init__(f"retryable HTTP {response.status_code}")
 
 
-def build_client(settings: Settings | None = None, **overrides: Any) -> httpx.Client:
+def build_client(
+    settings: Settings | None = None,
+    *,
+    timeout: float = 30.0,
+    headers: Mapping[str, str] | None = None,
+    transport: httpx.BaseTransport | None = None,
+) -> httpx.Client:
     settings = settings or get_settings()
-    headers = {"User-Agent": settings.http_user_agent}
-    extra_headers = overrides.pop("headers", None)
-    if isinstance(extra_headers, dict):
-        headers.update(extra_headers)
-    timeout = overrides.pop("timeout", 30.0)
-    return httpx.Client(headers=headers, timeout=timeout, follow_redirects=True, **overrides)
+    merged = {"User-Agent": settings.http_user_agent}
+    if headers:
+        merged.update(headers)
+    return httpx.Client(
+        headers=merged, timeout=timeout, follow_redirects=True, transport=transport,
+    )
 
 
 def request_with_retry(
@@ -43,7 +50,9 @@ def request_with_retry(
     *,
     attempts: int = 3,
     wait: wait_base | None = None,
-    **kwargs: Any,
+    params: Mapping[str, str] | None = None,
+    json: Mapping[str, Any] | None = None,
+    data: Mapping[str, str] | None = None,
 ) -> httpx.Response:
     """Retry transport failures and 429/5xx responses with exponential backoff.
 
@@ -61,7 +70,7 @@ def request_with_retry(
         reraise=True,
     )
     def _send() -> httpx.Response:
-        response = client.request(method, url, **kwargs)
+        response = client.request(method, url, params=params, json=json, data=data)
         if response.status_code in RETRYABLE_STATUS:
             raise RetryableStatus(response)
         return response

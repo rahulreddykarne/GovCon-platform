@@ -91,7 +91,7 @@ def _award(session: Session, **overrides) -> Award:
         "recipient_name": "Known Vendor",
         "awarding_agency": "Department of Defense / Defense Logistics Agency",
         "action_date": date(2024, 6, 1),
-        "total_obligation": Decimal("1000"),
+        "total_obligation": Decimal(1000),
         "quantity": None,
         "unit_price": None,
         "raw": {"generated_internal_id": award_id},
@@ -127,17 +127,17 @@ def test_quantity_and_unit_price_are_not_invented_from_obligation() -> None:
     payload = _search_row(Description="quantity 10 for the kit", **{"Award Amount": 1000})
     quantity, unit_price = derive_quantity_and_unit_price(payload, payload["Description"])
     item = normalize_award(payload)
-    assert quantity == Decimal("10")
+    assert quantity == Decimal(10)
     assert unit_price is None
     assert item is not None
-    assert item.quantity == Decimal("10")
+    assert item.quantity == Decimal(10)
     assert item.unit_price is None
-    assert item.total_obligation == Decimal("1000")
+    assert item.total_obligation == Decimal(1000)
     labeled = _search_row(Description="quantity 10 unit price $25.00")
     labeled_item = normalize_award(labeled)
     assert labeled_item is not None
-    assert labeled_item.unit_price == Decimal("25")
-    assert labeled_item.total_obligation == Decimal("1000")
+    assert labeled_item.unit_price == Decimal(25)
+    assert labeled_item.total_obligation == Decimal(1000)
     bare = normalize_award(_search_row(Description="part 6545016320167 only"))
     assert bare is not None
     assert bare.nsn is None
@@ -208,11 +208,11 @@ def test_pull_is_idempotent_and_pages_until_has_next_is_false(session: Session) 
         stored = session.scalars(select(Award).where(Award.award_id.in_([first["generated_internal_id"], second["generated_internal_id"]]))).all()
         by_id = {row.award_id: row for row in stored}
         assert by_id[first["generated_internal_id"]].unit_price is None
-        assert by_id[first["generated_internal_id"]].quantity == Decimal("10")
-        assert by_id[first["generated_internal_id"]].raw["Award Amount"] in (1000, 1000.0, Decimal("1000"))
+        assert by_id[first["generated_internal_id"]].quantity == Decimal(10)
+        assert by_id[first["generated_internal_id"]].raw["Award Amount"] in (1000, 1000.0, Decimal(1000))
         assert by_id[second["generated_internal_id"]].nsn == "5306-00-111-2222"
         assert by_id[second["generated_internal_id"]].unit_price == Decimal("4.50")
-        assert by_id[second["generated_internal_id"]].total_obligation == Decimal("80")
+        assert by_id[second["generated_internal_id"]].total_obligation == Decimal(80)
         again = pull_usaspending(session, plan, client=client, limit=1, attempts=1, wait=FAST_WAIT)
         assert again.fetched == 2
         assert again.inserted == 0
@@ -235,9 +235,9 @@ def test_changed_payload_updates_without_inventing_price(session: Session) -> No
     assert updated.updated == 1
     row = session.scalar(select(Award).where(Award.award_id == "CONT_AWD_PHASE5_CHANGE"))
     assert row is not None
-    assert row.quantity == Decimal("9")
+    assert row.quantity == Decimal(9)
     assert row.unit_price == Decimal("12.50")
-    assert row.total_obligation == Decimal("900")
+    assert row.total_obligation == Decimal(900)
 
 
 def test_incremental_pull_uses_last_modified_after_backfill(session: Session) -> None:
@@ -349,8 +349,8 @@ def test_known_nsn_history_returns_vendor_date_amount_and_known_unit_price_only(
         session,
         award_id="phase5-nsn-priced",
         action_date=date(2025, 1, 15),
-        total_obligation=Decimal("999"),
-        quantity=Decimal("40"),
+        total_obligation=Decimal(999),
+        quantity=Decimal(40),
         unit_price=Decimal("12.5"),
         recipient_name="Priced Vendor",
     )
@@ -358,8 +358,8 @@ def test_known_nsn_history_returns_vendor_date_amount_and_known_unit_price_only(
         session,
         award_id="phase5-nsn-unpriced",
         action_date=date(2025, 3, 1),
-        total_obligation=Decimal("900"),
-        quantity=Decimal("9"),
+        total_obligation=Decimal(900),
+        quantity=Decimal(9),
         unit_price=None,
         recipient_name="Unpriced Vendor",
     )
@@ -370,12 +370,12 @@ def test_known_nsn_history_returns_vendor_date_amount_and_known_unit_price_only(
     unpriced = rows[0]
     assert priced.vendor_name == "Priced Vendor"
     assert priced.action_date == date(2025, 1, 15)
-    assert priced.amount == Decimal("999")
+    assert priced.amount == Decimal(999)
     assert priced.unit_price == Decimal("12.5")
     assert unpriced.vendor_name == "Unpriced Vendor"
-    assert unpriced.amount == Decimal("900")
+    assert unpriced.amount == Decimal(900)
     assert unpriced.unit_price is None
-    assert unpriced.quantity == Decimal("9")
+    assert unpriced.quantity == Decimal(9)
 
 
 def test_psc_history_keywords_are_whole_words(session: Session) -> None:
@@ -406,7 +406,7 @@ def test_agency_history_and_top_awardees(session: Session) -> None:
         award_id="phase5-dla-1",
         recipient_uei="UEI-TOP",
         recipient_name="Top Vendor",
-        total_obligation=Decimal("100"),
+        total_obligation=Decimal(100),
         psc_code="R425",
         nsn=None,
     )
@@ -415,7 +415,7 @@ def test_agency_history_and_top_awardees(session: Session) -> None:
         award_id="phase5-dla-2",
         recipient_uei="UEI-TOP",
         recipient_name="Top Vendor",
-        total_obligation=Decimal("50"),
+        total_obligation=Decimal(50),
         psc_code="R425",
         nsn=None,
     )
@@ -435,14 +435,14 @@ def test_agency_history_and_top_awardees(session: Session) -> None:
     assert "unit_price" not in AwardeeTotal.__dataclass_fields__
     top = next(row for row in totals if row.recipient_uei == "UEI-TOP")
     assert top.award_count == 2
-    assert top.total_obligation == Decimal("150")
+    assert top.total_obligation == Decimal(150)
     assert top.recipient_name == "Top Vendor"
 
 
 def test_recompete_view_keeps_older_awards_and_skips_long_periods(session: Session) -> None:
     views = set(inspect(session.get_bind()).get_view_names())
     assert "award_recompete_candidates" in views
-    today = date.today()
+    today = datetime.now(UTC).date()
     old = today - timedelta(days=800)
     recent = today - timedelta(days=30)
     far_end = (today + timedelta(days=800)).isoformat()
@@ -500,7 +500,7 @@ def test_digest_displays_recent_award_comps(session: Session, tmp_path: Path) ->
         Match(
             opportunity_id=opportunity.id,
             watchlist_id=watchlist.id,
-            score=Decimal("1"),
+            score=Decimal(1),
             matched_on={"score_basis": "rule_hits"},
             status="new",
         )
@@ -510,7 +510,7 @@ def test_digest_displays_recent_award_comps(session: Session, tmp_path: Path) ->
         award_id="phase5-comp-priced",
         action_date=date(2025, 5, 1),
         recipient_name="Comp Vendor",
-        total_obligation=Decimal("999"),
+        total_obligation=Decimal(999),
         unit_price=Decimal("12.5"),
     )
     _award(
@@ -518,8 +518,8 @@ def test_digest_displays_recent_award_comps(session: Session, tmp_path: Path) ->
         award_id="phase5-comp-unpriced",
         action_date=date(2025, 8, 1),
         recipient_name="Obligation Only",
-        total_obligation=Decimal("900"),
-        quantity=Decimal("9"),
+        total_obligation=Decimal(900),
+        quantity=Decimal(9),
         unit_price=None,
     )
     result = run_digest(session, settings=_settings(tmp_path), now=NOW)

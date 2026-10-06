@@ -723,7 +723,8 @@ def _build_preliminary_recommendation(
     compliance = bundle_results["compliance_and_amendment"]
     strengths: list[str] = []
     risks: list[str] = []
-    missing = list(state.get("analysis", {}).get("missing_information", []))
+    missing_information = state.get("analysis", {}).get("missing_information") or []
+    missing = missing_information.copy() if isinstance(missing_information, list) else list(missing_information)
     if eligibility.get("capability_match") in {"high", "very_high"}:
         strengths.append("Capability fit is strong.")
     if market.get("margin_quality") in {"good", "strong"}:
@@ -734,14 +735,14 @@ def _build_preliminary_recommendation(
         risks.append("Execution risk is elevated.")
     if bid.get("compliance_risk") in {"high", "critical"}:
         risks.append("Compliance risk remains high.")
-    for blocker in bid.get("hard_rule_blockers", []):
-        risks.append(blocker)
+    risks.extend(bid.get("hard_rule_blockers") or [])
     if not strengths:
         strengths.append("No strong automated strengths identified.")
     if not risks:
         risks.append("No decisive blocking risk identified.")
 
-    evidence = list(state.get("evidence_refs", []))
+    evidence_refs = state.get("evidence_refs") or []
+    evidence = evidence_refs.copy() if isinstance(evidence_refs, list) else list(evidence_refs)
     factor_scores = {
         "capability_fit": state.get("scores", {}).get("capability_fit_score"),
         "product_source_availability": 1.0 if state.get("sourcing", {}).get("product_found") else 0.0,

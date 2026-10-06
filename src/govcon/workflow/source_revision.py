@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Self
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ class SourceRevision(str):
 
     legacy: str
 
-    def __new__(cls, value: str, legacy: str) -> "SourceRevision":
+    def __new__(cls, value: str, legacy: str) -> Self:
         obj = super().__new__(cls, value)
         obj.legacy = legacy
         return obj

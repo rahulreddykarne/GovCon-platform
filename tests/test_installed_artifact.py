@@ -84,7 +84,7 @@ print('Installed wheel startup and bootstrap passed')
             admin.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(sql.Identifier(database_name)))
             env["DATABASE_URL"] = url.set(database=database_name).render_as_string(hide_password=False)
         result = subprocess.run([sys.executable, "-I", "-c", script, str(installed), mode, str(Path(__file__).with_name("test_release_lifecycle.py"))],
-                                cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
+                                cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120, check=False)
         assert result.returncode == 0, result.stdout + result.stderr
     finally:
         if admin is not None:

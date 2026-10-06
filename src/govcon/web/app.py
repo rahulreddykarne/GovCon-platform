@@ -11,6 +11,7 @@ import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from govcon.config import Settings, get_settings
@@ -51,6 +52,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Static files
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    @app.get("/health")
+    def health() -> JSONResponse:
+        """Liveness and database connectivity. The body never includes secrets or rows."""
+        from sqlalchemy import text as sql_text
+
+        from govcon.db import session_scope
+
+        try:
+            with session_scope(settings) as db:
+                db.execute(sql_text("SELECT 1"))
+        except Exception:  # noqa: BLE001  boundary must record any failure
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        return JSONResponse({"status": "ok"})
 
     # Import routes (late import to avoid circular deps at module load time)
     from govcon.web.routes import (

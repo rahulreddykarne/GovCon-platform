@@ -177,11 +177,14 @@ def status() -> None:
                     if last_run.row_counts:
                         totals: dict[str, int] = {}
                         for step_counts in last_run.row_counts.values():
-                            for k, v in step_counts.items():
-                                totals[k] = totals.get(k, 0) + (v or 0)
+                            if not isinstance(step_counts, dict):
+                                continue
+                            for key, value in step_counts.items():
+                                if isinstance(key, str) and isinstance(value, int):
+                                    totals[key] = totals.get(key, 0) + value
                         counts = " " + " ".join(f"{k}={v}" for k, v in totals.items() if v)
                     typer.echo(f"{chain_name}: {last_run.status} at {ts}{counts}")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         typer.echo(f"status_detail_error: {exc}", err=True)
 
 
@@ -2354,10 +2357,10 @@ def compliance_preflight(
             from govcon.models import Submission
             from govcon.submissions.manifest import current_package
             submission = session.scalar(select(Submission).where(Submission.opportunity_id == opportunity_id))
-            assembled = current_package(session, submission) if submission else None
-            if assembled is None:
-                typer.echo("Assemble a submission package first or provide --package.", err=True)
-                raise typer.Exit(code=1)
+            assembled = current_package(session, submission) if submission is not None else None
+        if assembled is None:
+            typer.echo("Assemble a submission package first or provide --package.", err=True)
+            raise typer.Exit(code=1)
         result = run_submission_preflight(
             session, opportunity_id, assembled,
             submission_id=submission_id, use_ai=ai, settings=settings,

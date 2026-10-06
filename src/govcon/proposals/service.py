@@ -129,8 +129,10 @@ def generate_proposal(
                 company_facts=company_facts,
                 settings=settings,
             )
-            provider = draft_result.get("provider")
-            model = draft_result.get("model")
+            raw_provider = draft_result.get("provider")
+            raw_model = draft_result.get("model")
+            provider = raw_provider if isinstance(raw_provider, str) else None
+            model = raw_model if isinstance(raw_model, str) else None
         except StructuredCallError as exc:
             logger.warning("AI drafting failed (%s); using placeholder draft: %s", exc.reason, exc.detail)
             draft_result = _build_placeholder_draft(session, opportunity_id)

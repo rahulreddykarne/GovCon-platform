@@ -8,6 +8,7 @@ caught, logged, and recorded to the DB; the scheduler continues running.
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 logger = logging.getLogger(__name__)
 _scheduler_settings = None
@@ -19,14 +20,14 @@ def execute_scheduled_chain(chain_name: str) -> None:
     Queues a durable ``scheduler_chain`` task (ADR-063); a worker runs it and
     resumes it at the next unfinished step if the worker dies.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from govcon.config import get_settings
     from govcon.db import session_scope
     from govcon.scheduler.chain_tasks import queue_chain
 
     settings = _scheduler_settings or get_settings()
-    slot = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+    slot = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M")
     with session_scope(settings) as db:
         task, created = queue_chain(db, chain_name, trigger="scheduler", slot=slot)
         task_id = task.id

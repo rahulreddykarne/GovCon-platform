@@ -21,7 +21,7 @@ def _fit_from_score(score: float | None) -> str:
     return "very_low"
 
 
-def _risk_from_days(days_remaining: int | float | None) -> str:
+def _risk_from_days(days_remaining: float | None) -> str:
     if days_remaining is None:
         return "medium"
     if days_remaining <= 2:
@@ -288,9 +288,7 @@ class RuleDecisionProvider:
         sufficient_information = not missing
         if missing:
             recommendation = "insufficient_information"
-        elif eligibility.get("stop_evaluation"):
-            recommendation = "no_bid"
-        elif isinstance(margin, (int, float)) and margin < 5:
+        elif eligibility.get("stop_evaluation") or isinstance(margin, (int, float)) and margin < 5:
             recommendation = "no_bid"
         elif isinstance(days, (int, float)) and days <= 1:
             recommendation = "review"

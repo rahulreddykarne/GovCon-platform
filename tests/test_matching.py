@@ -75,7 +75,7 @@ def _make_watchlist(
     exclude_keywords: list[str] | None = None,
     max_value: Decimal | None = None,
     min_value: Decimal | None = None,
-    sources: list[str] | None = ["sam"],
+    sources: list[str] | None = None,
 ) -> Watchlist:
     return create_watchlist(
         session,
@@ -86,7 +86,7 @@ def _make_watchlist(
         exclude_keywords=exclude_keywords,
         max_value=max_value,
         min_value=min_value,
-        sources=sources,
+        sources=["sam"] if sources is None else sources,
     )
 
 
@@ -178,7 +178,7 @@ MATCH_CASES = [
     ),
     pytest.param(
         {
-            "watchlist": {"max_value": Decimal("1000000")},
+            "watchlist": {"max_value": Decimal(1000000)},
             "opportunity": {"estimated_value_min": None, "estimated_value_max": None},
             "expected": True,
             "group": "value",
@@ -188,8 +188,8 @@ MATCH_CASES = [
     ),
     pytest.param(
         {
-            "watchlist": {"max_value": Decimal("100000")},
-            "opportunity": {"estimated_value_min": Decimal("150000"), "estimated_value_max": Decimal("200000")},
+            "watchlist": {"max_value": Decimal(100000)},
+            "opportunity": {"estimated_value_min": Decimal(150000), "estimated_value_max": Decimal(200000)},
             "expected": False,
             "group": "value",
             "value_status": "fail",

@@ -116,6 +116,7 @@ def _ai_validate(
     except StructuredCallError as exc:
         warnings.append({"code": f"{label}_{exc.reason}", "severity": "medium", "message": f"{label} unavailable: {exc.detail}"})
         return {}
+    analysis = result.analysis
     out: dict[int, dict[str, Any]] = {}
     for item in checked_output(result.output, ComplianceValidationV1).validations:
         if item.requirement_id not in by_id:
@@ -126,9 +127,9 @@ def _ai_validate(
             "reason": item.reason,
             "confidence": item.confidence,
             "evidence_ids": [ref.evidence_id for ref in item.evidence_refs if ref.evidence_id is not None],
-            "analysis_id": result.analysis.id,
-            "provider": result.analysis.provider,
-            "model": result.analysis.model,
+            "analysis_id": analysis.id if analysis is not None else None,
+            "provider": analysis.provider if analysis is not None else None,
+            "model": analysis.model if analysis is not None else None,
         }
     return out
 

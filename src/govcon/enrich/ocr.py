@@ -14,6 +14,10 @@ import shutil
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pytesseract import ImageData
 
 logger = logging.getLogger("govcon.enrich.ocr")
 
@@ -72,7 +76,7 @@ def ocr_available(config: OcrConfig) -> bool:
     return resolve_tesseract(config.tesseract_cmd) is not None
 
 
-def _page_text(data: dict) -> tuple[str, float | None]:
+def _page_text(data: ImageData) -> tuple[str, float | None]:
     """Rebuild reading-order lines from ``image_to_data`` output, with mean confidence."""
     lines: dict[tuple[int, int, int], list[str]] = {}
     confidences: list[float] = []
@@ -109,11 +113,11 @@ def ocr_pdf_pages(pdf_bytes: bytes, page_numbers: list[int], config: OcrConfig) 
     assert command is not None  # ocr_available verified this cached resolution
     pytesseract.pytesseract.tesseract_cmd = command
     allowed = page_numbers[: config.max_pages]
-    for page in page_numbers[config.max_pages:]:
-        failed[page] = f"over the OCR limit of {config.max_pages} pages per file"
+    for skipped in page_numbers[config.max_pages:]:
+        failed[skipped] = f"over the OCR limit of {config.max_pages} pages per file"
     try:
         document = pdfium.PdfDocument(pdf_bytes)
-    except Exception as exc:  # unreadable PDF: nothing can be OCR'd
+    except Exception as exc:  # unreadable PDF: nothing can be OCR'd  # noqa: BLE001  boundary must record any failure
         return read, {**failed, **{page: f"PDF could not be rendered: {type(exc).__name__}" for page in allowed}}
     try:
         for page_no in allowed:
@@ -122,7 +126,7 @@ def ocr_pdf_pages(pdf_bytes: bytes, page_numbers: list[int], config: OcrConfig) 
                 image = rendered_page.render(scale=config.dpi / 72).to_pil()
                 data = pytesseract.image_to_data(image, lang=config.lang, output_type=pytesseract.Output.DICT)
                 text, confidence = _page_text(data)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  boundary must record any failure
                 logger.warning("OCR failed on page %s: %s", page_no, type(exc).__name__)
                 failed[page_no] = f"OCR error: {type(exc).__name__}"
                 continue

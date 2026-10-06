@@ -28,8 +28,8 @@ def quote_inputs(db):
     actor, _ = user(db)
     supplier, _ = get_or_create_supplier(db, name=f"repeat-{uuid4().hex}", actor=actor, provenance="test")
     db.commit()
-    return dict(opportunity_id=opp.id, supplier_id=supplier.id, actor=actor, method="csv", total_price="1000",
-                valid_until="2099-12-31", source={"source_sha256": uuid4().hex * 2})
+    return {"opportunity_id": opp.id, "supplier_id": supplier.id, "actor": actor, "method": "csv", "total_price": "1000",
+                "valid_until": "2099-12-31", "source": {"source_sha256": uuid4().hex * 2}}
 
 
 @pytest.mark.parametrize("difference", ["opportunity", "supplier", "document", "validity", "withdrawn", "manual"])

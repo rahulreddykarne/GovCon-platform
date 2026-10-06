@@ -114,14 +114,14 @@ _OPTIONAL_INSTRUCTION_KEYS = frozenset({"deadline_conflicts", "stale_fields", "f
 _ARTIFACT_SCOPES = (
     ("pricing", re.compile(
         r"\b(?:price|pricing|cost)\s+(?:schedule|sheet|workbook|volume|proposal|quote|list|spreadsheet|template)s?\b|\bbid\s+schedule\b|\bCLINs?\b",
-        re.I,
+        re.IGNORECASE,
     )),
     ("proposal", re.compile(
         r"\btechnical\s+(?:proposal|volume|quote|quotation|narrative|response|submission)s?\b|\bnarrative\s+(?:volume|response)s?\b",
-        re.I,
+        re.IGNORECASE,
     )),
 )
-_APPLIES_TO_ALL = re.compile(r"\b(?:all|each|every|entire|any)\b", re.I)
+_APPLIES_TO_ALL = re.compile(r"\b(?:all|each|every|entire|any)\b", re.IGNORECASE)
 
 
 def file_type_scope(requirement: Requirement) -> str | None:

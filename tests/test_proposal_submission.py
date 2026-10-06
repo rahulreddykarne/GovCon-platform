@@ -259,7 +259,7 @@ def test_generate_proposal_creates_version_when_approved(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, req_type="technical", status="satisfied")
 
     result = generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -279,7 +279,7 @@ def test_generate_proposal_with_ai_mock(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, req_type="technical", status="satisfied")
     _requirement(session, opp.id, req_type="delivery", status="satisfied")
 
@@ -302,7 +302,7 @@ def test_generate_proposal_triggers_package_and_notification(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
     actor = _user(session, "approver")
 
@@ -347,7 +347,7 @@ def test_placeholder_draft_maps_requirement_ids(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     req = _requirement(session, opp.id, req_type="technical", status="missing", mandatory=True)
 
     result = generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -371,7 +371,7 @@ def test_submission_package_generated_from_requirements(session):
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
 
     # Add requirements with submission key_values
     req = Requirement(
@@ -408,7 +408,7 @@ def test_submission_instructions_from_checklist(session):
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     generate_submission_package(session, opportunity_id=opp.id)
@@ -429,7 +429,7 @@ def test_email_draft_generated(session):
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
 
     req = Requirement(
         opportunity_id=opp.id,
@@ -463,7 +463,7 @@ def test_missing_mandatory_blocks_ready(session):
     from govcon.proposals.service import generate_proposal, get_proposal_workspace
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     # Add a blocking mandatory requirement
     _requirement(session, opp.id, status="missing", mandatory=True, blocks_submission=True)
 
@@ -479,7 +479,7 @@ def test_all_satisfied_shows_ready(session):
     from govcon.proposals.service import generate_proposal, get_proposal_workspace
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, status="satisfied", mandatory=True, blocks_submission=False)
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -494,7 +494,7 @@ def test_checklist_blocked_when_mandatory_missing(session):
     from govcon.submissions.checklist import generate_final_checklist
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, status="missing", mandatory=True, blocks_submission=True)
 
     checklist = generate_final_checklist(session, opportunity_id=opp.id)
@@ -511,7 +511,7 @@ def test_export_proposal_docx(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     result = generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -525,7 +525,7 @@ def test_export_coverage_xlsx(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, req_type="technical")
 
     result = generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -552,7 +552,7 @@ def test_export_submission_zip(session):
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -580,7 +580,7 @@ def test_final_approval_requires_approver_role(session):
     from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, status="satisfied")
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -603,7 +603,7 @@ def test_approve_for_submission_sets_final_approved(session):
     from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, status="satisfied", mandatory=True, blocks_submission=False)
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -647,7 +647,7 @@ def test_return_for_fix_sets_returned_status(session):
     from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -668,7 +668,7 @@ def test_cancel_bid_sets_pursuit_cancelled(session):
     from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -690,7 +690,7 @@ def test_final_approval_is_audited(session):
     from govcon.proposals.service import finalize_proposal, generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, status="satisfied", mandatory=True, blocks_submission=False)
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -729,7 +729,7 @@ def test_no_auto_submission_in_v1(session):
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -822,7 +822,7 @@ def test_red_team_runs_and_persists_findings(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, req_type="technical", status="satisfied")
 
     result_gen = generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -867,7 +867,7 @@ def test_red_team_major_only_does_not_block(session):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     result_gen = generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -903,7 +903,7 @@ def test_every_regeneration_creates_new_version(session):
     from govcon.proposals.versions import list_proposal_versions
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id)
 
     r1 = generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
@@ -957,7 +957,7 @@ def test_cli_proposal_status_shows_readiness(session, upgraded_engine):
     from govcon.proposals.service import generate_proposal
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, status="satisfied")
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
     session.commit()
@@ -980,7 +980,7 @@ def test_cli_submission_checklist(session, upgraded_engine):
     from govcon.submissions.service import generate_submission_package
 
     opp = _opp(session)
-    review, pursuit = _approved_pursuit(session, opp)
+    _review, _pursuit = _approved_pursuit(session, opp)
     _requirement(session, opp.id, status="satisfied")
     generate_proposal(session, opportunity_id=opp.id, skip_ai=True)
     generate_submission_package(session, opportunity_id=opp.id)

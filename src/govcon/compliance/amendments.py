@@ -44,18 +44,18 @@ from govcon.models import OpportunityEvent, ProposalSection, Requirement, Review
 from govcon.security.classification import DataClassification
 
 AMENDMENT_VERSION = "amendment_revalidation.v1"
-_CHANGE_VERB = re.compile(r"\b(revised|changed|replaced|deleted|amended|extended|updated|is now|are now|hereby|superseded|modified|added|removed|reduced|increased)\b", re.I)
+_CHANGE_VERB = re.compile(r"\b(revised|changed|replaced|deleted|amended|extended|updated|is now|are now|hereby|superseded|modified|added|removed|reduced|increased)\b", re.IGNORECASE)
 TOPIC_PATTERNS = {
-    "delivery": re.compile(r"\bdeliver|\bship|f\.?o\.?b|lead time|packag|marking", re.I),
-    "pricing": re.compile(r"\bpric|\bclin\b|price schedule|bid schedule|quantit", re.I),
-    "page_limit": re.compile(r"\bpage", re.I),
-    "submission": re.compile(r"due date|deadline|closing|\bsubmi|received by|offers? (are )?due|quotes? (are )?due", re.I),
-    "signature": re.compile(r"\bsign", re.I),
-    "set_aside": re.compile(r"set-?aside|small business", re.I),
-    "country_of_origin": re.compile(r"country of origin|buy american|trade agreements|specialty metals", re.I),
-    "technical": re.compile(r"specification|drawing|\bspec\b|purchase description", re.I),
-    "formatting": re.compile(r"\bformat|file (name|type|size)", re.I),
-    "past_performance": re.compile(r"past performance|references?", re.I),
+    "delivery": re.compile(r"\bdeliver|\bship|f\.?o\.?b|lead time|packag|marking", re.IGNORECASE),
+    "pricing": re.compile(r"\bpric|\bclin\b|price schedule|bid schedule|quantit", re.IGNORECASE),
+    "page_limit": re.compile(r"\bpage", re.IGNORECASE),
+    "submission": re.compile(r"due date|deadline|closing|\bsubmi|received by|offers? (are )?due|quotes? (are )?due", re.IGNORECASE),
+    "signature": re.compile(r"\bsign", re.IGNORECASE),
+    "set_aside": re.compile(r"set-?aside|small business", re.IGNORECASE),
+    "country_of_origin": re.compile(r"country of origin|buy american|trade agreements|specialty metals", re.IGNORECASE),
+    "technical": re.compile(r"specification|drawing|\bspec\b|purchase description", re.IGNORECASE),
+    "formatting": re.compile(r"\bformat|file (name|type|size)", re.IGNORECASE),
+    "past_performance": re.compile(r"past performance|references?", re.IGNORECASE),
 }
 _EVENT_TOPICS = {
     "deadline_changed": ("submission",),
@@ -103,7 +103,7 @@ def diff_inventory(prior_files: list[dict[str, Any]], inventory: Inventory) -> I
     current_ids = {d.file_id for d in inventory.documents}
     diff = InventoryDiff()
     for doc in inventory.documents:
-        if doc.file_id in prior_ids:
+        if doc.file_id is None or doc.file_id in prior_ids:
             continue
         if doc.file_id is not None:
             diff.new_file_ids.append(doc.file_id)
@@ -151,17 +151,17 @@ def affected_requirement_reasons(
             found.append("source file replaced or removed")
         pattern = TOPIC_PATTERNS.get(req.requirement_type or "")
         section = (req.source_section or "").strip()
-        section_id = re.match(r"(?:section\s+)?([A-Z]?\d+(?:\.\d+)*|[A-Z])\b", section, re.I)
-        clins = set(re.findall(r"\bCLIN\s*(\d{4}[A-Z]{0,2})", req.text or "", re.I))
+        section_id = re.match(r"(?:section\s+)?([A-Z]?\d+(?:\.\d+)*|[A-Z])\b", section, re.IGNORECASE)
+        clins = set(re.findall(r"\bCLIN\s*(\d{4}[A-Z]{0,2})", req.text or "", re.IGNORECASE))
         fname = (filenames.get(req.source_file_id) or "").rsplit(".", 1)[0].lower()
         for sentence in sentences:
             text = sentence["text"]
             lowered = text.lower()
             if pattern is not None and pattern.search(text):
                 found.append(f"amendment changes {req.requirement_type}: {text[:160]}")
-            elif section_id and re.search(rf"\b(section\s+)?{re.escape(section_id.group(1))}\b", text, re.I) and len(section_id.group(1)) > 1:
+            elif section_id and re.search(rf"\b(section\s+)?{re.escape(section_id.group(1))}\b", text, re.IGNORECASE) and len(section_id.group(1)) > 1:
                 found.append(f"amendment revises section {section_id.group(1)}")
-            elif clins and any(re.search(rf"\bCLIN\s*{c}\b", text, re.I) for c in clins):
+            elif clins and any(re.search(rf"\bCLIN\s*{c}\b", text, re.IGNORECASE) for c in clins):
                 found.append(f"amendment revises CLIN {', '.join(sorted(clins))}")
             elif fname and len(fname) > 4 and fname in lowered:
                 found.append(f"amendment references {fname}")

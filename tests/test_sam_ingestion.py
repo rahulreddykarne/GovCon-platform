@@ -157,9 +157,9 @@ def test_nsn_quantity_and_estimated_value_are_explicit_only() -> None:
     title = "Bolt NSN 5305-00-123-4567 quantity 12 EA"
     description = "Estimated value $1,000 to $2,500. Phone 2174941263."
     assert parse_nsn_candidates(title, description) == ("5305-00-123-4567",)
-    assert parse_quantity(title, description) == (Decimal("12"), "EA")
+    assert parse_quantity(title, description) == (Decimal(12), "EA")
     low, high, source = parse_estimated_values({}, title, description)
-    assert (low, high, source) == (Decimal("1000"), Decimal("2500"), "explicit_text")
+    assert (low, high, source) == (Decimal(1000), Decimal(2500), "explicit_text")
     bare = parse_quantity("Widget 12 EA for NAICS 236220", None)
     assert bare == (None, None)
     award_only = {"award": {"amount": "800620"}}
@@ -349,10 +349,10 @@ def test_tracked_field_diffs_reference_the_new_snapshot(session: Session) -> Non
         )
         assert opportunity is not None
         assert opportunity.nsn == "5305-00-123-4567"
-        assert opportunity.quantity == Decimal("4")
+        assert opportunity.quantity == Decimal(4)
         assert opportunity.unit == "ea"
-        assert opportunity.estimated_value_min == Decimal("10")
-        assert opportunity.estimated_value_max == Decimal("20")
+        assert opportunity.estimated_value_min == Decimal(10)
+        assert opportunity.estimated_value_max == Decimal(20)
         assert opportunity.estimated_value_source == "explicit_text"
         assert opportunity.set_aside_code == "SBA"
         assert opportunity.status == "archived"

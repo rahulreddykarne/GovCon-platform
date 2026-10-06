@@ -107,5 +107,5 @@ def check_connectivity(engine: Engine) -> tuple[bool, str | None]:
             connection.execute(text("SELECT 1"))
             context = MigrationContext.configure(connection)
             return True, context.get_current_revision()
-    except Exception:
+    except Exception:  # noqa: BLE001  boundary must record any failure
         return False, None

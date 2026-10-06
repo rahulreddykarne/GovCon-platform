@@ -57,7 +57,7 @@ def synced_prompts(upgraded_engine):
 
 def opportunity(db, **kw):
     opp = Opportunity(source="sam", source_id=uuid4().hex, title="Nitrile gloves", status="open",
-                      solicitation_number=f"SPE-{uuid4().hex[:6]}", nsn="6515-01-519-8818", quantity=Decimal("500"),
+                      solicitation_number=f"SPE-{uuid4().hex[:6]}", nsn="6515-01-519-8818", quantity=Decimal(500),
                       unit="PR", response_deadline=datetime.now(UTC) + timedelta(days=20), raw={}, links={}, **kw)
     db.add(opp)
     db.commit()
@@ -143,7 +143,7 @@ def test_expired_quotes_are_not_used(db):
         before = sourcing_revision(s, opp.id)
         supplier, _ = get_or_create_supplier(s, name=f"Old {uuid4().hex[:6]}", actor=None, provenance="test")
         record_quote(s, opportunity_id=opp.id, supplier_id=supplier.id, actor=s.get(User, actor.id), method="manual",
-                     total_price="900", valid_until=(date.today() - timedelta(days=1)).isoformat())
+                     total_price="900", valid_until=(datetime.now(UTC).date() - timedelta(days=1)).isoformat())
         assert sourcing_revision(s, opp.id) == before, "an expired quote is not current"
         with pytest.raises(AnalysisInputMissing):
             _REQUESTS["supplier"](s, opp.id, get_settings())

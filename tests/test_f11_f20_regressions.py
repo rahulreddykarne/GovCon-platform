@@ -42,8 +42,8 @@ def db(upgraded_engine):
 
 
 def opportunity(db, **fields):
-    defaults = dict(source="sam", source_id=f"f11-20-{uuid4().hex}", title="Regression opportunity",
-                    status="open", raw={}, response_deadline=datetime.now(UTC) + timedelta(days=10))
+    defaults = {"source": "sam", "source_id": f"f11-20-{uuid4().hex}", "title": "Regression opportunity",
+                    "status": "open", "raw": {}, "response_deadline": datetime.now(UTC) + timedelta(days=10)}
     defaults.update(fields)
     row = Opportunity(**defaults)
     db.add(row)
@@ -264,7 +264,7 @@ def test_f16_malformed_times_return_unknown_with_source(time_text):
     )
     values = {"response_deadline_date": "2027-01-15", "response_deadline_time": time_text, "deadline_timezone": "ET"}
     assert parse_source_deadline("2027-01-15", time_text, "ET") is None
-    result = deadline_timezone_consistent(values, datetime(2027, 1, 15))
+    result = deadline_timezone_consistent(values, datetime(2027, 1, 15, tzinfo=UTC))
     assert result.status == "unknown" and result.evidence["source"] == values
 
 
@@ -279,11 +279,11 @@ def test_f16_boundaries_and_naive_datetimes():
     assert parse_source_deadline("2027-01-15", "12am", "UTC").hour == 0
     assert parse_source_deadline("2027-01-15", "12pm", "UTC").hour == 12
     assert parse_source_deadline("2027-01-15", "23:59", "UTC").hour == 23
-    assert parse_source_deadline(datetime(2027, 1, 15), "12pm", "UTC") is None
+    assert parse_source_deadline(datetime(2027, 1, 15, tzinfo=UTC), "12pm", "UTC") is None
     values = {"response_deadline_date": "2027-01-15", "response_deadline_time": "12pm", "deadline_timezone": "UTC"}
-    assert deadline_timezone_consistent(values, datetime(2027, 1, 15, 12)).status == "pass"
-    assert deadline_not_passed(datetime(2027, 1, 15), datetime(2027, 1, 14, tzinfo=UTC)).status == "pass"
-    assert submission_before_deadline(SubmissionPackage(planned_submission_at=datetime(2027, 1, 14)), datetime(2027, 1, 15, tzinfo=UTC)).status == "pass"
+    assert deadline_timezone_consistent(values, datetime(2027, 1, 15, 12, tzinfo=UTC)).status == "pass"
+    assert deadline_not_passed(datetime(2027, 1, 15, tzinfo=UTC), datetime(2027, 1, 14, tzinfo=UTC)).status == "pass"
+    assert submission_before_deadline(SubmissionPackage(planned_submission_at=datetime(2027, 1, 14, tzinfo=UTC)), datetime(2027, 1, 15, tzinfo=UTC)).status == "pass"
 
 
 @pytest.mark.parametrize("stage", ["submitted", "won", "lost", "cancelled", "no_bid"])
@@ -291,13 +291,13 @@ def test_f16_boundaries_and_naive_datetimes():
 def test_f17_reviewers_cannot_edit_locked_commercial_facts(db, monkeypatch, stage, field, value):
     from govcon.mcp.operations import op_update_pursuit
     opp = opportunity(db)
-    pursuit = Pursuit(opportunity_id=opp.id, stage=stage, quote_price=Decimal("10000"), notes="original")
+    pursuit = Pursuit(opportunity_id=opp.id, stage=stage, quote_price=Decimal(10000), notes="original")
     db.add(pursuit)
     db.flush()
     monkeypatch.setattr("govcon.mcp.operations.current_actor", lambda *args: user(db, "reviewer"))
     with pytest.raises(ValueError, match="locked"):
         op_update_pursuit(db, opp.id, expected_version=pursuit.version, **{field: value})
-    assert pursuit.quote_price == Decimal("10000") and pursuit.notes == "original"
+    assert pursuit.quote_price == Decimal(10000) and pursuit.notes == "original"
 
 
 @pytest.mark.parametrize("value", [-1, float("nan"), float("inf"), float("-inf")])
@@ -319,7 +319,7 @@ def test_f17_pre_submission_edits_reopen_approvals_and_drafts(db, monkeypatch, s
     from govcon.mcp.operations import op_update_pursuit
     opp = opportunity(db)
     actor = user(db, "reviewer")
-    pursuit = Pursuit(opportunity_id=opp.id, stage=stage, quote_price=Decimal("100"))
+    pursuit = Pursuit(opportunity_id=opp.id, stage=stage, quote_price=Decimal(100))
     review = ReviewSession(opportunity_id=opp.id, status="approved_to_bid", final_approval_status="approved_to_bid")
     db.add_all([pursuit, review])
     db.flush()
@@ -329,7 +329,7 @@ def test_f17_pre_submission_edits_reopen_approvals_and_drafts(db, monkeypatch, s
     db.flush()
     monkeypatch.setattr("govcon.mcp.operations.current_actor", lambda *args: actor)
     op_update_pursuit(db, opp.id, expected_version=pursuit.version, quote_price=200)
-    assert pursuit.stage == "evaluating" and pursuit.quote_price == Decimal("200")
+    assert pursuit.stage == "evaluating" and pursuit.quote_price == Decimal(200)
     assert review.final_approval_status is None and review.status == "ready_for_review"
     assert proposal.status == "returned_for_fix" and proposal.approved_version_id is None
     assert submission.status == "preparing" and submission.readiness_status == "not_ready"
@@ -339,18 +339,18 @@ def test_f17_submitted_corrections_are_authorized_and_append_only(db):
     from govcon.collaboration.users import PermissionDenied
     from govcon.workflow.commercial import record_commercial_correction
     opp = opportunity(db)
-    pursuit = Pursuit(opportunity_id=opp.id, stage="submitted", quote_price=Decimal("95000"))
+    pursuit = Pursuit(opportunity_id=opp.id, stage="submitted", quote_price=Decimal(95000))
     db.add(pursuit)
     db.flush()
     submission = Submission(opportunity_id=opp.id, pursuit_id=pursuit.id, status="submitted", submitted_at=datetime.now(UTC), package_manifest_hash="original-hash")
     db.add(submission)
     db.flush()
-    params = dict(expected_version=pursuit.version, changes={"quote_price": 96000}, reason="Correcting a transcription error")
+    params = {"expected_version": pursuit.version, "changes": {"quote_price": 96000}, "reason": "Correcting a transcription error"}
     with pytest.raises(PermissionDenied):
         record_commercial_correction(db, opp.id, actor=user(db, "reviewer"), **params)
     result = record_commercial_correction(db, opp.id, actor=user(db), **params)
     event = db.get(AuditEvent, result["audit_event_id"])
-    assert pursuit.quote_price == Decimal("95000") and pursuit.stage == "submitted"
+    assert pursuit.quote_price == Decimal(95000) and pursuit.stage == "submitted"
     assert submission.package_manifest_hash == "original-hash"
     assert event.old_value["submitted_facts"]["quote_price"] == "95000"
     assert event.new_value["correction"]["quote_price"] == "96000"
