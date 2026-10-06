@@ -139,6 +139,14 @@ def ops_task_action(request: Request, task_id: int, action: str) -> Response:
     return _redirect("/ops", notice=f"Task {task_id} {'queued' if action == 'retry' else 'cancelled'}.", request=request)
 
 
+def _suggestion_rule(strength: str) -> str:
+    if strength == "strong":
+        return "Strong match: a stored SAM award notice shares the solicitation number, or a stored USAspending PIID is one that notice named. Won is suggested only when that match names our UEI."
+    if strength == "possible":
+        return "Possible match: stored NSN or PSC, agency, and an action date after submission agree. A possible match does not suggest won or lost."
+    return "No strength rule is stored for this row."
+
+
 def learning(request: Request) -> Response:
     try:
         user = _require_login(request)
@@ -147,7 +155,7 @@ def learning(request: Request) -> Response:
 
     with session_scope() as db:
         from govcon.learning.evals import run_eval_harness
-        from govcon.models import AnalyticsSnapshot, OutcomeSuggestion
+        from govcon.models import AnalyticsSnapshot, OutcomeFeedback, OutcomeSuggestion
 
         analytics = outcome_analytics(db)
         last_refresh = db.scalar(select(AnalyticsSnapshot).order_by(AnalyticsSnapshot.id.desc()).limit(1))
@@ -169,9 +177,17 @@ def learning(request: Request) -> Response:
                 "status": row.status,
                 "suggested_outcome": row.suggested_outcome or "none suggested",
                 "evidence_keys": sorted((row.evidence or {}).keys()),
+                "identifier_keys": sorted((row.matched_identifiers or {}).keys()),
+                "rule": _suggestion_rule(row.strength),
             }
             for row in suggestion_rows
         ]
+        margin_sample = int(db.scalar(
+            select(func.count()).select_from(OutcomeFeedback).where(
+                OutcomeFeedback.outcome == "won",
+                OutcomeFeedback.win_margin_pct.is_not(None),
+            )
+        ) or 0)
         evals = run_eval_harness()
 
     stats = ViewRow({
@@ -201,5 +217,14 @@ def learning(request: Request) -> Response:
         "capture_counts": capture_counts,
         "capture_rows": capture_rows,
         "evals": evals,
+        "calculations": {
+            "won": analytics.total_won,
+            "lost": analytics.total_lost,
+            "submitted": analytics.total_submitted,
+            "no_bid": analytics.total_no_bid,
+            "win_rate": analytics.overall_win_rate_pct,
+            "margin": analytics.avg_margin_pct_on_wins,
+            "margin_sample": margin_sample,
+        },
         "active_page": "learning",
     }, user)

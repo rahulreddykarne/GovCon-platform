@@ -31,3 +31,6 @@ def test_learning_page_shows_the_eval_set_and_capture_counts(db, client) -> None
     assert "Sparse output" in page
     assert "Missed blocker" in page
     assert "Outcome capture" in page
+    assert "won ÷ (won + lost)" in page
+    assert "Win rate is not computed" in page
+    assert "no won outcome has a stored margin" in page
