@@ -43,7 +43,16 @@ def start_blocking_scheduler(settings, *, embedded_worker: bool = True) -> None:
     """
     from sqlalchemy import text
 
-    from govcon.db import make_engine
+    from govcon.db import make_engine, session_scope
+    try:
+        from govcon.prompting.registry import PromptSetupError, ensure_prompt_registry
+
+        with session_scope(settings) as db:
+            missing = ensure_prompt_registry(db, settings)
+        if missing:
+            logger.error("%s", PromptSetupError(missing))
+    except Exception:
+        logger.exception("prompt registry was not prepared")
     engine = make_engine(settings)
     try:
         with engine.connect() as connection:

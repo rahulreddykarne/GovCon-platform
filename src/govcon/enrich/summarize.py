@@ -308,10 +308,21 @@ def _merged_analysis(calls: list[tuple[Any, Any]], merged: dict[str, Any], manif
         context_manifest=manifest,
         variables={"parts": [p.variables.get("SOURCE_PACKAGE_JSON") for p, _ in calls]},
     )
+    output = SolicitationAnalysisV1.model_validate(merged)
+    from govcon.ai.quality import assess_output_quality
+
+    quality, reason = assess_output_quality(output)
+    for _, executed in calls:
+        if executed.quality == "incomplete":
+            quality = "incomplete"
+            reason = executed.quality_reason or reason or "A source part returned sparse output."
+            break
     executed = ExecutedCall(
-        output=SolicitationAnalysisV1.model_validate(merged),
+        output=output,
         result=result,
         reservation=SimpleNamespace(cost=sum(costs)) if costs else None,
+        quality=quality,
+        quality_reason=reason,
     )
     return build_analysis(prepared, executed)
 

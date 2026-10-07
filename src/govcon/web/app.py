@@ -32,6 +32,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         try:
+            from govcon.db import session_scope
+            from govcon.prompting.registry import (
+                PromptSetupError,
+                ensure_prompt_registry,
+            )
+
+            with session_scope(settings) as db:
+                missing = ensure_prompt_registry(db, settings)
+            if missing:
+                import logging
+                logging.getLogger("govcon.web").error("%s", PromptSetupError(missing))
+        except Exception:
+            import logging
+            logging.getLogger("govcon.web").exception("prompt registry was not prepared")
+        try:
             yield
         finally:
             dispose_engines(settings)

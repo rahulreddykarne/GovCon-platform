@@ -235,6 +235,15 @@ def run_worker(
             logger.warning("worker marked %s interrupted bot run(s) failed so they can be run again", interrupted)
     except Exception:
         logger.warning("worker could not reconcile interrupted bot runs")
+    try:
+        from govcon.prompting.registry import PromptSetupError, ensure_prompt_registry
+
+        with session_scope(settings) as db:
+            missing = ensure_prompt_registry(db, settings)
+        if missing:
+            logger.error("%s", PromptSetupError(missing))
+    except Exception:
+        logger.exception("prompt registry was not prepared")
     owner = set_bot_worker(worker_id)
     pulse_stop = threading.Event()
     pulse = threading.Thread(
