@@ -2,7 +2,7 @@
 {% block title %}Admin · Users · GovCon{% endblock %}
 {% block content %}
 {% include "admin/_nav.html" %}
-<div class="page-header"><h1 class="page-title">Users</h1><a href="/admin/users/invite" class="btn btn-primary">Invite User</a></div>
+<div class="page-header"><div><p class="eyebrow">Access</p><h1 class="page-title">Users</h1></div><a href="/admin/users/invite" class="btn btn-primary">Invite User</a></div>
 {% for user in users %}
 <article class="card">
   <h2>{{ user.display_name }} <span class="badge badge-secondary">{{ user.role }}</span>{% if not user.is_active %} · Inactive{% endif %}</h2>

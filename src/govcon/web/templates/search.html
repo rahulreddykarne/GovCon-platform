@@ -5,6 +5,7 @@
 
 <div class="page-header">
   <div>
+    <p class="eyebrow">Notices</p>
     <h1 class="page-title">Search</h1>
     <div class="page-subtitle">Full-text and filtered search across all opportunities</div>
   </div>
@@ -83,7 +84,7 @@
     </table>
   </div>
   {% else %}
-    <p class="text-muted text-center" style="padding:2rem 0;">No matching opportunities found.</p>
+    <p class="empty-state text-center">No matching opportunities found.</p>
   {% endif %}
   <p class="text-sm">
     {% if page > 1 %}

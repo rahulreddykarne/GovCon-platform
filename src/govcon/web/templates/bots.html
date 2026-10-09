@@ -4,6 +4,7 @@
 
 <div class="page-header">
   <div>
+    <p class="eyebrow">Human gates</p>
     <h1 class="page-title">Bots</h1>
     <div class="page-subtitle">What ran, why, and what is waiting for you. Nothing here sends email or submits a bid.</div>
   </div>
@@ -48,7 +49,7 @@
   </div>
   <p class="text-sm text-muted">Recording a decision does not submit a proposal, contact a contracting officer, or change AI sharing.</p>
   {% else %}
-  <p class="text-muted">Nothing is waiting for a decision.</p>
+  <p class="empty-state">Nothing is waiting for a decision.</p>
   {% endif %}
 </div>
 
@@ -59,7 +60,7 @@
     {% if card.run %}
       <span class="badge badge-{% if card.run.status == 'succeeded' %}success{% elif card.run.status == 'failed' %}danger{% elif card.run.status == 'waiting_approval' or card.run.status == 'completed_with_errors' %}warning{% else %}primary{% endif %}">{{ card.run.status }}</span>
     {% else %}
-      <span class="badge">not run</span>
+      <span class="badge badge-secondary">No run yet</span>
     {% endif %}
   </div>
   <p>{{ card.why }}</p>

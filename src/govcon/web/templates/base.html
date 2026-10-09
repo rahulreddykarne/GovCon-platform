@@ -8,28 +8,50 @@
   <script src="/static/vendor/htmx.min.js" defer></script>
 </head>
 <body class="app-shell">
+{% set sections = {
+  'operate': 'Mission control',
+  'inbox': 'Inbox',
+  'pipeline': 'Pipeline',
+  'search': 'Search',
+  'watchlists': 'Watchlists',
+  'vendors': 'Vendors',
+  'suppliers': 'Suppliers',
+  'ops': 'Operations',
+  'bots': 'Approvals',
+  'settings': 'Settings',
+  'learning': 'Insights',
+  'admin': 'Admin'
+} %}
 
+<div class="shell-head">
 <header class="top-bar">
-  <a class="brand" href="/">GovCon</a>
-  <nav class="d-flex gap-1 align-center" aria-label="Main navigation">
-    {% for key, path, label in [('operate', '/operate', 'Operate'), ('inbox', '/', 'Inbox'), ('pipeline', '/pipeline', 'Pipeline'), ('search', '/search', 'Search'), ('watchlists', '/watchlists', 'Watchlists'), ('vendors', '/vendors', 'Vendors'), ('suppliers', '/suppliers', 'Suppliers'), ('ops', '/ops', 'Ops'), ('bots', '/bots', 'Bots'), ('settings', '/settings', 'Settings'), ('learning', '/learning', 'Insights'), ('admin', '/admin', 'Admin')] %}
-    <a href="{{ path }}" {% if active_page == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
-    {% endfor %}
-  </nav>
+  <a class="brand" href="/">
+    <span class="brandmark" aria-hidden="true">G</span>
+    <span>GovCon {% if active_page in sections %}<span class="brand-context">/ {{ sections[active_page] }}</span>{% endif %}</span>
+  </a>
   <span class="spacer"></span>
   <div class="user-badge">
     {% if current_user %}
-      <span>{{ current_user.display_name }}</span>
+      {% set raw_name = current_user.display_name or current_user.email or "?" %}
+      {% set bits = raw_name.replace("@", " ").split() %}
+      <span class="avatar" aria-hidden="true">{{ ((bits[0][:1] ~ (bits[1][:1] if bits|length > 1 else ""))|upper) or "?" }}</span>
+      <span class="user-name">{{ current_user.display_name }}</span>
       <span class="role-badge">{{ current_user.role }}</span>
       {% set notif_count = unread_notification_count|default(0) %}
       <a href="/notifications" class="notification-bell" aria-label="Notifications: {{ notif_count }} unread"><span aria-hidden="true">&#128276;</span>{% if notif_count %}<span>{{ notif_count }}</span>{% endif %}</a>
       <form method="post" action="/logout" style="margin:0;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <button type="submit" class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.7);">Logout</button>
+        <button type="submit" class="btn btn-ghost btn-sm logout-btn">Logout</button>
       </form>
     {% endif %}
   </div>
 </header>
+<nav class="app-tabs" aria-label="Main navigation">
+  {% for key, path, label in [('operate', '/operate', 'Operate'), ('inbox', '/', 'Inbox'), ('pipeline', '/pipeline', 'Pipeline'), ('search', '/search', 'Search'), ('watchlists', '/watchlists', 'Watchlists'), ('vendors', '/vendors', 'Vendors'), ('suppliers', '/suppliers', 'Suppliers'), ('ops', '/ops', 'Ops'), ('bots', '/bots', 'Bots'), ('settings', '/settings', 'Settings'), ('learning', '/learning', 'Insights'), ('admin', '/admin', 'Admin')] %}
+  <a href="{{ path }}" {% if active_page == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+</div>
 
 <main class="main-content">
   {% if flash_error %}<div class="alert alert-error" role="alert">{{ flash_error }}</div>{% endif %}

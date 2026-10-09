@@ -4,6 +4,7 @@
 
 <div class="page-header">
   <div>
+    <p class="eyebrow">New matches</p>
     <h1 class="page-title">Inbox</h1>
     <div class="page-subtitle">New opportunities from your watchlists — action required</div>
   </div>
@@ -44,7 +45,7 @@
 
 {% if not groups %}
   <div class="card">
-    <p class="text-muted text-center" style="padding:2rem 0;">No new matches. <a href="/watchlists">Create or rebuild a watchlist</a> to find opportunities.</p>
+    <p class="empty-state text-center">No new matches. <a href="/watchlists">Create or rebuild a watchlist</a> to find opportunities.</p>
   </div>
 {% endif %}
 
@@ -73,7 +74,7 @@
         {% endif %}
         {{ m.source|upper }} · {{ m.psc or "" }}
         {% if m.agency %} · {{ m.agency[:60] }}{% endif %}
-        {% if m.estimated_value %} · ~{{ m.estimated_value }}{% endif %}
+        {% if m.estimated_value %} · estimated {{ m.estimated_value }}{% endif %}
       </div>
       {% if m.rank_factors %}
       <details class="text-sm"><summary>Why this rank</summary>

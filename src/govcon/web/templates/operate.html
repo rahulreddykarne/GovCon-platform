@@ -145,7 +145,7 @@
         <div class="arch-row layout-{{ band.layout }}">
           {% for node in band.nodes %}
           {% if not loop.first %}<span class="flow-arrow across" aria-hidden="true">→</span>{% endif %}
-          <a class="arch-node {% if architecture.selected.id == node.id %}is-selected{% endif %}"
+          <a class="arch-node kind-{{ node.kind|lower }} {% if architecture.selected.id == node.id %}is-selected{% endif %}"
              href="/operate/architecture?node={{ node.id }}" title="{{ node.tip }}">
             <span class="arch-kind">{{ node.kind }}</span>
             <span class="arch-title">{{ node.title }}</span>
@@ -161,6 +161,7 @@
     {% set inspector = architecture.selected %}
     {% include "operate_inspector.html" %}
   </div>
+  <p class="architecture-note"><strong>Human control.</strong> Pursuit, compliance overrides, sensitive-data sharing, external messages, agency contact, and bid submission stay manual.</p>
   {% endif %}
 
   {% if view == 'how' and guide %}

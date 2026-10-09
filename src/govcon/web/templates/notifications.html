@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Notifications · GovCon{% endblock %}
 {% block content %}
-<h1>Notifications</h1>
+<p class="eyebrow">Alerts</p>
+<h1 class="page-title">Notifications</h1>
 {% for item in notifications %}
 <article class="card">
   <h2>{{ item.title }}{% if item.unread %} · Unread{% endif %}{% if item.needs_ack %} · Action required{% elif item.acknowledged_at %} · Acknowledged{% endif %}</h2>
