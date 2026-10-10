@@ -361,130 +361,143 @@ def run_decision_bundle(
     )
 
     hard_findings = evaluate_hard_rules(state)
-    rule_provider = RuleDecisionProvider()
-    baseline = rule_provider.decide(
-        bundle_name=bundle_name,
-        bundle_version=definition.version,
-        state=state,
+    from govcon.ai.usage_log import (
+        attach_call_ids,
+        collect_call_ids,
+        record_call,
+        stop_collecting,
     )
-    active: ProviderDecision = baseline
+    link_token, linked_ids = collect_call_ids()
+    try:
+        record_call(session, provider="local", purpose=f"decision_bundle:{bundle_name}", status="local",
+                    model="rules", opportunity_id=opportunity_id)
+        rule_provider = RuleDecisionProvider()
+        baseline = rule_provider.decide(
+            bundle_name=bundle_name,
+            bundle_version=definition.version,
+            state=state,
+        )
+        active: ProviderDecision = baseline
 
-    from govcon.ai.routing import decision_providers
+        from govcon.ai.routing import decision_providers
 
-    primary, fallback = decision_providers(session, settings)
-    diagnostic_event("decision.route", provider=primary, source=fallback, blockers=len(hard_findings))
-    jev_error: Exception | None = None
-    if primary == "jev":
-        try:
-            jev_provider = JevDecisionProvider.from_settings(settings, session=session)
-            jev_result = jev_provider.decide(
-                bundle_name=bundle_name,
-                bundle_version=definition.version,
-                state=state,
-            )
-            merged = _merge_provider_result(bundle_name, baseline.result, jev_result)
-            active = ProviderDecision(
-                provider=jev_result.provider,
-                model=jev_result.model,
-                result=merged,
-                confidence=jev_result.confidence if jev_result.confidence is not None else baseline.confidence,
-                cost=jev_result.cost,
-                latency_ms=jev_result.latency_ms,
-                raw_response=jev_result.raw_response,
-            )
-        except DecisionProviderUnavailable as exc:
-            jev_error = exc
-            diagnostic_event("decision.provider_fallback", level=logging.WARNING, provider="jev",
-                             source="rules", error_type=type(exc).__name__)
-            logger.warning(
-                "JEV unavailable for bundle=%s opportunity=%s; using the rules provider: %s",
-                bundle_name,
-                opportunity_id,
-                exc,
-            )
-    elif primary == "llm":
-        try:
-            llm = LLMDecisionProvider(settings=settings, session=session)
-            llm_result = llm.decide(
-                bundle_name=bundle_name,
-                bundle_version=definition.version,
-                state=state,
-            )
-            merged = _merge_provider_result(bundle_name, baseline.result, llm_result)
-            active = ProviderDecision(
-                provider=llm_result.provider,
-                model=llm_result.model,
-                result=merged,
-                confidence=llm_result.confidence if llm_result.confidence is not None else baseline.confidence,
-                cost=llm_result.cost,
-                latency_ms=llm_result.latency_ms,
-                raw_response=llm_result.raw_response,
-            )
-        except DecisionProviderUnavailable as exc:
-            diagnostic_event("decision.provider_fallback", level=logging.WARNING, provider="llm",
-                             source="rules", error_type=type(exc).__name__)
-            logger.warning("LLM decision provider unavailable for bundle=%s; using rules: %s", bundle_name, exc)
-            active = baseline
+        primary, fallback = decision_providers(session, settings)
+        diagnostic_event("decision.route", provider=primary, source=fallback, blockers=len(hard_findings))
+        jev_error: Exception | None = None
+        if primary == "jev":
+            try:
+                jev_provider = JevDecisionProvider.from_settings(settings, session=session)
+                jev_result = jev_provider.decide(
+                    bundle_name=bundle_name,
+                    bundle_version=definition.version,
+                    state=state,
+                )
+                merged = _merge_provider_result(bundle_name, baseline.result, jev_result)
+                active = ProviderDecision(
+                    provider=jev_result.provider,
+                    model=jev_result.model,
+                    result=merged,
+                    confidence=jev_result.confidence if jev_result.confidence is not None else baseline.confidence,
+                    cost=jev_result.cost,
+                    latency_ms=jev_result.latency_ms,
+                    raw_response=jev_result.raw_response,
+                )
+            except DecisionProviderUnavailable as exc:
+                jev_error = exc
+                diagnostic_event("decision.provider_fallback", level=logging.WARNING, provider="jev",
+                                 source="rules", error_type=type(exc).__name__)
+                logger.warning(
+                    "JEV unavailable for bundle=%s opportunity=%s; using the rules provider: %s",
+                    bundle_name,
+                    opportunity_id,
+                    exc,
+                )
+        elif primary == "llm":
+            try:
+                llm = LLMDecisionProvider(settings=settings, session=session)
+                llm_result = llm.decide(
+                    bundle_name=bundle_name,
+                    bundle_version=definition.version,
+                    state=state,
+                )
+                merged = _merge_provider_result(bundle_name, baseline.result, llm_result)
+                active = ProviderDecision(
+                    provider=llm_result.provider,
+                    model=llm_result.model,
+                    result=merged,
+                    confidence=llm_result.confidence if llm_result.confidence is not None else baseline.confidence,
+                    cost=llm_result.cost,
+                    latency_ms=llm_result.latency_ms,
+                    raw_response=llm_result.raw_response,
+                )
+            except DecisionProviderUnavailable as exc:
+                diagnostic_event("decision.provider_fallback", level=logging.WARNING, provider="llm",
+                                 source="rules", error_type=type(exc).__name__)
+                logger.warning("LLM decision provider unavailable for bundle=%s; using rules: %s", bundle_name, exc)
+                active = baseline
 
-    if (
-        active.provider == "rules"
-        and (allow_llm_fallback or fallback == "llm")
-        and (jev_error is not None or primary == "llm")
-    ):
-        try:
-            llm = LLMDecisionProvider(settings=settings, session=session)
-            llm_result = llm.decide(
-                bundle_name=bundle_name,
-                bundle_version=definition.version,
-                state=state,
-            )
-            merged = _merge_provider_result(bundle_name, active.result, llm_result)
-            active = ProviderDecision(
-                provider=llm_result.provider,
-                model=llm_result.model,
-                result=merged,
-                confidence=llm_result.confidence if llm_result.confidence is not None else active.confidence,
-                cost=llm_result.cost,
-                latency_ms=llm_result.latency_ms,
-                raw_response=llm_result.raw_response,
-            )
-        except DecisionProviderUnavailable as exc:
-            diagnostic_event("decision.fallback_unavailable", level=logging.WARNING, provider="llm",
-                             source="rules", error_type=type(exc).__name__)
+        if (
+            active.provider == "rules"
+            and (allow_llm_fallback or fallback == "llm")
+            and (jev_error is not None or primary == "llm")
+        ):
+            try:
+                llm = LLMDecisionProvider(settings=settings, session=session)
+                llm_result = llm.decide(
+                    bundle_name=bundle_name,
+                    bundle_version=definition.version,
+                    state=state,
+                )
+                merged = _merge_provider_result(bundle_name, active.result, llm_result)
+                active = ProviderDecision(
+                    provider=llm_result.provider,
+                    model=llm_result.model,
+                    result=merged,
+                    confidence=llm_result.confidence if llm_result.confidence is not None else active.confidence,
+                    cost=llm_result.cost,
+                    latency_ms=llm_result.latency_ms,
+                    raw_response=llm_result.raw_response,
+                )
+            except DecisionProviderUnavailable as exc:
+                diagnostic_event("decision.fallback_unavailable", level=logging.WARNING, provider="llm",
+                                 source="rules", error_type=type(exc).__name__)
 
-    result_data = apply_hard_rule_override(bundle_name, active.result, hard_findings)
-    threshold = settings.jev_human_review_threshold or 0.7
-    result_data = enforce_low_confidence_escalation(
-        bundle_name,
-        result_data,
-        confidence=active.confidence,
-        threshold=threshold,
-    )
+        result_data = apply_hard_rule_override(bundle_name, active.result, hard_findings)
+        threshold = settings.jev_human_review_threshold or 0.7
+        result_data = enforce_low_confidence_escalation(
+            bundle_name,
+            result_data,
+            confidence=active.confidence,
+            threshold=threshold,
+        )
 
-    validated = validate_bundle_result(bundle_name, result_data).model_dump(mode="json")
-    diagnostic_event("decision.validated", provider=active.provider, model=active.model,
-                     confidence=active.confidence, blockers=len(hard_findings), schema=definition.input_schema)
-    spec_meta = load_decision_spec_metadata(bundle_name, settings=settings)
-    row = DecisionRun(
-        opportunity_id=opportunity_id,
-        bundle_name=bundle_name,
-        bundle_version=definition.version,
-        provider=active.provider,
-        model=active.model,
-        decision_spec_name=spec_meta.decision_spec_name,
-        decision_spec_hash=spec_meta.content_hash,
-        schema_version=definition.input_schema,
-        input_state=json_safe(state),
-        input_state_hash=state_hash,
-        result=validated,
-        confidence=Decimal(str(active.confidence)) if active.confidence is not None else None,
-        cost=active.cost,
-        latency_ms=active.latency_ms,
-        source_snapshot_ids=state.get("source_snapshot_ids") or None,
-        supersedes_run_id=previous_run.id if previous_run else None,
-    )
-    session.add(row)
-    session.flush()
+        validated = validate_bundle_result(bundle_name, result_data).model_dump(mode="json")
+        diagnostic_event("decision.validated", provider=active.provider, model=active.model,
+                         confidence=active.confidence, blockers=len(hard_findings), schema=definition.input_schema)
+        spec_meta = load_decision_spec_metadata(bundle_name, settings=settings)
+        row = DecisionRun(
+            opportunity_id=opportunity_id,
+            bundle_name=bundle_name,
+            bundle_version=definition.version,
+            provider=active.provider,
+            model=active.model,
+            decision_spec_name=spec_meta.decision_spec_name,
+            decision_spec_hash=spec_meta.content_hash,
+            schema_version=definition.input_schema,
+            input_state=json_safe(state),
+            input_state_hash=state_hash,
+            result=validated,
+            confidence=Decimal(str(active.confidence)) if active.confidence is not None else None,
+            cost=active.cost,
+            latency_ms=active.latency_ms,
+            source_snapshot_ids=state.get("source_snapshot_ids") or None,
+            supersedes_run_id=previous_run.id if previous_run else None,
+        )
+        session.add(row)
+        session.flush()
+        attach_call_ids(session, linked_ids, decision_run_id=row.id)
+    finally:
+        stop_collecting(link_token)
     fallback_reason = None
     if jev_error is not None and active.provider == "rules":
         # The rules result above is the baseline, including compliance findings.

@@ -1,0 +1,140 @@
+<header class="mission-head">
+  <p class="mission-kicker">Provider usage</p>
+  <h1>AI usage and cost</h1>
+  <p class="mission-lead">Token counts are copied from provider usage fields. If a response omits them, the row says usage not reported. Cost uses the price table below, including the per-search fee for web search. A model with no price says price not set.</p>
+</header>
+
+{% if usage.empty %}
+<p class="empty-state">No usage recorded yet.</p>
+{% else %}
+{% for period in usage.periods %}
+<section class="mission-panel" style="margin-bottom:0.9rem;">
+  <h2>{{ period.title }}</h2>
+  {% if period.empty %}
+  <p class="mission-empty">No calls in this period.</p>
+  {% else %}
+  <p class="text-sm text-muted">{{ period.calls }} call{{ '' if period.calls == 1 else 's' }}.</p>
+  <h3>By provider and model</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Provider · model</th><th>Calls</th><th>Input tokens</th><th>Output tokens</th><th>Web search / fetch</th><th>Cost</th></tr></thead>
+      <tbody>
+        {% for row in period.by_model %}
+        <tr><td>{{ row.label }}</td><td>{{ row.calls }}</td><td>{{ row.input }}</td><td>{{ row.output }}</td><td>{{ row.server_tools }}</td><td>{{ row.cost }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <h3>By purpose</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Purpose</th><th>Calls</th><th>Input tokens</th><th>Output tokens</th><th>Cost</th></tr></thead>
+      <tbody>
+        {% for row in period.by_purpose %}
+        <tr><td>{{ row.label }}</td><td>{{ row.calls }}</td><td>{{ row.input }}</td><td>{{ row.output }}</td><td>{{ row.cost }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <h3>By opportunity</h3>
+  {% if period.by_opportunity %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Opportunity</th><th>Calls</th><th>Input tokens</th><th>Output tokens</th><th>Cost</th></tr></thead>
+      <tbody>
+        {% for row in period.by_opportunity %}
+        <tr>
+          <td><a href="/opp/{{ row.label[1:] }}">{{ row.label }}</a></td>
+          <td>{{ row.calls }}</td><td>{{ row.input }}</td><td>{{ row.output }}</td><td>{{ row.cost }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="mission-empty">No call in this period is tied to an opportunity.</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+
+<section class="mission-panel" style="margin-bottom:0.9rem;">
+  <h2>Recent calls</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>When (UTC)</th><th>Status</th><th>Provider</th><th>Model</th><th>Purpose</th><th>Opportunity</th><th>Input</th><th>Output</th><th>Cached</th><th>Web search / fetch</th><th>Cost</th><th>Latency</th></tr>
+      </thead>
+      <tbody>
+        {% for row in usage.recent %}
+        <tr>
+          <td>{{ row.when }}</td>
+          <td><span class="tag {% if row.status == 'succeeded' or row.status == 'local' %}good{% elif row.status == 'failed' or row.status == 'blocked' %}bad{% else %}info{% endif %}">{{ row.status }}</span></td>
+          <td>{{ row.provider }}</td>
+          <td>{{ row.model }}</td>
+          <td>{{ row.purpose }}</td>
+          <td>{% if row.opportunity_id %}<a href="/opp/{{ row.opportunity_id }}">#{{ row.opportunity_id }}</a>{% else %}—{% endif %}</td>
+          <td>{{ row.input }}</td>
+          <td>{{ row.output }}</td>
+          <td>{{ row.cached }}</td>
+          <td>{{ row.server_tools }}</td>
+          <td>{{ row.cost }}</td>
+          <td>{{ row.latency }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="mission-panel">
+  <h2>Price table</h2>
+  <p class="text-sm text-muted">USD per 1,000,000 tokens. These rows are editable. A model that is not listed shows price not set.</p>
+  {% if usage.prices %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Provider</th><th>Model</th><th>Input</th><th>Output</th><th>Cached</th><th>Cache write</th><th>Web search / 1K</th><th>Effective</th><th>Source</th></tr></thead>
+      <tbody>
+        {% for price in usage.prices %}
+        <tr>
+          <td>{{ price.provider }}</td>
+          <td>{{ price.model }}</td>
+          <td>{{ price.input_usd_per_million }}</td>
+          <td>{{ price.output_usd_per_million }}</td>
+          <td>{{ price.cached_usd_per_million if price.cached_usd_per_million is not none else "—" }}</td>
+          <td>{{ price.cache_write_usd_per_million if price.cache_write_usd_per_million is not none else "—" }}</td>
+          <td>{{ price.web_search_usd_per_thousand if price.web_search_usd_per_thousand is not none else "—" }}</td>
+          <td>{{ price.effective_as_of }}</td>
+          <td><a href="{{ price.source_url }}" rel="noopener">{{ price.source_url }}</a></td>
+        </tr>
+        {% if price.note %}<tr><td colspan="9" class="text-sm text-muted">{{ price.note }}</td></tr>{% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="mission-empty">No model price is stored.</p>
+  {% endif %}
+
+  {% if can(current_user, "manage_users") %}
+  <h3>Edit or add a price</h3>
+  <form method="post" action="/operate/usage/prices">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div class="inline-form">
+      <div class="form-group"><label>Existing id <input name="price_id" inputmode="numeric" placeholder="blank to add"></label></div>
+      <div class="form-group"><label>Provider <input name="provider" required maxlength="40"></label></div>
+      <div class="form-group"><label>Model <input name="model" required maxlength="80"></label></div>
+      <div class="form-group"><label>Input / 1M <input name="input_usd_per_million" required></label></div>
+      <div class="form-group"><label>Output / 1M <input name="output_usd_per_million" required></label></div>
+      <div class="form-group"><label>Cached / 1M <input name="cached_usd_per_million" placeholder="optional"></label></div>
+      <div class="form-group"><label>Cache write / 1M <input name="cache_write_usd_per_million" placeholder="optional"></label></div>
+      <div class="form-group"><label>Web search / 1K searches <input name="web_search_usd_per_thousand" placeholder="optional"></label></div>
+      <div class="form-group"><label>Effective date <input name="effective_as_of" type="date" required></label></div>
+      <div class="form-group" style="min-width:280px;"><label>Source URL <input name="source_url" type="url" required maxlength="500" placeholder="https://"></label></div>
+      <button class="btn btn-primary btn-sm" type="submit">Save price</button>
+    </div>
+  </form>
+  <p class="text-sm text-muted">Saving a price does not call a provider and does not change who may receive data.</p>
+  {% endif %}
+</section>

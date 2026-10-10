@@ -242,6 +242,9 @@ def prepare_structured_call(
             settings=settings,
         )
     except AIGatewayBlocked as exc:
+        from govcon.ai.usage_log import record_call
+        record_call(session, provider=resolved_provider, purpose=prompt_name, status="blocked",
+                    model=model, opportunity_id=opportunity_id)
         raise StructuredCallError("blocked_by_policy", str(exc)) from exc
 
     try:
@@ -428,6 +431,10 @@ def persist_structured_result(
     if session is not None:
         session.add(analysis)
         session.flush()
+        call_id = getattr(executed.result, "usage_call_id", None)
+        if call_id is not None:
+            from govcon.ai.usage_log import attach_call_ids
+            attach_call_ids(session, [int(call_id)], analysis_id=analysis.id)
     return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
 
 

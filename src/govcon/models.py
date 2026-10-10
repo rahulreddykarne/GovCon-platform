@@ -573,6 +573,86 @@ class AICallUsage(CreatedAtMixin, Base):
     usage: Mapped[dict | None] = mapped_column(JSONB)
 
 
+class AIModelPrice(TimestampMixin, Base):
+    """Editable USD price per 1,000,000 tokens. Missing rows mean the price is not set."""
+
+    __tablename__ = "ai_model_prices"
+    __table_args__ = (
+        UniqueConstraint("provider", "model", name="uq_ai_model_prices_provider_model"),
+        CheckConstraint(
+            "input_usd_per_million >= 0 AND output_usd_per_million >= 0 "
+            "AND (cached_usd_per_million IS NULL OR cached_usd_per_million >= 0) "
+            "AND (cache_write_usd_per_million IS NULL OR cache_write_usd_per_million >= 0) "
+            "AND (web_search_usd_per_thousand IS NULL OR web_search_usd_per_thousand >= 0)",
+            name="ck_ai_model_prices_nonnegative",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    input_usd_per_million: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    output_usd_per_million: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    cached_usd_per_million: Mapped[Decimal | None] = mapped_column(Numeric)
+    cache_write_usd_per_million: Mapped[Decimal | None] = mapped_column(Numeric)
+    # Server-side web search fee per 1,000 searches; NULL means no fee is configured.
+    web_search_usd_per_thousand: Mapped[Decimal | None] = mapped_column(Numeric)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    effective_as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class AIProviderCall(CreatedAtMixin, Base):
+    """One external or local model attempt, with tokens only when the provider reported them.
+
+    ``input_tokens`` is NULL when the response had no usage fields. Blocked calls
+    store zero tokens and a zero cost because nothing was sent. Local work stores
+    a zero cost. A NULL cost on a succeeded or failed call means the price is not set
+    or the usage was not reported.
+    """
+
+    __tablename__ = "ai_provider_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('succeeded', 'failed', 'blocked', 'local')",
+            name="ck_ai_provider_calls_status",
+        ),
+        CheckConstraint(
+            "(input_tokens IS NULL OR input_tokens >= 0) "
+            "AND (output_tokens IS NULL OR output_tokens >= 0) "
+            "AND (cached_tokens IS NULL OR cached_tokens >= 0) "
+            "AND (cache_write_tokens IS NULL OR cache_write_tokens >= 0) "
+            "AND (web_search_requests IS NULL OR web_search_requests >= 0) "
+            "AND (web_fetch_requests IS NULL OR web_fetch_requests >= 0) "
+            "AND (cost_usd IS NULL OR cost_usd >= 0) "
+            "AND (latency_ms IS NULL OR latency_ms >= 0)",
+            name="ck_ai_provider_calls_nonnegative",
+        ),
+        Index("ix_ai_provider_calls_created_at", "created_at"),
+        Index("ix_ai_provider_calls_opportunity_id", "opportunity_id"),
+        Index("ix_ai_provider_calls_provider_model", "provider", "model"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int | None] = mapped_column(BigInteger)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cached_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cache_write_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    # Server-tool counts (Anthropic web_search / web_fetch); NULL when the response did not report them.
+    web_search_requests: Mapped[int | None] = mapped_column(BigInteger)
+    web_fetch_requests: Mapped[int | None] = mapped_column(BigInteger)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    analysis_id: Mapped[int | None] = mapped_column(BigInteger)
+    decision_run_id: Mapped[int | None] = mapped_column(BigInteger)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric)
+    price_id: Mapped[int | None] = mapped_column(ForeignKey("ai_model_prices.id"))
+
+
 class PromptRegistryEntry(TimestampMixin, Base):
     __tablename__ = "prompt_registry"
     __table_args__ = (

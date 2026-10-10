@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import desc, func, select
 
 from govcon.collaboration.users import can
 from govcon.db import session_scope
@@ -69,22 +69,9 @@ def ops(request: Request) -> Response:
         ).all()
         oldest_queued = db.scalar(select(func.min(Task.created_at)).where(Task.status == "queued"))
 
-        # Measured AI usage (roadmap §6.2): settled tokens and recorded cost, last 30 days.
-        from govcon.models import AICallUsage
+        from govcon.ai.usage_log import usage_page
 
-        day = func.date_trunc("day", AICallUsage.created_at)
-        ai_usage = db.execute(
-            select(day.label("day"), AICallUsage.purpose, AICallUsage.model,
-                   func.count().label("calls"),
-                   func.sum(AICallUsage.input_tokens).label("input_tokens"),
-                   func.sum(AICallUsage.output_tokens).label("output_tokens"),
-                   func.sum(AICallUsage.cost_usd).label("cost_usd"),
-                   func.count().filter(AICallUsage.status == "failed").label("failed"))
-            .where(AICallUsage.created_at >= func.now() - text("interval '30 days'"))
-            .group_by(day, AICallUsage.purpose, AICallUsage.model)
-            .order_by(day.desc(), AICallUsage.purpose)
-            .limit(200)
-        ).all()
+        usage_summary = usage_page(db)
 
     stats = ViewRow({
         "opp_count": opp_count,
@@ -106,7 +93,7 @@ def ops(request: Request) -> Response:
         "failed_tasks": list(failed_tasks),
         "waiting_tasks": list(waiting_tasks),
         "oldest_queued": oldest_queued,
-        "ai_usage": list(ai_usage),
+        "usage_summary": usage_summary,
         "can_manage_tasks": can(user, "approve"),
         "active_page": "ops",
     }, user)

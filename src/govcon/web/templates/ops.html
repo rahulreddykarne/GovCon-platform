@@ -146,34 +146,27 @@
   {% endif %}
 </div>
 
-<!-- Measured AI usage (roadmap §6.2) -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title">AI usage (last 30 days)</span>
-    <span class="text-muted" style="font-size:0.85rem;">Settled from provider-reported usage; cost only where a rate is configured</span>
+    <span class="card-title">AI usage &amp; cost</span>
+    <a href="/operate/usage">Full view</a>
   </div>
-  {% if ai_usage %}
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Day</th><th>Purpose</th><th>Model</th><th>Calls</th><th>Failed</th><th>Input tokens</th><th>Output tokens</th><th>Cost (USD)</th></tr></thead>
-      <tbody>
-        {% for row in ai_usage %}
-        <tr>
-          <td>{{ row.day.strftime('%Y-%m-%d') }}</td>
-          <td><code>{{ row.purpose }}</code></td>
-          <td>{{ row.model or '—' }}</td>
-          <td>{{ row.calls }}</td>
-          <td>{{ row.failed }}</td>
-          <td>{{ '{:,}'.format(row.input_tokens or 0) }}</td>
-          <td>{{ '{:,}'.format(row.output_tokens or 0) }}</td>
-          <td>{% if row.cost_usd is not none %}{{ '%.4f' % row.cost_usd }}{% else %}—{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% if usage_summary.empty %}
+  <p class="empty-state">No usage recorded yet.</p>
   {% else %}
-  <p class="text-muted">No AI calls in the last 30 days.</p>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Calls today (UTC)</div>
+      <div class="value">{{ usage_summary.today_calls }}</div>
+      <div class="text-sm">{{ usage_summary.today_cost or "No calls in this period." }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Calls, last 30 days</div>
+      <div class="value">{{ usage_summary.month_calls }}</div>
+      <div class="text-sm">{{ usage_summary.month_cost or "No calls in this period." }}</div>
+    </div>
+  </div>
+  <p class="text-sm text-muted">Token totals on the full view come from provider usage fields. A missing price stays “price not set”.</p>
   {% endif %}
 </div>
 

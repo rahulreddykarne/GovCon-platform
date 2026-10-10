@@ -128,6 +128,15 @@ class AnthropicProvider:
         texts: list[str] = []
         try:
             for continuation in range(MAX_CONTINUATIONS + 1):
+                if continuation:
+                    # Each resumption is a new external request and passes the gate again.
+                    authorize_external_call(
+                        classification=classification,
+                        provider=self.name,
+                        model=use_model,
+                        purpose=purpose,
+                        settings=self._settings,
+                    )
                 response = self._send(request, use_fallback=use_fallback)
                 _add_usage(usage, _usage(response.usage))
                 texts.extend(block.text for block in response.content if block.type == "text")
