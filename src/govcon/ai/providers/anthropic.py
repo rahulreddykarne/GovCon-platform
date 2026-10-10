@@ -103,13 +103,7 @@ class AnthropicProvider:
     ) -> CompletionResult:
         """Call the Messages API once the AI gateway has approved the call."""
         use_model = model or self._model
-        authorize_external_call(
-            classification=classification,
-            provider=self.name,
-            model=use_model,
-            purpose=purpose,
-            settings=self._settings,
-        )
+        self._authorize(classification, use_model, purpose)
         del temperature  # not sent: current Claude models reject sampling parameters
 
         request: dict[str, Any] = {
@@ -128,6 +122,9 @@ class AnthropicProvider:
         texts: list[str] = []
         try:
             for continuation in range(MAX_CONTINUATIONS + 1):
+                if continuation:
+                    # A resumed turn is another request carrying the same content.
+                    self._authorize(classification, use_model, purpose)
                 response = self._send(request, use_fallback=use_fallback)
                 _add_usage(usage, _usage(response.usage))
                 texts.extend(block.text for block in response.content if block.type == "text")
@@ -169,6 +166,15 @@ class AnthropicProvider:
             usage=usage,
             latency_ms=latency_ms,
             finish_reason=response.stop_reason,
+        )
+
+    def _authorize(self, classification: DataClassification, model: str, purpose: str) -> None:
+        authorize_external_call(
+            classification=classification,
+            provider=self.name,
+            model=model,
+            purpose=purpose,
+            settings=self._settings,
         )
 
     def _send(self, request: dict[str, Any], *, use_fallback: bool) -> Message | BetaMessage:

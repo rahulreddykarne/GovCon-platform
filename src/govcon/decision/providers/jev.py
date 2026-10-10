@@ -13,6 +13,7 @@ import httpx
 
 from govcon.ai.budget import AIBudgetExceeded, reserve
 from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
+from govcon.ai.usage_log import record_call
 from govcon.config import Settings, get_settings
 from govcon.decision.bundles import bundle_definition
 from govcon.decision.provider import (
@@ -82,17 +83,10 @@ class JevDecisionProvider:
         definition = bundle_definition(bundle_name)
         questions = definition.jev_questions
         endpoint = self._resolve_endpoint()
-        try:
-            authorize_external_call(
-                classification=DataClassification(state.get("data_classification", "PROPRIETARY")),
-                provider=self.name,
-                model=self._model,
-                purpose=f"decision_bundle:{bundle_name}",
-                settings=self._settings,
-            )
-        except AIGatewayBlocked as exc:
-            # Policy refusal is an unavailable provider: the engine falls back to rules.
-            raise DecisionProviderUnavailable(f"JEV call blocked by data policy: {exc}") from exc
+        classification = DataClassification(state.get("data_classification", "PROPRIETARY"))
+        raw_opportunity_id = state.get("budget_opportunity_id")
+        opportunity_id = raw_opportunity_id if isinstance(raw_opportunity_id, int) else None
+        self._authorize(classification, bundle_name, opportunity_id, session=self._session)
         body = {
             "model": self._model,
             "state": state,
@@ -120,30 +114,40 @@ class JevDecisionProvider:
         else:
             response, latency_ms = self._post(endpoint, body, headers, bundle_name, budget_opportunity_id,
                                               session=self._session)
+        purpose = f"decision_bundle:{bundle_name}"
         if response.status_code >= 400:
+            record_call(self._session, provider=self.name, purpose=purpose, status="failed", model=self._model,
+                        latency_ms=latency_ms, opportunity_id=opportunity_id)
             # The body can echo the submitted state; keep only the status.
             raise DecisionProviderUnavailable(f"JEV responded with HTTP {response.status_code}")
 
         # Everything below validates untrusted output: any malformed part is a
         # typed provider error, so the engine falls back to the rules provider.
         try:
-            data = response.json()
-        except ValueError as exc:
-            raise DecisionProviderInvalidResponse("JEV response was not valid JSON") from exc
-        if not isinstance(data, dict):
-            raise DecisionProviderInvalidResponse(f"JEV response was a JSON {type(data).__name__}, not an object")
-        answers = data.get("answers") or data.get("result") or data.get("decisions")
-        if not isinstance(answers, dict):
-            raise DecisionProviderUnavailable("JEV response did not include an answers map")
-        model = data.get("model", self._model)
-        if model is not None and not isinstance(model, str):
-            raise DecisionProviderInvalidResponse("JEV response model is not a string")
-        normalized = _normalize_answers(questions, answers)
-        confidence = _aggregate_confidence(answers)
-        usage = data.get("usage")
-        if not isinstance(usage, dict):
-            usage = {}
-        cost = _parse_cost(usage.get("cost_usd"))
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise DecisionProviderInvalidResponse("JEV response was not valid JSON") from exc
+            if not isinstance(data, dict):
+                raise DecisionProviderInvalidResponse(f"JEV response was a JSON {type(data).__name__}, not an object")
+            answers = data.get("answers") or data.get("result") or data.get("decisions")
+            if not isinstance(answers, dict):
+                raise DecisionProviderUnavailable("JEV response did not include an answers map")
+            model = data.get("model", self._model)
+            if model is not None and not isinstance(model, str):
+                raise DecisionProviderInvalidResponse("JEV response model is not a string")
+            normalized = _normalize_answers(questions, answers)
+            confidence = _aggregate_confidence(answers)
+            usage = data.get("usage")
+            if not isinstance(usage, dict):
+                usage = {}
+            cost = _parse_cost(usage.get("cost_usd"))
+        except (DecisionProviderInvalidResponse, DecisionProviderUnavailable):
+            record_call(self._session, provider=self.name, purpose=purpose, status="failed", model=self._model,
+                        latency_ms=latency_ms, opportunity_id=opportunity_id)
+            raise
+        record_call(self._session, provider=self.name, purpose=purpose, status="succeeded",
+                    model=model or self._model, usage=usage, latency_ms=latency_ms, opportunity_id=opportunity_id)
         return ProviderDecision(
             provider=self.name,
             model=model,
@@ -157,7 +161,12 @@ class JevDecisionProvider:
     @trace_phase("decision.providers.jev.post")
     def _post(self, endpoint: str, body: dict[str, Any], headers: dict[str, str], bundle_name: str,
               budget_opportunity_id: int | None, *, session=None, engine=None) -> tuple[httpx.Response, int]:
-        """Reserve budget and send the request; returns the response and its latency."""
+        """Gate, reserve budget and send the request; returns the response and its latency."""
+        opportunity_id = budget_opportunity_id if isinstance(budget_opportunity_id, int) else None
+        # The body carries the state that is sent, so its classification is the one gated here.
+        state = body.get("state") if isinstance(body.get("state"), dict) else {}
+        classification = DataClassification(state.get("data_classification", "PROPRIETARY"))
+        self._authorize(classification, bundle_name, opportunity_id, session=session, engine=engine)
         try:
             reservation = reserve(session, opportunity_id=budget_opportunity_id,
                 settings=self._settings, system_prompt="", user_prompt=json.dumps(body, default=str),
@@ -173,6 +182,8 @@ class JevDecisionProvider:
         except httpx.HTTPError as exc:  # pragma: no cover - network-dependent
             if reservation is not None:
                 reservation.finish()
+            record_call(session, provider=self.name, purpose=f"decision_bundle:{bundle_name}", status="failed",
+                        model=self._model, engine=engine, opportunity_id=opportunity_id)
             raise DecisionProviderUnavailable(f"JEV request failed: {exc}") from exc
         latency_ms = int((time.monotonic() - started) * 1000)
         # JEV has no guaranteed token/output contract: retain the conservative
@@ -183,6 +194,18 @@ class JevDecisionProvider:
             answered = response.status_code < 400
             reservation.finish(SimpleNamespace(usage={}, model=self._model) if answered else None)
         return response, latency_ms
+
+    def _authorize(self, classification: DataClassification, bundle_name: str, opportunity_id: int | None,
+                   *, session=None, engine=None) -> None:
+        purpose = f"decision_bundle:{bundle_name}"
+        try:
+            authorize_external_call(classification=classification, provider=self.name, model=self._model,
+                                    purpose=purpose, settings=self._settings)
+        except AIGatewayBlocked as exc:
+            record_call(session, provider=self.name, purpose=purpose, status="blocked", model=self._model,
+                        opportunity_id=opportunity_id, engine=engine)
+            # Policy refusal is an unavailable provider: the engine falls back to rules.
+            raise DecisionProviderUnavailable(f"JEV call blocked by data policy: {exc}") from exc
 
     def _resolve_endpoint(self) -> str:
         if self._base_url.endswith("/v1/systemone") or self._base_url.endswith("/api/v1/decisions"):

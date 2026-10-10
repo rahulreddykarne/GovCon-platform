@@ -20,6 +20,8 @@ class CompletionResult:
     usage: dict = field(default_factory=dict)
     latency_ms: int = 0
     finish_reason: str | None = None
+    # Row id in ai_provider_calls, set by the budget wrapper after the call is recorded.
+    usage_call_id: int | None = None
 
 
 class ProviderAPIError(RuntimeError):

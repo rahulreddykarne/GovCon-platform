@@ -138,7 +138,8 @@ def test_jev_reservation_status_follows_the_http_answer(monkeypatch, status_code
     monkeypatch.setattr("govcon.http.build_client", lambda *a, **k: httpx.Client(
         transport=httpx.MockTransport(lambda request: httpx.Response(status_code, json={"answers": {}}))))
     provider = JevDecisionProvider(api_key="test-key", settings=Settings(_env_file=None))
-    response, _latency = provider._post("https://jev.example.test/v1/systemone", {"state": {}}, {}, "bid_decision", None)
+    response, _latency = provider._post("https://jev.example.test/v1/systemone",
+                                        {"state": {"data_classification": "PUBLIC"}}, {}, "bid_decision", None)
     assert response.status_code == status_code and finished == [expected]
 
 

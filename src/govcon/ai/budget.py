@@ -179,15 +179,40 @@ def _retryable(exc: Exception) -> bool:
     return isinstance(exc, httpx.TransportError)
 
 
+def _current_classification(session: Session | None, engine: Engine | None, opportunity_id: int | None,
+                            declared):
+    """Strictest of the declared class and the opportunity's stored files, read now."""
+    from govcon.security.classification import opportunity_classification
+    if opportunity_id is None:
+        return declared
+    if session is not None:
+        return opportunity_classification(session, opportunity_id, declared)
+    if engine is not None:
+        with Session(engine) as db:
+            return opportunity_classification(db, opportunity_id, declared)
+    return declared
+
+
+def _authorize_attempt(provider, session: Session | None, *, opportunity_id: int | None, settings: Settings,
+                       engine: Engine | None, model: str | None, kwargs: dict) -> None:
+    """Gate one attempt. A refusal is recorded as a blocked call with zero tokens, then re-raised."""
+    from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
+    kwargs["classification"] = _current_classification(session, engine, opportunity_id, kwargs["classification"])
+    try:
+        authorize_external_call(classification=kwargs["classification"], provider=provider.name,
+                                model=model or "default", purpose=kwargs["purpose"], settings=settings)
+    except AIGatewayBlocked:
+        from govcon.ai.usage_log import record_call
+        record_call(session, provider=str(provider.name), purpose=kwargs["purpose"], status="blocked",
+                    model=model, opportunity_id=opportunity_id, engine=engine)
+        raise
+
+
 @trace_phase("ai.budget.complete_with_budget")
 def complete_with_budget(provider, session: Session | None, *, opportunity_id: int | None,
                          settings: Settings, engine: Engine | None = None, **kwargs):
-    from govcon.ai.gateway import authorize_external_call
-    from govcon.security.classification import opportunity_classification
-    if session is not None and opportunity_id is not None:
-        kwargs["classification"] = opportunity_classification(session, opportunity_id, kwargs["classification"])
-    authorize_external_call(classification=kwargs["classification"], provider=provider.name,
-                            model=kwargs.get("model") or "default", purpose=kwargs["purpose"], settings=settings)
+    _authorize_attempt(provider, session, opportunity_id=opportunity_id, settings=settings, engine=engine,
+                       model=kwargs.get("model"), kwargs=kwargs)
     from govcon.ai.providers import resolve_provider_model
     from govcon.ai.replay import active_recorder
     requested_model = resolve_provider_model(settings, provider_name=provider.name, model=kwargs.get("model"))[1]
@@ -209,9 +234,15 @@ def complete_with_budget(provider, session: Session | None, *, opportunity_id: i
 @trace_phase("ai.budget.call_provider")
 def _call_provider(provider, session: Session | None, *, opportunity_id: int | None, settings: Settings,
                    engine: Engine | None, requested_model: str | None, kwargs: dict):
+    from govcon.ai.usage_log import record_call
+    kwargs = dict(kwargs)
     for attempt in range(1 + settings.ai_max_provider_retries):
         diagnostic_event("ai.provider_attempt", provider=str(provider.name), model=requested_model,
                          attempt=attempt + 1, attempts=1 + settings.ai_max_provider_retries)
+        # Every attempt, including retries and replayed runs, passes the gateway
+        # with the classification as it stands now.
+        _authorize_attempt(provider, session, opportunity_id=opportunity_id, settings=settings, engine=engine,
+                           model=requested_model, kwargs=kwargs)
         reservation = reserve(session, opportunity_id=opportunity_id, settings=settings,
                               system_prompt=kwargs["system_prompt"], user_prompt=kwargs["user_prompt"],
                               purpose=kwargs["purpose"], provider=str(provider.name), model=requested_model,
@@ -224,6 +255,11 @@ def _call_provider(provider, session: Session | None, *, opportunity_id: int | N
                              http_status=getattr(exc, "status_code", None))
             if reservation is not None:
                 reservation.finish()
+            from govcon.ai.gateway import AIGatewayBlocked
+            record_call(session, provider=str(provider.name), purpose=kwargs["purpose"],
+                        status="blocked" if isinstance(exc, AIGatewayBlocked) else "failed",
+                        model=requested_model, opportunity_id=opportunity_id, engine=engine,
+                        usage=getattr(exc, "usage", None), latency_ms=getattr(exc, "latency_ms", None))
             if attempt < settings.ai_max_provider_retries and _retryable(exc):
                 diagnostic_event("ai.provider_retry", attempt=attempt + 1, timeout_seconds=0.5 * 2 ** attempt)
                 time.sleep(0.5 * 2 ** attempt)
@@ -231,6 +267,17 @@ def _call_provider(provider, session: Session | None, *, opportunity_id: int | N
             raise
         if reservation is not None:
             reservation.finish(result)
+        call_id = record_call(
+            session, provider=str(getattr(result, "provider", None) or provider.name),
+            purpose=kwargs["purpose"], status="succeeded",
+            model=getattr(result, "model", None) or requested_model,
+            opportunity_id=opportunity_id, usage=getattr(result, "usage", None),
+            latency_ms=getattr(result, "latency_ms", None), engine=engine,
+        )
+        try:
+            result.usage_call_id = call_id
+        except (AttributeError, TypeError):
+            pass
         diagnostic_event("ai.provider_completed", provider=str(provider.name), model=getattr(result, "model", None),
                          latency_ms=getattr(result, "latency_ms", None), attempt=attempt + 1)
         return result, reservation

@@ -331,6 +331,7 @@ def _freeze(value: Any) -> Any:
             "usage": dict(value.usage or {}),
             "latency_ms": value.latency_ms,
             "finish_reason": value.finish_reason,
+            "usage_call_id": value.usage_call_id,
         }
     if isinstance(value, (Reservation, _RestoredReservation)):
         # Callers read the estimated cost from the reservation (structured
@@ -367,6 +368,7 @@ def _thaw(value: Any) -> Any:
             content=value["content"], model=value["model"], provider=value["provider"],
             usage=dict(value.get("usage") or {}), latency_ms=int(value.get("latency_ms") or 0),
             finish_reason=value.get("finish_reason"),
+            usage_call_id=value.get("usage_call_id"),
         )
     if kind == "reservation":
         return _RestoredReservation(

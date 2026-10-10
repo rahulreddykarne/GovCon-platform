@@ -341,7 +341,34 @@ def run_decision_bundle(
     settings: Settings | None = None,
     allow_llm_fallback: bool = False,
 ) -> BundleExecution:
-    """Run one decision bundle and persist an immutable decision_runs row."""
+    """Run one decision bundle and persist an immutable decision_runs row.
+
+    Every model call made for the bundle (local rules, JEV, LLM) is logged in
+    ``ai_provider_calls`` and linked to the resulting run.
+    """
+    from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
+
+    link_token, linked_ids = collect_call_ids()
+    try:
+        execution = _run_decision_bundle(session, opportunity_id=opportunity_id, bundle_name=bundle_name,
+                                         state=state, settings=settings, allow_llm_fallback=allow_llm_fallback)
+    finally:
+        stop_collecting(link_token)
+    attach_call_ids(session, linked_ids, decision_run_id=execution.run.id)
+    return execution
+
+
+def _run_decision_bundle(
+    session: Session,
+    *,
+    opportunity_id: int,
+    bundle_name: str,
+    state: dict[str, Any] | None,
+    settings: Settings | None,
+    allow_llm_fallback: bool,
+) -> BundleExecution:
+    from govcon.ai.usage_log import record_call
+
     settings = settings or get_settings()
     definition = bundle_definition(bundle_name)
     state = state or build_decision_state(session, opportunity_id)
@@ -361,6 +388,8 @@ def run_decision_bundle(
     )
 
     hard_findings = evaluate_hard_rules(state)
+    record_call(session, provider="local", purpose=f"decision_bundle:{bundle_name}", status="local",
+                model="rules", opportunity_id=opportunity_id)
     rule_provider = RuleDecisionProvider()
     baseline = rule_provider.decide(
         bundle_name=bundle_name,

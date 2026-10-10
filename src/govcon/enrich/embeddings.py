@@ -19,6 +19,7 @@ from typing import Any, Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from govcon.ai.usage_log import record_call
 from govcon.models import Match, Opportunity, OutcomeFeedback, Watchlist
 
 log = logging.getLogger(__name__)
@@ -229,6 +230,8 @@ def run_embedding_job(
         if not only_missing:
             opp.embedding_source_hash = None
         _refresh(opp, provider)
+        record_call(session, provider="local", purpose="embedding", status="local",
+                    model=_model_id(provider), opportunity_id=opp.id)
         embedded += 1
         if embedded % batch_size == 0:
             session.flush()
@@ -264,6 +267,7 @@ def build_watchlist_profiles(
         vectors: list[list[float]] = []
         if profile_text:
             vectors.append(_vector(provider, profile_text))
+            record_call(session, provider="local", purpose="embedding", status="local", model=_model_id(provider))
         matched = session.scalars(select(Opportunity).join(Match, Match.opportunity_id == Opportunity.id).where(Match.watchlist_id == wl.id, Match.active.is_(True)).order_by(Opportunity.id)).all()
         matched_vectors = [v for opp in matched if (v := _refresh(opp, provider)) is not None]
         if matched_vectors:

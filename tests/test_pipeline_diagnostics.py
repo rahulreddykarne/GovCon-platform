@@ -167,6 +167,7 @@ def test_structured_ai_logs_schema_field_and_successful_retry(events, monkeypatc
 def test_provider_retry_reports_status_without_leaking_request(events, monkeypatch):
     from govcon.ai import budget
     from govcon.ai.providers.base import CompletionResult, ProviderAPIError
+    from govcon.security.classification import DataClassification
 
     attempts = []
 
@@ -183,7 +184,8 @@ def test_provider_retry_reports_status_without_leaking_request(events, monkeypat
     result, reservation = budget._call_provider(
         Provider(), None, opportunity_id=None, settings=Settings(ai_max_provider_retries=1),
         engine=None, requested_model="test-model",
-        kwargs={"system_prompt": "private system", "user_prompt": "private user", "purpose": "synthetic"},
+        kwargs={"system_prompt": "private system", "user_prompt": "private user", "purpose": "synthetic",
+                "classification": DataClassification.PUBLIC},
     )
     assert result.content == "private reply" and reservation is None and len(attempts) == 2
     failed = next(item for _, item in events if item["event"] == "ai.provider_failed")
