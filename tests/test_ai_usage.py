@@ -78,7 +78,11 @@ def test_a_capped_completion_is_recorded_as_truncated_not_succeeded(db, monkeypa
 def test_discarded_json_is_recorded_as_output_rejected(db, monkeypatch) -> None:
     from pathlib import Path
 
-    from govcon.ai.structured import StructuredCallError, execute_prepared_call, prepare_structured_call
+    from govcon.ai.structured import (
+        StructuredCallError,
+        execute_prepared_call,
+        prepare_structured_call,
+    )
     from govcon.prompting.registry import sync_prompts
 
     sync_prompts(db, Path(__file__).parent.parent / "src" / "govcon" / "prompts", settings=_settings())

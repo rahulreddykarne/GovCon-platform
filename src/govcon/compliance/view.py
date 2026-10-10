@@ -239,7 +239,11 @@ def compliance_view(session: Session, opportunity_id: int, *, facts: dict[str, A
          for r in current),
         key=_sort_key,
     )
-    from govcon.compliance.metrics import coverage_counts, is_mandatory, normalize_mandatory
+    from govcon.compliance.metrics import (
+        coverage_counts,
+        is_mandatory,
+        normalize_mandatory,
+    )
 
     for req in current:
         normalize_mandatory(req)

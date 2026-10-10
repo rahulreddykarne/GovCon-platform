@@ -33,7 +33,6 @@ from govcon.ai.structured import (
     checked_output,
     run_structured_prompt,
 )
-from govcon.documents.chunking import split_text_batch
 from govcon.compliance.matrix import record_run
 from govcon.compliance.records import (
     REQUIREMENT_TYPES,
@@ -55,6 +54,7 @@ from govcon.compliance.text import (
 )
 from govcon.config import Settings, get_settings
 from govcon.diagnostics import trace_phase
+from govcon.documents.chunking import split_text_batch
 from govcon.models import Opportunity
 
 logger = logging.getLogger("govcon.compliance.extractor")
@@ -412,10 +412,13 @@ def run_ai_pass(
         "files": [{"file_id": d.file_id, "sha256": d.sha256, "pages": d.page_count, "classification": d.classification, "source_origin": d.source_origin} for d in inventory.documents],
     }
     run_type = f"extraction_pass_{pass_label.lower()}"
-    from govcon.security.classification import has_sendable_content, payload_classification
+    from govcon.security.classification import (
+        has_sendable_content,
+        payload_classification,
+    )
 
     classification = payload_classification(*inventory.documents)
-    empty_gaps = [
+    empty_gaps: list[dict[str, Any]] = [
         {
             "file_id": doc.file_id,
             "filename": doc.filename,

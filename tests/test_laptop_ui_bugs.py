@@ -18,8 +18,12 @@ from govcon.decision.missing import normalize_missing_information
 from govcon.display_time import format_pt
 from govcon.enrich.attachments import download_attachments
 from govcon.enrich.embeddings import run_embedding_job
-from govcon.enrich.safe_fetch import FetchRateLimited, RATE_LIMITED_MESSAGE, safe_fetch
-from govcon.matching.pricing import agencies_match, comparable_relevance, recent_award_comps
+from govcon.enrich.safe_fetch import RATE_LIMITED_MESSAGE, FetchRateLimited, safe_fetch
+from govcon.matching.pricing import (
+    agencies_match,
+    comparable_relevance,
+    recent_award_comps,
+)
 from govcon.models import (
     AIProviderCall,
     Award,
@@ -278,6 +282,7 @@ def test_rate_limited_download_records_gap_and_queues_retry(db, tmp_path) -> Non
 
 def test_decision_header_uses_scorecard_compliance_not_inverted_risk(client, db) -> None:
     from test_web_ui import _make_user
+
     from govcon.decision.engine import run_preliminary_decision_package
 
     user, token = _make_user(db, f"risk-{uuid4().hex[:8]}@example.test", "owner")

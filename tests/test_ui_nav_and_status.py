@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select, update
 from test_web_ui import _make_user
 
 from govcon.models import (
@@ -39,6 +39,11 @@ def test_status_strip_reads_real_rows_and_marks_stuck_jobs(db):
     source_jobs = tuple(job for jobs in _SOURCE_JOBS.values() for job in jobs)
     db.execute(delete(IngestionRun).where(IngestionRun.job.in_(source_jobs)))
     db.execute(delete(ProcessHeartbeat).where(ProcessHeartbeat.role.in_(("worker", "scheduler"))))
+    db.execute(
+        update(Task)
+        .where(Task.superseded_by_task_id.in_(select(Task.id).where(Task.status.in_(ACTIVE_TASKS))))
+        .values(superseded_by_task_id=None)
+    )
     db.execute(delete(Task).where(Task.status.in_(ACTIVE_TASKS)))
     db.execute(delete(SchedulerJobRun).where(SchedulerJobRun.status == "running"))
     db.flush()
