@@ -136,42 +136,31 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
         ).all()
     ]
 
-    award_comps = recent_award_comps(session, nsn=opportunity.nsn, psc_code=opportunity.psc_code, limit=10)
+    award_comps = recent_award_comps(
+        session,
+        nsn=opportunity.nsn,
+        psc_code=opportunity.psc_code,
+        naics_code=opportunity.naics_code,
+        awarding_agency=opportunity.agency_path,
+        limit=10,
+    )
 
     comp_summary = competitor_summary(session, opportunity_id, limit=5)
     competitor_bucket_count = len(comp_summary.buckets) if comp_summary else 0
 
-    mandatory_total = int(
-        session.scalar(
-            select(func.count())
-            .select_from(Requirement)
-            .where(Requirement.opportunity_id == opportunity_id, Requirement.mandatory.is_(True))
-        )
-        or 0
-    )
-    mandatory_unmet = int(
-        session.scalar(
-            select(func.count())
-            .select_from(Requirement)
-            .where(
-                Requirement.opportunity_id == opportunity_id,
-                Requirement.mandatory.is_(True),
-                Requirement.status == "missing",
-            )
-        )
-        or 0
-    )
-    mandatory_missing = int(
-        session.scalar(
-            select(func.count())
-            .select_from(Requirement)
-            .where(
-                Requirement.opportunity_id == opportunity_id,
-                Requirement.mandatory.is_(True),
-                Requirement.status.in_(["missing", "needs_review", "unknown", "unreviewed", "stale"]),
-            )
-        )
-        or 0
+    from govcon.compliance.matrix import active_requirements
+    from govcon.compliance.metrics import coverage_counts
+
+    requirement_rows = active_requirements(session, opportunity_id)
+    counted = coverage_counts(requirement_rows, [])
+    mandatory_total = int(counted["mandatory_total"])
+    mandatory_unmet = int(counted["mandatory_missing"])
+    mandatory_missing = (
+        int(counted["mandatory_missing"])
+        + int(counted["mandatory_needs_review"])
+        + int(counted["mandatory_unknown"])
+        + int(counted["mandatory_unreviewed"])
+        + int(counted["mandatory_stale"])
     )
     needs_review = int(
         session.scalar(
@@ -184,37 +173,19 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
         )
         or 0
     )
-    critical_total = int(
-        session.scalar(
-            select(func.count())
-            .select_from(Requirement)
-            .where(Requirement.opportunity_id == opportunity_id, Requirement.severity == "critical")
-        )
-        or 0
-    )
-    critical_unresolved = int(
-        session.scalar(
-            select(func.count())
-            .select_from(Requirement)
-            .where(
-                Requirement.opportunity_id == opportunity_id,
-                Requirement.severity == "critical",
-                Requirement.status.in_(["missing", "needs_review", "unknown", "unreviewed", "stale"]),
-            )
-        )
-        or 0
-    )
+    critical_total = int(counted["critical_total"])
+    critical_unresolved = int(counted["critical_unresolved"])
+
+    from govcon.decision.missing import normalize_missing_information
 
     missing_information = []
     if summary_stale:
         missing_information.append("solicitation analysis is stale: the source changed after it ran")
     elif latest_summary is None:
         missing_information.append("solicitation analysis has not run")
-    for item in summary_json.get("missing_information", []) if isinstance(summary_json, dict) else []:
-        if isinstance(item, dict):
-            missing_information.append(item.get("field") or item.get("reason") or "unknown")
-        elif isinstance(item, str):
-            missing_information.append(item)
+    missing_information.extend(
+        normalize_missing_information(summary_json.get("missing_information") if isinstance(summary_json, dict) else [])
+    )
 
     # The buyer's required delivery period (a requirement, not supplier evidence).
     required_delivery_days = None

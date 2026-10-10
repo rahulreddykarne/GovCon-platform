@@ -500,7 +500,9 @@ def test_local_call_is_zero_cost(db) -> None:
     record_call(db, provider="local", purpose="embedding", status="local", model="all-MiniLM-L6-v2")
     row = _rows(db)[-1]
     assert row.status == "local" and row.cost_usd == 0 and row.input_tokens is None
-    page = usage_page(Session(db.get_bind()))
+    hidden = usage_page(Session(db.get_bind()))
+    assert all(item["status"] != "local" for item in hidden["recent"])
+    page = usage_page(Session(db.get_bind()), include_local=True)
     assert page["recent"][0]["cost"] == "$0"
     assert page["recent"][0]["input"] == "—"
     local = next(row for row in page["periods"][0]["by_model"] if row["label"].startswith("local ·"))

@@ -65,8 +65,16 @@
   </form>
   {% endif %}
 
-  <!-- Approval actions (approver/owner only) -->
-  {% if can_approve and review_session.status not in ('approved_to_bid', 'no_bid') %}
+  <!-- Approval actions (approver/owner only). A pursuit must exist first. -->
+  {% if can_approve and not pursuit %}
+  <div class="alert alert-warning mt-2">
+    Approve to Bid and ready-for-review actions stay disabled until a pursuit exists.
+    <form method="post" action="/opp/{{ opp.id }}/start-workspace" class="mt-1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-primary btn-sm">Start pursuit (requires approval)</button>
+    </form>
+  </div>
+  {% elif can_approve and review_session.status not in ('approved_to_bid', 'no_bid') %}
   <div class="mt-2">
     {% if approval and approval.decision_package_stale %}
       <div class="alert alert-warning">The AI decision package was built from a superseded source revision. Regenerate it before approving.</div>

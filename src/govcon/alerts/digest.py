@@ -503,7 +503,13 @@ def _item_from_row(
         previous_deadline_text=previous,
         event_detected_at=_aware(detected_at) if detected_at is not None else None,
         match_status=match.status,
-        award_comps=recent_award_comps(session, nsn=opportunity.nsn, psc_code=opportunity.psc_code),
+        award_comps=recent_award_comps(
+            session,
+            nsn=opportunity.nsn,
+            psc_code=opportunity.psc_code,
+            naics_code=opportunity.naics_code,
+            awarding_agency=opportunity.agency_path,
+        ),
     )
 
 

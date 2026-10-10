@@ -7,7 +7,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
@@ -30,6 +30,26 @@ def session(upgraded_engine) -> Session:
     finally:
         db.rollback()
         db.close()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_leftover_opportunities(session: Session) -> None:
+    """Other tests leave open opportunities that inflate run_matching counts."""
+    session.execute(
+        update(Opportunity)
+        .where(Opportunity.status == "open", ~Opportunity.source_id.like("test-%"))
+        .values(status="archived")
+    )
+    session.execute(
+        update(Watchlist)
+        .where(
+            Watchlist.enabled.is_(True),
+            ~Watchlist.name.like("watchlist-%"),
+            ~Watchlist.name.like("cli-watchlist-%"),
+        )
+        .values(enabled=False)
+    )
+    session.flush()
 
 
 def _make_opportunity(

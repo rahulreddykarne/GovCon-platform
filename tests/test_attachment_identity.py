@@ -180,9 +180,10 @@ def test_blocked_classes_never_open_an_outbound_client(monkeypatch: pytest.Monke
                 )
 
 
-def test_missing_prompts_name_the_sync_command(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_prompts_name_the_eval_command(db, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("govcon.prompting.registry.active_version", lambda session, name: None)
     monkeypatch.setattr("govcon.prompting.registry.sync_prompts", lambda *args, **kwargs: None)
-    with pytest.raises(PromptSetupError, match="govcon prompts sync") as caught:
-        require_prompt_registry(Session(), Settings(_env_file=None))
+    with pytest.raises(PromptSetupError, match="govcon prompts eval") as caught:
+        require_prompt_registry(db, Settings(_env_file=None))
     assert "solicitation_analysis" in caught.value.missing
+    assert "--live" in str(caught.value)

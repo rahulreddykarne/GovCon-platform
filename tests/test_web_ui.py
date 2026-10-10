@@ -1023,7 +1023,13 @@ def test_decision_tab_shows_package_lists_and_real_percentages(client, db_sessio
         assert f"<li>{line}</li>" in page
     shown = lambda label: re.search(label + r'</div>\s*<div class="value[^"]*">\s*(\d+)%', page).group(1)
     assert shown("Confidence") == f"{float(bid.recommendation_score) * 100:.0f}"
-    assert shown("Compliance Risk") == f"{(1 - float(bid.compliance_risk_score)) * 100:.0f}"
+    assert "Compliance Risk" not in page
+    from govcon.decision.engine import build_decision_state
+    from govcon.decision.scorecard import build_scorecard
+
+    factor = next(item for item in build_scorecard(build_decision_state(db_session, opp.id)).as_dict()["factors"] if item["key"] == "compliance")
+    if factor["score"] is not None:
+        assert shown("Compliance") == f"{float(factor['score']) * 100:.0f}"
     assert shown("Margin Score") == f"{float(bid.margin_score) * 100:.0f}"
     assert "Rules engine" in page  # no JEV key in tests: the rules provider produced it
     assert "source: opportunity" in page

@@ -300,7 +300,18 @@ def execute_awards(
 
     revision = _revision(session, opportunity_id)
     opportunity = session.get(Opportunity, opportunity_id)
-    points = recent_award_comps(session, nsn=opportunity.nsn, psc_code=opportunity.psc_code, limit=5) if opportunity else []
+    points = (
+        recent_award_comps(
+            session,
+            nsn=opportunity.nsn,
+            psc_code=opportunity.psc_code,
+            naics_code=opportunity.naics_code,
+            awarding_agency=opportunity.agency_path,
+            limit=5,
+        )
+        if opportunity
+        else []
+    )
     dependency_revision = canonical_content_hash({"awards": [json_safe(vars(point)) for point in points]})
     run, started = begin_run(
         session, bot_name="awards", idempotency_key=f"awards:{opportunity_id}:{revision}:{dependency_revision}",

@@ -16,7 +16,7 @@
     {% if opp.status == 'open' %}
     <form method="post" action="/opp/{{ opp.id }}/start-workspace">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-      <button type="submit" class="btn btn-primary btn-sm">Pursue</button>
+      <button type="submit" class="btn btn-primary btn-sm">Start pursuit (requires approval)</button>
     </form>
     {% else %}
     <span class="badge badge-secondary" title="Only open solicitations can be pursued">{{ (opp.status or 'unknown')|replace('_', ' ')|capitalize }} · not open for offers</span>

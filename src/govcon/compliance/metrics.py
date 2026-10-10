@@ -32,6 +32,18 @@ CATEGORIES = ("Administrative", "Technical", "Pricing", "Delivery", "Certificati
 PERCENT_DEFINITION = "satisfied ÷ total for the named group; not_applicable rows count as neither; superseded rows are excluded"
 
 
+def is_mandatory(value: bool | None) -> bool:
+    """NULL is mandatory (fail closed) so the matrix and the decision agree."""
+    return value is not False
+
+
+def normalize_mandatory(requirement: Requirement) -> bool:
+    """Persist a NULL mandatory flag as True so both views count the same row."""
+    if requirement.mandatory is None:
+        requirement.mandatory = True
+    return requirement.mandatory is not False
+
+
 def _pct(numerator: int, denominator: int) -> float | None:
     return round(100.0 * numerator / denominator, 1) if denominator else None
 
@@ -49,7 +61,9 @@ def false_satisfied(req: Requirement) -> bool:
 
 def coverage_counts(requirements: Iterable[Requirement], findings: Iterable[ComplianceFinding]) -> dict[str, Any]:
     rows = [r for r in requirements if r.status != "superseded"]
-    mandatory = [r for r in rows if r.mandatory is not False and r.status != "not_applicable"]
+    for row in rows:
+        normalize_mandatory(row)
+    mandatory = [r for r in rows if is_mandatory(r.mandatory) and r.status != "not_applicable"]
     critical = [r for r in rows if r.severity == "critical" and r.status != "not_applicable"]
     blockers_req = [r for r in rows if r.blocks_submission]
     blocking_findings = [f for f in findings if f.blocks_submission and f.status == "open"]

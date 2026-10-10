@@ -28,6 +28,22 @@ def test_user_agent_and_retry() -> None:
     assert seen == ["govcon-platform/2.0"] * 3
 
 
+def test_retry_after_header_is_honored() -> None:
+    calls = {"n": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            return httpx.Response(429, headers={"Retry-After": "0"})
+        return httpx.Response(200, text="ok")
+
+    settings = Settings(http_user_agent="govcon-platform/2.0")
+    client = build_client(settings, transport=httpx.MockTransport(handler))
+    response = request_with_retry(client, "GET", "https://example.test/limited")
+    assert response.status_code == 200
+    assert calls["n"] == 2
+
+
 def test_placeholder_prompts_load() -> None:
     root = Settings().resolved_prompt_root()
     assets = iter_markdown_prompts(root)

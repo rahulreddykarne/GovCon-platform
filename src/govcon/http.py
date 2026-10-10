@@ -140,12 +140,22 @@ def request_with_retry(
     """
     if attempts < 1:
         raise ValueError("attempts must be at least 1")
-    policy = wait or wait_exponential(multiplier=0.05, min=0.05, max=0.5)
+    fallback = wait or wait_exponential(multiplier=0.05, min=0.05, max=0.5)
+
+    class _HonorRetryAfter(wait_base):
+        def __call__(self, retry_state) -> float:
+            outcome = retry_state.outcome
+            exc = outcome.exception() if outcome is not None and outcome.failed else None
+            if isinstance(exc, RetryableStatus):
+                raw = exc.response.headers.get("retry-after")
+                if raw and raw.strip().isdigit():
+                    return float(raw.strip())
+            return float(fallback(retry_state))
 
     @retry(
         retry=retry_if_exception_type((httpx.TransportError, RetryableStatus)),
         stop=stop_after_attempt(attempts),
-        wait=policy,
+        wait=_HonorRetryAfter(),
         reraise=True,
     )
     def _send() -> httpx.Response:

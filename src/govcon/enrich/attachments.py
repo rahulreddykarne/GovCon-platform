@@ -48,7 +48,7 @@ from govcon.enrich.attachment_refs import (
     attachment_refs_for,
 )
 from govcon.enrich.extract import ExtractionResult, extract_text, guess_mime_type
-from govcon.enrich.safe_fetch import FetchError, Resolver, safe_fetch
+from govcon.enrich.safe_fetch import FetchError, FetchRateLimited, Resolver, safe_fetch
 from govcon.http import build_client
 from govcon.ingest.snapshots import current_snapshot_id
 from govcon.logging import redact
@@ -298,6 +298,7 @@ class FetchedAttachment:
     mime: str | None = None
     local_path: str | None = None
     extraction: ExtractionResult | None = None
+    retry_after: float | None = None
 
 
 def current_sam_versions(
@@ -431,6 +432,9 @@ def fetch_attachment(
         if origin == SAM_DESCRIPTION:
             # The notice text, unwrapped from SAM's JSON, is the document.
             data, content_type = sam_description_text(data).encode("utf-8"), "text/plain"
+    except FetchRateLimited as exc:
+        logger.warning("attachment download rate-limited for opportunity %s; retry scheduled", opportunity_id)
+        return FetchedAttachment(ref, error=str(exc), retry_after=exc.retry_after)
     except FetchError as exc:
         message = redact(f"download failed: {exc}", settings.secret_values())
         logger.warning("attachment download failed for opportunity %s: %s", opportunity_id, message)
@@ -511,7 +515,27 @@ def _download_one(
     known = known_versions(session, opportunity.id, [ref], settings=settings)[ref.url]
     fetched = fetch_attachment(ref, opportunity_id=opportunity.id, known_shas=known, settings=settings,
                                client=client, resolver=resolver)
-    return record_fetched(session, opportunity, fetched, snapshot_id=snapshot_id)
+    row = record_fetched(session, opportunity, fetched, snapshot_id=snapshot_id)
+    if fetched.retry_after is not None or (fetched.error or "").startswith("rate limited"):
+        _schedule_download_retry(session, opportunity.id, fetched.retry_after)
+    return row
+
+
+def _schedule_download_retry(session: Session, opportunity_id: int, retry_after: float | None) -> None:
+    """Queue a later preparation pass so a 429 is not a hard download failure."""
+    from datetime import UTC, datetime, timedelta
+
+    from govcon.tasks.queue import enqueue
+
+    delay = max(1.0, retry_after if retry_after is not None else 60.0)
+    task, _created = enqueue(
+        session,
+        task_type="opportunity_preparation",
+        opportunity_id=opportunity_id,
+        input_revision={"reason": "attachment_rate_limited"},
+        payload={"retry_reason": "rate_limited"},
+    )
+    task.next_attempt_at = datetime.now(UTC) + timedelta(seconds=delay)
 
 
 @trace_phase("enrich.attachments.process_local_file")

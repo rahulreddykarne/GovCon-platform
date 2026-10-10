@@ -114,7 +114,10 @@ def _request(
 
 def _market_request(session: Session, opportunity_id: int, settings: Settings) -> dict[str, Any]:
     opp = _opportunity(session, opportunity_id)
-    comps = recent_award_comps(session, nsn=opp.nsn, psc_code=opp.psc_code, limit=25)
+    comps = recent_award_comps(
+        session, nsn=opp.nsn, psc_code=opp.psc_code, naics_code=opp.naics_code,
+        awarding_agency=opp.agency_path, limit=25,
+    )
     summary = competitor_summary(session, opp.id, limit=10)
     profiles: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -218,7 +221,10 @@ def _pricing_request(session: Session, opportunity_id: int, settings: Settings) 
             "record a quote price or sourcing cost on the pursuit, or a current supplier quote, or run the web "
             "price search on the Products tab before running pricing analysis"
         )
-    comps = recent_award_comps(session, nsn=opp.nsn, psc_code=opp.psc_code, limit=25)
+    comps = recent_award_comps(
+        session, nsn=opp.nsn, psc_code=opp.psc_code, naics_code=opp.naics_code,
+        awarding_agency=opp.agency_path, limit=25,
+    )
     markup = ((quote_price - cost) / cost * 100) if quote_price is not None and cost else None
     inputs = {
         "quote_price_total": _num(quote_price),

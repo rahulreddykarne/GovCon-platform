@@ -27,6 +27,7 @@ import httpx
 Resolver = Callable[[str], list[str]]
 
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
+RATE_LIMITED_MESSAGE = "rate limited, retry scheduled"
 
 
 class FetchError(RuntimeError):
@@ -39,6 +40,14 @@ class FetchBlocked(FetchError):
 
 class FetchTooLarge(FetchError):
     """The response exceeded the byte cap."""
+
+
+class FetchRateLimited(FetchError):
+    """HTTP 429 after honoring Retry-After; a retry should be queued."""
+
+    def __init__(self, retry_after: float | None = None) -> None:
+        self.retry_after = retry_after
+        super().__init__(RATE_LIMITED_MESSAGE)
 
 
 @dataclass(frozen=True)
@@ -127,17 +136,34 @@ def safe_fetch(
             )
         except _Retryable as exc:
             last_error = exc
+            wait = exc.retry_after if exc.retry_after is not None else backoff_seconds * (2**attempt)
         except httpx.TransportError as exc:
             last_error = FetchError(f"transport error: {type(exc).__name__}")
+            wait = backoff_seconds * (2**attempt)
         if attempt + 1 < attempts:
-            time.sleep(backoff_seconds * (2**attempt))
+            time.sleep(max(0.0, wait))
+    if isinstance(last_error, _Retryable) and last_error.status_code == 429:
+        raise FetchRateLimited(last_error.retry_after)
     if isinstance(last_error, _Retryable):
         raise FetchError(str(last_error))
     raise last_error or FetchError("fetch failed")
 
 
 class _Retryable(FetchError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
+def retry_after_seconds(response: httpx.Response) -> float | None:
+    raw = response.headers.get("retry-after")
+    if raw is None:
+        return None
+    text = raw.strip()
+    if text.isdigit():
+        return float(text)
+    return None
 
 
 def _fetch_once(
@@ -167,7 +193,11 @@ def _fetch_once(
                 current = urljoin(str(response.url), location)
                 continue
             if response.status_code in _RETRYABLE:
-                raise _Retryable(f"HTTP {response.status_code}")
+                raise _Retryable(
+                    f"HTTP {response.status_code}",
+                    status_code=response.status_code,
+                    retry_after=retry_after_seconds(response) if response.status_code == 429 else None,
+                )
             if response.status_code != 200:
                 raise FetchError(f"HTTP {response.status_code}")
             declared = response.headers.get("content-length")

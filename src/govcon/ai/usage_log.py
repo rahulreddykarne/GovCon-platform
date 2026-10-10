@@ -18,7 +18,10 @@ from typing import Any
 from sqlalchemy import Connection, Engine, select
 from sqlalchemy.orm import Session
 
+from govcon.display_time import format_pt
 from govcon.models import AIModelPrice, AIProviderCall
+
+USAGE_TABLE_LIMIT = 25
 
 _MILLION = Decimal(1_000_000)
 _THOUSAND = Decimal(1_000)
@@ -385,9 +388,17 @@ def _window(rows: list[AIProviderCall], start: datetime | None) -> list[AIProvid
     return [row for row in rows if row.created_at >= start]
 
 
-def usage_page(session: Session) -> dict[str, Any]:
+def usage_page(
+    session: Session,
+    *,
+    include_local: bool = False,
+    show_more: bool = False,
+) -> dict[str, Any]:
     """View model for /operate/usage and the /ops summary. No placeholder numbers."""
-    rows = list(session.scalars(select(AIProviderCall).order_by(AIProviderCall.id.desc())).all())
+    query = select(AIProviderCall).order_by(AIProviderCall.id.desc())
+    if not include_local:
+        query = query.where(AIProviderCall.status != "local")
+    rows = list(session.scalars(query).all())
     now = datetime.now(UTC)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     windows = (
@@ -399,21 +410,24 @@ def usage_page(session: Session) -> dict[str, Any]:
     periods = []
     for title, start in windows:
         chosen = _window(rows, start)
+        opp_groups = _group(
+            [row for row in chosen if row.opportunity_id is not None],
+            lambda row: f"#{row.opportunity_id}",
+        )
         periods.append({
             "title": title,
             "empty": not chosen,
             "calls": len(chosen),
             "by_model": _group(chosen, lambda row: f"{row.provider} · {row.model or 'model not reported'}"),
             "by_purpose": _group(chosen, lambda row: row.purpose),
-            "by_opportunity": _group(
-                [row for row in chosen if row.opportunity_id is not None],
-                lambda row: f"#{row.opportunity_id}",
-            ),
+            "by_opportunity": _limit_rows(opp_groups, show_more),
+            "opportunity_total": len(opp_groups),
         })
     recent = []
-    for row in rows[:50]:
+    recent_source = rows if show_more else rows[:USAGE_TABLE_LIMIT]
+    for row in recent_source:
         recent.append({
-            "when": row.created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "when": format_pt(row.created_at, seconds=True),
             "provider": row.provider,
             "model": row.model or "—",
             "purpose": row.purpose,
@@ -440,7 +454,17 @@ def usage_page(session: Session) -> dict[str, Any]:
         "today_cost": _cost_label(summary_rows) if summary_rows else None,
         "month_calls": len(month_rows),
         "month_cost": _cost_label(month_rows) if month_rows else None,
+        "include_local": include_local,
+        "show_more": show_more,
+        "table_limit": USAGE_TABLE_LIMIT,
+        "recent_total": len(rows),
     }
+
+
+def _limit_rows(rows: list[dict[str, Any]], show_more: bool) -> list[dict[str, Any]]:
+    if show_more or len(rows) <= USAGE_TABLE_LIMIT:
+        return rows
+    return rows[:USAGE_TABLE_LIMIT]
 
 
 def parse_price_amount(raw: str, *, required: bool, unit: str = "USD per 1M tokens") -> Decimal | None:

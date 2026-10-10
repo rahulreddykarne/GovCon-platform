@@ -113,18 +113,87 @@ def price_history_psc(
     return [_point(row) for row in rows]
 
 
+def _agency_tokens(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    stop = {"department", "of", "the", "and", "agency", "/", "-"}
+    return {part for part in re.findall(r"[a-z0-9]+", value.lower()) if part not in stop and len(part) > 1}
+
+
+def agencies_match(award_agency: str | None, opportunity_agency: str | None) -> bool:
+    """True when the award's office looks like the solicitation's agency path."""
+    left = _agency_tokens(award_agency)
+    right = _agency_tokens(opportunity_agency)
+    if not left or not right:
+        return False
+    if left & right:
+        return True
+    aliases = (
+        ({"dla", "defense", "logistics"}, {"dla", "defense", "logistics", "spe7", "spe"}),
+        ({"usda", "forest", "12c2"}, {"usda", "forest", "agriculture"}),
+    )
+    for group in aliases:
+        if (left & group[0] or left & group[1]) and (right & group[0] or right & group[1]):
+            return True
+    return False
+
+
+def comparable_relevance(
+    point: PricePoint,
+    *,
+    nsn: str | None,
+    psc_code: str | None,
+    naics_code: str | None,
+    awarding_agency: str | None,
+) -> str:
+    """``high`` when NSN or same agency plus PSC/NAICS match; ``low`` otherwise."""
+    if nsn and point.nsn and canonical_nsn(point.nsn) == canonical_nsn(nsn):
+        return "high"
+    agency_ok = agencies_match(point.awarding_agency, awarding_agency)
+    psc_ok = bool(psc_code and point.psc_code and point.psc_code.upper().startswith(psc_code[:2].upper()))
+    naics_ok = bool(naics_code and point.naics_code and point.naics_code[:2] == naics_code[:2])
+    if agency_ok and (psc_ok or naics_ok or not (psc_code or naics_code)):
+        return "high"
+    if (psc_ok or naics_ok) and not awarding_agency:
+        return "high"
+    if psc_ok or naics_ok:
+        return "low"
+    return "none"
+
+
 def recent_award_comps(
     session: Session,
     *,
     nsn: str | None,
     psc_code: str | None,
     limit: int = 3,
+    naics_code: str | None = None,
+    awarding_agency: str | None = None,
+    include_low_relevance: bool = False,
 ) -> list[PricePoint]:
-    """Prefer an exact NSN history. Fall back to the PSC prefix when that is empty."""
+    """Prefer an exact NSN history. Fall back to same-agency PSC/NAICS awards.
+
+    Low-relevance hits (same PSC, different agency) are excluded from the
+    score unless ``include_low_relevance`` is set.
+    """
+    found: list[PricePoint] = []
     if nsn:
-        exact = price_history(session, nsn, limit=limit)
-        if exact:
-            return exact
-    if psc_code:
-        return price_history_psc(session, psc_code, limit=limit)
-    return []
+        found.extend(price_history(session, nsn, limit=max(limit * 3, 10)))
+    if psc_code and len(found) < limit * 3:
+        found.extend(price_history_psc(session, psc_code, limit=max(limit * 3, 10)))
+    seen: set[str] = set()
+    ranked: list[tuple[str, PricePoint]] = []
+    for point in found:
+        if point.award_id in seen:
+            continue
+        seen.add(point.award_id)
+        relevance = comparable_relevance(
+            point, nsn=nsn, psc_code=psc_code, naics_code=naics_code, awarding_agency=awarding_agency,
+        )
+        if relevance == "none":
+            continue
+        if relevance == "low" and not include_low_relevance:
+            continue
+        ranked.append((relevance, point))
+    ranked.sort(key=lambda item: (0 if item[0] == "high" else 1))
+    return [point for _relevance, point in ranked[:limit]]

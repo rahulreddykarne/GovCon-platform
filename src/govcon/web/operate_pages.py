@@ -27,10 +27,14 @@ from govcon.web.routes.common import (
 _VIEWS = ("overview", "agents", "architecture", "integrations", "usage", "how")
 
 
-def _usage(db):
+def _usage(db, request: Request):
     from govcon.ai.usage_log import usage_page
 
-    return usage_page(db)
+    return usage_page(
+        db,
+        include_local=request.query_params.get("local") == "1",
+        show_more=request.query_params.get("more") == "1",
+    )
 
 
 def _routing(db, settings):
@@ -59,7 +63,7 @@ def operate(request: Request, view: str = "overview") -> Response:
             "architecture": architecture_board(db, settings, selected) if view == "architecture" else None,
             "integrations": integration_cards(db, settings) if view == "integrations" else None,
             "routing": _routing(db, settings) if view == "integrations" else None,
-            "usage": _usage(db) if view == "usage" else None,
+            "usage": _usage(db, request) if view == "usage" else None,
             "can_edit_prices": can(user, "manage_users"),
             "guide": guided_walk(db, opp_id) if view == "how" else None,
         }

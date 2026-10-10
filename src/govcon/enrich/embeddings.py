@@ -230,12 +230,16 @@ def run_embedding_job(
         if not only_missing:
             opp.embedding_source_hash = None
         _refresh(opp, provider)
-        record_call(session, provider="local", purpose="embedding", status="local",
-                    model=_model_id(provider), opportunity_id=opp.id)
         embedded += 1
         if embedded % batch_size == 0:
+            record_call(session, provider="local", purpose="embedding", status="local",
+                        model=_model_id(provider))
             session.flush()
 
+    remainder = embedded % batch_size
+    if remainder:
+        record_call(session, provider="local", purpose="embedding", status="local",
+                    model=_model_id(provider))
     session.flush()
     log.info("Embedding job complete: embedded=%d skipped=%d", embedded, skipped)
     return {"embedded": embedded, "skipped": skipped}

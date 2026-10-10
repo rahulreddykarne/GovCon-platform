@@ -28,16 +28,48 @@ class PromptRegistryAbsent(ValueError):
     """The prompt has never been synchronized to this registry."""
 
 
+def activation_next_step(session: Session | None, prompt_name: str) -> str:
+    """The exact command that unblocks a prompt the activation gate is holding."""
+    version = "v1"
+    if session is not None:
+        row = session.scalars(
+            select(PromptRegistryEntry)
+            .where(PromptRegistryEntry.prompt_name == prompt_name)
+            .order_by(PromptRegistryEntry.id.desc())
+            .limit(1)
+        ).first()
+        if row is not None:
+            version = row.prompt_version
+            return (
+                f"Run `govcon prompts eval {prompt_name}@{version} --live` "
+                f"then `govcon prompts activate {prompt_name}@{version}`."
+            )
+    return (
+        f"Run `govcon prompts sync`, then `govcon prompts eval {prompt_name}@{version} --live` "
+        f"then `govcon prompts activate {prompt_name}@{version}`."
+    )
+
+
 class PromptSetupError(RuntimeError):
     """Analysis cannot start because the prompt registry has no active version."""
 
-    def __init__(self, missing: list[str]) -> None:
+    def __init__(self, missing: list[str], *, next_steps: list[str] | None = None) -> None:
         self.missing = missing
+        self.next_steps = next_steps or []
+        detail = (
+            " ".join(self.next_steps)
+            if self.next_steps
+            else (
+                "Run `govcon prompts eval <name>@v1 --live` for each stored inactive version "
+                "(not `govcon prompts sync` alone — sync records the file but the activation "
+                "gate still needs a live eval)."
+            )
+        )
         super().__init__(
             "Prompt registry is not ready. Missing active prompts: "
             + ", ".join(missing)
-            + ". Run `govcon prompts sync` before analysis. "
-            "If that command prints BLOCKED, the activation gate refused the version."
+            + ". "
+            + detail
         )
 
 
@@ -133,7 +165,7 @@ def require_prompt_registry(session: Session, settings=None) -> None:
     """Raise ``PromptSetupError`` when analysis prompts are still inactive."""
     missing = ensure_prompt_registry(session, settings)
     if missing:
-        raise PromptSetupError(missing)
+        raise PromptSetupError(missing, next_steps=[activation_next_step(session, name) for name in missing])
 
 
 def _gated_activation(session: Session, asset: PromptAsset, prompt_root: Path, settings, actor_user_id, report: SyncReport, *, reason: str) -> None:
@@ -362,7 +394,8 @@ def load_prompt(
             error = PromptRegistryDenied if known is not None else PromptRegistryAbsent
             raise error(
                 f"no active version for prompt {prompt_name!r}. "
-                "Run `govcon prompts sync` before analysis."
+                + (activation_next_step(session, prompt_name) if known is not None
+                   else f"Run `govcon prompts sync` then `govcon prompts eval {prompt_name}@v1 --live`.")
             )
     else:
         row = session.execute(

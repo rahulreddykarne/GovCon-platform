@@ -170,7 +170,12 @@ def _award_payload(session: Session, *, opportunity_id: int) -> dict[str, Any]:
     if opportunity is None:
         return {"comparables": []}
     comps = recent_award_comps(
-        session, nsn=opportunity.nsn, psc_code=opportunity.psc_code, limit=10
+        session,
+        nsn=opportunity.nsn,
+        psc_code=opportunity.psc_code,
+        naics_code=opportunity.naics_code,
+        awarding_agency=opportunity.agency_path,
+        limit=10,
     )
     return {
         "comparables": [

@@ -50,6 +50,8 @@ def _add_template_globals(templates: Jinja2Templates) -> None:
     templates.env.globals["can"] = can
     templates.env.globals["now"] = lambda: datetime.now(UTC)
     templates.env.filters["money"] = _money
+    from govcon.display_time import format_pt
+    templates.env.filters["pt"] = format_pt
 
 
 _add_template_globals(_templates)

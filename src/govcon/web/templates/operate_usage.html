@@ -1,7 +1,15 @@
 <header class="mission-head">
   <p class="mission-kicker">Provider usage</p>
   <h1>AI usage and cost</h1>
-  <p class="mission-lead">Token counts are copied from provider usage fields. If a response omits them, the row says usage not reported. Cost uses the price table below. A model with no price says price not set.</p>
+  <p class="mission-lead">Token counts are copied from provider usage fields. If a response omits them, the row says usage not reported. Cost uses the price table below. A model with no price says price not set. Times are America/Los_Angeles (PT).</p>
+  <p class="text-sm text-muted">
+    {% if usage.include_local %}
+    <a href="/operate/usage{% if usage.show_more %}?more=1{% endif %}">Hide local embeddings</a>
+    {% else %}
+    <a href="/operate/usage?local=1{% if usage.show_more %}&amp;more=1{% endif %}">Show local embeddings</a>
+    {% endif %}
+    · Local embedding batches are hidden from this view by default.
+  </p>
 </header>
 
 {% if usage.empty %}
@@ -51,6 +59,9 @@
       </tbody>
     </table>
   </div>
+  {% if not usage.show_more and period.opportunity_total > usage.table_limit %}
+  <p class="text-sm"><a href="/operate/usage?more=1{% if usage.include_local %}&amp;local=1{% endif %}">Show more ({{ period.opportunity_total }} opportunities)</a></p>
+  {% endif %}
   {% else %}
   <p class="mission-empty">No call in this period is tied to an opportunity.</p>
   {% endif %}
@@ -63,7 +74,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>When (UTC)</th><th>Status</th><th>Provider</th><th>Model</th><th>Purpose</th><th>Opportunity</th><th>Input</th><th>Output</th><th>Cached</th><th>Server tools</th><th>Cost</th><th>Latency</th></tr>
+        <tr><th>When (PT)</th><th>Status</th><th>Provider</th><th>Model</th><th>Purpose</th><th>Opportunity</th><th>Input</th><th>Output</th><th>Cached</th><th>Server tools</th><th>Cost</th><th>Latency</th></tr>
       </thead>
       <tbody>
         {% for row in usage.recent %}
@@ -85,6 +96,9 @@
       </tbody>
     </table>
   </div>
+  {% if not usage.show_more and usage.recent_total > usage.table_limit %}
+  <p class="text-sm"><a href="/operate/usage?more=1{% if usage.include_local %}&amp;local=1{% endif %}">Show more ({{ usage.recent_total }} calls)</a></p>
+  {% endif %}
 </section>
 {% endif %}
 

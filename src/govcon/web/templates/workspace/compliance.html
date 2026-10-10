@@ -12,7 +12,7 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Compliance matrix</span>
-    <span class="text-sm text-muted">Last run {{ compliance_run.created_at.strftime('%Y-%m-%d %H:%M UTC') if compliance_run.created_at else 'time not recorded' }}</span>
+    <span class="text-sm text-muted">Last run {{ compliance_run.created_at|pt if compliance_run.created_at else 'time not recorded' }}</span>
   </div>
   {% if cv.run_complete %}
     <div class="alert alert-success" data-run-state="complete">

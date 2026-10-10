@@ -239,12 +239,19 @@ def compliance_view(session: Session, opportunity_id: int, *, facts: dict[str, A
          for r in current),
         key=_sort_key,
     )
+    from govcon.compliance.metrics import coverage_counts, is_mandatory, normalize_mandatory
+
+    for req in current:
+        normalize_mandatory(req)
+        row_for = next((row for row in rows if row["requirement_id"] == req.id), None)
+        if row_for is not None:
+            row_for["mandatory"] = req.mandatory
+    counted = coverage_counts(current, [])
     counts = {label: 0 for label in ("Met", "Missing", "Needs review", "Not applicable")}
-    mandatory = {"total": 0, **counts}
+    mandatory = {"total": counted["mandatory_total"], **{label: 0 for label in counts}}
     for row in rows:
         counts[row["status_label"]] += 1
-        if row["mandatory"] is not False:
-            mandatory["total"] += 1
+        if is_mandatory(row["mandatory"]) and row["status"] != "not_applicable":
             mandatory[row["status_label"]] += 1
     groups: list[dict[str, Any]] = []
     for key, label in CATEGORIES:
