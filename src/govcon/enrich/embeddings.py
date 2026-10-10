@@ -176,7 +176,8 @@ def _refresh(opp: Opportunity, provider: EmbeddingProvider) -> list[float] | Non
         opp.embedding_source_hash = None
         return None
     if not _fresh(opp, provider, text):
-        opp.embedding = _vector(provider, text)
+        vector = _vector(provider, text)
+        opp.embedding = vector
         opp.embedding_model = _model_id(provider)
         opp.embedding_dimension = _EMBEDDING_DIM
         opp.embedding_source_hash = _source_hash(text)
@@ -228,6 +229,9 @@ def run_embedding_job(
         if not only_missing:
             opp.embedding_source_hash = None
         _refresh(opp, provider)
+        from govcon.ai.usage_log import record_call
+        record_call(session, provider="local", purpose="embedding", status="local",
+                    model=_model_id(provider), opportunity_id=opp.id)
         embedded += 1
         if embedded % batch_size == 0:
             session.flush()
@@ -263,6 +267,9 @@ def build_watchlist_profiles(
         vectors: list[list[float]] = []
         if profile_text:
             vectors.append(_vector(provider, profile_text))
+            from govcon.ai.usage_log import record_call
+            record_call(session, provider="local", purpose="embedding", status="local",
+                        model=_model_id(provider))
         matched = session.scalars(select(Opportunity).join(Match, Match.opportunity_id == Opportunity.id).where(Match.watchlist_id == wl.id, Match.active.is_(True)).order_by(Opportunity.id)).all()
         matched_vectors = [v for opp in matched if (v := _refresh(opp, provider)) is not None]
         if matched_vectors:

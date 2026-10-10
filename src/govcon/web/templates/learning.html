@@ -2,8 +2,78 @@
 {% block title %}Learning — GovCon{% endblock %}
 {% block content %}
 
+<div class="card">
+  <div class="card-header"><span class="card-title">Outcome capture</span></div>
+  <p class="text-sm text-muted">The USAspending chain writes suggestions from stored award rows. A person confirms or dismisses them. Nothing here is recorded as won or lost until then.</p>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="label">Suggested</div><div class="value">{{ capture_counts.suggested }}</div></div>
+    <div class="stat-card"><div class="label">Confirmed</div><div class="value">{{ capture_counts.confirmed }}</div></div>
+    <div class="stat-card"><div class="label">Dismissed</div><div class="value">{{ capture_counts.dismissed }}</div></div>
+  </div>
+  {% if capture_rows %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Notice</th><th>Source</th><th>Strength</th><th>Suggestion</th><th>Status</th><th>Evidence fields</th></tr></thead>
+      <tbody>
+        {% for row in capture_rows %}
+        <tr>
+          <td><a href="/workspace/{{ row.opportunity_id }}">#{{ row.opportunity_id }}</a></td>
+          <td>{{ row.source }}</td>
+          <td>{{ row.strength }}</td>
+          <td>{{ row.suggested_outcome }}</td>
+          <td>{{ row.status }}</td>
+          <td>{{ row.evidence_keys|join(', ') or 'none stored' }}{% if row.identifier_keys %} (identifiers: {{ row.identifier_keys|join(', ') }}){% endif %}<br><span class="text-sm">{{ row.rule }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-state">No outcome suggestion is stored.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Sanitized eval set</span></div>
+  <p>{{ evals.note }}</p>
+  <p>Sample size {{ evals.sample_size }}. Passed {{ evals.passed }}. Failed {{ evals.failed }}.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Case</th><th>Result</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        {% for case in evals.cases %}
+        <tr>
+          <td>{{ case.title }}</td>
+          <td>{% if case.passed %}passed{% else %}failed{% endif %}</td>
+          <td>{{ case.before }}</td>
+          <td>{{ case.after }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">How the business numbers are calculated</span></div>
+  <p>Win rate = won ÷ (won + lost) × 100. No-bid is excluded. Sample size is the number of recorded won and lost outcomes: {{ calculations.submitted }} ({{ calculations.won }} won, {{ calculations.lost }} lost, {{ calculations.no_bid }} no-bid).</p>
+  {% if calculations.win_rate is not none %}
+  <p>{{ calculations.won }} ÷ {{ calculations.submitted }} × 100 = {{ calculations.win_rate }}%.</p>
+  {% else %}
+  <p>Win rate is not computed because there is no recorded won or lost outcome.</p>
+  {% endif %}
+  <p>Average win margin is the average of stored win_margin_pct on won outcomes. Sample size {{ calculations.margin_sample }}.</p>
+  {% if calculations.margin is not none %}
+  <p>That average is {{ calculations.margin }}%.</p>
+  {% else %}
+  <p>The average is not computed because no won outcome has a stored margin.</p>
+  {% endif %}
+  <p class="text-sm text-muted">A group rate later on this page is that group's won ÷ submitted. Fewer than 3 submissions is marked a small sample. These figures describe stored outcomes. They are not a prediction.</p>
+</div>
+
 <div class="page-header">
   <div>
+    <p class="eyebrow">Recorded outcomes</p>
     <h1 class="page-title">Learning &amp; Analytics</h1>
     <div class="page-subtitle">Descriptive outcome history — all figures are from recorded data, not causal inference.</div>
     <div class="text-sm text-muted">{% if last_refresh %}Last scheduled refresh: {{ last_refresh.created_at.strftime('%Y-%m-%d %H:%M') }} UTC ({{ last_refresh.outcome_count }} outcomes). Figures below are live.{% else %}No scheduled refresh has run yet; figures below are live.{% endif %}</div>

@@ -103,34 +103,48 @@ def _watchlist_save_sync(request: Request, user: User, wl_id: int | None, form: 
         values = [value for raw in form.getlist(key) for value in (parse_list(str(raw)) or [])]
         return list(dict.fromkeys(values)) or None
 
-    try:
-        if not name:
-            raise ValueError("Name is required.")
-        values: dict[str, Decimal | None] = {}
-        for key in ("min_value", "max_value"):
-            raw = str(form.get(key) or "").strip()
-            value = Decimal(raw) if raw else None
-            if value is not None and (not value.is_finite() or value < 0):
-                raise ValueError("Value filters must be finite, nonnegative numbers.")
-            if value is not None:
-                exponent = value.as_tuple().exponent
-                if not isinstance(exponent, int) or value.adjusted() > 131_071 or exponent < -16_383:
-                    raise ValueError("Value filters exceed the supported numeric range.")
-            values[key] = value
-        minimum, maximum = values["min_value"], values["max_value"]
-        if minimum is not None and maximum is not None and minimum > maximum:
-            raise ValueError("Minimum value cannot exceed maximum value.")
-        days_raw = str(form.get("min_deadline_days") or "").strip()
-        if days_raw and (not days_raw.isascii() or not days_raw.isdigit() or len(days_raw) > 10 or int(days_raw) > 2_147_483_647):
-            raise ValueError("Minimum deadline days must be a nonnegative whole number within the supported range.")
-        days = int(days_raw) if days_raw else None
-    except (ValueError, InvalidOperation) as exc:
+    errors: list[str] = []
+    if not name:
+        errors.append("Name is required.")
+    values: dict[str, Decimal | None] = {}
+    for key in ("min_value", "max_value"):
+        raw = str(form.get(key) or "").strip()
+        if not raw:
+            values[key] = None
+            continue
+        try:
+            value = Decimal(raw)
+        except InvalidOperation:
+            errors.append("Enter a finite dollar amount.")
+            values[key] = None
+            continue
+        if not value.is_finite() or value < 0:
+            errors.append("Enter a finite, non-negative dollar amount.")
+            values[key] = None
+            continue
+        exponent = value.as_tuple().exponent
+        if not isinstance(exponent, int) or value.adjusted() > 131_071 or exponent < -16_383:
+            errors.append("Enter a dollar amount within the supported numeric range.")
+            values[key] = None
+            continue
+        values[key] = value
+    minimum, maximum = values["min_value"], values["max_value"]
+    if minimum is not None and maximum is not None and minimum > maximum:
+        errors.append("Minimum value cannot exceed maximum value.")
+    days_raw = str(form.get("min_deadline_days") or "").strip()
+    days: int | None = None
+    if days_raw and (not days_raw.isascii() or not days_raw.isdigit() or len(days_raw) > 10 or int(days_raw) > 2_147_483_647):
+        errors.append("Minimum deadline days must be a nonnegative whole number within the supported range.")
+    elif days_raw:
+        days = int(days_raw)
+    if errors or not name:
         preserved: dict[str, Any] = {key: str(form.get(key) or "") for key in ("name", "notes", "min_value", "max_value", "min_deadline_days")}
         preserved.update({key: parse_list(form.get(key)) for key in ("psc_codes", "naics_codes", "keywords", "exclude_keywords", "nsn_list", "set_asides", "sources")})
         preserved.update({key: parse_checks(key) for key in ("set_asides", "sources")})
+        message = " ".join(dict.fromkeys(errors)) if errors else "Name is required."
         response = _render(request, "watchlist_edit.html", {
             "editing": wl_id is not None, "wl": ViewRow({"id": wl_id, **preserved}),
-            "error": str(exc) if isinstance(exc, ValueError) else "Value filters must be numbers.", "active_page": "watchlists",
+            "error": message, "active_page": "watchlists",
         }, user)
         response.status_code = 422
         return response

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -139,7 +140,7 @@ def test_compact_opportunity_truncates_description_and_scrubs_secrets():
         posted_date = None
         response_deadline = None
         status = "open"
-        links = {"api_key": "secret-value"}
+        links: ClassVar[dict[str, str]] = {"api_key": "secret-value"}
 
     payload = compact_opportunity(_Row(), include_full_description=False, description_limit=100)
     assert payload["description_truncated"] is True
@@ -215,9 +216,9 @@ def test_acceptance_e2e_mcp_workflow(session: Session, mcp_actor):
             recipient_name="Fixture Vendor LLC",
             recipient_uei="ZJEUBM5FYLQ2",
             action_date=datetime.now(UTC).date(),
-            total_obligation=Decimal("12000"),
+            total_obligation=Decimal(12000),
             unit_price=Decimal("24.50"),
-            quantity=Decimal("500"),
+            quantity=Decimal(500),
             raw={"fixture": True},
         )
     )

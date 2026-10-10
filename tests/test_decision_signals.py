@@ -111,7 +111,7 @@ def test_line_items_do_not_mean_sourced_and_missing_analysis_does_not_block(sess
     execution = run_decision_bundle(session, opportunity_id=opp.id, bundle_name="bid_decision")
     assert not any("cannot currently be sourced" in b for b in execution.result.get("hard_rule_blockers", []))
 
-    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal("100")))
+    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal(100)))
     session.flush()
     state = build_decision_state(session, opp.id)
     assert state["sourcing"]["product_found"] is True
@@ -144,8 +144,8 @@ def test_capability_comes_from_watchlists_and_history(session, company) -> None:
 
 
 def test_prices_compare_per_unit_against_unit_priced_awards_only(session, company) -> None:
-    opp = _opp(session, nsn=f"6515-01-{secrets.randbelow(900) + 100}-{secrets.randbelow(9000) + 1000}", quantity=Decimal("100"))
-    for unit, total in ((Decimal("2.00"), Decimal("200")), (Decimal("2.20"), Decimal("220")), (None, Decimal("5000000"))):
+    opp = _opp(session, nsn=f"6515-01-{secrets.randbelow(900) + 100}-{secrets.randbelow(9000) + 1000}", quantity=Decimal(100))
+    for unit, total in ((Decimal("2.00"), Decimal(200)), (Decimal("2.20"), Decimal(220)), (None, Decimal(5000000))):
         session.add(
             Award(
                 source="usaspending",
@@ -158,7 +158,7 @@ def test_prices_compare_per_unit_against_unit_priced_awards_only(session, compan
                 raw={},
             )
         )
-    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", quote_price=Decimal("190"), sourcing_cost=Decimal("150")))
+    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", quote_price=Decimal(190), sourcing_cost=Decimal(150)))
     session.flush()
     state = build_decision_state(session, opp.id)
     pricing = state["pricing"]

@@ -167,7 +167,7 @@ def test_hard_rule_override_beats_bid_signal(upgraded_engine) -> None:
 def test_low_confidence_routes_to_review(upgraded_engine, monkeypatch: pytest.MonkeyPatch) -> None:
     from govcon.decision.provider import ProviderDecision
 
-    def _forced_low_confidence(self, *, bundle_name, bundle_version, state):  # noqa: ANN001
+    def _forced_low_confidence(self, *, bundle_name, bundle_version, state):
         return ProviderDecision(
             provider="rules",
             model="deterministic-v1",
@@ -209,7 +209,7 @@ def test_submission_ready_cannot_set_submitted_stage(upgraded_engine, monkeypatc
 
     original_decide = RuleDecisionProvider.decide
 
-    def _ready_submission(self, *, bundle_name, bundle_version, state):  # noqa: ANN001
+    def _ready_submission(self, *, bundle_name, bundle_version, state):
         if bundle_name == "submission_readiness":
             return ProviderDecision(
                 provider="rules",
@@ -284,6 +284,8 @@ def test_jev_unavailable_falls_back_to_rules(upgraded_engine, monkeypatch: pytes
         )
         session.commit()
         assert execution.provider == "rules"
+        assert execution.fallback_reason == "JEV unavailable (DecisionProviderUnavailable); rules result kept"
+        assert execution.result  # the rules package, including its compliance findings, is kept
 
 
 def test_decision_fixture_contract_and_boundaries() -> None:

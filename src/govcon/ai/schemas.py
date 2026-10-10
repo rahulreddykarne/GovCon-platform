@@ -315,7 +315,7 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "pricing_analysis.v1": PricingAnalysisV1,
 }
 
-from govcon.compliance.schemas import COMPLIANCE_SCHEMAS  # noqa: E402
+from govcon.compliance.schemas import COMPLIANCE_SCHEMAS
 
 SCHEMA_REGISTRY.update(COMPLIANCE_SCHEMAS)
 

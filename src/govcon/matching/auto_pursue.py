@@ -108,18 +108,21 @@ def run_auto_pursue(session: Session, *, now: datetime | None = None) -> AutoPur
         if remaining <= 0:
             result.skipped_daily_cap += 1
             continue
-        pursuit, created = create_or_get_pursuit(session, opportunity_id=opportunity.id, actor=None, origin="auto_policy")
+        score = match.rank_score
+        if score is None:
+            continue
+        _pursuit, created = create_or_get_pursuit(session, opportunity_id=opportunity.id, actor=None, origin="auto_policy")
         if not created:
             continue
         match.status = "pursuing"
         record_audit(
             session, action_type="auto_pursue_applied", opportunity_id=opportunity.id,
             entity_type="matches", entity_id=match.id,
-            new_value={"rank_score": float(match.rank_score), "factors": match.rank_factors, "policy": policy},
+            new_value={"rank_score": float(score), "factors": match.rank_factors, "policy": policy},
         )
         for user_id in approvers:
             notify(session, user_id=user_id, notification_type="auto_pursued", opportunity_id=opportunity.id,
-                   payload={"title": opportunity.title, "rank_score": float(match.rank_score)})
+                   payload={"title": opportunity.title, "rank_score": float(score)})
         result.pursued.append(opportunity.id)
         done.add(opportunity.id)
         remaining -= 1

@@ -126,7 +126,7 @@ def _sections_for_opportunity(requirements: list[Requirement]) -> list[str]:
     types_present: set[str | None] = {r.requirement_type for r in requirements}
     sections: list[str] = ["cover_letter", "executive_summary"]
 
-    if any(t in types_present for t in {"technical", "country_of_origin", "delivery"}):
+    if any(t in types_present for t in ("technical", "country_of_origin", "delivery")):
         sections.append("technical_response")
     if "delivery" in types_present:
         sections.append("delivery_plan")
@@ -240,6 +240,11 @@ def _draft_request(
 def draft_output(result: StructuredCallResult) -> dict[str, Any]:
     """The draft dict ``generate_proposal`` consumes, from a persisted drafting call."""
     output = result.output.model_dump()
-    output["provider"] = result.analysis.provider
-    output["model"] = result.analysis.model
+    analysis = result.analysis
+    if analysis is None:
+        output["provider"] = None
+        output["model"] = None
+        return output
+    output["provider"] = analysis.provider
+    output["model"] = analysis.model
     return output

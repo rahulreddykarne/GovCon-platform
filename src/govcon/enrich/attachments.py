@@ -272,7 +272,7 @@ def _record_failure(
     """
     row = _existing(session, opportunity.id, ref.url, None)
     if row is None or row.sha256:  # never turn a stored version into a failure row
-        row = StoredFile(opportunity_id=opportunity.id, url=ref.url, classification="PUBLIC", source_origin="government_feed")
+        row = StoredFile(opportunity_id=opportunity.id, url=ref.url, classification="UNKNOWN", source_origin="government_feed")
         session.add(row)
     row.filename = sanitize_filename(ref.filename or _url_basename(ref.url))
     row.extraction_status = DOWNLOAD_FAILED
@@ -465,6 +465,7 @@ def record_fetched(
             existing.local_path = fetched.local_path or existing.local_path
             update_extraction(session, existing, fetched.extraction)
         session.flush()
+        _promote_downloaded(session, existing)
         return existing
     if fetched.known or fetched.extraction is None:
         raise RuntimeError(f"stored version of {ref.url} disappeared while it was being fetched")
@@ -472,7 +473,7 @@ def record_fetched(
     extraction = fetched.extraction
     row = _existing(session, opportunity.id, ref.url, None)  # reuse an earlier failure row
     if row is None:
-        row = StoredFile(opportunity_id=opportunity.id, url=ref.url, classification="PUBLIC", source_origin="government_feed")
+        row = StoredFile(opportunity_id=opportunity.id, url=ref.url, classification="UNKNOWN", source_origin="government_feed")
         session.add(row)
     row.filename = fetched.filename
     row.local_path = fetched.local_path
@@ -487,6 +488,7 @@ def record_fetched(
     row.removed_at = None
     session.flush()
     write_pages(session, row, extraction)
+    _promote_downloaded(session, row)
     return row
 
 
@@ -514,6 +516,7 @@ def process_local_file(
     *,
     classification: DataClassification,
     source_origin: str,
+    settings: Settings | None = None,
 ) -> StoredFile:
     """Process a local file: compute SHA-256, extract text, persist.
 
@@ -528,11 +531,12 @@ def process_local_file(
         raise ValueError("source_origin must identify the document's source (1–200 characters)")
     from govcon.enrich.ocr import ocr_config
 
+    settings = settings or get_settings()
     data = file_path.read_bytes()
     sha = hashlib.sha256(data).hexdigest()
     filename = file_path.name
     mime = guess_mime_type(filename)
-    extraction = extract_text(data, mime, filename, ocr=ocr_config(get_settings()))
+    extraction = extract_text(data, mime, filename, ocr=ocr_config(settings))
 
     existing = session.execute(
         select(StoredFile).where(
@@ -542,25 +546,31 @@ def process_local_file(
         )
     ).scalars().first()
     if existing is not None:
-        if needs_ocr_retry(existing, get_settings()):
+        if needs_ocr_retry(existing, settings):
             existing.local_path = str(file_path)
             update_extraction(session, existing, extraction)
-        if existing.classification == DataClassification.UNKNOWN.value:
-            # Re-ingest is the explicit classification step for legacy files.
-            existing.classification = classification.value
-            existing.source_origin = source_origin.strip()
+        existing.source_origin = source_origin.strip()
+        existing.local_path = str(store_bytes(data, sha, opportunity.id, filename, settings))
+        if classification is DataClassification.PUBLIC:
+            _promote_local(session, existing, data)
         else:
-            existing.classification = strictest_classification(existing.classification, classification).value
+            from govcon.enrich.file_class import apply_classification
+
+            apply_classification(
+                session, existing, strictest_classification(existing.classification, classification),
+                reason="explicit_local_import",
+            )
         session.flush()
         return existing
 
+    stored = store_bytes(data, sha, opportunity.id, filename, settings)
     sf = StoredFile(
         opportunity_id=opportunity.id,
         filename=filename,
-        classification=classification.value,
+        classification="UNKNOWN",
         source_origin=source_origin.strip(),
         url=None,
-        local_path=str(file_path),
+        local_path=str(stored),
         mime_type=mime,
         sha256=sha,
         extracted_text=extraction.text,
@@ -573,4 +583,24 @@ def process_local_file(
     session.add(sf)
     session.flush()
     write_pages(session, sf, extraction)
+    if classification is DataClassification.PUBLIC:
+        _promote_local(session, sf, data)
+    else:
+        from govcon.enrich.file_class import apply_classification
+
+        apply_classification(session, sf, classification, reason="explicit_local_import")
     return sf
+
+
+def _promote_downloaded(session: Session, row: StoredFile) -> None:
+    from govcon.enrich.file_class import promote_public_if_verified
+    from govcon.enrich.storage import get_store
+
+    data = get_store(get_settings()).read(row.local_path) if row.local_path else None
+    promote_public_if_verified(session, row, data)
+
+
+def _promote_local(session: Session, row: StoredFile, data: bytes) -> None:
+    from govcon.enrich.file_class import promote_public_if_verified
+
+    promote_public_if_verified(session, row, data)

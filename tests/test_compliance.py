@@ -893,13 +893,11 @@ def test_structured_runner_fails_closed_on_malformed_output(session) -> None:
     for bad in ("not json", json.dumps({"requirements": [{"requirement_text": "x"}]}), json.dumps({"validations": [{"requirement_id": 1, "status": "SATISFIED", "reason": "no evidence"}]})):
         prompt = "compliance_validator" if "validations" in bad else "requirement_extraction_b"
         variables = {"REQUIREMENTS_JSON": [], "EVIDENCE_JSON": []} if prompt == "compliance_validator" else {"DOCUMENT_INVENTORY_JSON": [], "SOURCE_CHUNKS": "x", "AMENDMENT_JSON": {}}
-        with patch("govcon.ai.structured.get_provider", return_value=FakeProvider({prompt: bad})):
-            with pytest.raises(StructuredCallError):
-                run_structured_prompt(session, opportunity_id=o.id, prompt_name=prompt, analysis_type="compliance_review", variables=variables, context_manifest={}, classification=DataClassification.PUBLIC)
+        with patch("govcon.ai.structured.get_provider", return_value=FakeProvider({prompt: bad})), pytest.raises(StructuredCallError):
+            run_structured_prompt(session, opportunity_id=o.id, prompt_name=prompt, analysis_type="compliance_review", variables=variables, context_manifest={}, classification=DataClassification.PUBLIC)
     assert not session.scalars(select(AIAnalysis).where(AIAnalysis.opportunity_id == o.id)).all()
-    with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()):
-        with pytest.raises(StructuredCallError) as exc:
-            run_structured_prompt(session, opportunity_id=o.id, prompt_name="requirement_extraction_b", analysis_type="compliance_review", variables={"SOURCE_CHUNKS": "x"}, context_manifest={}, classification=DataClassification.PUBLIC)
+    with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()), pytest.raises(StructuredCallError) as exc:
+        run_structured_prompt(session, opportunity_id=o.id, prompt_name="requirement_extraction_b", analysis_type="compliance_review", variables={"SOURCE_CHUNKS": "x"}, context_manifest={}, classification=DataClassification.PUBLIC)
     assert exc.value.reason == "render_error"
 
 

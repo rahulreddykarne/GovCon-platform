@@ -1,9 +1,8 @@
 """Alert digests for unalerted new matches and optional deadline re-alerts.
 
-Phase 3 sends one HTML message per run, grouped by watchlist. SMTP is used
-when ``SMTP_HOST`` and ``ALERT_EMAIL_TO`` are both set. Otherwise the HTML
-file is written under ``OUTBOX_DIR``. An empty run writes nothing and sends
-nothing.
+Phase 3 writes one HTML message per run, grouped by watchlist, under
+``OUTBOX_DIR``. An empty run writes nothing. SMTP is not used unless a caller
+passes ``external_delivery=True``; the application does not do that.
 
 Phase 5 adds recent award comps when a stored award matches the opportunity
 NSN, or the PSC when no NSN history exists. Unit price is shown only when the
@@ -20,6 +19,7 @@ opportunity; other changes to a closed opportunity are not.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import logging
 import smtplib
@@ -95,12 +95,14 @@ def run_digest(
     *,
     settings: Settings | None = None,
     now: datetime | None = None,
+    external_delivery: bool = False,
 ) -> DigestResult:
     """Deliver one digest, then stamp ``alerted_at`` on the included matches.
 
-    Delivery runs before the watermark is flushed. A successful commit does not
-    send the same match again. A crash after delivery and before commit can
-    produce one duplicate on the next run.
+    Outbox files use a content key, so a retry overwrites the same file.
+    SMTP records a claim on its own committed transaction before the message
+    is handed to the server. A crash after that hand-off finds the claim and
+    does not send again; it only finishes the watermark.
     """
     settings = settings or get_settings()
     now = _aware(now or datetime.now(UTC))
@@ -124,12 +126,22 @@ def run_digest(
     html = render_html(new_items, amendment_items, generated_at=now)
     plain = render_plain(new_items, amendment_items, generated_at=now)
     subject = _subject(len(new_items), len(amendment_items))
-    if settings.email_configured:
-        send_smtp(settings, subject=subject, html=html, plain=plain)
+    claim_key = _delivery_key(new_items + amendment_items)
+    # Scheduled and manual digests stay on disk unless a caller explicitly
+    # asks to send. Nothing in the application passes external_delivery=True.
+    if external_delivery and settings.email_configured:
+        decision = _smtp_claim(settings, claim_key, [item.match.id for item in new_items + amendment_items])
+        if decision == "send":
+            try:
+                send_smtp(settings, subject=subject, html=html, plain=plain)
+            except DigestDeliveryError:
+                _finish_claim(settings, claim_key, "failed")
+                raise
+            _finish_claim(settings, claim_key, "sent")
         channel = "smtp"
         path = None
     else:
-        written = write_outbox(resolve_outbox(settings), html, now)
+        written = write_outbox(resolve_outbox(settings), html, now, claim_key=claim_key)
         channel = "outbox"
         path = str(written)
 
@@ -210,8 +222,12 @@ def resolve_outbox(settings: Settings) -> Path:
     return (Path.cwd() / path).resolve()
 
 
-def write_outbox(directory: Path, html: str, now: datetime) -> Path:
+def write_outbox(directory: Path, html: str, now: datetime, *, claim_key: str | None = None) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
+    if claim_key:
+        path = directory / f"digest-{claim_key[:20]}.html"
+        path.write_text(html, encoding="utf-8")
+        return path
     stamp = now.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = directory / f"digest-{stamp}.html"
     suffix = 2
@@ -220,6 +236,47 @@ def write_outbox(directory: Path, html: str, now: datetime) -> Path:
         suffix += 1
     path.write_text(html, encoding="utf-8")
     return path
+
+
+def _delivery_key(items: list[_Item]) -> str:
+    parts = []
+    for item in items:
+        detected = item.event_detected_at.isoformat() if item.event_detected_at is not None else ""
+        parts.append(f"{item.kind}:{item.match.id}:{detected}")
+    return hashlib.sha256("|".join(sorted(parts)).encode()).hexdigest()
+
+
+def _smtp_claim(settings: Settings, claim_key: str, match_ids: list[int]) -> str:
+    """Commit a send claim before SMTP. ``skip`` means this body was already handed off."""
+    from govcon.db import session_scope
+    from govcon.models import AlertDelivery
+
+    with session_scope(settings) as db:
+        existing = db.scalar(select(AlertDelivery).where(AlertDelivery.claim_key == claim_key))
+        if existing is not None and existing.status in {"sending", "sent"}:
+            return "skip"
+        if existing is None:
+            db.add(AlertDelivery(
+                claim_key=claim_key, status="sending", channel="smtp", match_ids=match_ids,
+            ))
+        else:
+            existing.status = "sending"
+            existing.channel = "smtp"
+            existing.match_ids = match_ids
+            existing.finished_at = None
+    return "send"
+
+
+def _finish_claim(settings: Settings, claim_key: str, status: str) -> None:
+    from govcon.db import session_scope
+    from govcon.models import AlertDelivery
+
+    with session_scope(settings) as db:
+        row = db.scalar(select(AlertDelivery).where(AlertDelivery.claim_key == claim_key))
+        if row is None:
+            return
+        row.status = status
+        row.finished_at = datetime.now(UTC)
 
 
 def send_smtp(settings: Settings, *, subject: str, html: str, plain: str, to: str | None = None) -> None:

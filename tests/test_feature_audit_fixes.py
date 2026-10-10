@@ -325,7 +325,7 @@ def test_f4_preserves_empty_requirements_and_matrix_counts(db, client):
     empty, _, _, _ = matched_opportunity(db, client)
     assert "No compliance run yet" in client.get(f"/workspace/{empty.id}?tab=compliance").text
     assert "No requirements extracted yet" in client.get(f"/workspace/{empty.id}?tab=requirements").text
-    opp, counts, _ = matrix_fixture(db, client)
+    opp, _counts, _ = matrix_fixture(db, client)
     page = client.get(f"/workspace/{opp.id}?tab=compliance")
     assert page.status_code == 200
     assert stat_value(page.text, "Mandatory Total") == 3

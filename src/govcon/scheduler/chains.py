@@ -26,6 +26,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from govcon.scheduler.jobs import StepResult
+from govcon.scheduler.schedule import describe
 
 logger = logging.getLogger(__name__)
 
@@ -49,43 +50,43 @@ class ChainDef:
 CHAIN_DEFINITIONS: dict[str, ChainDef] = {
     "morning_ingest": ChainDef(
         name="morning_ingest",
-        description="SAM ingest → DIBBS ingest → source-change workflow → match → rank → auto-pursue → alerts",
-        cron="06:30 daily",
-        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"],
-        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue"}),
+        description="SAM ingest → DIBBS ingest → source documents → source-change workflow → match → rank → auto-pursue → alerts",
+        cron=describe("morning_ingest"),
+        steps=["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
+        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "rank", "auto_pursue", "orchestrate"}),
     ),
     "usaspending": ChainDef(
         name="usaspending",
         description="USAspending delta ingest → award-match outcome suggestions",
-        cron="07:30 daily",
+        cron=describe("usaspending"),
         steps=["usaspending", "outcome_suggestions"],
         soft_steps=frozenset({"outcome_suggestions"}),
     ),
     "embeddings": ChainDef(
         name="embeddings",
         description="Opportunity embeddings → semantic recommendations → rank",
-        cron="08:00 daily",
+        cron=describe("embeddings"),
         steps=["embeddings", "semantic_match", "rank"],
         soft_steps=frozenset({"rank"}),
     ),
     "midday_check": ChainDef(
         name="midday_check",
         description="Deadline/amendment check → review reminders and escalations → company SAM registration refresh",
-        cron="12:00 daily",
+        cron=describe("midday_check"),
         steps=["midday_deadline_check", "review_escalations", "company_registration"],
         soft_steps=frozenset({"review_escalations", "company_registration"}),
     ),
     "evening_ingest": ChainDef(
         name="evening_ingest",
-        description="Second SAM/DIBBS → source-change workflow → match → rank → auto-pursue → alerts",
-        cron="18:00 daily",
-        steps=["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"],
-        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_changes", "rank", "auto_pursue"}),
+        description="Second SAM/DIBBS → source documents → source-change workflow → match → rank → auto-pursue → alerts",
+        cron=describe("evening_ingest"),
+        steps=["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"],
+        soft_steps=frozenset({"sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "rank", "auto_pursue", "orchestrate"}),
     ),
     "sunday_sweep": ChainDef(
         name="sunday_sweep",
         description="Archive sweep → cache refresh → analytics refresh → VACUUM ANALYZE",
-        cron="09:00 every Sunday",
+        cron=describe("sunday_sweep"),
         steps=["archive_sweep", "cache_refresh", "analytics_refresh", "vacuum_analyze"],
     ),
 }
@@ -156,7 +157,6 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
     chain_def = CHAIN_DEFINITIONS.get(chain_name)
     if chain_def is None:
         raise ValueError(f"Unknown chain: {chain_name!r}. Available: {list(CHAIN_DEFINITIONS)}")
-
     started_at = datetime.now(timezone.utc)
     steps_completed: list[str] = []
     step_results: list[StepResult] = []
@@ -210,8 +210,9 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
 
         logger.info("chain=%s step=%s starting", chain_name, step_name)
         try:
-            with session_scope(settings) as step_db:
-                result = _invoke_step(step_fn, step_db, settings)
+            from govcon.scheduler.limits import run_step_bounded
+
+            result = run_step_bounded(step_name, step_fn, settings)
         except Exception as exc:
             result = StepResult(step=step_name, status="failed", error=str(exc))
             logger.exception("chain=%s step=%s uncaught error", chain_name, step_name)
@@ -328,9 +329,11 @@ def _build_step_table() -> dict[str, Callable]:
     return {
         "sam_ingest": jobs.step_sam_ingest,
         "dibbs_ingest": jobs.step_dibbs_ingest,
+        "source_documents": jobs.step_source_documents,
         "source_changes": jobs.step_source_changes,
         "match": jobs.step_match,
         "alerts": jobs.step_alerts,
+        "orchestrate": jobs.step_orchestrate,
         "usaspending": jobs.step_usaspending,
         "embeddings": jobs.step_embeddings,
         "semantic_match": jobs.step_semantic_match,

@@ -65,10 +65,18 @@ class AnthropicProvider:
         self._model = model or DEFAULT_MODEL
         # The same settings object the factory used drives the gateway policy.
         self._settings = settings or get_settings()
+        # The SDK uses httpx2, so it cannot take the shared httpx client.
+        # Cap connect the same way: a black-holed route fails instead of waiting
+        # the whole 300 second read budget on TCP setup.
         self._client = anthropic.Anthropic(
             api_key=api_key,
             base_url=base_url,
-            timeout=REQUEST_TIMEOUT_SECONDS,
+            timeout=httpx2.Timeout(
+                connect=min(10.0, REQUEST_TIMEOUT_SECONDS),
+                read=REQUEST_TIMEOUT_SECONDS,
+                write=min(30.0, REQUEST_TIMEOUT_SECONDS),
+                pool=min(10.0, REQUEST_TIMEOUT_SECONDS),
+            ),
             max_retries=max_retries,
             http_client=http_client,
         )

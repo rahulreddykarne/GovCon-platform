@@ -4,44 +4,47 @@
 
 <div class="page-header">
   <div>
+    <p class="eyebrow">Filters</p>
     <h1 class="page-title">{% if editing %}Edit Watchlist{% else %}New Watchlist{% endif %}</h1>
   </div>
   <a href="/watchlists" class="btn btn-secondary">← Back</a>
 </div>
 
 {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+{% set submitted = submitted if submitted is defined and submitted else {} %}
 
 <div class="card">
+  <p class="text-sm">Every group you fill in must pass (AND). Values inside one group match if any of them hit (OR). An empty group is ignored. A watchlist with no groups does not match anything.</p>
   <form method="post" action="{% if editing %}/watchlists/{{ wl.id }}/edit{% else %}/watchlists/new{% endif %}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <div class="form-group">
       <label for="name">Name *</label>
-      <input type="text" id="name" name="name" required value="{{ wl.name if wl else '' }}">
+      <input type="text" id="name" name="name" required value="{{ submitted.get('name', wl.name if wl else '') }}">
     </div>
 
     <div class="form-group">
       <label for="psc_codes">PSC Codes (comma-separated prefixes)</label>
-      <input type="text" id="psc_codes" name="psc_codes" value="{{ (wl.psc_codes|join(',')) if wl and wl.psc_codes else '' }}">
+      <input type="text" id="psc_codes" name="psc_codes" value="{{ submitted.get('psc_codes', (wl.psc_codes|join(',')) if wl and wl.psc_codes else '') }}">
     </div>
 
     <div class="form-group">
       <label for="naics_codes">NAICS Codes (comma-separated prefixes)</label>
-      <input type="text" id="naics_codes" name="naics_codes" value="{{ (wl.naics_codes|join(',')) if wl and wl.naics_codes else '' }}">
+      <input type="text" id="naics_codes" name="naics_codes" value="{{ submitted.get('naics_codes', (wl.naics_codes|join(',')) if wl and wl.naics_codes else '') }}">
     </div>
 
     <div class="form-group">
       <label for="keywords">Keywords (comma-separated)</label>
-      <input type="text" id="keywords" name="keywords" value="{{ (wl.keywords|join(',')) if wl and wl.keywords else '' }}">
+      <input type="text" id="keywords" name="keywords" value="{{ submitted.get('keywords', (wl.keywords|join(',')) if wl and wl.keywords else '') }}">
     </div>
 
     <div class="form-group">
       <label for="exclude_keywords">Exclude Keywords (comma-separated)</label>
-      <input type="text" id="exclude_keywords" name="exclude_keywords" value="{{ (wl.exclude_keywords|join(',')) if wl and wl.exclude_keywords else '' }}">
+      <input type="text" id="exclude_keywords" name="exclude_keywords" value="{{ submitted.get('exclude_keywords', (wl.exclude_keywords|join(',')) if wl and wl.exclude_keywords else '') }}">
     </div>
 
     <div class="form-group">
       <label for="nsn_list">NSNs (comma-separated)</label>
-      <input type="text" id="nsn_list" name="nsn_list" value="{{ (wl.nsn_list|join(',')) if wl and wl.nsn_list else '' }}">
+      <input type="text" id="nsn_list" name="nsn_list" value="{{ submitted.get('nsn_list', (wl.nsn_list|join(',')) if wl and wl.nsn_list else '') }}">
     </div>
 
     <fieldset class="form-group">
@@ -86,7 +89,7 @@
 
     <div class="form-group">
       <label for="notes">Notes</label>
-      <textarea id="notes" name="notes" rows="2">{{ wl.notes if wl and wl.notes else '' }}</textarea>
+      <textarea id="notes" name="notes" rows="2">{{ submitted.get('notes', wl.notes if wl and wl.notes else '') }}</textarea>
     </div>
 
     <button type="submit" class="btn btn-primary">{% if editing %}Save Changes{% else %}Create Watchlist{% endif %}</button>

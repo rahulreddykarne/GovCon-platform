@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_attribute
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.ai.schemas import ReviewerCommentValidationV1
@@ -84,14 +85,18 @@ def apply_ai_validation_to_comment(
     comment.ai_position = validation.position
     comment.ai_confidence = validation.confidence
     comment.ai_reason = validation.reason
-    comment.ai_supporting_evidence = [
-        evidence.model_dump(mode="json") for evidence in validation.supporting_evidence
-    ]
-    comment.ai_contradicting_evidence = [
-        evidence.model_dump(mode="json")
-        for evidence in validation.contradicting_evidence
-    ]
-    comment.ai_missing_information = list(validation.missing_information)
+    # JSONB columns are annotated as dict; evidence and missing-info values are JSON arrays.
+    set_attribute(
+        comment,
+        "ai_supporting_evidence",
+        [evidence.model_dump(mode="json") for evidence in validation.supporting_evidence],
+    )
+    set_attribute(
+        comment,
+        "ai_contradicting_evidence",
+        [evidence.model_dump(mode="json") for evidence in validation.contradicting_evidence],
+    )
+    set_attribute(comment, "ai_missing_information", list(validation.missing_information))
     comment.ai_suggested_action = validation.suggested_action
 
 

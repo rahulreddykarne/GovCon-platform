@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -29,7 +29,7 @@ class IngestStats:
 def start_run(session: Session, job: str) -> IngestionRun:
     run = IngestionRun(
         job=job,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         status="running",
         fetched=0,
         inserted=0,
@@ -49,7 +49,7 @@ def finish_run(
     status: str,
     details: dict | None = None,
 ) -> None:
-    run.finished_at = datetime.now(timezone.utc)
+    run.finished_at = datetime.now(UTC)
     run.status = status
     run.fetched = stats.fetched
     run.inserted = stats.inserted

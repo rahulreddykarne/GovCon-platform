@@ -59,7 +59,7 @@ class LLMDecisionProvider:
             default=str,
         )
         try:
-            result, reservation = complete_with_budget(provider, self._session,
+            result, _reservation = complete_with_budget(provider, self._session,
                 opportunity_id=state.get("budget_opportunity_id"), settings=self._settings,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
@@ -73,7 +73,7 @@ class LLMDecisionProvider:
 
         try:
             parsed = parse_json_response(result)
-        except Exception:
+        except Exception:  # noqa: BLE001  boundary must record any failure
             try:
                 parsed = json.loads(getattr(result, "content", "") or "{}")
             except Exception as exc:

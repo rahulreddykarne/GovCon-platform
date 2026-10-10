@@ -79,7 +79,7 @@ class TestChainDefinitions:
     def test_morning_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["morning_ingest"]
         # ADR-069: ranking and controlled auto-pursue run between matching and alerts.
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"]
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"]
 
     def test_usaspending_steps(self):
         chain = CHAIN_DEFINITIONS["usaspending"]
@@ -96,7 +96,7 @@ class TestChainDefinitions:
 
     def test_evening_ingest_steps(self):
         chain = CHAIN_DEFINITIONS["evening_ingest"]
-        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"]
+        assert chain.steps == ["sam_ingest", "dibbs_ingest", "source_documents", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"]
 
     def test_sunday_sweep_steps(self):
         chain = CHAIN_DEFINITIONS["sunday_sweep"]
@@ -170,7 +170,8 @@ class TestJobsList:
     def test_shows_schedule_for_each_chain(self):
         result = _invoke("jobs", "list")
         assert result.exit_code == 0
-        assert "daily" in result.output
+        assert "6:30 AM America/Los_Angeles" in result.output
+        assert "5:00 PM America/Los_Angeles" in result.output
         assert "Sunday" in result.output
 
     def test_shows_steps_for_each_chain(self):
@@ -184,7 +185,8 @@ class TestJobsList:
         result = _invoke("jobs", "list")
         assert result.exit_code == 0
         # At least one column should mention the schedule
-        assert "06:30 daily" in result.output or "schedule" in result.output.lower()
+        assert "6:30 AM America/Los_Angeles" in result.output
+        assert "Sunday 9:00 AM America/Los_Angeles" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -276,12 +278,11 @@ class TestChainAbortOnFailure:
         patched_fns["sam_ingest"] = step_fail
         patched_fns["dibbs_ingest"] = step_should_not_run
 
-        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched_fns):
-            with patch(
-                "govcon.scheduler.chains.CHAIN_DEFINITIONS",
-                {"morning_ingest": custom_chain},
-            ):
-                result = run_chain("morning_ingest", settings, trigger="test")
+        with (
+            patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched_fns),
+            patch("govcon.scheduler.chains.CHAIN_DEFINITIONS", {"morning_ingest": custom_chain}),
+        ):
+            result = run_chain("morning_ingest", settings, trigger="test")
 
         assert result.failed
         assert result.failed_step == "sam_ingest"
@@ -324,12 +325,11 @@ class TestChainAbortOnFailure:
         patched["cache_refresh"] = step_fail
         patched["analytics_refresh"] = step_never
 
-        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
-            with patch(
-                "govcon.scheduler.chains.CHAIN_DEFINITIONS",
-                {"sunday_sweep": custom_chain},
-            ):
-                result = run_chain("sunday_sweep", settings, trigger="test")
+        with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched), patch(
+            "govcon.scheduler.chains.CHAIN_DEFINITIONS",
+            {"sunday_sweep": custom_chain},
+        ):
+            result = run_chain("sunday_sweep", settings, trigger="test")
 
         assert result.failed
         assert "archive_sweep" in result.steps_completed
@@ -594,7 +594,7 @@ class TestSoftIngestSteps:
             return step
 
         patched = dict(_STEP_FUNCTIONS)
-        for name in ("sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"):
+        for name in ("sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"):
             patched[name] = overrides.get(name) or make(name)
         return patched, make
 
@@ -604,7 +604,7 @@ class TestSoftIngestSteps:
         patched["sam_ingest"] = make("sam_ingest", "failed", "SAM HTTP 503")
         with patch("govcon.scheduler.chains._STEP_FUNCTIONS", patched):
             result = run_chain("morning_ingest", _settings(), trigger="test_soft")
-        assert calls == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts"]
+        assert calls == ["sam_ingest", "dibbs_ingest", "source_changes", "match", "rank", "auto_pursue", "alerts", "orchestrate"]
         assert result.status == "completed_with_errors"
         assert not result.failed
         assert "match" in result.steps_completed and "alerts" in result.steps_completed
@@ -638,9 +638,8 @@ class TestSoftIngestSteps:
             coverage=DibbsCoverage(records=10, nsn=9, quantity=10),
             index_name="in260925.txt",
         )
-        with session_scope(_settings()) as db:
-            with patch("govcon.ingest.dibbs.pull_dibbs_index", return_value=fake):
-                result = step_dibbs_ingest(db, _settings())
+        with session_scope(_settings()) as db, patch("govcon.ingest.dibbs.pull_dibbs_index", return_value=fake):
+            result = step_dibbs_ingest(db, _settings())
         assert result.status == "completed_with_errors"
         assert not result.failed
 

@@ -10,6 +10,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+
+def parse_model[ModelT: BaseModel](output: BaseModel, model: type[ModelT]) -> ModelT:
+    """Return ``output`` when it is already an instance of ``model``."""
+    if isinstance(output, model):
+        return output
+    raise TypeError(f"expected {model.__name__}, got {type(output).__name__}")
+
 Severity = Literal["critical", "high", "medium", "low"]
 ComplianceStatus = Literal["SATISFIED", "MISSING", "UNKNOWN", "NEEDS_REVIEW", "NOT_APPLICABLE", "STALE"]
 

@@ -379,7 +379,7 @@ def upsert_opportunity(session: Session, item: NormalizedOpportunity) -> str:
         return "unchanged"
     # Content seen before (a revert, A -> B -> A) is still an update to the live
     # row; it reuses the stored snapshot for that content.
-    snapshot = session.scalar(
+    prior = session.scalar(
         select(OpportunitySnapshot).where(
             OpportunitySnapshot.opportunity_id == existing.id,
             OpportunitySnapshot.content_hash == item.content_hash,
@@ -406,10 +406,10 @@ def upsert_opportunity(session: Session, item: NormalizedOpportunity) -> str:
                 },
             )
         )
-    if snapshot is None:
-        snapshot = _insert_snapshot(session, existing.id, item)
+    if prior is None:
+        prior = _insert_snapshot(session, existing.id, item)
     for event in events:
-        event.snapshot_id = snapshot.id
+        event.snapshot_id = prior.id
         session.add(event)
     session.flush()
     _apply_current(existing, item)

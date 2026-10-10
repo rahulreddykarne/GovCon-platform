@@ -131,6 +131,9 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
                 .order_by(OpportunityEvent.detected_at.desc()).limit(20)).all()
             tab_ctx["contacts"] = db.scalars(select(Contact).where(Contact.agency_path == opp.agency_path).limit(5)).all() if opp.agency_path else []
             tab_ctx["source_links"] = source_links(opp.links)
+            from govcon.operating.trace import opportunity_trace
+
+            tab_ctx["stage_trace"] = opportunity_trace(db, opp)
 
         if active_tab == "requirements" or active_tab == "compliance":
             total = db.scalar(select(func.count()).select_from(Requirement).where(Requirement.opportunity_id == opp_id)) or 0

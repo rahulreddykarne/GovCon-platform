@@ -33,7 +33,7 @@ def test_current_invalid_number_contract(value):
 
 def test_current_formatted_manual_total_web_contract(db, client):
     opp = opportunity(db)
-    actor, token = user(db)
+    _actor, token = user(db)
     client.cookies.set("govcon_session", token)
     response = client.post(f"/workspace/{opp.id}/quotes", data={"supplier_name": f"finite-{uuid4().hex}",
                                                                "total_price": "$1,200.50"})

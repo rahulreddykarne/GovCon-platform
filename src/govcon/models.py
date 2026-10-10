@@ -163,6 +163,16 @@ class Award(TimestampMixin, Base):
 
 class Vendor(TimestampMixin, Base):
     __tablename__ = "vendors"
+    __table_args__ = (
+        CheckConstraint(
+            "freshness_status IN ('fresh', 'stale', 'expired', 'failed', 'unknown')",
+            name="ck_vendors_freshness_status",
+        ),
+        CheckConstraint(
+            "attempt_state IS NULL OR attempt_state IN ('in_progress', 'cancelled', 'applied', 'failed')",
+            name="ck_vendors_attempt_state",
+        ),
+    )
 
     uei: Mapped[str] = mapped_column(Text, primary_key=True)
     cage_code: Mapped[str | None] = mapped_column(Text)
@@ -176,6 +186,17 @@ class Vendor(TimestampMixin, Base):
     points_of_contact: Mapped[dict | list | None] = mapped_column(JSONB)
     raw: Mapped[dict | None] = mapped_column(JSONB)
     fetched_at: Mapped[datetime | None] = mapped_column(_ts())
+    source_updated_at: Mapped[datetime | None] = mapped_column(_ts())
+    expires_at: Mapped[date | None] = mapped_column(Date)
+    freshness_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'unknown'"), default="unknown"
+    )
+    last_refresh_error: Mapped[str | None] = mapped_column(Text)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(_ts())
+    refresh_generation: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"), default=0)
+    attempt_id: Mapped[str | None] = mapped_column(Text)
+    attempt_state: Mapped[str | None] = mapped_column(Text)
+    registration_key: Mapped[str | None] = mapped_column(Text)
 
 
 class Contact(TimestampMixin, Base):
@@ -550,6 +571,78 @@ class AICallUsage(CreatedAtMixin, Base):
     output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric)
     usage: Mapped[dict | None] = mapped_column(JSONB)
+
+
+class AIModelPrice(TimestampMixin, Base):
+    """Editable USD price per 1,000,000 tokens. Missing rows mean the price is not set."""
+
+    __tablename__ = "ai_model_prices"
+    __table_args__ = (
+        UniqueConstraint("provider", "model", name="uq_ai_model_prices_provider_model"),
+        CheckConstraint(
+            "input_usd_per_million >= 0 AND output_usd_per_million >= 0 "
+            "AND (cached_usd_per_million IS NULL OR cached_usd_per_million >= 0) "
+            "AND (cache_write_usd_per_million IS NULL OR cache_write_usd_per_million >= 0)",
+            name="ck_ai_model_prices_nonnegative",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    input_usd_per_million: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    output_usd_per_million: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    cached_usd_per_million: Mapped[Decimal | None] = mapped_column(Numeric)
+    cache_write_usd_per_million: Mapped[Decimal | None] = mapped_column(Numeric)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    effective_as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class AIProviderCall(CreatedAtMixin, Base):
+    """One external or local model attempt, with tokens only when the provider reported them.
+
+    ``input_tokens`` is NULL when the response had no usage fields. Blocked calls
+    store zero tokens and a zero cost because nothing was sent. Local work stores
+    a zero cost. A NULL cost on a succeeded or failed call means the price is not set
+    or the usage was not reported.
+    """
+
+    __tablename__ = "ai_provider_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('succeeded', 'failed', 'blocked', 'local')",
+            name="ck_ai_provider_calls_status",
+        ),
+        CheckConstraint(
+            "(input_tokens IS NULL OR input_tokens >= 0) "
+            "AND (output_tokens IS NULL OR output_tokens >= 0) "
+            "AND (cached_tokens IS NULL OR cached_tokens >= 0) "
+            "AND (cache_write_tokens IS NULL OR cache_write_tokens >= 0) "
+            "AND (cost_usd IS NULL OR cost_usd >= 0) "
+            "AND (latency_ms IS NULL OR latency_ms >= 0)",
+            name="ck_ai_provider_calls_nonnegative",
+        ),
+        Index("ix_ai_provider_calls_created_at", "created_at"),
+        Index("ix_ai_provider_calls_opportunity_id", "opportunity_id"),
+        Index("ix_ai_provider_calls_provider_model", "provider", "model"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int | None] = mapped_column(BigInteger)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cached_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cache_write_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    analysis_id: Mapped[int | None] = mapped_column(BigInteger)
+    decision_run_id: Mapped[int | None] = mapped_column(BigInteger)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric)
+    price_id: Mapped[int | None] = mapped_column(ForeignKey("ai_model_prices.id"))
 
 
 class PromptRegistryEntry(TimestampMixin, Base):
@@ -1003,9 +1096,104 @@ class SchedulerJobRun(Base):
     row_counts: Mapped[dict | None] = mapped_column(JSONB)
 
 
+class ProcessHeartbeat(Base):
+    """Latest liveness beat for a local web, worker, or scheduler process."""
+
+    __tablename__ = "process_heartbeats"
+    __table_args__ = (
+        UniqueConstraint("role", "instance_id", name="uq_process_heartbeats_role_instance"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    instance_id: Mapped[str] = mapped_column(Text, nullable=False)
+    beat_at: Mapped[datetime] = mapped_column(_ts(), nullable=False)
+    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+
+
+BOT_NAMES = (
+    "orchestrator", "discovery", "document", "matching", "bid_decision",
+    "compliance", "amendment", "awards", "alert", "operations",
+)
+BOT_STATUSES = (
+    "queued", "running", "succeeded", "completed_with_errors", "failed",
+    "skipped", "blocked", "waiting_approval",
+)
+BOT_APPROVAL_STATUSES = ("pending", "approved", "rejected")
+
+
+class BotRun(Base):
+    """One execution of an in-app bot, including retries of the same inputs."""
+
+    __tablename__ = "bot_runs"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_bot_runs_idempotency_key"),
+        CheckConstraint(f"bot_name IN {BOT_NAMES!r}", name="ck_bot_runs_bot_name"),
+        CheckConstraint(f"status IN {BOT_STATUSES!r}", name="ck_bot_runs_status"),
+        Index("ix_bot_runs_bot_started", "bot_name", "started_at"),
+        Index("ix_bot_runs_opportunity", "opportunity_id", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    bot_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'running'"))
+    trigger: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'manual'"))
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    opportunity_id: Mapped[int | None] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"))
+    source_revision: Mapped[str | None] = mapped_column(Text)
+    parent_run_id: Mapped[int | None] = mapped_column(ForeignKey("bot_runs.id", ondelete="SET NULL"))
+    started_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(_ts())
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    inputs: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    outputs: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+
+
+class BotApproval(Base):
+    """A human decision the bots are not allowed to make themselves."""
+
+    __tablename__ = "bot_approvals"
+    __table_args__ = (
+        CheckConstraint(f"status IN {BOT_APPROVAL_STATUSES!r}", name="ck_bot_approvals_status"),
+        Index("ix_bot_approvals_status", "status", "requested_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    bot_run_id: Mapped[int] = mapped_column(ForeignKey("bot_runs.id", ondelete="CASCADE"), nullable=False)
+    opportunity_id: Mapped[int | None] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    requested_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    decided_at: Mapped[datetime | None] = mapped_column(_ts())
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decision_note: Mapped[str | None] = mapped_column(Text)
+
+
+class AlertDelivery(Base):
+    """A digest claim committed before SMTP so a crash cannot send the same body twice."""
+
+    __tablename__ = "alert_deliveries"
+    __table_args__ = (
+        UniqueConstraint("claim_key", name="uq_alert_deliveries_claim_key"),
+        CheckConstraint("status IN ('sending', 'sent', 'failed')", name="ck_alert_deliveries_status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    claim_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'sending'"))
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    match_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    claimed_at: Mapped[datetime] = mapped_column(_ts(), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(_ts())
+
+
 TASK_TYPES = (
     "proposal_generation", "ai_analysis", "solicitation_summary", "scheduler_chain", "opportunity_preparation",
-    "notification_email", "quote_extraction",
+    "notification_email", "quote_extraction", "bot_run",
 )
 TASK_STATUSES = (
     "queued", "running", "waiting_for_input", "waiting_for_budget", "retrying",
@@ -1240,6 +1428,16 @@ class CompanyRegistration(TimestampMixin, Base):
     """Our own SAM registration, refreshed daily from the SAM entity API (ADR-072)."""
 
     __tablename__ = "company_registration"
+    __table_args__ = (
+        CheckConstraint(
+            "freshness_status IN ('fresh', 'stale', 'expired', 'failed', 'unknown')",
+            name="ck_company_registration_freshness_status",
+        ),
+        CheckConstraint(
+            "attempt_state IS NULL OR attempt_state IN ('in_progress', 'cancelled', 'applied', 'failed')",
+            name="ck_company_registration_attempt_state",
+        ),
+    )
 
     uei: Mapped[str] = mapped_column(Text, primary_key=True)
     legal_name: Mapped[str | None] = mapped_column(Text)
@@ -1248,6 +1446,18 @@ class CompanyRegistration(TimestampMixin, Base):
     expiration_date: Mapped[date | None] = mapped_column(Date)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'sam_entity_api'"))
     refreshed_at: Mapped[datetime] = mapped_column(_ts(), nullable=False)
+    fetched_at: Mapped[datetime | None] = mapped_column(_ts())
+    source_updated_at: Mapped[datetime | None] = mapped_column(_ts())
+    expires_at: Mapped[date | None] = mapped_column(Date)
+    freshness_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'unknown'"), default="unknown"
+    )
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(_ts())
+    refresh_generation: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"), default=0)
+    attempt_id: Mapped[str | None] = mapped_column(Text)
+    attempt_state: Mapped[str | None] = mapped_column(Text)
+    registration_key: Mapped[str | None] = mapped_column(Text)
     raw: Mapped[dict | None] = mapped_column(JSONB)
     last_expiry_alert_at: Mapped[datetime | None] = mapped_column(_ts())
 

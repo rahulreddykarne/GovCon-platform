@@ -7,6 +7,7 @@ import smtplib
 import ssl
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -88,8 +89,8 @@ def _opportunity(session: Session, **overrides) -> Opportunity:
         "naics_code": "541512",
         "set_aside_code": "SBA",
         "response_deadline": datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
-        "estimated_value_min": Decimal("25000"),
-        "estimated_value_max": Decimal("25000"),
+        "estimated_value_min": Decimal(25000),
+        "estimated_value_max": Decimal(25000),
         "links": {"ui": "https://sam.gov/opp/alert-1/view"},
         "raw": {"fixture": True},
     }
@@ -116,7 +117,7 @@ def _match(session: Session, opportunity: Opportunity, watchlist: Watchlist, **o
     values = {
         "opportunity_id": opportunity.id,
         "watchlist_id": watchlist.id,
-        "score": Decimal("1"),
+        "score": Decimal(1),
         "matched_on": {"score_basis": "rule_hits"},
         "status": "new",
     }
@@ -135,7 +136,7 @@ def test_calendar_days_and_estimated_value_and_source_link() -> None:
     assert calendar_days_remaining(datetime(2026, 10, 1, 12, tzinfo=UTC), NOW) == 5
     assert calendar_days_remaining(None, NOW) is None
     assert format_estimated_value(None, None) is None
-    assert format_estimated_value(Decimal("10"), Decimal("20")) == "10–20"
+    assert format_estimated_value(Decimal(10), Decimal(20)) == "10–20"
     assert format_estimated_value(Decimal("25000.00"), None) == "25000"
     assert source_link({"ui": "javascript:alert(1)", "self": [{"href": "https://sam.gov/opp/9/view"}]}) == (
         "https://sam.gov/opp/9/view"
@@ -275,7 +276,7 @@ def test_material_deadline_change_can_realert(session: Session, tmp_path) -> Non
     assert second.sent is True
     assert second.new_count == 0
     assert second.amendment_count == 1
-    html = _html_files(tmp_path)[-1].read_text(encoding="utf-8")
+    html = Path(second.path).read_text(encoding="utf-8")
     assert "Amendment alerts" in html
     assert "material deadline change" in html
     assert "2026-10-01T12:00:00+00:00" in html
@@ -415,7 +416,7 @@ def test_cancellation_files_and_set_aside_changes_realert(session: Session, tmp_
 
     result = run_digest(session, settings=_settings(tmp_path), now=NOW + timedelta(hours=1))
     assert result.amendment_count == 3
-    html = _html_files(tmp_path)[-1].read_text(encoding="utf-8")
+    html = Path(result.path).read_text(encoding="utf-8")
     for label in ("new files posted", "set-aside changed", "opportunity cancelled"):
         assert label in html
     assert "Previous deadline" not in html  # only shown for deadline changes
@@ -448,7 +449,7 @@ def test_files_alert_even_when_deadline_realerts_are_off(session: Session, tmp_p
     settings = _settings(tmp_path, alert_on_material_deadline_change=False)
     result = run_digest(session, settings=settings, now=NOW + timedelta(hours=1))
     assert result.amendment_count == 1
-    html = _html_files(tmp_path)[-1].read_text(encoding="utf-8")
+    html = Path(result.path).read_text(encoding="utf-8")
     assert "new files posted" in html and "material deadline change" not in html
 
 
@@ -502,6 +503,30 @@ class _FakeSMTP:
         self.messages.append(message)
 
 
+def test_configured_smtp_still_writes_the_outbox_by_default(session: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A configured SMTP server must not be contacted unless a caller opts in."""
+    _quiet_existing(session)
+
+    class BoomSMTP:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("SMTP must not be opened")
+
+    monkeypatch.setattr("govcon.alerts.digest.smtplib.SMTP", BoomSMTP)
+    watchlist = _watchlist(session)
+    _match(session, _opportunity(session, title="Outbox only hull"), watchlist)
+    settings = _settings(
+        tmp_path,
+        smtp_host="smtp.example.test",
+        smtp_user="alerts@example.test",
+        smtp_pass="supersecret-value",
+        alert_email_to="ops@example.test",
+    )
+    result = run_digest(session, settings=settings, now=NOW)
+    assert result.channel == "outbox"
+    assert result.path is not None
+    assert "Outbox only hull" in Path(result.path).read_text(encoding="utf-8")
+
+
 def test_smtp_sends_html_and_skips_outbox(session: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _quiet_existing(session)
     created: list[_FakeSMTP] = []
@@ -521,7 +546,7 @@ def test_smtp_sends_html_and_skips_outbox(session: Session, tmp_path, monkeypatc
         smtp_pass="supersecret-value",
         alert_email_to="ops@example.test",
     )
-    result = run_digest(session, settings=settings, now=NOW)
+    result = run_digest(session, settings=settings, now=NOW, external_delivery=True)
     assert result.sent is True
     assert result.channel == "smtp"
     assert result.path is None
@@ -535,6 +560,36 @@ def test_smtp_sends_html_and_skips_outbox(session: Session, tmp_path, monkeypatc
     assert created[0].logged_in == ("alerts@example.test", "supersecret-value")
     # STARTTLS used a certificate- and host-verifying context before login.
     assert created[0].tls_context.check_hostname and created[0].tls_context.verify_mode == ssl.CERT_REQUIRED
+
+
+def test_smtp_crash_after_send_does_not_send_again(session: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A claim left as sent covers a crash after SMTP and before the watermark commit."""
+    _quiet_existing(session)
+    created: list[_FakeSMTP] = []
+
+    class RecordingSMTP(_FakeSMTP):
+        def __init__(self, host, port, timeout=None):
+            super().__init__(host, port, timeout)
+            created.append(self)
+
+    monkeypatch.setattr("govcon.alerts.digest.smtplib.SMTP", RecordingSMTP)
+    watchlist = _watchlist(session)
+    match = _match(session, _opportunity(session, title="Once only hull"), watchlist)
+    settings = _settings(
+        tmp_path,
+        smtp_host="smtp.example.test",
+        smtp_user="alerts@example.test",
+        smtp_pass="supersecret-value",
+        alert_email_to="ops@example.test",
+    )
+    first = run_digest(session, settings=settings, now=NOW, external_delivery=True)
+    assert first.sent is True and len(created) == 1
+    match.alerted_at = None
+    session.flush()
+    second = run_digest(session, settings=settings, now=NOW + timedelta(minutes=5), external_delivery=True)
+    assert second.sent is True
+    assert len(created) == 1
+    assert match.alerted_at == NOW + timedelta(minutes=5)
 
 
 def test_smtp_failure_leaves_match_unalerted(session: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -555,7 +610,7 @@ def test_smtp_failure_leaves_match_unalerted(session: Session, tmp_path, monkeyp
         alert_email_to="ops@example.test",
     )
     with pytest.raises(DigestDeliveryError) as caught:
-        run_digest(session, settings=settings, now=NOW)
+        run_digest(session, settings=settings, now=NOW, external_delivery=True)
     assert "supersecret-value" not in str(caught.value)
     assert match.alerted_at is None
     assert match.status == "new"

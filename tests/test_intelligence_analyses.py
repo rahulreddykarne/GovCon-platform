@@ -72,7 +72,7 @@ def _opp(session: Session) -> Opportunity:
         status="open",
         psc_code="6515",
         nsn="6515-01-519-8818",
-        quantity=Decimal("100"),
+        quantity=Decimal(100),
         unit="PR",
         response_deadline=datetime.now(UTC) + timedelta(days=10),
         raw={},
@@ -88,8 +88,8 @@ def _opp(session: Session) -> Opportunity:
             psc_code="6515",
             recipient_name="Glove Supply Co",
             unit_price=Decimal("2.10"),
-            quantity=Decimal("500"),
-            total_obligation=Decimal("1050"),
+            quantity=Decimal(500),
+            total_obligation=Decimal(1050),
             raw={},
         )
     )
@@ -122,7 +122,7 @@ def test_supplier_and_pricing_need_recorded_inputs(session) -> None:
 
 def test_supplier_and_pricing_are_proprietary_and_blocked_by_default(session) -> None:
     opp = _opp(session)
-    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal("150"), quote_price=Decimal("200")))
+    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal(150), quote_price=Decimal(200)))
     session.flush()
     with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()):
         for producer in (run_supplier_analysis, run_pricing_analysis):
@@ -134,7 +134,7 @@ def test_supplier_and_pricing_are_proprietary_and_blocked_by_default(session) ->
 @pytest.mark.usefixtures("allow_proprietary_ai")
 def test_supplier_and_pricing_produce_typed_analyses(session) -> None:
     opp = _opp(session)
-    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal("150"), quote_price=Decimal("200")))
+    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", supplier="Acme Gloves", sourcing_cost=Decimal(150), quote_price=Decimal(200)))
     session.flush()
     with patch("govcon.ai.structured.get_provider", return_value=FakeProvider()):
         supplier = run_supplier_analysis(session, opp.id)
@@ -210,7 +210,7 @@ def test_market_tab_runs_and_renders_the_analysis(client, session) -> None:
 
 def test_pricing_tab_reports_a_policy_block_to_the_user(client, session) -> None:
     opp = _opp(session)
-    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", quote_price=Decimal("200"), sourcing_cost=Decimal("150")))
+    session.add(Pursuit(opportunity_id=opp.id, stage="sourcing", quote_price=Decimal(200), sourcing_cost=Decimal(150)))
     session.commit()
     token = _token(session, "reviewer")
     resp = client.post(f"/workspace/{opp.id}/analyze/pricing", cookies={"govcon_session": token})

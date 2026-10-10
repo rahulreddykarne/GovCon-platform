@@ -9,8 +9,11 @@
 <body>
 <div class="login-wrap">
   <div class="login-box">
-    <h1>GovCon</h1>
-    <p class="subtitle">Bid management platform — sign in to continue</p>
+    <div class="login-brand">
+      <span class="brandmark" aria-hidden="true">G</span>
+      <h1>GovCon</h1>
+    </div>
+    <p class="subtitle">Sign in to the local workspace</p>
 
     {% if error %}
       <div class="alert alert-error">{{ error }}</div>

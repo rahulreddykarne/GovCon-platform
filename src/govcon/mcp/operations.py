@@ -388,7 +388,9 @@ def op_get_compliance_matrix(
     for req in requirements:
         text_value: str | None = req.requirement_text
         if not include_requirement_text:
-            text_value = truncate_text(text_value, limit=240)
+            shortened = truncate_text(text_value, limit=240)
+            if shortened is not None:
+                text_value = shortened
         rows.append(
             {
                 "id": req.id,

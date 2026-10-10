@@ -48,6 +48,24 @@
   </div>
 
   <div>
+    {% if stage_trace %}
+    <div class="card stage-trace">
+      <div class="card-header"><span class="card-title">What ran on this notice</span></div>
+      <ol>
+        {% for stage in stage_trace %}
+        <li>
+          {% if not loop.first %}<span class="flow-arrow down" aria-hidden="true">↓</span>{% endif %}
+          <div>
+            <strong>{{ stage.title }}</strong>
+            <span class="tag {{ stage.tag }}">{{ stage.status }}</span>
+            <p class="text-sm text-muted">{{ stage.detail }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% endif %}
+
     {% if bid_decision %}
     <div class="card">
       <div class="card-header">
@@ -74,7 +92,13 @@
     <div class="card">
       <div class="card-header">
         <span class="card-title">AI Summary <span class="label-ai">AI</span></span>
+        {% if (ai_summary.generation_settings or {}).get('quality') == 'incomplete' %}
+        <span class="badge badge-danger">incomplete</span>
+        {% endif %}
       </div>
+      {% if (ai_summary.generation_settings or {}).get('quality') == 'incomplete' %}
+      <p class="text-danger">This analysis is not finished. {{ (ai_summary.generation_settings or {}).get('quality_reason') }}</p>
+      {% endif %}
       {% set out = ai_summary.output_json %}
       {% if out.get('summary') %}<p>{{ out['summary'] }}</p>{% endif %}
     </div>

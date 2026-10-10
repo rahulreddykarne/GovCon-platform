@@ -88,6 +88,10 @@ class JevDecisionProvider:
                 settings=self._settings,
             )
         except AIGatewayBlocked as exc:
+            from govcon.ai.usage_log import record_call
+            record_call(self._session, provider=self.name, purpose=f"decision_bundle:{bundle_name}",
+                        status="blocked", model=self._model,
+                        opportunity_id=state.get("budget_opportunity_id") if isinstance(state.get("budget_opportunity_id"), int) else None)
             # Policy refusal is an unavailable provider: the engine falls back to rules.
             raise DecisionProviderUnavailable(f"JEV call blocked by data policy: {exc}") from exc
         body = {
@@ -118,29 +122,43 @@ class JevDecisionProvider:
             response, latency_ms = self._post(endpoint, body, headers, bundle_name, budget_opportunity_id,
                                               session=self._session)
         if response.status_code >= 400:
+            from govcon.ai.usage_log import record_call
+            record_call(self._session, provider=self.name, purpose=f"decision_bundle:{bundle_name}",
+                        status="failed", model=self._model, latency_ms=latency_ms,
+                        opportunity_id=state.get("budget_opportunity_id") if isinstance(state.get("budget_opportunity_id"), int) else None)
             # The body can echo the submitted state; keep only the status.
             raise DecisionProviderUnavailable(f"JEV responded with HTTP {response.status_code}")
 
         # Everything below validates untrusted output: any malformed part is a
         # typed provider error, so the engine falls back to the rules provider.
+        from govcon.ai.usage_log import record_call
+        opportunity_id = state.get("budget_opportunity_id") if isinstance(state.get("budget_opportunity_id"), int) else None
         try:
-            data = response.json()
-        except ValueError as exc:
-            raise DecisionProviderInvalidResponse("JEV response was not valid JSON") from exc
-        if not isinstance(data, dict):
-            raise DecisionProviderInvalidResponse(f"JEV response was a JSON {type(data).__name__}, not an object")
-        answers = data.get("answers") or data.get("result") or data.get("decisions")
-        if not isinstance(answers, dict):
-            raise DecisionProviderUnavailable("JEV response did not include an answers map")
-        model = data.get("model", self._model)
-        if model is not None and not isinstance(model, str):
-            raise DecisionProviderInvalidResponse("JEV response model is not a string")
-        normalized = _normalize_answers(questions, answers)
-        confidence = _aggregate_confidence(answers)
-        usage = data.get("usage")
-        if not isinstance(usage, dict):
-            usage = {}
-        cost = _parse_cost(usage.get("cost_usd"))
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise DecisionProviderInvalidResponse("JEV response was not valid JSON") from exc
+            if not isinstance(data, dict):
+                raise DecisionProviderInvalidResponse(f"JEV response was a JSON {type(data).__name__}, not an object")
+            answers = data.get("answers") or data.get("result") or data.get("decisions")
+            if not isinstance(answers, dict):
+                raise DecisionProviderUnavailable("JEV response did not include an answers map")
+            model = data.get("model", self._model)
+            if model is not None and not isinstance(model, str):
+                raise DecisionProviderInvalidResponse("JEV response model is not a string")
+            normalized = _normalize_answers(questions, answers)
+            confidence = _aggregate_confidence(answers)
+            usage = data.get("usage")
+            if not isinstance(usage, dict):
+                usage = {}
+            cost = _parse_cost(usage.get("cost_usd"))
+        except (DecisionProviderInvalidResponse, DecisionProviderUnavailable):
+            record_call(self._session, provider=self.name, purpose=f"decision_bundle:{bundle_name}",
+                        status="failed", model=self._model, latency_ms=latency_ms, opportunity_id=opportunity_id)
+            raise
+        record_call(self._session, provider=self.name, purpose=f"decision_bundle:{bundle_name}",
+                    status="succeeded", model=model if isinstance(model, str) else self._model,
+                    usage=usage, latency_ms=latency_ms, opportunity_id=opportunity_id)
         return ProviderDecision(
             provider=self.name,
             model=model,
@@ -162,11 +180,17 @@ class JevDecisionProvider:
             raise DecisionProviderUnavailable(str(exc)) from exc
         started = time.monotonic()
         try:
-            with httpx.Client(timeout=self._timeout_seconds) as client:
+            from govcon.http import build_client
+
+            with build_client(self._settings, timeout=self._timeout_seconds) as client:
                 response = client.post(endpoint, json=body, headers=headers)
         except httpx.HTTPError as exc:  # pragma: no cover - network-dependent
             if reservation is not None:
                 reservation.finish()
+            from govcon.ai.usage_log import record_call
+            record_call(session, provider=self.name, purpose=f"decision_bundle:{bundle_name}",
+                        status="failed", model=self._model, engine=engine,
+                        opportunity_id=budget_opportunity_id if isinstance(budget_opportunity_id, int) else None)
             raise DecisionProviderUnavailable(f"JEV request failed: {exc}") from exc
         latency_ms = int((time.monotonic() - started) * 1000)
         # JEV has no guaranteed token/output contract: retain the conservative

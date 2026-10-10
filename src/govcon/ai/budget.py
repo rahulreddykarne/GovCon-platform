@@ -47,6 +47,23 @@ def input_bound(system_prompt: str, user_prompt: str) -> int:
     return len(system_prompt.encode("utf-8")) + len(user_prompt.encode("utf-8")) + 256
 
 
+def _engine_for_accounting(bind: Engine | Connection) -> Engine:
+    """The engine behind a session bind, so accounting opens its own connection."""
+    if isinstance(bind, Connection):
+        return bind.engine
+    return bind
+
+
+def _decimal_amount(value: object) -> Decimal:
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return Decimal(value)
+    if isinstance(value, str):
+        return Decimal(value)
+    return Decimal(0)
+
+
 @dataclass
 class Reservation:
     engine: Engine | Connection
@@ -54,9 +71,9 @@ class Reservation:
     rate: Decimal | None
     cost: Decimal | None
 
-    def finish(self, result=None) -> None:
-        usage = getattr(result, "usage", None)
-        usage = usage if isinstance(usage, dict) else {}
+    def finish(self, result: object | None = None) -> None:
+        usage_attr = getattr(result, "usage", None)
+        usage = usage_attr if isinstance(usage_attr, dict) else {}
         with Session(self.engine) as db, db.begin():
             row = db.get(AICallUsage, self.id, with_for_update=True)
             if row is None:
@@ -158,13 +175,21 @@ def _retryable(exc: Exception) -> bool:
 
 
 def complete_with_budget(provider, session: Session | None, *, opportunity_id: int | None,
-                         settings: Settings, engine=None, **kwargs):
+                         settings: Settings, engine: Engine | None = None, **kwargs):
     from govcon.ai.gateway import authorize_external_call
     from govcon.security.classification import opportunity_classification
     if session is not None and opportunity_id is not None:
         kwargs["classification"] = opportunity_classification(session, opportunity_id, kwargs["classification"])
-    authorize_external_call(classification=kwargs["classification"], provider=provider.name,
-                            model=kwargs.get("model") or "default", purpose=kwargs["purpose"], settings=settings)
+    try:
+        authorize_external_call(classification=kwargs["classification"], provider=provider.name,
+                                model=kwargs.get("model") or "default", purpose=kwargs["purpose"], settings=settings)
+    except Exception as exc:
+        from govcon.ai.gateway import AIGatewayBlocked
+        if isinstance(exc, AIGatewayBlocked):
+            from govcon.ai.usage_log import record_call
+            record_call(session, provider=str(provider.name), purpose=kwargs["purpose"], status="blocked",
+                        model=kwargs.get("model"), opportunity_id=opportunity_id, engine=engine)
+        raise
     from govcon.ai.providers import resolve_provider_model
     from govcon.ai.replay import active_recorder
     requested_model = resolve_provider_model(settings, provider_name=provider.name, model=kwargs.get("model"))[1]
@@ -173,8 +198,7 @@ def complete_with_budget(provider, session: Session | None, *, opportunity_id: i
         # A recorded run (ADR-061, DEV-023): the provider is called later with
         # no transaction open, then the run is replayed with its response.
         if engine is None and session is not None:
-            bind = session.get_bind()
-            engine = getattr(bind, "engine", bind)
+            engine = _engine_for_accounting(session.get_bind())
         return recorder.call(
             ("provider", str(provider.name), requested_model, kwargs),
             lambda: _call_provider(provider, None, opportunity_id=opportunity_id, settings=settings,
@@ -185,7 +209,7 @@ def complete_with_budget(provider, session: Session | None, *, opportunity_id: i
 
 
 def _call_provider(provider, session: Session | None, *, opportunity_id: int | None, settings: Settings,
-                   engine, requested_model: str | None, kwargs: dict):
+                   engine: Engine | None, requested_model: str | None, kwargs: dict):
     for attempt in range(1 + settings.ai_max_provider_retries):
         reservation = reserve(session, opportunity_id=opportunity_id, settings=settings,
                               system_prompt=kwargs["system_prompt"], user_prompt=kwargs["user_prompt"],
@@ -196,11 +220,27 @@ def _call_provider(provider, session: Session | None, *, opportunity_id: int | N
         except Exception as exc:
             if reservation is not None:
                 reservation.finish()
+            from govcon.ai.usage_log import record_call
+            record_call(session, provider=str(provider.name), purpose=kwargs["purpose"], status="failed",
+                        model=requested_model, opportunity_id=opportunity_id, engine=engine,
+                        latency_ms=getattr(exc, "latency_ms", None))
             if attempt < settings.ai_max_provider_retries and _retryable(exc):
                 time.sleep(0.5 * 2 ** attempt)
                 continue
             raise
         if reservation is not None:
             reservation.finish(result)
+        from govcon.ai.usage_log import record_call
+        call_id = record_call(
+            session, provider=str(getattr(result, "provider", None) or provider.name),
+            purpose=kwargs["purpose"], status="succeeded",
+            model=getattr(result, "model", None) or requested_model,
+            opportunity_id=opportunity_id, usage=getattr(result, "usage", None),
+            latency_ms=getattr(result, "latency_ms", None), engine=engine,
+        )
+        try:
+            setattr(result, "usage_call_id", call_id)
+        except (AttributeError, TypeError):
+            pass
         return result, reservation
     raise AssertionError("unreachable provider retry state")

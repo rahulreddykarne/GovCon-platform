@@ -89,6 +89,38 @@ def database_url():
 NO_DB = os.environ.get("GOVCON_TEST_NO_DB", "").strip().lower() in {"1", "true", "yes"}
 
 
+@pytest.fixture()
+def db(upgraded_engine):
+    """One transaction-scoped session. Test modules may override this fixture."""
+    from sqlalchemy.orm import Session
+
+    with Session(upgraded_engine) as session:
+        yield session
+
+
+@pytest.fixture()
+def our_uei(monkeypatch):
+    """Company UEI used by award-attribution tests."""
+    from govcon.config import get_settings
+
+    value = "OURUEI123456"
+    monkeypatch.setenv("COMPANY_UEI", value)
+    get_settings.cache_clear()
+    yield value
+    get_settings.cache_clear()
+
+
+@pytest.fixture()
+def client(upgraded_engine):
+    """CSRF-aware web client. The engine argument applies migrations first."""
+    from web_client import CsrfTestClient
+
+    from govcon.web.app import create_app
+
+    with CsrfTestClient(create_app(), follow_redirects=False) as test_client:
+        yield test_client
+
+
 @pytest.fixture(scope="session")
 def upgraded_engine(database_url: str):
     if NO_DB:

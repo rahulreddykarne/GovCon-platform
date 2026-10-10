@@ -4,6 +4,7 @@
 
 <div class="page-header">
   <div>
+    <p class="eyebrow">Pursuit board</p>
     <h1 class="page-title">Pipeline</h1>
     <div class="page-subtitle">Bid lifecycle board — {{ total_count }} active opportunities &middot; {{ closed_count }} closed opportunities</div>
   </div>
@@ -23,7 +24,7 @@
   <div class="pipeline-column">
     <div class="pipeline-column-header">
       <span>{{ col.label }}</span>
-      <span style="background:rgba(255,255,255,.2); padding:1px 6px; border-radius:10px; font-size:11px;">{{ matched_count if col.key == 'matched' else col.cards|length }}</span>
+      <span class="pipeline-count">{{ matched_count if col.key == 'matched' else col.cards|length }}</span>
     </div>
     {% if not col.cards %}
       <div class="pipeline-card" style="color:var(--color-muted); font-style:italic;">empty</div>
@@ -32,11 +33,12 @@
     <div class="pipeline-card">
       <div class="title">
         <a href="/workspace/{{ card.opp_id }}">{{ card.title[:50] if card.title else card.source_id }}</a>
+        {% if card.stage_label %}<div class="text-sm text-muted">{{ card.stage_label }}</div>{% endif %}
       </div>
       <div class="meta">
         <span class="badge badge-secondary">{{ card.stage|replace("_", " ") }}</span><br>
         {% if card.deadline_label %}<span class="{{ card.deadline_class }}">{{ card.deadline_label }}</span><br>{% endif %}
-        {% if card.value %}<span>{{ card.value }}</span><br>{% endif %}
+        {% if card.value %}<span>estimated {{ card.value }}</span><br>{% endif %}
         {% if card.margin is not none %}Margin {{ card.margin }}%{% endif %}
       </div>
     </div>

@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, text
@@ -29,14 +30,16 @@ from govcon.db import make_engine, session_scope
 from govcon.models import SchedulerJobRun, Task
 from govcon.scheduler import chains
 from govcon.scheduler.jobs import StepResult
+from govcon.scheduler.limits import (
+    PUBLISH_GRACE_SECONDS,
+    run_step_bounded,
+    step_timeout,
+)
 from govcon.tasks import queue
 
 logger = logging.getLogger(__name__)
 
 CHAIN_TASK = "scheduler_chain"
-# Ingest steps can legitimately run for a long time; the lease is renewed
-# throughout, and only a step stuck past this stops renewing.
-CHAIN_STEP_TIMEOUT_SECONDS = 4 * 3600
 
 
 def queue_chain(session: Session, chain_name: str, *, trigger: str, slot: str,
@@ -52,6 +55,18 @@ def queue_chain(session: Session, chain_name: str, *, trigger: str, slot: str,
         payload={"chain_name": chain_name, "trigger": trigger},
         actor_user_id=actor_user_id,
     )
+
+
+def chain_task_failed(session: Session, task: Task) -> None:
+    """A chain task that failed outside a step must not leave its run row "running"."""
+    if task.scheduler_job_run_id is None:
+        return
+    run = session.get(SchedulerJobRun, task.scheduler_job_run_id)
+    if run is not None and run.status == "running":
+        run.status = "failed"
+        run.finished_at = datetime.now(UTC)
+        run.failed_step = run.failed_step or task.current_step
+        run.error = task.last_error or "the chain task failed before finishing"
 
 
 def _jsonable(result: StepResult) -> dict[str, Any]:
@@ -84,11 +99,11 @@ def _start_run(settings: Settings, claim: queue.Claim, chain_name: str, trigger:
             SchedulerJobRun.id != (task.scheduler_job_run_id or -1),
         )):
             row.status = "failed"
-            row.finished_at = datetime.now(timezone.utc)
+            row.finished_at = datetime.now(UTC)
             row.error = "worker stopped before completion; recovered after advisory lock release"
         if task.scheduler_job_run_id is None:
             run = SchedulerJobRun(chain_name=chain_name, trigger=trigger,
-                                  started_at=datetime.now(timezone.utc), status="running", steps_completed=[])
+                                  started_at=datetime.now(UTC), status="running", steps_completed=[])
             db.add(run)
             db.flush()
             task.scheduler_job_run_id = run.id
@@ -116,8 +131,11 @@ def _record_step(db: Session, claim: queue.Claim, result: StepResult, *, done: b
 def run_chain_task(settings: Settings, claim: queue.Claim, heartbeat) -> str:
     with session_scope(settings) as db:
         task = queue.guard_publish(db, claim)
-        chain_name = (task.payload or {}).get("chain_name")
-        trigger = (task.payload or {}).get("trigger") or "scheduler"
+        payload = task.payload or {}
+        raw_name = payload.get("chain_name")
+        chain_name = raw_name if isinstance(raw_name, str) else None
+        raw_trigger = payload.get("trigger")
+        trigger = raw_trigger if isinstance(raw_trigger, str) and raw_trigger else "scheduler"
         completed = list((task.checkpoint or {}).get("completed_steps") or [])
     chain_def = chains.CHAIN_DEFINITIONS.get(chain_name) if isinstance(chain_name, str) else None
     if not isinstance(chain_name, str) or chain_def is None:
@@ -132,6 +150,18 @@ def run_chain_task(settings: Settings, claim: queue.Claim, heartbeat) -> str:
         with engine.connect() as lock_connection:
             acquired = lock_connection.scalar(text("SELECT pg_try_advisory_lock(742901, :key)"), {"key": lock_key})
             lock_connection.commit()
+            if not acquired:
+                from govcon.ops.reaper import reap_in_new_session
+
+                # A holder past the chain maximum is stopped here, so this run can start.
+                if reap_in_new_session(settings, actor=f"chain task {claim.task_id}"):
+                    for _ in range(10):
+                        acquired = lock_connection.scalar(
+                            text("SELECT pg_try_advisory_lock(742901, :key)"), {"key": lock_key})
+                        lock_connection.commit()
+                        if acquired:
+                            break
+                        time.sleep(0.5)
             if not acquired:
                 with session_scope(settings) as db:
                     queue.cancel(db, queue.guard_publish(db, claim),
@@ -162,17 +192,23 @@ def _run_steps(settings, claim, heartbeat, chain_def, run_id, completed, lock_co
         if step_fn is None:
             failed_step, chain_error = step_name, f"No implementation for step '{step_name}'"
             break
-        heartbeat.set_deadline(CHAIN_STEP_TIMEOUT_SECONDS)
+        limit = step_timeout(step_name, settings)
+        heartbeat.set_deadline(limit + PUBLISH_GRACE_SECONDS + 60)
         with session_scope(settings) as db:
             queue.guard_publish(db, claim).current_step = step_name
-        logger.info("chain=%s step=%s starting", chain_def.name, step_name)
+        logger.info("chain=%s step=%s starting (limit %ss)", chain_def.name, step_name, limit)
         soft = step_name in chain_def.soft_steps
+
+        def publish(step_db: Session, result: StepResult, *, _soft: bool = soft, _step: str = step_name) -> None:
+            if heartbeat.lost:
+                raise queue.LeaseLost(f"task {claim.task_id}: lease lost during {_step}")
+            _record_step(step_db, claim, result, done=_soft or not result.failed)
+
         try:
-            with session_scope(settings) as step_db:
-                result = chains._invoke_step(step_fn, step_db, settings)
-                if heartbeat.lost:
-                    raise queue.LeaseLost(f"task {claim.task_id}: lease lost during {step_name}")
-                _record_step(step_db, claim, result, done=soft or not result.failed)
+            result = run_step_bounded(step_name, step_fn, settings, timeout=limit, publish=publish)
+            if result.extra.get("timed_out"):
+                with session_scope(settings) as db:
+                    _record_step(db, claim, result, done=soft)
         except queue.LeaseLost:
             raise
         except Exception as exc:
@@ -204,9 +240,11 @@ def _finish(settings, claim, chain_def, run_id, failed_step, chain_error) -> str
             status = "succeeded"
         run = db.get(SchedulerJobRun, run_id)
         if run is not None:
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             run.status = status
-            run.steps_completed = steps_completed
+            # JSONB column is annotated as a dict; the stored value is the step-name list.
+            stored_steps: Any = steps_completed
+            run.steps_completed = stored_steps
             run.failed_step = failed_step
             run.error = chain_error
             run.row_counts = {r.step: r.row_counts() for r in ordered}

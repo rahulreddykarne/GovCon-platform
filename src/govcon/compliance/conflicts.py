@@ -46,7 +46,7 @@ SCALAR_TOPICS = (
     "delivery_days", "page_limit", "response_deadline_date", "response_deadline_time", "deadline_timezone",
     "recipient_email", "submission_portal", "max_file_size_mb", "allowed_file_types",
 )
-_CLIN = re.compile(r"\bCLIN\s*(\d{4}[A-Z]{0,2})\b", re.I)
+_CLIN = re.compile(r"\bCLIN\s*(\d{4}[A-Z]{0,2})\b", re.IGNORECASE)
 
 
 @dataclass

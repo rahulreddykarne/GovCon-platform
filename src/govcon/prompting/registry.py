@@ -28,6 +28,23 @@ class PromptRegistryAbsent(ValueError):
     """The prompt has never been synchronized to this registry."""
 
 
+class PromptSetupError(RuntimeError):
+    """Analysis cannot start because the prompt registry has no active version."""
+
+    def __init__(self, missing: list[str]) -> None:
+        self.missing = missing
+        super().__init__(
+            "Prompt registry is not ready. Missing active prompts: "
+            + ", ".join(missing)
+            + ". Run `govcon prompts sync` before analysis. "
+            "If that command prints BLOCKED, the activation gate refused the version."
+        )
+
+
+# These must be active before a model analysis. Disk status is `active`.
+REQUIRED_ANALYSIS_PROMPTS = ("solicitation_analysis",)
+
+
 class PromptRegistryDenied(ValueError):
     """The registry knows the prompt but has no approved active version."""
 
@@ -95,6 +112,28 @@ def sync_prompts(
         _gated_activation(session, asset, prompt_root, settings, actor_user_id, report, reason="sync")
     session.flush()
     return report
+
+
+def ensure_prompt_registry(session: Session, settings=None) -> list[str]:
+    """Sync source prompts when a required analysis prompt is not active.
+
+    Returns the required names that are still inactive after the sync.
+    """
+    from govcon.config import get_settings
+
+    settings = settings or get_settings()
+    missing = [name for name in REQUIRED_ANALYSIS_PROMPTS if active_version(session, name) is None]
+    if not missing:
+        return []
+    sync_prompts(session, settings.resolved_prompt_root(), settings=settings)
+    return [name for name in REQUIRED_ANALYSIS_PROMPTS if active_version(session, name) is None]
+
+
+def require_prompt_registry(session: Session, settings=None) -> None:
+    """Raise ``PromptSetupError`` when analysis prompts are still inactive."""
+    missing = ensure_prompt_registry(session, settings)
+    if missing:
+        raise PromptSetupError(missing)
 
 
 def _gated_activation(session: Session, asset: PromptAsset, prompt_root: Path, settings, actor_user_id, report: SyncReport, *, reason: str) -> None:
@@ -321,7 +360,10 @@ def load_prompt(
                 PromptRegistryEntry.prompt_name == prompt_name
             ).limit(1))
             error = PromptRegistryDenied if known is not None else PromptRegistryAbsent
-            raise error(f"no active version for prompt {prompt_name!r}")
+            raise error(
+                f"no active version for prompt {prompt_name!r}. "
+                "Run `govcon prompts sync` before analysis."
+            )
     else:
         row = session.execute(
             select(PromptRegistryEntry).where(

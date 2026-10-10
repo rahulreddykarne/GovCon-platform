@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import desc, func, select
 
 from govcon.collaboration.users import can
 from govcon.db import session_scope
@@ -31,8 +31,6 @@ def ops(request: Request) -> Response:
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    from govcon.scheduler.chains import CHAIN_DEFINITIONS
-
     with session_scope() as db:
         opp_count = db.scalar(select(func.count()).select_from(Opportunity)) or 0
         opp_open = db.scalar(select(func.count()).select_from(Opportunity).where(Opportunity.status == "open")) or 0
@@ -52,22 +50,11 @@ def ops(request: Request) -> Response:
             select(SchedulerJobRun).order_by(desc(SchedulerJobRun.started_at)).limit(50)
         ).all()
 
-        # Latest run per chain for the summary panel
-        chain_summary = []
-        for chain_name, chain_def in CHAIN_DEFINITIONS.items():
-            last = db.scalars(
-                select(SchedulerJobRun)
-                .where(SchedulerJobRun.chain_name == chain_name)
-                .order_by(desc(SchedulerJobRun.started_at))
-                .limit(1)
-            ).first()
-            chain_summary.append({
-                "name": chain_name,
-                "description": chain_def.description,
-                "cron": chain_def.cron,
-                "steps": chain_def.steps,
-                "last_run": last,
-            })
+        from govcon.ops.health import chain_board, collect_health, record_heartbeat
+
+        record_heartbeat(db, role="web", instance_id="web")
+        health = collect_health(db, request.app.state.settings)
+        chain_summary = chain_board(db, request.app.state.settings)
 
         users = db.scalars(select(User).order_by(User.email)).all() if can(user, "manage_users") else []
 
@@ -82,22 +69,9 @@ def ops(request: Request) -> Response:
         ).all()
         oldest_queued = db.scalar(select(func.min(Task.created_at)).where(Task.status == "queued"))
 
-        # Measured AI usage (roadmap §6.2): settled tokens and recorded cost, last 30 days.
-        from govcon.models import AICallUsage
+        from govcon.ai.usage_log import usage_page
 
-        day = func.date_trunc("day", AICallUsage.created_at)
-        ai_usage = db.execute(
-            select(day.label("day"), AICallUsage.purpose, AICallUsage.model,
-                   func.count().label("calls"),
-                   func.sum(AICallUsage.input_tokens).label("input_tokens"),
-                   func.sum(AICallUsage.output_tokens).label("output_tokens"),
-                   func.sum(AICallUsage.cost_usd).label("cost_usd"),
-                   func.count().filter(AICallUsage.status == "failed").label("failed"))
-            .where(AICallUsage.created_at >= func.now() - text("interval '30 days'"))
-            .group_by(day, AICallUsage.purpose, AICallUsage.model)
-            .order_by(day.desc(), AICallUsage.purpose)
-            .limit(200)
-        ).all()
+        usage_summary = usage_page(db)
 
     stats = ViewRow({
         "opp_count": opp_count,
@@ -113,12 +87,13 @@ def ops(request: Request) -> Response:
         "runs": list(runs),
         "job_runs": list(job_runs),
         "chain_summary": chain_summary,
+        "health": health,
         "users": list(users),
         "task_counts": task_counts,
         "failed_tasks": list(failed_tasks),
         "waiting_tasks": list(waiting_tasks),
         "oldest_queued": oldest_queued,
-        "ai_usage": list(ai_usage),
+        "usage_summary": usage_summary,
         "can_manage_tasks": can(user, "approve"),
         "active_page": "ops",
     }, user)
@@ -151,6 +126,73 @@ def ops_task_action(request: Request, task_id: int, action: str) -> Response:
     return _redirect("/ops", notice=f"Task {task_id} {'queued' if action == 'retry' else 'cancelled'}.", request=request)
 
 
+def ops_run_chain(request: Request, chain_name: str) -> Response:
+    """Queue one real run of a scheduler chain for a worker (owner/approver). Sends no email."""
+    from datetime import UTC, datetime
+
+    from govcon.audit import record_audit
+    from govcon.models import ProcessHeartbeat
+    from govcon.ops.health import STALE_PROCESS
+    from govcon.ops.reaper import reap_stale_runs
+    from govcon.scheduler.chain_tasks import CHAIN_TASK, queue_chain
+    from govcon.scheduler.chains import CHAIN_DEFINITIONS, _chain_lock_key
+    from govcon.tasks.queue import ACTIVE_STATUSES
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    if chain_name not in CHAIN_DEFINITIONS:
+        return HTMLResponse("Unknown job", status_code=404)
+    settings = request.app.state.settings
+    now = datetime.now(UTC)
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "approve")
+            reaped = reap_stale_runs(db, settings, now=now)
+            group = [name for name in CHAIN_DEFINITIONS if _chain_lock_key(name) == _chain_lock_key(chain_name)]
+            running = db.scalar(select(SchedulerJobRun).where(
+                SchedulerJobRun.status == "running", SchedulerJobRun.chain_name.in_(group),
+            ).order_by(desc(SchedulerJobRun.started_at)).limit(1))
+            if running is not None:
+                raise ValueError(
+                    f"{running.chain_name} run #{running.id} is still running (started "
+                    f"{running.started_at:%Y-%m-%d %H:%M} UTC) and is inside its time limit. "
+                    "Wait for it to finish, or cancel its task below."
+                )
+            waiting = [task for task in db.scalars(select(Task).where(
+                Task.task_type == CHAIN_TASK, Task.status.in_(ACTIVE_STATUSES),
+            )) if (task.payload or {}).get("chain_name") in group]
+            if waiting:
+                raise ValueError(f"{chain_name} is already queued as task {waiting[0].id}.")
+            task, _ = queue_chain(db, chain_name, trigger="manual", slot=f"manual:{now.isoformat()}",
+                                  actor_user_id=actor.id)
+            record_audit(db, action_type="scheduler_chain_queued", user_id=actor.id, entity_type="tasks",
+                         entity_id=task.id, new_value={"chain": chain_name, "trigger": "manual"})
+            task_id = task.id
+            beats = db.scalars(select(ProcessHeartbeat).where(
+                ProcessHeartbeat.role.in_(("worker", "scheduler")))).all()
+            alive = any(now - (b.beat_at if b.beat_at.tzinfo else b.beat_at.replace(tzinfo=UTC)) <= STALE_PROCESS
+                        for b in beats)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect("/ops", error=_error_text(exc), request=request)
+    notice = f"{chain_name} queued as task {task_id}. No email is sent by this run."
+    if reaped:
+        notice = f"Marked {len(reaped)} stuck run(s) failed. " + notice
+    if not alive:
+        notice += (" No worker or scheduler heartbeat in the last 90 seconds, so nothing will pick it up "
+                   "until you start `govcon worker start` or `govcon scheduler start`.")
+    return _redirect("/ops", notice=notice, request=request)
+
+
+def _suggestion_rule(strength: str) -> str:
+    if strength == "strong":
+        return "Strong match: a stored SAM award notice shares the solicitation number, or a stored USAspending PIID is one that notice named. Won is suggested only when that match names our UEI."
+    if strength == "possible":
+        return "Possible match: stored NSN or PSC, agency, and an action date after submission agree. A possible match does not suggest won or lost."
+    return "No strength rule is stored for this row."
+
+
 def learning(request: Request) -> Response:
     try:
         user = _require_login(request)
@@ -158,10 +200,41 @@ def learning(request: Request) -> Response:
         return RedirectResponse("/login", status_code=303)
 
     with session_scope() as db:
-        from govcon.models import AnalyticsSnapshot
+        from govcon.learning.evals import run_eval_harness
+        from govcon.models import AnalyticsSnapshot, OutcomeFeedback, OutcomeSuggestion
 
         analytics = outcome_analytics(db)
         last_refresh = db.scalar(select(AnalyticsSnapshot).order_by(AnalyticsSnapshot.id.desc()).limit(1))
+        suggestion_rows = list(db.scalars(
+            select(OutcomeSuggestion).order_by(OutcomeSuggestion.created_at.desc()).limit(8)
+        ).all())
+        capture_counts = {
+            status: int(db.scalar(
+                select(func.count()).select_from(OutcomeSuggestion).where(OutcomeSuggestion.status == status)
+            ) or 0)
+            for status in ("suggested", "confirmed", "dismissed")
+        }
+        capture_rows = [
+            {
+                "id": row.id,
+                "opportunity_id": row.opportunity_id,
+                "source": row.source,
+                "strength": row.strength,
+                "status": row.status,
+                "suggested_outcome": row.suggested_outcome or "none suggested",
+                "evidence_keys": sorted((row.evidence or {}).keys()),
+                "identifier_keys": sorted((row.matched_identifiers or {}).keys()),
+                "rule": _suggestion_rule(row.strength),
+            }
+            for row in suggestion_rows
+        ]
+        margin_sample = int(db.scalar(
+            select(func.count()).select_from(OutcomeFeedback).where(
+                OutcomeFeedback.outcome == "won",
+                OutcomeFeedback.win_margin_pct.is_not(None),
+            )
+        ) or 0)
+        evals = run_eval_harness()
 
     stats = ViewRow({
         "submitted": analytics.total_submitted,
@@ -187,5 +260,17 @@ def learning(request: Request) -> Response:
         "common_competitors": analytics.common_competitors,
         "reliable_suppliers": analytics.reliable_suppliers,
         "recent_outcomes": analytics.recent_outcomes,
+        "capture_counts": capture_counts,
+        "capture_rows": capture_rows,
+        "evals": evals,
+        "calculations": {
+            "won": analytics.total_won,
+            "lost": analytics.total_lost,
+            "submitted": analytics.total_submitted,
+            "no_bid": analytics.total_no_bid,
+            "win_rate": analytics.overall_win_rate_pct,
+            "margin": analytics.avg_margin_pct_on_wins,
+            "margin_sample": margin_sample,
+        },
         "active_page": "learning",
     }, user)

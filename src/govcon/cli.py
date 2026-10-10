@@ -18,7 +18,11 @@ from govcon.db import check_connectivity, make_engine, session_scope
 from govcon.logging import configure_logging, redact
 from govcon.models import Opportunity, User
 from govcon.paths import migration_root
-from govcon.seed import demo_watchlist_count, seed_demo_watchlist
+from govcon.seed import (
+    demo_watchlist_count,
+    seed_demo_opportunities,
+    seed_demo_watchlist,
+)
 
 app = typer.Typer(help="GovCon opportunity and bid management platform.", no_args_is_help=True)
 db_app = typer.Typer(help="Database administration.")
@@ -177,11 +181,14 @@ def status() -> None:
                     if last_run.row_counts:
                         totals: dict[str, int] = {}
                         for step_counts in last_run.row_counts.values():
-                            for k, v in step_counts.items():
-                                totals[k] = totals.get(k, 0) + (v or 0)
+                            if not isinstance(step_counts, dict):
+                                continue
+                            for key, value in step_counts.items():
+                                if isinstance(key, str) and isinstance(value, int):
+                                    totals[key] = totals.get(key, 0) + value
                         counts = " " + " ".join(f"{k}={v}" for k, v in totals.items() if v)
                     typer.echo(f"{chain_name}: {last_run.status} at {ts}{counts}")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  boundary must record any failure
         typer.echo(f"status_detail_error: {exc}", err=True)
 
 
@@ -210,6 +217,19 @@ def db_seed_demo_watchlist() -> None:
         count = demo_watchlist_count(session)
     typer.echo(f"demo_watchlist_created: {'yes' if created else 'no'}")
     typer.echo(f"demo_watchlist_count: {count}")
+
+
+@db_app.command("seed-demo-opportunities")
+def db_seed_demo_opportunities() -> None:
+    """Insert sanitized fictional notices. They are not real solicitations."""
+    try:
+        _settings().require_database_url()
+    except ConfigError as exc:
+        _fail_config(exc)
+        return
+    with session_scope() as session:
+        created = seed_demo_opportunities(session)
+    typer.echo(f"demo_opportunities_created: {created}")
 
 
 @users_app.command("invite")
@@ -907,7 +927,7 @@ def _echo_digest(result) -> None:
 
 @alerts_app.command("digest")
 def alerts_digest() -> None:
-    """Send unalerted new matches, grouped by watchlist, and optional deadline re-alerts."""
+    """Write unalerted matches to the outbox. Does not send email."""
     from govcon.alerts.digest import DigestDeliveryError, run_digest
 
     try:
@@ -2354,10 +2374,10 @@ def compliance_preflight(
             from govcon.models import Submission
             from govcon.submissions.manifest import current_package
             submission = session.scalar(select(Submission).where(Submission.opportunity_id == opportunity_id))
-            assembled = current_package(session, submission) if submission else None
-            if assembled is None:
-                typer.echo("Assemble a submission package first or provide --package.", err=True)
-                raise typer.Exit(code=1)
+            assembled = current_package(session, submission) if submission is not None else None
+        if assembled is None:
+            typer.echo("Assemble a submission package first or provide --package.", err=True)
+            raise typer.Exit(code=1)
         result = run_submission_preflight(
             session, opportunity_id, assembled,
             submission_id=submission_id, use_ai=ai, settings=settings,
@@ -2955,6 +2975,8 @@ def jobs_list() -> None:
 
     from govcon.models import SchedulerJobRun
     from govcon.scheduler.chains import CHAIN_DEFINITIONS
+    from govcon.scheduler.schedule import describe, effective_jobs
+    from govcon.workflow.app_settings import OPERATOR_SCHEDULE, get_setting
 
     try:
         _settings().require_database_url()
@@ -2963,6 +2985,8 @@ def jobs_list() -> None:
         return
 
     with session_scope() as db:
+        saved = get_setting(db, OPERATOR_SCHEDULE)
+        jobs = effective_jobs(saved.get("jobs") if isinstance(saved, dict) else None)
         for chain_name, chain_def in CHAIN_DEFINITIONS.items():
             last_run = db.scalars(
                 select(SchedulerJobRun)
@@ -2987,7 +3011,7 @@ def jobs_list() -> None:
                     row_info = ""
 
             typer.echo(f"chain: {chain_name}")
-            typer.echo(f"  schedule: {chain_def.cron}")
+            typer.echo(f"  schedule: {describe(chain_name, jobs)}")
             typer.echo(f"  steps: {' → '.join(chain_def.steps)}")
             typer.echo(f"  last_run: {last_info}{row_info}")
             if last_run and last_run.failed_step:

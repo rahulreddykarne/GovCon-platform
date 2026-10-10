@@ -16,8 +16,6 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-import httpx
-
 from govcon.ai.gateway import authorize_external_call
 from govcon.config import Settings, get_settings
 from govcon.security.classification import DataClassification
@@ -111,7 +109,9 @@ class DeepSeekProvider:
         }
 
         start = time.monotonic()
-        with httpx.Client(timeout=120.0) as client:
+        from govcon.http import build_client
+
+        with build_client(timeout=120.0) as client:
             resp = client.post(
                 f"{self._base_url}/chat/completions",
                 headers=headers,

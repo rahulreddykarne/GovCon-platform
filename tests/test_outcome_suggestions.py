@@ -129,7 +129,7 @@ def test_usaspending_awards_are_possible_or_strong_by_identifier(db, our_uei):
     db.add_all([
         Award(award_id=f"linked-{uuid4().hex}", piid=piid, recipient_uei="OTHERVENDOR1", recipient_name="Other",
               awarding_agency="Department of Defense / Defense Logistics Agency", action_date=date(2026, 9, 2),
-              total_obligation=Decimal("12500"), raw={}),
+              total_obligation=Decimal(12500), raw={}),
         Award(award_id=f"same-nsn-{uuid4().hex}", nsn=nsn, recipient_uei="THIRDVENDOR1",
               awarding_agency="Department of Defense / Defense Logistics Agency",
               action_date=(SUBMITTED + timedelta(days=10)).date(), raw={}),

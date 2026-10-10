@@ -434,7 +434,7 @@ def test_f07_same_model_extraction_passes_are_not_independent_confirmation() -> 
     [independent] = reconcile(candidates(), merge_threshold=0.72, duplicate_threshold=0.4)
     assert independent.independently_confirmed and "ab_same_model" not in independent.flags
 
-    outcome = lambda label, provider, model: NS(pass_label=label, provider=provider, model=model)  # noqa: E731
+    outcome = lambda label, provider, model: NS(pass_label=label, provider=provider, model=model)
     assert passes_independent([outcome("A", "deepseek", "flash"), outcome("B", "deepseek", "pro")])
     assert not passes_independent([outcome("A", "deepseek", "flash"), outcome("B", "DeepSeek", "flash")])
     assert not passes_independent([outcome("A", "deepseek", "flash"), outcome("B", None, None)])
@@ -585,7 +585,7 @@ def test_f09_same_zone_spellings_and_matching_dates_are_not_conflicts() -> None:
     # 11:30 PM Eastern on Oct 20 is Oct 21 in UTC: still the same deadline.
     assert not _deadline_disagrees(datetime(2026, 10, 21, 3, 30, tzinfo=UTC), info["extracted_deadline_dates"])
     assert _deadline_disagrees(datetime(2026, 10, 27, 21, 0, tzinfo=UTC), info["extracted_deadline_dates"])
-    assert _parse_date("Oct. 20, 2026") == _parse_date("10/20/2026") == _parse_date("2026-10-20 17:00") == datetime(2026, 10, 20).date()
+    assert _parse_date("Oct. 20, 2026") == _parse_date("10/20/2026") == _parse_date("2026-10-20 17:00") == datetime(2026, 10, 20, tzinfo=UTC).date()
     assert _parse_date("upon award") is None
 
 

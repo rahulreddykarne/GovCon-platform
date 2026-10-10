@@ -264,17 +264,16 @@ PROPRIETARY_PROMPTS = [
 
 @pytest.mark.parametrize("prompt_name", PROPRIETARY_PROMPTS)
 def test_proprietary_calls_are_blocked_under_default_policy(prompt_name: str) -> None:
-    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()):
-        with pytest.raises(StructuredCallError) as exc:
-            run_structured_prompt(
-                None,
-                opportunity_id=None,
-                prompt_name=prompt_name,
-                analysis_type="gate_test",
-                variables={},
-                context_manifest={},
-                classification=DataClassification.PROPRIETARY,
-            )
+    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()), pytest.raises(StructuredCallError) as exc:
+        run_structured_prompt(
+            None,
+            opportunity_id=None,
+            prompt_name=prompt_name,
+            analysis_type="gate_test",
+            variables={},
+            context_manifest={},
+            classification=DataClassification.PROPRIETARY,
+        )
     assert exc.value.reason == "blocked_by_policy"
 
 
@@ -284,17 +283,16 @@ def test_public_only_prompt_refuses_proprietary_even_when_gateway_allows(prompt_
 
     monkeypatch.setenv("AI_EXTERNAL_ALLOWED_FOR_PROPRIETARY", "true")
     get_settings.cache_clear()
-    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()):
-        with pytest.raises(StructuredCallError) as exc:
-            run_structured_prompt(
-                None,
-                opportunity_id=None,
-                prompt_name=prompt_name,
-                analysis_type="gate_test",
-                variables={},
-                context_manifest={},
-                classification=DataClassification.PROPRIETARY,
-            )
+    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()), pytest.raises(StructuredCallError) as exc:
+        run_structured_prompt(
+            None,
+            opportunity_id=None,
+            prompt_name=prompt_name,
+            analysis_type="gate_test",
+            variables={},
+            context_manifest={},
+            classification=DataClassification.PROPRIETARY,
+        )
     assert exc.value.reason == "blocked_by_policy"
     assert "does not allow PROPRIETARY" in exc.value.detail
 
@@ -317,9 +315,8 @@ def test_proposal_drafting_is_sent_as_proprietary_and_blocked(session) -> None:
     opp = _opp(session)
     session.add(Pursuit(opportunity_id=opp.id, stage="bid_approved", quote_price=100, sourcing_cost=80, supplier="Acme"))
     session.flush()
-    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()):
-        with pytest.raises(StructuredCallError) as exc:
-            draft_proposal(session, opportunity_id=opp.id, company_facts={"name": "Us"})
+    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()), pytest.raises(StructuredCallError) as exc:
+        draft_proposal(session, opportunity_id=opp.id, company_facts={"name": "Us"})
     assert exc.value.reason == "blocked_by_policy"
 
 
@@ -339,9 +336,8 @@ def test_reviewer_comment_validation_is_blocked_by_default(session) -> None:
         body="Supplier quote at 82 dollars is well under the historical price.",
         validate_with_ai=False,
     )
-    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()):
-        with pytest.raises(AICommentValidationError) as exc:
-            validate_comment_with_ai(session, comment=comment)
+    with patch("govcon.ai.structured.get_provider", return_value=_MustNotBeCalled()), pytest.raises(AICommentValidationError) as exc:
+        validate_comment_with_ai(session, comment=comment)
     assert exc.value.reason == "blocked_by_policy"
 
 
@@ -401,14 +397,13 @@ def test_deepseek_errors_do_not_log_response_bodies(monkeypatch, caplog) -> None
 
     monkeypatch.setattr(httpx, "Client", _Client)
     provider = DeepSeekProvider(api_key="k" * 20, settings=Settings())
-    with caplog.at_level("ERROR"):
-        with pytest.raises(DeepSeekAPIError):
-            provider.complete(
-                system_prompt="s",
-                user_prompt="u",
-                classification=DataClassification.PUBLIC,
-                purpose="gate_test",
-            )
+    with caplog.at_level("ERROR"), pytest.raises(DeepSeekAPIError):
+        provider.complete(
+            system_prompt="s",
+            user_prompt="u",
+            classification=DataClassification.PUBLIC,
+            purpose="gate_test",
+        )
     assert secret_echo not in caplog.text
 
 
@@ -866,7 +861,7 @@ def test_consolidated_review_runs_once_per_distinct_completed_set(session) -> No
         session, opportunity_id=opp.id, user_id=reviewer.id, action="approve_continue", agree_with_ai_assessment=True
     )
     assert _review(session, opp.id).status == "approval_pending"
-    count = lambda: len(session.scalars(select(DecisionRun).where(DecisionRun.opportunity_id == opp.id, DecisionRun.bundle_name == "collaborative_review_synthesis")).all())  # noqa: E731
+    count = lambda: len(session.scalars(select(DecisionRun).where(DecisionRun.opportunity_id == opp.id, DecisionRun.bundle_name == "collaborative_review_synthesis")).all())
     first = count()
     for _ in range(3):
         recalculate_quorum(session, opportunity_id=opp.id)

@@ -5,9 +5,21 @@
 
 <div class="page-header">
   <div>
+    <p class="eyebrow">Workspace</p>
     <h1 class="page-title">Settings</h1>
     <div class="page-subtitle">Workflow choices the owner adjusts as circumstances change</div>
   </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">External AI sharing</span></div>
+  <p>These switches live in the environment, not in this form. The page does not change them.</p>
+  <ul>
+    <li>Proprietary data to an external model: <strong>{{ 'on' if ai_sharing.proprietary else 'off' }}</strong></li>
+    <li>FCI: <strong>{{ 'on' if ai_sharing.fci else 'off' }}</strong></li>
+    <li>CUI: <strong>{{ 'on' if ai_sharing.cui else 'off' }}</strong></li>
+  </ul>
+  <p class="text-sm text-muted">Off means the call is blocked and the local rules engine is used for bid/no-bid. Unknown and credential material is always blocked. Government solicitations mixed with company data are treated as proprietary.</p>
 </div>
 
 <form method="post" action="/settings">
@@ -73,6 +85,37 @@
     </label>
   </div>
 
+  <div class="card">
+    <div class="card-header"><span class="card-title">When the scheduler runs</span></div>
+    <p>Times are America/Los_Angeles. Embeddings default to after the morning ingest. The running scheduler reads these clocks when it starts, so restart it after a change.</p>
+    {% for job in schedule %}
+    <label>{{ job.label }}
+      <input type="time" name="schedule_{{ job.name }}" value="{{ job.value }}" {% if not can_edit %}disabled{% endif %}>
+      <span class="text-sm text-muted">{{ job.shown }} Pacific</span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Company strategy</span></div>
+    <p>Blank means missing. A recommendation will say so. Nothing here is guessed from the watchlist.</p>
+    <input type="hidden" name="strategy_form" value="on">
+    {% if strategy_missing %}
+    <p class="text-sm">Missing: {{ strategy_missing|join(', ') }}.</p>
+    {% else %}
+    <p class="text-sm">Every strategy field has a saved value.</p>
+    {% endif %}
+    {% for field in strategy %}
+    <label>{{ field.label }}{% if field.missing %} <span class="text-muted">(missing)</span>{% endif %}
+      {% if field.kind == 'list' or field.kind == 'text' %}
+      <textarea name="strategy_{{ field.name }}" rows="2" {% if not can_edit %}disabled{% endif %}>{{ field.value }}</textarea>
+      {% else %}
+      <input name="strategy_{{ field.name }}" value="{{ field.value }}" inputmode="decimal" {% if not can_edit %}disabled{% endif %}>
+      {% endif %}
+    </label>
+    {% endfor %}
+  </div>
+
   {% if can_edit %}
   <button type="submit" class="btn btn-primary">Save settings</button>
   {% else %}
@@ -83,10 +126,23 @@
 <div class="card" id="registration">
   <div class="card-header"><span class="card-title">Our SAM registration</span></div>
   {% if registration %}
-  <p>{{ registration.legal_name or registration.uei }} — UEI {{ registration.uei }}{% if registration.cage_code %}, CAGE {{ registration.cage_code }}{% endif %}.
+  {% set freshness = registration.freshness_status or 'unknown' %}
+  <p>{{ registration.legal_name or registration.uei }} — UEI {{ registration.uei }}{% if freshness == 'fresh' and registration.cage_code %}, CAGE {{ registration.cage_code }}{% endif %}.
+  {% if freshness == 'fresh' %}
   Status: <strong>{{ registration.registration_status or 'unknown' }}</strong>;
-  expires {{ registration.expiration_date or 'unknown' }}.
-  <span class="text-muted text-sm">Refreshed {{ registration.refreshed_at.strftime('%Y-%m-%d %H:%M') }} UTC from SAM.gov, daily by the midday job.</span></p>
+  expires {{ registration.expires_at or registration.expiration_date or 'unknown' }}.
+  {% elif freshness == 'expired' %}
+  Status: <strong>expired</strong>. The stored expiration is not a current active registration.
+  {% elif freshness == 'failed' %}
+  Status: <strong>unknown</strong>. The last SAM refresh failed{% if registration.last_error %}: {{ registration.last_error }}{% endif %}.
+  {% elif freshness == 'stale' %}
+  Status: <strong>unknown</strong>. The last SAM refresh is stale.
+  {% else %}
+  Status: <strong>unknown</strong>.
+  {% endif %}
+  <span class="text-muted text-sm">Freshness {{ freshness }}.
+  Fetched {{ registration.fetched_at.strftime('%Y-%m-%d %H:%M') if registration.fetched_at else 'never' }} UTC;
+  source updated {{ registration.source_updated_at.strftime('%Y-%m-%d %H:%M') if registration.source_updated_at else 'unknown' }} UTC.</span></p>
   {% else %}
   <p class="text-muted">Not refreshed yet. Set COMPANY_UEI (or uei in the company facts file) and SAM_API_KEY; the midday job refreshes it daily.</p>
   {% endif %}

@@ -1,0 +1,20 @@
+<aside class="inspector" aria-live="polite">
+  <p class="mission-kicker">Selected</p>
+  <h2>{{ inspector.title }}</h2>
+  <dl>
+    <div><dt>Trigger</dt><dd>{{ inspector.trigger }}</dd></div>
+    <div><dt>Inputs</dt><dd>{{ inspector.inputs }}</dd></div>
+    <div><dt>Outputs</dt><dd>{{ inspector.outputs }}</dd></div>
+    <div><dt>Permissions</dt><dd>{{ inspector.permissions }}</dd></div>
+    <div><dt>If it fails</dt><dd>{{ inspector.failure }}</dd></div>
+    {% if inspector.run %}
+    <div>
+      <dt>Last stored run</dt>
+      <dd>{{ inspector.run.status }} · {{ inspector.run.when }}{% if inspector.run.detail %} — {{ inspector.run.detail }}{% endif %}</dd>
+    </div>
+    {% endif %}
+    {% for row in inspector.rows or [] %}
+    <div><dt>{{ row.label }}</dt><dd>{{ row.value }}</dd></div>
+    {% endfor %}
+  </dl>
+</aside>

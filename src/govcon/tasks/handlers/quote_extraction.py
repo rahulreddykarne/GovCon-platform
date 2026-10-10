@@ -112,6 +112,12 @@ def _extract_publish(session: Session, task: Task, call: _Call, ctx: StepContext
     } for line in output.lines]
     actor = session.get(User, task.created_by_user_id) if task.created_by_user_id else None
     payload = ctx.payload
+    analysis_id = analysis.id if analysis is not None else None
+    if analysis_id is None:
+        raise TaskFailedPermanently(
+            "quote extraction result was not stored",
+            next_action="Retry quote extraction, or enter the quote lines by hand.",
+        )
     quote = record_quote(
         session, opportunity_id=required_opportunity_id(task.opportunity_id), supplier_id=payload["supplier_id"], actor=actor, method="ai",
         lines=lines, total_price=output.total_price,
@@ -120,7 +126,7 @@ def _extract_publish(session: Session, task: Task, call: _Call, ctx: StepContext
         notes=("Read by AI; verify against the document. Missing: " + "; ".join(output.missing_information))
         if output.missing_information else "Read by AI; verify against the document.",
     )
-    ctx.result = {"quote_id": quote.id, "analysis_id": analysis.id, "lines": len(lines)}
+    ctx.result = {"quote_id": quote.id, "analysis_id": analysis_id, "lines": len(lines)}
 
 
 def _iso_date(value: str | None) -> str | None:

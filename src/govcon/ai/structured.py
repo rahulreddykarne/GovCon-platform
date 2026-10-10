@@ -34,6 +34,7 @@ from govcon.ai.budget import AIBudgetExceeded, complete_with_budget
 from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
+from govcon.ai.quality import assess_output_quality
 from govcon.ai.schemas import SCHEMA_REGISTRY
 from govcon.config import Settings, get_settings
 from govcon.models import AIAnalysis
@@ -173,6 +174,8 @@ class ExecutedCall:
     output: BaseModel
     result: Any
     reservation: Any
+    quality: str = "accepted"
+    quality_reason: str = ""
 
 
 def prepare_structured_call(
@@ -190,6 +193,11 @@ def prepare_structured_call(
 ) -> PreparedCall:
     """Resolve the prompt and enforce policy; refuse before any content is sent."""
     settings = settings or get_settings()
+    from govcon.ai.routing import analysis_selection
+
+    provider_name, model, route_fallback = analysis_selection(
+        session, settings, provider_name=provider_name, model=model,
+    )
     if not isinstance(classification, DataClassification):
         raise TypeError("classification must be a DataClassification")
     if session is not None and opportunity_id is not None:
@@ -212,6 +220,9 @@ def prepare_structured_call(
             settings=settings,
         )
     except AIGatewayBlocked as exc:
+        from govcon.ai.usage_log import record_call
+        record_call(session, provider=resolved_provider, purpose=prompt_name, status="blocked",
+                    model=model, opportunity_id=opportunity_id)
         raise StructuredCallError("blocked_by_policy", str(exc)) from exc
 
     try:
@@ -233,6 +244,8 @@ def prepare_structured_call(
     }
     if model:
         generation_settings["model"] = model
+    if route_fallback:
+        generation_settings["route_fallback"] = route_fallback
     return PreparedCall(
         prompt=prompt,
         schema_cls=schema_cls,
@@ -302,10 +315,29 @@ def execute_prepared_call(
                 ) from exc
             last_error = StructuredCallError("invalid_output", f"attempt {attempt + 1}: {type(exc).__name__}")
             continue
-        return ExecutedCall(output=validated, result=result, reservation=reservation)
+        quality, reason = _output_quality(prepared.schema_cls, validated)
+        executed = ExecutedCall(
+            output=validated, result=result, reservation=reservation, quality=quality, quality_reason=reason,
+        )
+        if quality == "incomplete":
+            # Stored for review. A second call in the same request would spend the budget twice
+            # on an answer that is already known to be thin. The next analysis run retries it.
+            logger.warning("structured output sparse prompt=%s attempt=%d", prepared.prompt.name, attempt + 1)
+            return executed
+        return executed
 
+    # A later invalid reply does not turn an earlier sparse reply into the answer.
     assert last_error is not None
     raise last_error
+
+
+def _output_quality(schema_cls: type[BaseModel], output: BaseModel) -> tuple[str, str]:
+    """Sparse solicitation analysis is incomplete. Other schemas may be legitimately empty."""
+    from govcon.ai.schemas import SolicitationAnalysisV1
+
+    if schema_cls is SolicitationAnalysisV1:
+        return assess_output_quality(output)
+    return "accepted", ""
 
 
 def build_analysis(prepared: PreparedCall, executed: ExecutedCall) -> AIAnalysis:
@@ -326,7 +358,11 @@ def build_analysis(prepared: PreparedCall, executed: ExecutedCall) -> AIAnalysis
         prompt_version=prepared.prompt.version,
         prompt_hash=prepared.prompt.content_hash,
         schema_version=prepared.schema_version,
-        generation_settings=prepared.generation_settings,
+        generation_settings={
+            **prepared.generation_settings,
+            "quality": executed.quality,
+            "quality_reason": executed.quality_reason,
+        },
         input_snapshot_hash=input_hash,
         context_manifest=manifest,
         output_json=executed.output.model_dump(mode="json"),
@@ -345,6 +381,10 @@ def persist_structured_result(
     if session is not None:
         session.add(analysis)
         session.flush()
+        call_id = getattr(executed.result, "usage_call_id", None)
+        if call_id is not None:
+            from govcon.ai.usage_log import attach_call_ids
+            attach_call_ids(session, [int(call_id)], analysis_id=analysis.id)
     return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
 
 

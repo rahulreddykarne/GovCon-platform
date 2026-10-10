@@ -115,7 +115,9 @@ class OpenAIProvider:
 
     def _post(self, url: str, *, headers: dict[str, str], body: dict[str, Any], purpose: str) -> httpx.Response:
         status: int | None = None
-        with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS, transport=self._transport) as client:
+        from govcon.http import build_client
+
+        with build_client(timeout=REQUEST_TIMEOUT_SECONDS, transport=self._transport) as client:
             for attempt in range(self._attempts):
                 if attempt:
                     time.sleep(self._backoff * (2 ** (attempt - 1)))

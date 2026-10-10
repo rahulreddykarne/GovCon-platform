@@ -15,8 +15,9 @@ import socket
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
+from govcon.bots.store import fail_interrupted_runs, reset_bot_worker, set_bot_worker
 from govcon.config import Settings, get_settings
 from govcon.db import session_scope
 from govcon.models import Task
@@ -43,7 +44,7 @@ class _Heartbeat(threading.Thread):
         self.lost = False
 
     def set_deadline(self, seconds: int) -> None:
-        self._deadline = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+        self._deadline = datetime.now(UTC) + timedelta(seconds=seconds)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -52,7 +53,7 @@ class _Heartbeat(threading.Thread):
         lease = self._settings.task_lease_seconds
         interval = max(0.2, lease / 3)
         while not self._stop_event.wait(interval):
-            if self._deadline is not None and datetime.now(timezone.utc) > self._deadline:
+            if self._deadline is not None and datetime.now(UTC) > self._deadline:
                 logger.warning("task %s: step exceeded its timeout; lease will lapse", self._claim.task_id)
                 return
             try:
@@ -95,10 +96,11 @@ def _record_outcome(settings: Settings, claim: queue.Claim, exc: BaseException) 
                 # Cancel first: the replacement may share no key, but the
                 # active-task index must never see both as active.
                 queue.cancel(db, task, reason=str(exc))
+                replacement_payload = exc.payload if exc.payload is not None else dict(task.payload or {})
                 replacement, _ = queue.enqueue(
                     db, task_type=task.task_type, opportunity_id=task.opportunity_id,
                     input_revision=exc.input_revision,
-                    payload=exc.payload if exc.payload is not None else dict(task.payload or {}),
+                    payload=replacement_payload,
                     actor_user_id=task.created_by_user_id, settings=settings,
                 )
                 task.superseded_by_task_id = replacement.id
@@ -130,7 +132,7 @@ def run_claimed(settings: Settings, claim: queue.Claim) -> str:
             except queue.LeaseLost as exc:
                 logger.warning("%s; discarding this worker's result", exc)
                 return "lease_lost"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  boundary must record any failure
                 logger.warning("task %s failed: %s", claim.task_id, type(exc).__name__)
                 return _record_outcome(settings, claim, exc)
         for index, step in enumerate(handler.steps):
@@ -163,7 +165,7 @@ def run_claimed(settings: Settings, claim: queue.Claim) -> str:
             except queue.LeaseLost as exc:
                 logger.warning("%s; discarding this worker's result", exc)
                 return "lease_lost"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  boundary must record any failure
                 logger.warning("task %s step %s failed: %s", claim.task_id, step.name, type(exc).__name__)
                 return _record_outcome(settings, claim, exc)
         # Every step was already checkpointed (resumed after the final publish).
@@ -226,8 +228,50 @@ def run_worker(
     settings = settings or get_settings()
     worker_id = new_worker_id()
     stop_event = stop_event or threading.Event()
+    try:
+        with session_scope(settings) as db:
+            interrupted = fail_interrupted_runs(db)
+        if interrupted:
+            logger.warning("worker marked %s interrupted bot run(s) failed so they can be run again", interrupted)
+    except Exception:
+        logger.warning("worker could not reconcile interrupted bot runs")
+    from govcon.ops.reaper import reap_in_new_session
+
+    reap_in_new_session(settings, actor=f"worker {worker_id} startup")
+    try:
+        from govcon.prompting.registry import PromptSetupError, ensure_prompt_registry
+
+        with session_scope(settings) as db:
+            missing = ensure_prompt_registry(db, settings)
+        if missing:
+            logger.error("%s", PromptSetupError(missing))
+    except Exception:
+        logger.exception("prompt registry was not prepared")
+    owner = set_bot_worker(worker_id)
+    pulse_stop = threading.Event()
+    pulse = threading.Thread(
+        target=heartbeat_loop, name="worker-heartbeat", args=(settings, worker_id, pulse_stop), daemon=True,
+    )
+    pulse.start()
     processed = 0
     logger.info("worker %s started (types=%s)", worker_id, task_types or "all")
+    try:
+        return _run_loop(settings, worker_id, stop_event, task_types, until_idle, max_tasks, processed)
+    finally:
+        pulse_stop.set()
+        pulse.join(timeout=2)
+        reset_bot_worker(owner)
+
+
+def _run_loop(
+    settings: Settings,
+    worker_id: str,
+    stop_event: threading.Event,
+    task_types: list[str] | None,
+    until_idle: bool,
+    max_tasks: int | None,
+    processed: int,
+) -> int:
     while not stop_event.is_set():
         if max_tasks is not None and processed >= max_tasks:
             break
@@ -249,6 +293,40 @@ def run_worker(
         processed += 1
     logger.info("worker %s stopped after %d task(s)", worker_id, processed)
     return processed
+
+
+WORKER_HEARTBEAT_SECONDS = 20.0
+
+
+def _beat(settings: Settings, role: str, instance_id: str) -> None:
+    """Record liveness. A database problem here must not kill the worker."""
+    try:
+        from govcon.ops.health import record_heartbeat
+
+        with session_scope(settings) as db:
+            record_heartbeat(db, role=role, instance_id=instance_id)
+    except Exception:
+        logger.warning("%s heartbeat was not recorded", role)
+
+
+def heartbeat_loop(
+    settings: Settings,
+    worker_id: str,
+    stop_event: threading.Event,
+    *,
+    interval: float = WORKER_HEARTBEAT_SECONDS,
+) -> None:
+    """Keep /health green while a task is blocked on the network; reap stale runs periodically."""
+    from govcon.ops.reaper import reap_in_new_session
+
+    next_reap = time.monotonic() + settings.stale_run_reap_interval_seconds
+    while not stop_event.is_set():
+        _beat(settings, "worker", worker_id)
+        if time.monotonic() >= next_reap:
+            reap_in_new_session(settings, actor=f"worker {worker_id}")
+            next_reap = time.monotonic() + settings.stale_run_reap_interval_seconds
+        if stop_event.wait(interval):
+            return
 
 
 def wait_for(settings: Settings, task_id: int, *, timeout: float, poll: float = 1.0) -> Task | None:
