@@ -129,6 +129,7 @@ def test_waiting_for_budget_is_never_claimed(db) -> None:
 
 def test_analysis_lock_rejects_a_second_run(db, monkeypatch) -> None:
     from govcon.enrich.summarize import run_solicitation_analysis
+    from govcon.tasks.errors import classify
     from govcon.workflow.analysis_lock import AnalysisInProgress, hold_analysis_lock
 
     opp = _opp(db)
@@ -136,6 +137,9 @@ def test_analysis_lock_rejects_a_second_run(db, monkeypatch) -> None:
     with hold_analysis_lock(db, opp.id):
         with pytest.raises(AnalysisInProgress, match="already running"):
             run_solicitation_analysis(db, opp, settings=Settings(_env_file=None))
+    outcome = classify(AnalysisInProgress(opp.id))
+    assert outcome.kind == "block" and outcome.status == "waiting_for_input"
+    assert "already running" in str(outcome.exc).lower() or "in progress" in outcome.next_action.lower()
 
 
 def test_part_cache_skips_provider_and_split_parent_does_not_count(db, monkeypatch) -> None:
@@ -158,7 +162,10 @@ def test_part_cache_skips_provider_and_split_parent_does_not_count(db, monkeypat
         def complete(self, **kwargs):
             calls.append(kwargs)
             return SimpleNamespace(
-                content='{"summary":"cached part"}',
+                content=(
+                    '{"summary":"This cached analysis part has enough substance to be reused.",'
+                    '"source_refs":[{"quote":"See page 1 of the RFQ document."}]}'
+                ),
                 usage={"prompt_tokens": 80, "completion_tokens": 10},
                 model="synthetic-model", provider="deepseek", latency_ms=1, finish_reason="stop",
             )
@@ -190,11 +197,13 @@ def test_part_cache_skips_provider_and_split_parent_does_not_count(db, monkeypat
     after = opportunity_input_used(db, opp.id)
     assert after == before - 50_000
 
-    tiny = Settings(_env_file=None, ai_max_input_tokens_per_opportunity=1, ai_proposal_budget_share=0)
+    # Limit must accept this request's estimate (257) but not used(80)+requested.
+    exhausted = Settings(_env_file=None, ai_max_input_tokens_per_opportunity=300, ai_proposal_budget_share=0)
     with pytest.raises(AIBudgetExceeded, match="used of") as caught:
-        reserve(db, opportunity_id=opp.id, settings=tiny, system_prompt="", user_prompt="x",
+        reserve(db, opportunity_id=opp.id, settings=exhausted, system_prompt="", user_prompt="x",
                 purpose="solicitation_analysis", provider="fake")
-    assert caught.value.used is not None and caught.value.limit == 1
+    assert caught.value.used == 80 and caught.value.limit == 300
+    assert caught.value.spendable == 300
 
 
 def test_raise_budget_is_audited_and_does_not_auto_resume(db, client) -> None:
@@ -222,7 +231,7 @@ def test_raise_budget_is_audited_and_does_not_auto_resume(db, client) -> None:
     audit = db.scalar(select(AuditEvent).where(
         AuditEvent.opportunity_id == opp.id, AuditEvent.action_type == "opportunity_budget_raised"))
     assert audit is not None
-    assert audit.new_value["ai_max_input_tokens"] == 240000
+    assert audit.new_value["limit"] == 240000
     assert audit.new_value["default_unchanged"] == Settings(_env_file=None).ai_max_input_tokens_per_opportunity
 
 

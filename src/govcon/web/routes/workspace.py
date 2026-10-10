@@ -168,7 +168,6 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
             )
             from govcon.compliance.submission_preflight import readiness_blockers
             from govcon.compliance.view import compliance_view
-            from govcon.config import get_settings
 
             try:
                 facts = load_company_facts(get_settings(), db)
@@ -480,8 +479,8 @@ def workspace_raise_budget(
             record_audit(
                 db, action_type="opportunity_budget_raised", user_id=actor.id, opportunity_id=opp_id,
                 entity_type="opportunities", entity_id=opp_id,
-                old_value={"ai_max_input_tokens": previous, "used": status["used"], "limit": status["limit"]},
-                new_value={"ai_max_input_tokens": raised, "default_unchanged": settings.ai_max_input_tokens_per_opportunity},
+                old_value={"previous_limit": previous, "used": status["used"], "limit": status["limit"]},
+                new_value={"limit": raised, "default_unchanged": settings.ai_max_input_tokens_per_opportunity},
             )
     except PermissionDenied as exc:
         return _redirect(target, error=_error_text(exc), request=request)

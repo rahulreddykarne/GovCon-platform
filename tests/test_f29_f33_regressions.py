@@ -113,7 +113,9 @@ def test_f30_repeated_calls_and_rollback_cannot_reset_budget(db, monkeypatch):
     configured = settings()
     setup_prompt(db, configured)
     bound = call_bound(db, configured)
-    configured.ai_max_input_tokens_per_opportunity = bound + 100
+    # Room for two different parts (cache key includes the source text) finishing
+    # at 100 tokens each; a third reservation must still exceed the cap.
+    configured.ai_max_input_tokens_per_opportunity = bound + 150
     opp = opportunity(db)
     opp_id = opp.id
     calls = provider(monkeypatch)

@@ -329,7 +329,9 @@ def block(
     if status not in BLOCKED_STATUSES:
         raise ValueError(f"not a blocked status: {status}")
     cleaned = clean_error(reason, settings)
-    repeated = task.last_error_type == status and task.last_error == cleaned
+    # Only skip the audit when we are re-stating an already-parked block.
+    # After a human resume the task is queued/running again, so a new block is a new event.
+    repeated = task.status == status and task.last_error_type == status and task.last_error == cleaned
     if status == "waiting_for_budget":
         _record_budget_block(task, settings or get_settings())
     task.status = status

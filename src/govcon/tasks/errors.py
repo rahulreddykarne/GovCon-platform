@@ -92,8 +92,13 @@ def classify(exc: BaseException) -> Outcome:
     from govcon.ai.structured import StructuredCallError
     from govcon.compliance.pipeline import CompanyFactsInvalid
 
+    from govcon.workflow.analysis_lock import AnalysisInProgress, analysis_in_progress_blocked
+
     if isinstance(exc, TaskBlocked):
         return Outcome("block", exc, exc.status, exc.owner_role, exc.next_action, exc.resume_at)
+    if isinstance(exc, AnalysisInProgress):
+        blocked = analysis_in_progress_blocked(exc)
+        return Outcome("block", blocked, blocked.status, blocked.owner_role, blocked.next_action, blocked.resume_at)
     if isinstance(exc, TaskCancelled):
         return Outcome("cancel", exc, superseded_by=exc.superseded_by)
     if isinstance(exc, TaskSuperseded):
