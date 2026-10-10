@@ -164,7 +164,8 @@ class JevDecisionProvider:
         """Gate, reserve budget and send the request; returns the response and its latency."""
         opportunity_id = budget_opportunity_id if isinstance(budget_opportunity_id, int) else None
         # The body carries the state that is sent, so its classification is the one gated here.
-        state = body.get("state") if isinstance(body.get("state"), dict) else {}
+        raw_state = body.get("state")
+        state: dict[str, Any] = raw_state if isinstance(raw_state, dict) else {}
         classification = DataClassification(state.get("data_classification", "PROPRIETARY"))
         self._authorize(classification, bundle_name, opportunity_id, session=session, engine=engine)
         try:
