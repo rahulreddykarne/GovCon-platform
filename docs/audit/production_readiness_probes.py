@@ -129,7 +129,7 @@ def incomplete_extraction_never_retries():
         "run_clause_validation": {"run_id": 1, "linked_requirement_ids": [], "created_requirement_ids": [], "flagged": []},
         "run_conflict_scan": {"run_id": 1, "applied": {"superseded": []}},
         "build_context": None, "run_deterministic_validation": {},
-        "run_validation": {"run_id": 1, "changed": 0, "warnings": []},
+        "run_validation": {"run_id": 1, "changed": 0, "warnings": [], "ai_complete": True},
         "run_red_team": {"run_id": 1, "finding_ids": [], "ai": {}},
         "run_jev_routing": {"run_id": 1, "decision_run_id": 1, "provider": "rules"},
         "record_matrix_run": ({}, 1),

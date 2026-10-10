@@ -286,7 +286,7 @@ def run_compliance_pipeline(
 
         bid_rerun = run_decision_bundle(session, opportunity_id=opportunity_id, bundle_name="bid_decision", settings=settings).run.id
 
-    complete = inventory.complete and ai_passes_ok and validation["ai_complete"]
+    complete = inventory.complete and ai_passes_ok and validation.get("ai_complete", True)
     diagnostic_event("compliance.result", status="complete" if complete else "incomplete",
                      independent=passes_independent(ai_outcomes) if extraction_needed else None,
                      cached=not extraction_needed, warnings=len(warnings))

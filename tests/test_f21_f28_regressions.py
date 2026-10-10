@@ -346,7 +346,7 @@ def _state_without_supplier_evidence() -> dict:
     db = MagicMock()
     db.get.return_value = Opportunity(id=1, response_deadline=datetime.now(UTC) + timedelta(days=15))
     summary = NS(context_manifest={"source_revision": "revision"}, output_json={"delivery": {"delivery_days": 30}}, id=1, schema_version="test")
-    db.scalar.side_effect = [summary, None, None, 0, 0, 0, 0, 0, 0]
+    db.scalar.side_effect = [summary, None, None, 0, 0, 0, 0, 0, 0, 0]
     db.execute.return_value.all.return_value = []
     db.execute.return_value.scalars.return_value.all.return_value = []
 
