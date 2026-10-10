@@ -13,12 +13,13 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from govcon.ai.analysis_types import AnalysisType
 from govcon.bots.catalog import CATALOG
 from govcon.models import (
     AIAnalysis,
+    BidDecision,
     BotApproval,
     BotRun,
+    ComplianceRun,
     MarketPriceRun,
     Opportunity,
     StoredFile,
@@ -36,12 +37,9 @@ def opportunity_trace(session: Session, opportunity: Opportunity) -> list[dict[s
         select(BotApproval).where(BotApproval.opportunity_id == opportunity.id)
         .order_by(BotApproval.requested_at.desc()).limit(1)
     )
-    analysis = session.scalar(
-        select(AIAnalysis).where(
-            AIAnalysis.opportunity_id == opportunity.id,
-            AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY,
-        ).order_by(AIAnalysis.created_at.desc()).limit(1)
-    )
+    from govcon.enrich.summarize import latest_solicitation_summary
+
+    analysis = latest_solicitation_summary(session, opportunity.id)
     files = list(session.scalars(
         select(StoredFile).where(StoredFile.opportunity_id == opportunity.id, StoredFile.active.is_(True))
     ).all())
@@ -49,15 +47,47 @@ def opportunity_trace(session: Session, opportunity: Opportunity) -> list[dict[s
         select(MarketPriceRun).where(MarketPriceRun.opportunity_id == opportunity.id)
         .order_by(MarketPriceRun.created_at.desc(), MarketPriceRun.id.desc()).limit(1)
     )
+    matrix = session.scalar(
+        select(ComplianceRun).where(
+            ComplianceRun.opportunity_id == opportunity.id,
+            ComplianceRun.run_type == "compliance_matrix",
+        ).order_by(ComplianceRun.created_at.desc(), ComplianceRun.id.desc()).limit(1)
+    )
+    decision = session.scalar(
+        select(BidDecision).where(BidDecision.opportunity_id == opportunity.id)
+        .order_by(BidDecision.created_at.desc()).limit(1)
+    )
     stages = [_notice(opportunity), _files(files)]
     for name in _BOTS:
-        stages.append(_bot(name, runs.get(name)))
         if name == "compliance":
-            # Preparation searches web prices after compliance, before the decision.
+            stages.append(_compliance_stage(runs.get(name), matrix))
             stages.append(_market_prices(market))
+        elif name == "bid_decision":
+            stages.append(_bid_stage(runs.get(name), decision))
+        else:
+            stages.append(_bot(name, runs.get(name)))
     stages.append(_human(approval))
     stages.append(_analysis(analysis))
     return stages
+
+
+def _compliance_stage(run: BotRun | None, matrix: ComplianceRun | None) -> dict[str, Any]:
+    if matrix is not None:
+        when = _local(matrix.created_at)
+        status = matrix.status or "stored"
+        tag = "good" if status == "complete" else ("warn" if status == "incomplete" else "info")
+        return _stage("compliance", "Compliance", status.replace("_", " "), tag,
+                      f"Matrix run {matrix.id}. {when}.")
+    return _bot("compliance", run)
+
+
+def _bid_stage(run: BotRun | None, decision: BidDecision | None) -> dict[str, Any]:
+    if decision is not None:
+        when = _local(decision.created_at)
+        rec = (decision.recommendation or "stored").replace("_", " ")
+        return _stage("bid_decision", "Bid / no-bid", rec, "good",
+                      f"Decision {decision.id}. {when}.")
+    return _bot("bid_decision", run)
 
 
 def _notice(opportunity: Opportunity) -> dict[str, Any]:

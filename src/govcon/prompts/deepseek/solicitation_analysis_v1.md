@@ -55,4 +55,7 @@ RULES
 - Every material extracted field should include source_refs when possible.
 
 OUTPUT
-Return only JSON conforming to the solicitation_analysis.v1 schema.
+Return only compact JSON conforming to the solicitation_analysis.v1 schema.
+Quotes in source_refs are at most 200 characters. Do not echo the source
+package beyond those quotes. This call is one part of a larger analysis;
+do not add a "only part X of N" disclaimer — coverage is recorded separately.

@@ -1,4 +1,6 @@
 <!-- Compliance tab -->
+{% include "workspace/_analyze.html" %}
+{% include "workspace/_raise_budget.html" %}
 {% set cv = compliance %}
 {% if company_facts_error %}
 <div class="alert alert-error">Company facts could not be read: {{ company_facts_error }}. Every company-fact column below reads as missing until the file is fixed.</div>

@@ -71,5 +71,12 @@ RULES
 - Provide source evidence.
 
 OUTPUT
-Return only JSON conforming to requirement_extraction.v1:
-{"requirements": [{...}], "extraction_notes": ["..."]}
+Return only compact JSON conforming to requirement_extraction.v1.
+Use short keys: t=requirement_text, ty=requirement_type, m=mandatory,
+sv=severity, rr=response_required, fid=source_file_id, p=source_page,
+sec=source_section, q=supporting_quote, sid=source_snapshot_id, c=confidence,
+u=uncertainty_reason, nv=normalized_values, cr=clause_references,
+r=requirements, n=extraction_notes.
+q is a verbatim quote of at most 200 characters. Do not echo the source
+chunk beyond that quote. Do not repeat SOURCE_CHUNKS in the answer.
+{"r": [{...short keys...}], "n": ["..."]}

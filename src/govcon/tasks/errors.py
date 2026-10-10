@@ -91,6 +91,7 @@ def classify(exc: BaseException) -> Outcome:
     from govcon.ai.gateway import AIGatewayBlocked
     from govcon.ai.structured import StructuredCallError
     from govcon.compliance.pipeline import CompanyFactsInvalid
+    from govcon.ai.spend_guard import SpendGuardExceeded
     from govcon.workflow.analysis_lock import (
         AnalysisInProgress,
         analysis_in_progress_blocked,
@@ -107,6 +108,12 @@ def classify(exc: BaseException) -> Outcome:
         return Outcome("supersede", exc)
     if isinstance(exc, TaskFailedPermanently):
         return Outcome("fail", exc, owner_role=exc.owner_role, next_action=exc.next_action)
+    if isinstance(exc, SpendGuardExceeded):
+        return Outcome(
+            "block", exc, "waiting_for_input", "owner",
+            "This run exceeded twice its pre-run estimate. Cached parts are kept. "
+            "Review the estimate, then start a new analysis run.",
+        )
     if isinstance(exc, AIBudgetExceeded):
         return Outcome("block", exc, "waiting_for_budget", "owner", _BUDGET_NEXT)
     if isinstance(exc, CompanyFactsInvalid):
@@ -117,6 +124,12 @@ def classify(exc: BaseException) -> Outcome:
     if isinstance(exc, StructuredCallError):
         if exc.reason == "budget_exceeded":
             return Outcome("block", exc, "waiting_for_budget", "owner", _BUDGET_NEXT)
+        if exc.reason == "spend_guard":
+            return Outcome(
+                "block", exc, "waiting_for_input", "owner",
+                "This run exceeded twice its pre-run estimate. Cached parts are kept. "
+                "Review the estimate, then start a new analysis run.",
+            )
         if exc.reason == "blocked_by_policy":
             return Outcome("block", exc, "waiting_for_input", "owner", _POLICY_NEXT)
         if exc.reason == "no_provider":

@@ -1,0 +1,15 @@
+{% if budget_status and budget_status.show_raise and can_run_analysis %}
+<div class="card" id="raise-budget">
+  <div class="card-header"><span class="card-title">Opportunity AI budget</span></div>
+  <p class="text-sm">Used {{ budget_status.used }} / limit {{ budget_status.limit }}
+    ({{ "%.0f"|format((budget_status.pct_used or 0) * 100) }}%). Raising the budget does not start a task. Resume a parked task on /ops after the raise is audited.</p>
+  <form method="post" action="/workspace/{{ opp.id }}/raise-budget" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <label class="text-sm" for="new-limit-{{ active_tab }}">New token limit for this opportunity</label>
+    <input id="new-limit-{{ active_tab }}" name="new_limit" type="number" min="{{ budget_status.limit + 1 }}" value="{{ budget_status.limit * 2 }}" required>
+    <label class="text-sm" for="raise-reason-{{ active_tab }}">Reason (required, stored in the audit log)</label>
+    <textarea id="raise-reason-{{ active_tab }}" name="reason" rows="2" minlength="8" required></textarea>
+    <button type="submit" class="btn btn-secondary btn-sm">Raise budget for this opportunity</button>
+  </form>
+</div>
+{% endif %}

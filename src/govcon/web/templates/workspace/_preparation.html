@@ -3,16 +3,16 @@
 <div class="alert alert-info" role="status" id="document-ready">
   <strong>Document now available, rerun analysis?</strong>
   A previously missing attachment was downloaded. This did not start analysis, compliance, decision, or market work.
-  {% if pursuit and can_run_analysis %}
-  <form method="post" action="/workspace/{{ opp.id }}/prepare" class="mt-1">
+  {% if can_run_analysis %}
+  <form method="post" action="/workspace/{{ opp.id }}/analyze" class="mt-1">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-    <button type="submit" class="btn btn-secondary btn-sm">Rerun analysis</button>
+    <button type="submit" class="btn btn-secondary btn-sm">Rerun analysis &amp; compliance</button>
   </form>
-  {% elif not pursuit %}
-  <p class="text-sm mt-1">Start a pursuit first, then rerun analysis.</p>
   {% endif %}
 </div>
 {% endif %}
+{% include "workspace/_analyze.html" %}
+{% include "workspace/_raise_budget.html" %}
 {% if pursuit %}
 <div class="card" id="preparation" data-progress-key="preparation">
   <div class="card-header">
@@ -47,10 +47,12 @@
         {% if preparation.task.status == 'waiting_for_budget' and budget_status %}
         <div class="mt-1">Used {{ budget_status.used }} / limit {{ budget_status.limit }} ({{ budget_status.spendable }} spendable after the proposal reserve).</div>
         {% if can_run_analysis %}
-        <form method="post" action="/workspace/{{ opp.id }}/raise-budget" class="mt-1">
+        <form method="post" action="/workspace/{{ opp.id }}/raise-budget" class="mt-1 stack-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
           <label class="text-sm" for="new-limit">New token limit for this opportunity</label>
           <input id="new-limit" name="new_limit" type="number" min="{{ budget_status.limit + 1 }}" value="{{ budget_status.limit * 2 }}" required>
+          <label class="text-sm" for="raise-reason-waiting">Reason (required, stored in the audit log)</label>
+          <textarea id="raise-reason-waiting" name="reason" rows="2" minlength="8" required></textarea>
           <button type="submit" class="btn btn-secondary btn-sm">Raise budget for this opportunity</button>
         </form>
         <p class="text-sm text-muted">Raising the budget does not start the task. Resume it on /ops after the raise is audited.</p>

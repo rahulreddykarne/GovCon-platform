@@ -655,7 +655,9 @@ class AIProviderCall(CreatedAtMixin, Base):
     web_search_requests: Mapped[int | None] = mapped_column(BigInteger)
     web_fetch_requests: Mapped[int | None] = mapped_column(BigInteger)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
-    analysis_id: Mapped[int | None] = mapped_column(BigInteger)
+    analysis_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ai_analyses.id", ondelete="SET NULL", name="fk_ai_provider_calls_analysis_id")
+    )
     decision_run_id: Mapped[int | None] = mapped_column(BigInteger)
     compliance_run_id: Mapped[int | None] = mapped_column(BigInteger)
     finish_reason: Mapped[str | None] = mapped_column(Text)
@@ -1212,6 +1214,7 @@ class AlertDelivery(Base):
 TASK_TYPES = (
     "proposal_generation", "ai_analysis", "solicitation_summary", "scheduler_chain", "opportunity_preparation",
     "notification_email", "quote_extraction", "bot_run", "market_price_research", "attachment_download",
+    "opportunity_review",
 )
 TASK_STATUSES = (
     "queued", "running", "waiting_for_input", "waiting_for_budget", "retrying",

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -28,12 +29,11 @@ from govcon.ai.analysis_types import AnalysisType
 from govcon.config import Settings, get_settings
 from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.documents.chunking import (
+    AdaptivePlanner,
     Gap,
     SourceChunk,
-    batch_chunks,
     chunks_for_pages,
     gaps_for,
-    nbytes,
     render_batch,
     split_source_batch,
 )
@@ -124,6 +124,8 @@ def _run_solicitation_analysis(
         if existing is not None and (existing.generation_settings or {}).get("quality") == "incomplete":
             logger.info("cached solicitation analysis %d is incomplete; re-running", existing.id)
             existing = None
+        if existing is not None and (existing.generation_settings or {}).get("role") == "part":
+            existing = None
         if existing is not None:
             logger.info(
                 "solicitation analysis already exists for opportunity %d",
@@ -162,33 +164,33 @@ def _run_solicitation_analysis(
             )
         return None
     header = _metadata_block(opportunity, files)
-    budget = min(settings.ai_max_input_tokens_per_call // 2, settings.ai_max_input_tokens_per_opportunity // 2,
-                 settings.ai_source_batch_bytes)
-    batches = batch_chunks(chunks, max(budget - nbytes(header) - 200, 2_000))
-    diagnostic_event("summary.batches", files=len(files), parts=len(batches), candidates=len(chunks))
     classification = strictest_classification(*(f.classification for f in files))
     from govcon.ai.structured import (
         StructuredCallError,
         execute_prepared_call,
+        persist_committed_part,
         prepare_structured_call,
     )
-    from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
+    from govcon.ai.usage_log import collect_call_ids, stop_collecting
 
     calls: list[tuple[Any, Any]] = []
     gaps: list[Gap] = []
-    pending = list(batches)
-    index = 0
+    planner = AdaptivePlanner(
+        list(chunks), units=1, max_units=3,
+        output_cap=settings.ai_max_output_tokens_per_call,
+    )
     sent = 0
-    link_token, linked_ids = collect_call_ids()
+    part_no = 0
+    link_token, _linked_ids = collect_call_ids()
     try:
-        while index < len(pending):
-            batch = pending[index]
-            diagnostic_event("summary.batch_start", part=index + 1, parts=len(pending), candidates=len(batch))
-            part = (
-                f" (part {index + 1} of {len(pending)}; other parts are analysed separately)"
-                if len(pending) > 1 else ""
-            )
-            source = f"{header}\n\n## Extracted Source Content{part}\n{render_batch(batch)}"
+        while True:
+            batch = planner.next_batch()
+            if batch is None:
+                break
+            part_no += 1
+            diagnostic_event("summary.batch_start", part=part_no, candidates=len(batch))
+            source = f"{header}\n\n## Extracted Source Content\n{render_batch(batch)}"
+            part_manifest = {**context_manifest, "part": part_no}
             try:
                 prepared = prepare_structured_call(
                     session,
@@ -203,18 +205,20 @@ def _run_solicitation_analysis(
                         }, default=str),
                         "SOURCE_PACKAGE_JSON": source,
                     },
-                    context_manifest=context_manifest,
+                    context_manifest=part_manifest,
                     settings=settings,
                     classification=classification,
                 )
                 executed = execute_prepared_call(prepared, settings=settings, session=session)
+                persist_committed_part(session, prepared, executed)
             except StructuredCallError as exc:
-                diagnostic_event("summary.batch_refused", level=logging.WARNING, reason=exc.reason,
-                                 part=index + 1, parts=len(pending))
+                diagnostic_event("summary.batch_refused", level=logging.WARNING, reason=exc.reason, part=part_no)
                 if exc.reason == "output_truncated":
                     halves = split_source_batch(batch)
                     if halves:
-                        pending[index:index + 1] = halves
+                        planner.pending[:len(batch)] = [item for half in halves for item in half]
+                        planner.units = 1
+                        part_no -= 1
                         continue
                 if not calls:
                     if exc.reason == "no_provider":
@@ -227,30 +231,39 @@ def _run_solicitation_analysis(
                 reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
                 if exc.reason == "output_truncated":
                     gaps.extend(gaps_for(batch, reason))
-                    index += 1
+                    planner.consume(len(batch), truncated=True)
                     continue
-                for rest in pending[index:]:
-                    gaps.extend(gaps_for(rest, reason))
+                gaps.extend(gaps_for(planner.pending, reason))
                 logger.warning("solicitation analysis for opportunity %d stopped at part %d: %s",
-                               opportunity.id, index + 1, exc.reason)
+                               opportunity.id, part_no, exc.reason)
                 break
+            usage = getattr(executed.result, "usage", None) or {}
+            planner.consume(
+                len(batch),
+                output_tokens=int(usage.get("completion_tokens") or usage.get("output_tokens") or 0),
+                input_tokens=int(usage.get("prompt_tokens") or usage.get("input_tokens") or 1),
+            )
             calls.append((prepared, executed))
             sent += len(batch)
-            index += 1
-            diagnostic_event("summary.batch_complete", part=index, quality=executed.quality)
+            diagnostic_event("summary.batch_complete", part=part_no, quality=executed.quality)
 
-        merged = merge_summaries([executed.output.model_dump(mode="json") for _, executed in calls])
-        context_manifest["coverage"] = {
-            "chunks_total": len(chunks), "chunks_sent": sent, "parts": len(pending),
+        if not calls:
+            return None
+        part_outputs = [executed.output.model_dump(mode="json") for _, executed in calls]
+        merged = merge_summaries(part_outputs)
+        coverage = {
+            "chunks_total": len(chunks), "chunks_sent": sent, "parts": part_no,
             "parts_sent": len(calls), "gaps": [gap.as_dict() for gap in gaps],
         }
-        # Kept under its earlier name for consumers that read omitted sources.
+        context_manifest["coverage"] = coverage
         context_manifest["omitted_sources"] = [gap.as_dict() for gap in gaps]
         context_manifest["warnings"] = ([{"code": "context_truncated", "severity": "high",
             "message": "Part of the source set was not analysed; the listed files and pages remain unreviewed."}] if gaps else [])
+        note = coverage_note(coverage)
+        summary_text = merged.get("summary") or ""
+        if note:
+            merged["summary"] = f"{summary_text}\n\n{note}".strip() if summary_text else note
         if gaps:
-            # Keep the gap visible in the user-facing result as well as the
-            # provenance manifest; it cannot imply complete review.
             merged["missing_information"] = [*merged.get("missing_information", []), {
                 "field": "source_package",
                 "reason": "Not analysed: " + "; ".join(
@@ -258,13 +271,34 @@ def _run_solicitation_analysis(
                 "impact": "Incomplete summary; review these pages separately.",
             }]
         analysis = _merged_analysis(calls, merged, context_manifest)
+        settings_blob = dict(analysis.generation_settings or {})
+        settings_blob["role"] = "merged"
+        analysis.generation_settings = settings_blob
         session.add(analysis)
         analysis.source_refs = analysis.output_json.get("source_refs") or None
         session.flush()
-        attach_call_ids(session, linked_ids, analysis_id=analysis.id)
         return analysis
     finally:
         stop_collecting(link_token)
+
+
+def latest_solicitation_summary(session: Session, opportunity_id: int) -> AIAnalysis | None:
+    """Prefer the merged summary over an interrupted part row."""
+    from sqlalchemy import desc
+
+    rows = list(session.scalars(
+        select(AIAnalysis).where(
+            AIAnalysis.opportunity_id == opportunity_id,
+            AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY,
+        ).order_by(desc(AIAnalysis.created_at), desc(AIAnalysis.id))
+    ).all())
+    for row in rows:
+        if (row.generation_settings or {}).get("role") == "merged":
+            return row
+    for row in rows:
+        if (row.generation_settings or {}).get("role") != "part":
+            return row
+    return rows[0] if rows else None
 
 
 def _source_chunks(session: Session, files: Sequence[StoredFile]) -> list[SourceChunk]:
@@ -286,15 +320,43 @@ def _source_chunks(session: Session, files: Sequence[StoredFile]) -> list[Source
     return chunks
 
 
+_PART_DISCLAIMER = re.compile(
+    r"\s*\(?(?:only\s+)?part\s+\d+\s+of\s+\d+(?:;[^)]*)?\)?\.?",
+    re.IGNORECASE,
+)
+
+
+def strip_part_disclaimers(text: str) -> str:
+    return _PART_DISCLAIMER.sub("", text).strip()
+
+
+def coverage_note(coverage: dict[str, Any]) -> str:
+    sent = int(coverage.get("parts_sent") or 0)
+    total = int(coverage.get("parts") or sent)
+    if coverage.get("gaps"):
+        return f"Coverage: analysed {sent} of {total} parts; some pages remain unreviewed."
+    if total > 1:
+        return f"Coverage: analysed {sent} of {total} parts."
+    return ""
+
+
 def merge_summaries(outputs: list[dict[str, Any]]) -> dict[str, Any]:
     """Combine per-part summaries without inventing anything.
 
     Lists are concatenated without duplicates. A single-valued section keeps
     the first part's answer; a different answer from a later part is recorded
-    under ``conflicts`` rather than silently dropped.
+    under ``conflicts`` rather than silently dropped. Per-part 'only part X of N'
+    disclaimers are stripped so the merged summary has one coverage note.
     """
     if not outputs:
         return {}
+    cleaned = []
+    for out in outputs:
+        item = dict(out)
+        if isinstance(item.get("summary"), str):
+            item["summary"] = strip_part_disclaimers(item["summary"])
+        cleaned.append(item)
+    outputs = cleaned
     if len(outputs) == 1:
         return outputs[0]
     from govcon.ai.schemas import SolicitationAnalysisV1

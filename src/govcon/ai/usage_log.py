@@ -268,7 +268,11 @@ def attach_call_ids(
     with Session(bind) as db, db.begin():
         rows = db.scalars(select(AIProviderCall).where(AIProviderCall.id.in_(ids))).all()
         for row in rows:
-            if analysis_id is not None:
+            if analysis_id is not None and row.analysis_id is None:
+                from govcon.models import AIAnalysis
+
+                if db.get(AIAnalysis, analysis_id) is None:
+                    continue
                 row.analysis_id = analysis_id
             if decision_run_id is not None:
                 row.decision_run_id = decision_run_id

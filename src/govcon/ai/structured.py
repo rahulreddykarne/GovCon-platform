@@ -41,6 +41,7 @@ from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
 from govcon.ai.quality import assess_output_quality
 from govcon.ai.schemas import SCHEMA_REGISTRY
+from govcon.ai.spend_guard import SpendGuardExceeded, note_spend
 from govcon.config import Settings, get_settings
 from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.models import AIAnalysis
@@ -358,12 +359,29 @@ def execute_prepared_call(
             )
         except AIBudgetExceeded as exc:
             raise StructuredCallError("budget_exceeded", str(exc)) from exc
+        except SpendGuardExceeded as exc:
+            raise StructuredCallError("spend_guard", str(exc)) from exc
         except AIGatewayBlocked as exc:
             raise StructuredCallError("blocked_by_policy", str(exc)) from exc
         except Exception as exc:
             raise StructuredCallError("provider_error", type(exc).__name__) from exc
         try:
-            data = _drop_unknown_root_keys(prepared, parse_json_response(result))
+            usage = getattr(result, "usage", None) or {}
+            tokens = None
+            if isinstance(usage, dict):
+                tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0) + int(
+                    usage.get("completion_tokens") or usage.get("output_tokens") or 0
+                )
+            _charge_reservation(reservation, tokens=tokens or None)
+        except SpendGuardExceeded as exc:
+            raise StructuredCallError("spend_guard", str(exc)) from exc
+        try:
+            data = parse_json_response(result)
+            if prepared.schema_version == "requirement_extraction.v1":
+                from govcon.compliance.schemas import expand_compact_extraction
+
+                data = expand_compact_extraction(data)
+            data = _drop_unknown_root_keys(prepared, data)
             validated = prepared.schema_cls.model_validate(data)
         except (json.JSONDecodeError, ValueError, ValidationError) as exc:
             # Parse-error metadata only (message, position, sizes); never the response text.
@@ -424,9 +442,17 @@ def execute_prepared_call(
     raise last_error
 
 
+_VOLATILE_MANIFEST = frozenset({
+    "part", "parts", "coverage", "omitted_sources", "warnings", "chunks",
+})
+
+
 def analysis_input_hash(prepared: PreparedCall) -> str:
-    """Stable key for a successful part: variables + manifest (includes document sha)."""
-    manifest = dict(prepared.context_manifest)
+    """Stable key: source variables + document sha. Part index is not hashed."""
+    manifest = {
+        key: value for key, value in dict(prepared.context_manifest).items()
+        if key not in _VOLATILE_MANIFEST
+    }
     manifest.setdefault("opportunity_id", prepared.opportunity_id)
     return hashlib.sha256(
         json.dumps({"variables": prepared.variables, "manifest": manifest}, sort_keys=True, default=str).encode()
@@ -518,25 +544,80 @@ def build_analysis(prepared: PreparedCall, executed: ExecutedCall) -> AIAnalysis
     )
 
 
-@trace_phase("ai.structured.persist_structured_result")
-def persist_structured_result(
-    session: Session | None, prepared: PreparedCall, executed: ExecutedCall
+def _engine_of(session: Session | None):
+    if session is None:
+        return None
+    bind = session.get_bind()
+    return getattr(bind, "engine", bind)
+
+
+def _charge_reservation(reservation: Any, tokens: int | None = None) -> None:
+    cost = getattr(reservation, "cost", None) if reservation is not None else None
+    note_spend(cost_usd=cost, tokens=tokens)
+
+
+def persist_committed_part(
+    session: Session | None, prepared: PreparedCall, executed: ExecutedCall,
 ) -> StructuredCallResult:
-    """Record the validated call as an ``ai_analyses`` row in the caller's transaction."""
+    """Commit one successful part immediately, then link the ledger row.
+
+    The caller's transaction can roll back later (or the process can die)
+    without losing the paid part. The ledger analysis_id is written only after
+    this commit, so it never points at a row that does not exist.
+    """
+    from govcon.ai.usage_log import attach_call_ids
+
     if executed.cached_analysis is not None:
         analysis = executed.cached_analysis
         if session is not None and analysis not in session:
             analysis = session.merge(analysis)
         return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
     analysis = build_analysis(prepared, executed)
-    if session is not None:
+    settings_blob = dict(analysis.generation_settings or {})
+    if (prepared.context_manifest or {}).get("part") is not None:
+        settings_blob["role"] = "part"
+        settings_blob["part_index"] = prepared.context_manifest.get("part")
+        analysis.generation_settings = settings_blob
+    engine = _engine_of(session)
+    call_id = getattr(executed.result, "usage_call_id", None)
+    ids = [int(call_id)] if call_id is not None else []
+
+    def _on_caller() -> StructuredCallResult:
+        if session is None:
+            return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
         session.add(analysis)
         session.flush()
-        call_id = getattr(executed.result, "usage_call_id", None)
-        if call_id is not None:
-            from govcon.ai.usage_log import attach_call_ids
-            attach_call_ids(session, [int(call_id)], analysis_id=analysis.id)
+        if ids:
+            attach_call_ids(session, ids, analysis_id=analysis.id, engine=engine)
+        return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
+
+    if engine is None:
+        return _on_caller()
+    from sqlalchemy.orm import Session as OrmSession
+
+    from govcon.models import Opportunity
+
+    opportunity_id = prepared.opportunity_id
+    if opportunity_id is not None:
+        with OrmSession(engine) as probe:
+            if probe.get(Opportunity, opportunity_id) is None:
+                return _on_caller()
+    with OrmSession(engine) as db, db.begin():
+        db.add(analysis)
+        db.flush()
+        analysis_id = analysis.id
+    attach_call_ids(session, ids, analysis_id=analysis_id, engine=engine)
+    if session is not None:
+        analysis = session.get(AIAnalysis, analysis_id) or analysis
     return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
+
+
+@trace_phase("ai.structured.persist_structured_result")
+def persist_structured_result(
+    session: Session | None, prepared: PreparedCall, executed: ExecutedCall
+) -> StructuredCallResult:
+    """Commit a paid part on its own connection; reuse a cached part as-is."""
+    return persist_committed_part(session, prepared, executed)
 
 
 def run_structured_prompt(

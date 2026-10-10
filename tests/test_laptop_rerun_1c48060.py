@@ -228,7 +228,10 @@ def test_raise_budget_is_audited_and_does_not_auto_resume(db, client) -> None:
     queue.block(db, task, status="waiting_for_budget", reason="exhausted",
                 owner_role="owner", next_action="resume")
     db.commit()
-    response = client.post(f"/workspace/{opp.id}/raise-budget", data={"new_limit": "240000"})
+    response = client.post(
+        f"/workspace/{opp.id}/raise-budget",
+        data={"new_limit": "240000", "reason": "Laptop rerun needs a higher token cap"},
+    )
     assert response.status_code == 303
     db.expire_all()
     assert db.get(Opportunity, opp.id).ai_max_input_tokens == 240000
@@ -239,6 +242,7 @@ def test_raise_budget_is_audited_and_does_not_auto_resume(db, client) -> None:
         AuditEvent.opportunity_id == opp.id, AuditEvent.action_type == "opportunity_budget_raised"))
     assert audit is not None
     assert audit.new_value["limit"] == 240000
+    assert audit.new_value["reason"] == "Laptop rerun needs a higher token cap"
     assert audit.new_value["default_unchanged"] == Settings(_env_file=None).ai_max_input_tokens_per_opportunity
 
 
@@ -337,4 +341,4 @@ def test_document_ready_banner_renders(client, db) -> None:
     db.commit()
     page = client.get(f"/workspace/{opp.id}?tab=overview", cookies={"govcon_session": token}).text
     assert "Document now available, rerun analysis?" in page
-    assert f'action="/workspace/{opp.id}/prepare"' in page
+    assert f'action="/workspace/{opp.id}/analyze"' in page

@@ -155,6 +155,39 @@ def split_text_batch(batch: list[dict]) -> list[list[dict]]:
     return out
 
 
+@dataclass
+class AdaptivePlanner:
+    """Start at one page (or chunk) per call; grow only when output stayed small.
+
+    Requirement-dense RFQ pages produce large JSON. Sizing by input bytes alone
+    packed many pages into one 8,192-token completion and truncated. After each
+    part the next batch shrinks if the last completion used most of the output
+    cap, and grows only when the output/input ratio stayed low.
+    """
+
+    pending: list
+    units: int = 1
+    max_units: int = 3
+    output_cap: int = 8_192
+
+    def next_batch(self) -> list | None:
+        if not self.pending:
+            return None
+        return list(self.pending[: min(self.units, len(self.pending))])
+
+    def consume(self, count: int, *, output_tokens: int = 0, input_tokens: int = 1,
+                truncated: bool = False) -> None:
+        del self.pending[: max(0, count)]
+        if truncated or (self.output_cap and output_tokens > int(self.output_cap * 0.55)):
+            self.units = 1
+            return
+        ratio = output_tokens / max(input_tokens, 1)
+        if ratio < 0.12:
+            self.units = min(self.max_units, self.units + 1)
+        elif ratio > 0.35:
+            self.units = 1
+
+
 def gaps_for(chunks: Iterable[SourceChunk], reason: str) -> list[Gap]:
     """Group unsent chunks into one gap per file, listing pages (or parts)."""
     by_file: dict[int | None, Gap] = {}

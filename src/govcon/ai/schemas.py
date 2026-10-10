@@ -24,7 +24,11 @@ class SourceRef(BaseModel):
         # Models cite non-file inputs (e.g. "AWARDS_JSON") as a bare string; keep
         # it as the section label. It names no file, so it never counts as a
         # verified citation.
-        return {"section": value} if isinstance(value, str) else value
+        if isinstance(value, str):
+            return {"section": value}
+        if isinstance(value, dict) and isinstance(value.get("quote"), str) and len(value["quote"]) > 200:
+            return {**value, "quote": value["quote"][:200]}
+        return value
 
 
 class LineItem(BaseModel):

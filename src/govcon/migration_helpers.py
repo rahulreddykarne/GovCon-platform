@@ -263,6 +263,42 @@ def ensure_download_retry_v1() -> None:
     add_column_if_missing("opportunities", sa.Column("ai_max_input_tokens", sa.Integer()))
 
 
+# ── part commit + ledger FK + review task (revision e3f4a5b6c7d8) ──
+
+PART_COMMIT_TASK_TYPES = (
+    "('proposal_generation','ai_analysis','solicitation_summary','scheduler_chain','opportunity_preparation',"
+    "'notification_email','quote_extraction','bot_run','market_price_research','attachment_download',"
+    "'opportunity_review')"
+)
+
+
+def ensure_part_commit_v1() -> None:
+    """Allow ``opportunity_review`` and make ledger analysis_id a nullable FK.
+
+    Orphaned analysis ids from rolled-back runs are cleared first so the FK
+    can be added on a laptop database that already has those rows.
+    """
+    bind = op.get_bind()
+    current = constraint_definition("tasks", "ck_tasks_task_type")
+    if current is None or "opportunity_review" not in current:
+        if current is not None:
+            op.drop_constraint("ck_tasks_task_type", "tasks")
+        op.create_check_constraint("ck_tasks_task_type", "tasks", f"task_type IN {PART_COMMIT_TASK_TYPES}")
+    if table_exists("ai_provider_calls") and table_exists("ai_analyses"):
+        bind.execute(sa.text(
+            "UPDATE ai_provider_calls AS c SET analysis_id = NULL "
+            "WHERE analysis_id IS NOT NULL AND NOT EXISTS "
+            "(SELECT 1 FROM ai_analyses AS a WHERE a.id = c.analysis_id)"
+        ))
+        if constraint_definition("ai_provider_calls", "fk_ai_provider_calls_analysis_id") is None:
+            op.create_foreign_key(
+                "fk_ai_provider_calls_analysis_id",
+                "ai_provider_calls", "ai_analyses",
+                ["analysis_id"], ["id"],
+                ondelete="SET NULL",
+            )
+
+
 def seed_model_prices(rows: tuple[dict[str, object], ...]) -> None:
     """Insert cited prices that are not stored yet. Existing (possibly edited) rows are kept.
 

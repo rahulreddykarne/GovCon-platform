@@ -1,4 +1,6 @@
 <!-- Bid / no-bid scorecard -->
+{% include "workspace/_analyze.html" %}
+{% include "workspace/_raise_budget.html" %}
 {% from "workspace/_decision_display.html" import items_of, pct, engine_badge %}
 {% set rec_labels = {'bid': 'BID', 'no_bid': 'NO-BID', 'insufficient_information': 'NEEDS-INFO', 'review': 'REVIEW'} %}
 {% set card = scorecard or {} %}

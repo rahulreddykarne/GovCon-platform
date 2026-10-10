@@ -12,6 +12,9 @@
   <nav class="chip-row mb-1" aria-label="Requirement categories">
     {% for g in compliance.groups %}<span class="chip">{{ g.label }} <strong>{{ g.count }}</strong>{% if g.open %} · {{ g.open }} open{% endif %}</span>{% endfor %}
   </nav>
+  {% for section in requirement_sections or [] %}
+  <details class="req-section mb-1" {% if loop.first %}open{% endif %}>
+    <summary>{{ section.label }} <strong>{{ section.rows|length }}</strong></summary>
   <div class="table-wrap">
     <table class="req-table">
       <thead>
@@ -25,12 +28,7 @@
         </tr>
       </thead>
       <tbody>
-        {% set ns = namespace(category=None) %}
-        {% for row in requirement_rows %}
-        {% if row.category != ns.category %}
-          {% set ns.category = row.category %}
-          <tr class="group-row"><th colspan="6" scope="colgroup">{{ row.category_label }}</th></tr>
-        {% endif %}
+        {% for row in section.rows %}
         <tr id="req-{{ row.requirement_id }}">
           <td class="req-text">
             <div class="text-sm text-muted">#{{ row.requirement_id }} · {{ row.requirement_type or 'type not set' }}
@@ -106,6 +104,8 @@
       </tbody>
     </table>
   </div>
+  </details>
+  {% endfor %}
   {% if requirements_pages > 1 %}
   <nav class="d-flex gap-2 align-center mt-2" aria-label="Requirement pages">
     {% if requirements_page > 1 %}<a class="btn btn-secondary" href="?tab={{ active_tab }}&amp;requirements_page={{ requirements_page - 1 }}">Previous</a>{% endif %}

@@ -54,7 +54,7 @@ from govcon.compliance.text import (
 )
 from govcon.config import Settings, get_settings
 from govcon.diagnostics import trace_phase
-from govcon.documents.chunking import split_text_batch
+from govcon.documents.chunking import AdaptivePlanner, split_text_batch
 from govcon.models import Opportunity
 
 logger = logging.getLogger("govcon.compliance.extractor")
@@ -146,7 +146,9 @@ def candidates_from_output(pass_label: str, requirements: list[Any], inventory: 
     known_files = inventory.by_file_id()
     for index, item in enumerate(requirements, start=1):
         text = normalize_ws(item.requirement_text)
-        quote = normalize_ws(item.supporting_quote) or None
+        quote = (normalize_ws(item.supporting_quote) or None)
+        if quote is not None:
+            quote = quote[:200]
         requirement_type = item.requirement_type if item.requirement_type in REQUIREMENT_TYPES else classify_type(f"{text} {quote or ''}")
         key_values = {k: v for k, v in (item.normalized_values or {}).items() if v is not None}
         key_values.update(extract_key_values(quote or text))
@@ -383,10 +385,11 @@ def run_ai_pass(
     """
     settings = settings or get_settings()
     prompt_name = PASS_PROMPTS[pass_label]
-    budget = min(settings.ai_max_input_tokens_per_call // 2, settings.ai_max_input_tokens_per_opportunity // 2,
-                 settings.ai_source_batch_bytes)
     chunks = build_context(inventory, pass_label, char_budget=10**12)
-    batches = _batches(chunks, budget)
+    planner = AdaptivePlanner(
+        list(chunks), units=1, max_units=2,
+        output_cap=settings.ai_max_output_tokens_per_call,
+    )
     provider_name, model, warnings = _pass_provider(pass_label, opportunity, settings)
     base_variables: dict[str, Any] = {
         "DOCUMENT_INVENTORY_JSON": _inventory_json(inventory),
@@ -441,7 +444,7 @@ def run_ai_pass(
                 + ". Re-download or ingest readable copies; they remain a coverage gap."
             ),
         })
-    if not batches:
+    if not chunks:
         # No document text (nothing downloaded, or nothing readable): no call is made,
         # and the pass is recorded as failed so the extraction stays incomplete.
         warnings.append({"code": f"pass_{pass_label.lower()}_no_source_text", "severity": "high", "message": (
@@ -463,21 +466,22 @@ def run_ai_pass(
     gaps: list[dict[str, Any]] = list(empty_gaps)
     sent = 0
     last_error: StructuredCallError | None = None
-    pending = list(batches)
-    index = 0
+    part_no = 0
     from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
     link_token, linked_ids = collect_call_ids()
     try:
-        while index < len(pending):
-            batch = pending[index]
+        while True:
+            batch = planner.next_batch()
+            if not batch:
+                break
+            part_no += 1
             manifest = {
                 **base_manifest,
-                "part": index + 1,
-                "parts": len(pending),
+                "part": part_no,
                 "chunks": [{"chunk_id": c["chunk_id"], "file_id": c["file_id"], "page": c["page"]} for c in batch],
             }
             try:
-                results.append(run_structured_prompt(
+                result = run_structured_prompt(
                     session,
                     classification=classification,
                     opportunity_id=opportunity.id,
@@ -488,24 +492,30 @@ def run_ai_pass(
                     settings=settings,
                     provider_name=provider_name,
                     model=model,
-                ))
+                )
+                results.append(result)
+                usage = (result.analysis.token_usage or {}) if result.analysis is not None else {}
+                planner.consume(
+                    len(batch),
+                    output_tokens=int(usage.get("completion_tokens") or usage.get("output_tokens") or 0),
+                    input_tokens=int(usage.get("prompt_tokens") or usage.get("input_tokens") or 1),
+                )
                 sent += len(batch)
-                index += 1
             except StructuredCallError as exc:
                 last_error = exc
                 reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
                 if exc.reason == "output_truncated":
                     halves = split_text_batch(batch)
                     if halves:
-                        pending[index:index + 1] = halves
+                        planner.pending[:len(batch)] = [item for half in halves for item in half]
+                        planner.units = 1
+                        part_no -= 1
                         continue
                 if exc.reason in _PART_LOCAL_FAILURES:
-                    # One unusable answer: this part is a gap, the rest is still read.
                     gaps += _gaps(batch, inventory, reason)
-                    index += 1
+                    planner.consume(len(batch), truncated=True)
                     continue
-                # Budget, policy or prompt problems fail every later part the same way.
-                gaps += _gaps([c for rest in pending[index:] for c in rest], inventory, reason)
+                gaps += _gaps(planner.pending, inventory, reason)
                 break
     finally:
         stop_collecting(link_token)
@@ -520,7 +530,7 @@ def run_ai_pass(
             opportunity_id=opportunity.id,
             run_type=run_type,
             run_version=EXTRACTOR_VERSION,
-            output={"error": failure.reason, "detail": failure.detail, "manifest": {**base_manifest, "parts": len(pending)},
+            output={"error": failure.reason, "detail": failure.detail, "manifest": {**base_manifest, "parts": part_no},
                     "coverage": {"chunks_total": len(chunks), "chunks_sent": 0,
                                  "gaps": empty_gaps + _gaps(chunks, inventory, failure.reason)}},
             status="failed",
@@ -549,7 +559,7 @@ def run_ai_pass(
             "prompt": {"name": first.prompt.name, "version": first.prompt.version, "hash": first.prompt.content_hash},
             "candidates": [c.__dict__ for c in candidates],
             "extraction_notes": [note for r in results for note in checked_output(r.output, RequirementExtractionV1).extraction_notes],
-            "coverage": {"chunks_total": len(chunks), "chunks_sent": sent, "parts": len(pending),
+            "coverage": {"chunks_total": len(chunks), "chunks_sent": sent, "parts": part_no,
                          "parts_sent": len(results), "gaps": gaps},
         },
         status="incomplete" if gaps else "complete",

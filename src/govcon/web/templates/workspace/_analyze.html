@@ -1,0 +1,27 @@
+{% if can_run_analysis %}
+<div class="card" id="analyze-opportunity">
+  <div class="card-header">
+    <span class="card-title">{% if ai_summary or review_analysis or bid_decision %}Rerun analysis &amp; compliance{% else %}Analyze this opportunity{% endif %}</span>
+  </div>
+  <p class="text-sm">Runs solicitation analysis and the compliance matrix. Does not start a pursuit and does not contact anyone.</p>
+  {% if spend_estimate %}
+  <div class="alert alert-info" role="status" id="spend-estimate">
+    <strong>Estimated spend for this run:</strong>
+    {% if spend_estimate.usd is not none %}
+      ${{ "%.2f"|format(spend_estimate.usd) }}
+      (hard stop at ${{ "%.2f"|format(spend_estimate.cap_usd) }} = 2×)
+    {% else %}
+      {{ spend_estimate.tokens }} tokens
+      (hard stop at {{ spend_estimate.cap_tokens }} tokens = 2×)
+    {% endif %}
+    <div class="text-sm">{{ spend_estimate.note }}</div>
+  </div>
+  {% endif %}
+  <form method="post" action="/workspace/{{ opp.id }}/analyze">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-secondary btn-sm">
+      {% if ai_summary or review_analysis or bid_decision %}Rerun analysis &amp; compliance{% else %}Analyze this opportunity{% endif %}
+    </button>
+  </form>
+</div>
+{% endif %}

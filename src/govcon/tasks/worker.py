@@ -142,52 +142,69 @@ def run_claimed(settings: Settings, claim: queue.Claim) -> str:
             except Exception as exc:  # noqa: BLE001  boundary must record any failure
                 logger.warning("task %s failed: %s", claim.task_id, type(exc).__name__)
                 return _record_outcome(settings, claim, exc)
-        for index, step in enumerate(handler.steps):
-            last = index == len(handler.steps) - 1
-            heartbeat.set_deadline(step.timeout_seconds)
-            try:
-                # 1. Prepare: short transaction under the locks.
-                with pipeline_phase("worker.prepare", step=step.name, timeout_seconds=step.timeout_seconds), session_scope(settings) as db:
-                    task = queue.guard_publish(db, claim)
-                    if step.name in (task.checkpoint or {}).get("completed_steps", []):
-                        diagnostic_event("task.checkpoint_skip", step=step.name, cached=True)
-                        continue
-                    task.current_step = step.name
-                    ctx = _context(task, settings)
-                    inputs = step.prepare(db, task, ctx)
-                # 2. Execute: no transaction open.
-                with pipeline_phase("worker.execute", step=step.name, opportunity_id=ctx.opportunity_id):
-                    output = step.execute(inputs, ctx) if step.execute is not None else inputs
-                if heartbeat.lost:
-                    raise queue.LeaseLost(f"task {claim.task_id}: lease lost during {step.name}")
-                # 3. Publish: recheck lease and inputs, write, checkpoint — one commit.
-                with pipeline_phase("worker.publish", step=step.name, opportunity_id=ctx.opportunity_id), session_scope(settings) as db:
-                    task = queue.guard_publish(db, claim)
-                    step.publish(db, task, output, ctx)
-                    if task.status == "running":
-                        queue.record_step(task, step.name, ctx.checkpoint_data)
-                        if last:
-                            queue.complete(task, ctx.result)
-                    status = task.status
-                    diagnostic_event("task.checkpoint_saved", step=step.name, status=status,
-                                     completed_steps=len((task.checkpoint or {}).get("completed_steps", [])))
-                if status != "running":
-                    return status
-            except queue.LeaseLost as exc:
-                logger.warning("%s; discarding this worker's result", exc)
-                return "lease_lost"
-            except Exception as exc:  # noqa: BLE001  boundary must record any failure
-                logger.warning("task %s step %s failed: %s", claim.task_id, step.name, type(exc).__name__)
-                return _record_outcome(settings, claim, exc)
-        # Every step was already checkpointed (resumed after the final publish).
-        with session_scope(settings) as db:
-            task = queue.guard_publish(db, claim)
-            queue.complete(task, task.result)
-            return task.status
+        spend_cm = _spend_guard_context(settings, claim)
+        with spend_cm:
+            return _run_steps(settings, claim, handler, heartbeat)
     except queue.LeaseLost:
         return "lease_lost"
     finally:
         heartbeat.stop()
+
+
+def _spend_guard_context(settings: Settings, claim: queue.Claim):
+    from contextlib import nullcontext
+
+    from govcon.ai.spend_guard import hold_spend_guard
+
+    with session_scope(settings) as db:
+        task = db.get(Task, claim.task_id)
+        payload = dict(task.payload or {}) if task is not None else {}
+    usd = payload.get("spend_estimate_usd") or 0
+    tokens = int(payload.get("spend_estimate_tokens") or 0)
+    if usd or tokens:
+        return hold_spend_guard(usd, tokens)
+    return nullcontext()
+
+
+def _run_steps(settings: Settings, claim: queue.Claim, handler, heartbeat) -> str:
+    for index, step in enumerate(handler.steps):
+        last = index == len(handler.steps) - 1
+        heartbeat.set_deadline(step.timeout_seconds)
+        try:
+            with pipeline_phase("worker.prepare", step=step.name, timeout_seconds=step.timeout_seconds), session_scope(settings) as db:
+                task = queue.guard_publish(db, claim)
+                if step.name in (task.checkpoint or {}).get("completed_steps", []):
+                    diagnostic_event("task.checkpoint_skip", step=step.name, cached=True)
+                    continue
+                task.current_step = step.name
+                ctx = _context(task, settings)
+                inputs = step.prepare(db, task, ctx)
+            with pipeline_phase("worker.execute", step=step.name, opportunity_id=ctx.opportunity_id):
+                output = step.execute(inputs, ctx) if step.execute is not None else inputs
+            if heartbeat.lost:
+                raise queue.LeaseLost(f"task {claim.task_id}: lease lost during {step.name}")
+            with pipeline_phase("worker.publish", step=step.name, opportunity_id=ctx.opportunity_id), session_scope(settings) as db:
+                task = queue.guard_publish(db, claim)
+                step.publish(db, task, output, ctx)
+                if task.status == "running":
+                    queue.record_step(task, step.name, ctx.checkpoint_data)
+                    if last:
+                        queue.complete(task, ctx.result)
+                status = task.status
+                diagnostic_event("task.checkpoint_saved", step=step.name, status=status,
+                                 completed_steps=len((task.checkpoint or {}).get("completed_steps", [])))
+            if status != "running":
+                return status
+        except queue.LeaseLost as exc:
+            logger.warning("%s; discarding this worker's result", exc)
+            return "lease_lost"
+        except Exception as exc:  # noqa: BLE001  boundary must record any failure
+            logger.warning("task %s step %s failed: %s", claim.task_id, step.name, type(exc).__name__)
+            return _record_outcome(settings, claim, exc)
+    with session_scope(settings) as db:
+        task = queue.guard_publish(db, claim)
+        queue.complete(task, task.result)
+        return task.status
 
 
 def run_once(

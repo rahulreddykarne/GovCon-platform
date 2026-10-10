@@ -56,7 +56,7 @@ from govcon.web.routes.proposals import _generation_status
 from govcon.web.routes.sourcing import _sourcing_context
 from govcon.workflow.attachment_download import document_ready_notice
 from govcon.workflow.invalidation import lock_opportunity
-from govcon.workflow.preparation import PREPARATION_TASK, preparation_view
+from govcon.workflow.preparation import PREPARATION_TASK, REVIEW_TASK, preparation_view
 from govcon.workflow.proposal_generation import artifacts_exist
 from govcon.workflow.transitions import (
     APPROVABLE_PROPOSAL_STATUSES,
@@ -107,7 +107,7 @@ WORKSPACE_MORE_TABS = [
 WORKSPACE_TAB_KEYS = {key for key, _label in WORKSPACE_TABS + WORKSPACE_MORE_TABS}
 
 
-REQUIREMENTS_PAGE_SIZE = 200
+REQUIREMENTS_PAGE_SIZE = 25
 OVERRIDE_STATUS_LABELS = (
     ("satisfied", "Met"), ("missing", "Missing"), ("needs_review", "Needs review"), ("not_applicable", "Not applicable"),
 )
@@ -141,10 +141,9 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
         bid_decision = db.scalar(
             select(BidDecision).where(BidDecision.opportunity_id == opp_id).order_by(desc(BidDecision.created_at))
         )
-        ai_summary = db.scalar(
-            select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY)
-            .order_by(desc(AIAnalysis.created_at))
-        )
+        from govcon.enrich.summarize import latest_solicitation_summary
+
+        ai_summary = latest_solicitation_summary(db, opp_id)
 
         # build tab-specific context
         tab_ctx: dict[str, Any] = {}
@@ -184,7 +183,16 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
                            requirements_start=(page - 1) * page_size + 1 if total else 0,
                            requirements_end=min(total, page * page_size))
             tab_ctx["compliance"] = view
-            tab_ctx["requirement_rows"] = view.rows[(page - 1) * page_size: page * page_size]
+            page_rows = view.rows[(page - 1) * page_size: page * page_size]
+            tab_ctx["requirement_rows"] = page_rows
+            sections: list[dict[str, Any]] = []
+            current: dict[str, Any] | None = None
+            for row in page_rows:
+                if current is None or current["category"] != row.category:
+                    current = {"category": row.category, "label": row.category_label, "rows": []}
+                    sections.append(current)
+                current["rows"].append(row)
+            tab_ctx["requirement_sections"] = sections
             tab_ctx["compliance_run"] = view.run
             tab_ctx["can_override"] = can(user, "override_compliance")
             tab_ctx["override_statuses"] = [(s, label) for s, label in OVERRIDE_STATUS_LABELS if s in OVERRIDE_STATUSES]
@@ -355,8 +363,10 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
             "can_run_analysis": can(user, "review") and (not pursuit or pursuit.stage not in TERMINAL_PURSUIT_STAGES),
             "analysis_tasks": latest_analysis_tasks(db, opp_id),
             "preparation": preparation_view(latest_task(db, task_type=PREPARATION_TASK, opportunity_id=opp_id)),
+            "review_analysis": preparation_view(latest_task(db, task_type=REVIEW_TASK, opportunity_id=opp_id)),
             "document_ready": document_ready_notice(db, opp_id),
-            "budget_status": opportunity_budget_status(db, opp_id, get_settings()),
+            "budget_status": _budget_panel(opportunity_budget_status(db, opp_id, get_settings())),
+            "spend_estimate": _spend_estimate(db, opp_id),
             "deadline_label": deadline_label,
             "deadline_class": deadline_cls,
             "pursuit": pursuit,
@@ -420,6 +430,61 @@ def _user_display_map(db: OrmSession) -> dict[int, str]:
     return {r.id: r.display_name for r in rows}
 
 
+def _budget_panel(status: dict[str, Any]) -> dict[str, Any]:
+    limit = int(status.get("limit") or 0)
+    used = int(status.get("used") or 0)
+    pct = (used / limit) if limit else 0.0
+    return {**status, "pct_used": pct, "show_raise": limit > 0 and pct >= 0.8}
+
+
+def _spend_estimate(db: OrmSession, opp_id: int) -> dict[str, Any]:
+    from govcon.ai.spend_guard import estimate_review
+
+    return estimate_review(db, opp_id, get_settings())
+
+
+def workspace_analyze(request: Request, opp_id: int) -> Response:
+    """Queue analysis and compliance without starting a pursuit."""
+    from govcon.workflow.preparation import queue_review
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=overview"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            if lock_opportunity(db, opp_id) is None:
+                raise ValueError("opportunity not found")
+            from govcon.security.classification import DataClassification, opportunity_classification
+
+            classification = opportunity_classification(db, opp_id, DataClassification.PUBLIC)
+            if classification is not DataClassification.PUBLIC:
+                raise ValueError(
+                    f"External analysis is limited to PUBLIC content. "
+                    f"This opportunity is classified as {classification.value}."
+                )
+            estimate = _spend_estimate(db, opp_id)
+            task, created = queue_review(
+                db, opportunity_id=opp_id, actor_user_id=actor.id, spend_estimate=estimate,
+            )
+            record_audit(
+                db, action_type="analysis_requested", user_id=actor.id, opportunity_id=opp_id,
+                entity_type="tasks", entity_id=task.id,
+                new_value={"queued": created, "scope": "analysis_compliance", "estimate": estimate},
+            )
+    except PermissionDenied as exc:
+        return _redirect(target, error=_error_text(exc), request=request)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc), request=request)
+    notice = (
+        "Analysis and compliance queued. Pursuit was not started."
+        if created else "Analysis is already queued or running."
+    )
+    return _redirect(target, notice=notice, request=request)
+
+
 def workspace_prepare(request: Request, opp_id: int) -> Response:
     """Queue (or re-run) automatic preparation for a pursued opportunity."""
     from govcon.workflow.preparation import queue_preparation
@@ -439,7 +504,10 @@ def workspace_prepare(request: Request, opp_id: int) -> Response:
                 raise ValueError("start a pursuit before preparing the opportunity")
             if pursuit.stage in TERMINAL_PURSUIT_STAGES:
                 raise ValueError("A closed pursuit cannot be prepared. Reopen the review before preparing a no-bid decision.")
-            task, created = queue_preparation(db, opportunity_id=opp_id, actor_user_id=actor.id)
+            estimate = _spend_estimate(db, opp_id)
+            task, created = queue_preparation(
+                db, opportunity_id=opp_id, actor_user_id=actor.id, spend_estimate=estimate,
+            )
             record_audit(db, action_type="preparation_requested", user_id=actor.id, opportunity_id=opp_id,
                          entity_type="tasks", entity_id=task.id, new_value={"queued": created})
     except _WORKFLOW_ERRORS as exc:
@@ -451,6 +519,7 @@ def workspace_raise_budget(
     request: Request,
     opp_id: int,
     new_limit: Annotated[str, Form()] = "",
+    reason: Annotated[str, Form()] = "",
 ) -> Response:
     """Audited per-opportunity token cap. Does not change the process default or auto-start tasks."""
     try:
@@ -462,6 +531,9 @@ def workspace_raise_budget(
         raised = int(str(new_limit).replace(",", "").strip())
         if raised <= 0:
             raise ValueError("the new token limit must be a positive integer")
+        reason_text = str(reason or "").strip()
+        if len(reason_text) < 8:
+            raise ValueError("a reason of at least 8 characters is required and is stored in the audit log")
         with session_scope() as db:
             actor = _actor(db, user, "review")
             opp = lock_opportunity(db, opp_id)
@@ -483,7 +555,11 @@ def workspace_raise_budget(
                 db, action_type="opportunity_budget_raised", user_id=actor.id, opportunity_id=opp_id,
                 entity_type="opportunities", entity_id=opp_id,
                 old_value={"previous_limit": previous, "used": status["used"], "limit": status["limit"]},
-                new_value={"limit": raised, "default_unchanged": settings.ai_max_input_tokens_per_opportunity},
+                new_value={
+                    "limit": raised,
+                    "reason": reason_text,
+                    "default_unchanged": settings.ai_max_input_tokens_per_opportunity,
+                },
             )
     except PermissionDenied as exc:
         return _redirect(target, error=_error_text(exc), request=request)

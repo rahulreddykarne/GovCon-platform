@@ -38,6 +38,53 @@ class EvidenceRef(BaseModel):
     quote: str | None = None
 
 
+MAX_QUOTE_CHARS = 200
+
+_COMPACT_REQUIREMENT_KEYS = {
+    "t": "requirement_text",
+    "ty": "requirement_type",
+    "m": "mandatory",
+    "sv": "severity",
+    "rr": "response_required",
+    "fid": "source_file_id",
+    "p": "source_page",
+    "sec": "source_section",
+    "q": "supporting_quote",
+    "sid": "source_snapshot_id",
+    "c": "confidence",
+    "u": "uncertainty_reason",
+    "nv": "normalized_values",
+    "cr": "clause_references",
+}
+_COMPACT_ROOT_KEYS = {"r": "requirements", "n": "extraction_notes"}
+
+
+def _cap_quote(value: object) -> object:
+    if isinstance(value, str) and len(value) > MAX_QUOTE_CHARS:
+        return value[:MAX_QUOTE_CHARS]
+    return value
+
+
+def expand_compact_extraction(data: object) -> object:
+    """Expand short extraction keys and cap quotes at 200 characters."""
+    if not isinstance(data, dict):
+        return data
+    out = {_COMPACT_ROOT_KEYS.get(key, key): value for key, value in data.items()}
+    rows = out.get("requirements")
+    if isinstance(rows, list):
+        expanded = []
+        for item in rows:
+            if not isinstance(item, dict):
+                expanded.append(item)
+                continue
+            row = {_COMPACT_REQUIREMENT_KEYS.get(key, key): value for key, value in item.items()}
+            if "supporting_quote" in row:
+                row["supporting_quote"] = _cap_quote(row["supporting_quote"])
+            expanded.append(row)
+        out["requirements"] = expanded
+    return out
+
+
 class ExtractedRequirement(BaseModel):
     requirement_text: str = Field(min_length=3)
     requirement_type: str | None = None
@@ -55,6 +102,7 @@ class ExtractedRequirement(BaseModel):
     clause_references: list[str] = Field(default_factory=list)
 
     _normalize_severity = field_validator("severity", "requirement_type", mode="before")(_lower_or_none)
+    _cap_quote = field_validator("supporting_quote", mode="before")(_cap_quote)
 
 
 class RequirementExtractionV1(BaseModel):

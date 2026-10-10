@@ -57,7 +57,9 @@ from govcon.workflow.source_revision import current_source_revision
 logger = logging.getLogger("govcon.workflow.preparation")
 
 PREPARATION_TASK = "opportunity_preparation"
+REVIEW_TASK = "opportunity_review"
 STEPS = ("documents", "summary", "compliance", "market_prices", "research", "decision", "review")
+REVIEW_STEPS = ("documents", "summary", "compliance")
 STEP_LABELS = {
     "documents": "Download and read documents",
     "summary": "Solicitation summary",
@@ -71,16 +73,44 @@ STEP_LABELS = {
 
 @trace_phase("workflow.preparation.queue_preparation")
 def queue_preparation(session: Session, *, opportunity_id: int, actor_user_id: int | None,
-                      review_return_version: int | None = None) -> tuple[Task, bool]:
+                      review_return_version: int | None = None,
+                      spend_estimate: dict[str, Any] | None = None) -> tuple[Task, bool]:
     """Queue preparation in the caller's transaction; one active run per source revision."""
     inputs: dict[str, Any] = {"source_revision": str(current_source_revision(session, opportunity_id))}
     if review_return_version is not None:
         inputs["review_return_version"] = review_return_version
+    payload: dict[str, Any] = {}
+    if spend_estimate:
+        payload["spend_estimate_usd"] = spend_estimate.get("usd") or 0
+        payload["spend_estimate_tokens"] = spend_estimate.get("tokens") or 0
     return queue.enqueue(
         session,
         task_type=PREPARATION_TASK,
         opportunity_id=opportunity_id,
         input_revision=inputs,
+        payload=payload or None,
+        actor_user_id=actor_user_id,
+    )
+
+
+@trace_phase("workflow.preparation.queue_review")
+def queue_review(session: Session, *, opportunity_id: int, actor_user_id: int | None,
+                 spend_estimate: dict[str, Any] | None = None) -> tuple[Task, bool]:
+    """Queue analysis + compliance only. Does not require a pursuit and does not start market work."""
+    inputs: dict[str, Any] = {
+        "source_revision": str(current_source_revision(session, opportunity_id)),
+        "scope": "analysis_compliance",
+    }
+    payload: dict[str, Any] = {"scope": "analysis_compliance"}
+    if spend_estimate:
+        payload["spend_estimate_usd"] = spend_estimate.get("usd") or 0
+        payload["spend_estimate_tokens"] = spend_estimate.get("tokens") or 0
+    return queue.enqueue(
+        session,
+        task_type=REVIEW_TASK,
+        opportunity_id=opportunity_id,
+        input_revision=inputs,
+        payload=payload,
         actor_user_id=actor_user_id,
     )
 
@@ -367,28 +397,33 @@ def _review_publish(session: Session, task: Task, _: None, ctx: StepContext) -> 
     _note(ctx, reviewers=assigned, note=note)
 
 
-register(TaskHandler(task_type=PREPARATION_TASK, steps=[
+_CORE_STEPS = [
     Step("documents", prepare=_documents_prepare, execute=_documents_execute, publish=_documents_publish,
          timeout_seconds=3600),
     Step("summary", prepare=_nothing, execute=_summary_execute, publish=_record, timeout_seconds=3600),
     Step("compliance", prepare=_nothing, execute=_compliance_execute, publish=_record, timeout_seconds=3600),
+]
+register(TaskHandler(task_type=PREPARATION_TASK, steps=[
+    *_CORE_STEPS,
     Step("market_prices", prepare=market_prices.prepare_step, execute=market_prices.execute_step,
          publish=market_prices.publish_step, timeout_seconds=900),
     Step("research", prepare=_nothing, publish=_research_publish, timeout_seconds=300),
     Step("decision", prepare=_nothing, execute=_decision_execute, publish=_record, timeout_seconds=1800),
     Step("review", prepare=_nothing, publish=_review_publish, timeout_seconds=300),
 ]))
+register(TaskHandler(task_type=REVIEW_TASK, steps=list(_CORE_STEPS)))
 
 
-def preparation_view(task: Task | None) -> dict[str, Any] | None:
+def preparation_view(task: Task | None, *, steps: tuple[str, ...] | None = None) -> dict[str, Any] | None:
     """The workspace panel's view: each step's state and recorded notes."""
     if task is None:
         return None
     checkpoint = task.checkpoint or {}
     done = set(checkpoint.get("completed_steps") or [])
     data = checkpoint.get("data") or {}
+    names = steps or (REVIEW_STEPS if task.task_type == REVIEW_TASK else STEPS)
     steps = []
-    for name in STEPS:
+    for name in names:
         if name in done:
             state = "done"
         elif task.status in ("running", "retrying") and task.current_step == name:
