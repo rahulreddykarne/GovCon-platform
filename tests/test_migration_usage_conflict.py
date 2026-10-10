@@ -21,7 +21,7 @@ from sqlalchemy.engine import Engine, make_url
 from alembic import command
 from govcon.cli import alembic_config
 
-HEAD = "c1d2e3f4a5b6"
+HEAD = "d2e3f4a5b6c7"
 BEFORE_CONFLICT = "e7f8a9b0c1d2"
 CONFLICT = "f8a9b0c1d2e3"
 
@@ -183,10 +183,16 @@ def test_fresh_database_reaches_head_with_every_table() -> None:
             check = conn.execute(text(
                 "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_tasks_task_type'"
             )).scalar_one()
+            has_budget = conn.execute(text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'opportunities' AND column_name = 'ai_max_input_tokens'"
+            )).scalar()
         assert len(rows) == 8
         assert {row.model for row in rows if row.web_search_usd_per_thousand == Decimal(10)} == {
             "claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "claude-fable-5", "claude-fable-5-1"}
         assert "market_price_research" in check
+        assert "attachment_download" in check
+        assert has_budget == 1
 
         # Down past the conflict and back up again: every step is repeatable.
         command.downgrade(alembic_config(), BEFORE_CONFLICT)
