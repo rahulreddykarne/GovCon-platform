@@ -18,7 +18,6 @@ from govcon.config import Settings
 from govcon.decision.missing import normalize_missing_information
 from govcon.models import (
     AIAnalysis,
-    AICallUsage,
     AuditEvent,
     Opportunity,
     OpportunityEvent,
@@ -84,7 +83,10 @@ def test_rate_limited_download_queues_download_only_task(db, tmp_path) -> None:
 
 def test_download_task_records_document_ready_and_does_not_queue_ai(db) -> None:
     from govcon.tasks.registry import get_handler
-    from govcon.workflow.attachment_download import DOCUMENT_READY_EVENT, DOCUMENT_READY_MESSAGE
+    from govcon.workflow.attachment_download import (
+        DOCUMENT_READY_EVENT,
+        DOCUMENT_READY_MESSAGE,
+    )
 
     handler = get_handler("attachment_download")
     assert [step.name for step in handler.steps] == ["documents"]
@@ -145,7 +147,12 @@ def test_analysis_lock_rejects_a_second_run(db, monkeypatch) -> None:
 def test_part_cache_skips_provider_and_split_parent_does_not_count(db, monkeypatch) -> None:
     from pathlib import Path
 
-    from govcon.ai.budget import AIBudgetExceeded, mark_replaced_by_split, opportunity_input_used, reserve
+    from govcon.ai.budget import (
+        AIBudgetExceeded,
+        mark_replaced_by_split,
+        opportunity_input_used,
+        reserve,
+    )
     from govcon.ai.structured import run_structured_prompt
     from govcon.prompting.registry import sync_prompts
     from govcon.security.classification import DataClassification
@@ -315,7 +322,10 @@ def test_decision_timestamp_uses_pt(client, db) -> None:
 
 
 def test_document_ready_banner_renders(client, db) -> None:
-    from govcon.workflow.attachment_download import DOCUMENT_READY_EVENT, DOCUMENT_READY_MESSAGE
+    from govcon.workflow.attachment_download import (
+        DOCUMENT_READY_EVENT,
+        DOCUMENT_READY_MESSAGE,
+    )
 
     user, token = _make_user(db, f"ready-{uuid4().hex[:8]}@example.test", "owner")
     opp = _opp(db)

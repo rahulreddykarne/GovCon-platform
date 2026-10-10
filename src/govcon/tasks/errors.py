@@ -91,8 +91,10 @@ def classify(exc: BaseException) -> Outcome:
     from govcon.ai.gateway import AIGatewayBlocked
     from govcon.ai.structured import StructuredCallError
     from govcon.compliance.pipeline import CompanyFactsInvalid
-
-    from govcon.workflow.analysis_lock import AnalysisInProgress, analysis_in_progress_blocked
+    from govcon.workflow.analysis_lock import (
+        AnalysisInProgress,
+        analysis_in_progress_blocked,
+    )
 
     if isinstance(exc, TaskBlocked):
         return Outcome("block", exc, exc.status, exc.owner_role, exc.next_action, exc.resume_at)

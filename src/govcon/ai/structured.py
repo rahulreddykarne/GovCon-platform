@@ -30,7 +30,12 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from govcon.ai.budget import AIBudgetExceeded, complete_with_budget, mark_replaced_by_split, output_token_limit
+from govcon.ai.budget import (
+    AIBudgetExceeded,
+    complete_with_budget,
+    mark_replaced_by_split,
+    output_token_limit,
+)
 from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response

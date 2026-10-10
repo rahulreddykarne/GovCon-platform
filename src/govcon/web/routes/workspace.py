@@ -470,10 +470,13 @@ def workspace_raise_budget(
             settings = get_settings()
             status = opportunity_budget_status(db, opp_id, settings)
             previous = opp.ai_max_input_tokens
-            if raised <= int(status["limit"]):
+            current_limit = int(status["limit"] or 0)
+            used = int(status["used"] or 0)
+            spendable = int(status["spendable"] or 0)
+            if raised <= current_limit:
                 raise ValueError(
-                    f"new limit {raised:,} must be greater than the current limit {status['limit']:,} "
-                    f"({status['used']:,} used of {status['spendable']:,} spendable)"
+                    f"new limit {raised:,} must be greater than the current limit {current_limit:,} "
+                    f"({used:,} used of {spendable:,} spendable)"
                 )
             opp.ai_max_input_tokens = raised
             record_audit(

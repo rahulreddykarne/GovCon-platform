@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import Connection, Engine, func, select, text
+from sqlalchemy import Connection, Engine, select, text
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings

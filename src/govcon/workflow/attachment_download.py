@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 
 from govcon.models import AIAnalysis, OpportunityEvent, StoredFile, Task
 from govcon.tasks import queue
-from govcon.tasks.registry import Step, StepContext, TaskHandler, register, required_opportunity_id
+from govcon.tasks.registry import (
+    Step,
+    StepContext,
+    TaskHandler,
+    register,
+    required_opportunity_id,
+)
 from govcon.workflow.preparation import (
     _documents_execute,
     _documents_prepare,

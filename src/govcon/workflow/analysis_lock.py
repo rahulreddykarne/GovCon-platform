@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import text
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from govcon.tasks.errors import TaskBlocked
@@ -32,9 +32,11 @@ class AnalysisInProgress(RuntimeError):
         )
 
 
-def _bind(session: Session) -> Engine | Connection:
+def _engine(session: Session) -> Engine:
     bind = session.get_bind()
-    return getattr(bind, "engine", bind)
+    if isinstance(bind, Engine):
+        return bind
+    return bind.engine
 
 
 @contextmanager
@@ -44,8 +46,8 @@ def hold_analysis_lock(session: Session, opportunity_id: int) -> Iterator[None]:
     Uses ``pg_try_advisory_lock`` on a dedicated connection so the lock
     survives the recorded-pass pattern (commit, call the provider, reopen).
     """
-    engine = _bind(session)
-    if getattr(engine.dialect, "name", "") != "postgresql":
+    engine = _engine(session)
+    if engine.dialect.name != "postgresql":
         yield
         return
     with engine.connect() as lock_conn:

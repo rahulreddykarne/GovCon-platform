@@ -199,7 +199,6 @@ def run_compliance_pipeline(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     settings = settings or get_settings()
-    from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
     from govcon.workflow.analysis_lock import hold_analysis_lock
 
     with hold_analysis_lock(session, opportunity_id):
