@@ -220,7 +220,11 @@ def _money(value: Decimal) -> str:
 
 
 def _token_label(rows: list[AIProviderCall], attr: str) -> str:
-    values = [getattr(row, attr) for row in rows]
+    # Local rows store NULL because no provider was called. That is not a missing usage report.
+    reportable = [row for row in rows if row.status != "local"]
+    if not reportable:
+        return "—"
+    values = [getattr(row, attr) for row in reportable]
     known = [value for value in values if value is not None]
     missing = len(values) - len(known)
     if not known and missing:

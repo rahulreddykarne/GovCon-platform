@@ -188,6 +188,11 @@ def test_local_call_is_zero_cost(db) -> None:
     assert row.status == "local" and row.cost_usd == 0 and row.input_tokens is None
     page = usage_page(Session(db.get_bind()))
     assert page["recent"][0]["cost"] == "$0"
+    assert page["recent"][0]["input"] == "—"
+    local = next(row for row in page["periods"][0]["by_model"] if row["label"].startswith("local ·"))
+    assert local["input"] == "—"
+    assert local["output"] == "—"
+    assert local["cost"] == "$0"
     assert page["empty"] is False
 
 
