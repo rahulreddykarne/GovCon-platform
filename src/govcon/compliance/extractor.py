@@ -389,6 +389,7 @@ def run_ai_pass(
     planner = AdaptivePlanner(
         list(chunks), units=1, max_units=2,
         output_cap=settings.ai_max_output_tokens_per_call,
+        byte_budget=settings.ai_source_batch_bytes,
     )
     provider_name, model, warnings = _pass_provider(pass_label, opportunity, settings)
     base_variables: dict[str, Any] = {

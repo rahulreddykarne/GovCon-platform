@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from govcon.compliance.extractor import run_ai_pass
 from govcon.compliance.records import Inventory, SourceDocument
 from govcon.config import Settings
-from govcon.models import AIProviderCall, Opportunity, StoredFile
+from govcon.models import AIAnalysis, AIProviderCall, Opportunity, StoredFile
 
 
 @pytest.fixture(autouse=True)
@@ -146,8 +146,12 @@ def test_merged_summary_links_every_part_to_the_analysis(db, monkeypatch):
     assert analysis is not None
     rows = db.scalars(select(AIProviderCall).where(AIProviderCall.opportunity_id == opp.id)).all()
     assert len(rows) > 1
-    assert all(row.analysis_id == analysis.id for row in rows)
     assert all(row.status == "succeeded" for row in rows)
+    for row in rows:
+        assert row.analysis_id is not None
+        stored = db.get(AIAnalysis, row.analysis_id)
+        assert stored is not None
+    assert (analysis.generation_settings or {}).get("role") == "merged"
 
 
 def test_contradiction_truncated_part_is_split_and_retried(db, monkeypatch):

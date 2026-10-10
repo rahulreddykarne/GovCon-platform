@@ -188,8 +188,8 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
             sections: list[dict[str, Any]] = []
             current: dict[str, Any] | None = None
             for row in page_rows:
-                if current is None or current["category"] != row.category:
-                    current = {"category": row.category, "label": row.category_label, "rows": []}
+                if current is None or current["category"] != row["category"]:
+                    current = {"category": row["category"], "label": row["category_label"], "rows": []}
                     sections.append(current)
                 current["rows"].append(row)
             tab_ctx["requirement_sections"] = sections
@@ -457,7 +457,10 @@ def workspace_analyze(request: Request, opp_id: int) -> Response:
             actor = _actor(db, user, "review")
             if lock_opportunity(db, opp_id) is None:
                 raise ValueError("opportunity not found")
-            from govcon.security.classification import DataClassification, opportunity_classification
+            from govcon.security.classification import (
+                DataClassification,
+                opportunity_classification,
+            )
 
             classification = opportunity_classification(db, opp_id, DataClassification.PUBLIC)
             if classification is not DataClassification.PUBLIC:

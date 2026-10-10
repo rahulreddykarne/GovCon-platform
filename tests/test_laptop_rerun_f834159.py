@@ -112,7 +112,7 @@ def test_part_commit_survives_caller_rollback_and_ledger_fk(db, monkeypatch) -> 
     assert row is not None
     assert row.analysis_id is None
 
-    attach_call_ids(db, [orphan], analysis_id=analysis_id)
+    attach_call_ids(db, [orphan], analysis_id=analysis_id, engine=db.get_bind())
     db.expire_all()
     linked = db.get(AIProviderCall, orphan)
     assert linked.analysis_id == analysis_id
@@ -166,7 +166,7 @@ def test_cached_part_is_reused_after_independent_commit(db, monkeypatch) -> None
 def test_adaptive_planner_sizes_by_output_ratio() -> None:
     from govcon.documents.chunking import AdaptivePlanner
 
-    planner = AdaptivePlanner(list(range(8)), units=1, max_units=3, output_cap=8192)
+    planner = AdaptivePlanner(list(range(8)), units=1, max_units=3, output_cap=8192, byte_budget=None)
     assert planner.next_batch() == [0]
     planner.consume(1, output_tokens=400, input_tokens=4000)
     assert planner.units == 2
@@ -178,7 +178,10 @@ def test_adaptive_planner_sizes_by_output_ratio() -> None:
 
 
 def test_compact_extraction_expands_short_keys_and_caps_quotes() -> None:
-    from govcon.compliance.schemas import RequirementExtractionV1, expand_compact_extraction
+    from govcon.compliance.schemas import (
+        RequirementExtractionV1,
+        expand_compact_extraction,
+    )
 
     long_quote = "x" * 350
     expanded = expand_compact_extraction({
@@ -193,7 +196,11 @@ def test_compact_extraction_expands_short_keys_and_caps_quotes() -> None:
 
 
 def test_merged_summary_has_one_coverage_note() -> None:
-    from govcon.enrich.summarize import coverage_note, merge_summaries, strip_part_disclaimers
+    from govcon.enrich.summarize import (
+        coverage_note,
+        merge_summaries,
+        strip_part_disclaimers,
+    )
 
     assert "only part 3 of 13" not in strip_part_disclaimers(
         "Delivery is 30 days (only part 3 of 13; later pages not read)."
@@ -276,22 +283,23 @@ def test_analyze_refuses_non_public_content(db, client) -> None:
     assert db.scalar(select(Task).where(Task.opportunity_id == opp.id, Task.task_type == "opportunity_review")) is None
 
 
-def test_raise_budget_requires_reason_and_shows_above_80(db, client, monkeypatch) -> None:
-    from govcon.web.routes import workspace as workspace_mod
+def test_raise_budget_requires_reason_and_shows_above_80(db, client) -> None:
+    from govcon.models import AICallUsage
 
     user, token = _make_user(db, f"raise-{uuid4().hex[:8]}@example.test", "owner")
     client.cookies.set("govcon_session", token)
     opp = _opp(db)
+    opp.ai_max_input_tokens = 100
+    db.add(AICallUsage(
+        opportunity_id=opp.id, purpose="solicitation_analysis", provider="deepseek",
+        status="succeeded", input_tokens=85, output_tokens=1,
+    ))
     db.commit()
     denied = client.post(f"/workspace/{opp.id}/raise-budget", data={"new_limit": "240000"})
     assert denied.status_code == 303
     db.expire_all()
-    assert db.get(Opportunity, opp.id).ai_max_input_tokens is None
+    assert db.get(Opportunity, opp.id).ai_max_input_tokens == 100
 
-    monkeypatch.setattr(
-        workspace_mod, "opportunity_budget_status",
-        lambda *a, **k: {"limit": 100, "used": 85, "spendable": 15},
-    )
     page = client.get(f"/workspace/{opp.id}?tab=decision").text
     assert "Raise budget for this opportunity" in page
     assert 'name="reason"' in page
@@ -327,14 +335,19 @@ def test_compliance_requirements_paginate_and_collapse(db, client) -> None:
     page = client.get(f"/workspace/{opp.id}?tab=compliance").text
     assert "Showing 1–25 of 30" in page
     assert 'class="req-section' in page
-    assert "Requirement 26 shall be acknowledged." not in page
+    assert page.count('id="req-') == 25
     page2 = client.get(f"/workspace/{opp.id}?tab=compliance&requirements_page=2").text
-    assert "Requirement 26 shall be acknowledged." in page2
     assert "Showing 26–30 of 30" in page2
+    assert page2.count('id="req-') == 5
 
 
 def test_spend_guard_stops_at_twice_estimate() -> None:
-    from govcon.ai.spend_guard import SpendGuard, SpendGuardExceeded, hold_spend_guard, note_spend
+    from govcon.ai.spend_guard import (
+        SpendGuard,
+        SpendGuardExceeded,
+        hold_spend_guard,
+        note_spend,
+    )
 
     guard = SpendGuard(estimate_usd=Decimal("1.00"), estimate_tokens=1000)
     guard.charge(cost_usd=Decimal("1.50"), tokens=500)

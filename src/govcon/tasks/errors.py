@@ -89,9 +89,9 @@ _BUDGET_NEXT = (
 def classify(exc: BaseException) -> Outcome:
     from govcon.ai.budget import AIBudgetExceeded
     from govcon.ai.gateway import AIGatewayBlocked
+    from govcon.ai.spend_guard import SpendGuardExceeded
     from govcon.ai.structured import StructuredCallError
     from govcon.compliance.pipeline import CompanyFactsInvalid
-    from govcon.ai.spend_guard import SpendGuardExceeded
     from govcon.workflow.analysis_lock import (
         AnalysisInProgress,
         analysis_in_progress_blocked,

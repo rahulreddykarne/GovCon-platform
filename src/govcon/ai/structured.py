@@ -380,7 +380,9 @@ def execute_prepared_call(
             if prepared.schema_version == "requirement_extraction.v1":
                 from govcon.compliance.schemas import expand_compact_extraction
 
-                data = expand_compact_extraction(data)
+                expanded = expand_compact_extraction(data)
+                if isinstance(expanded, dict):
+                    data = expanded
             data = _drop_unknown_root_keys(prepared, data)
             validated = prepared.schema_cls.model_validate(data)
         except (json.JSONDecodeError, ValueError, ValidationError) as exc:
@@ -460,8 +462,18 @@ def analysis_input_hash(prepared: PreparedCall) -> str:
 
 
 def lookup_cached_analysis(session: Session | None, prepared: PreparedCall) -> AIAnalysis | None:
-    """Reuse a complete analysis for the same prompt hash and document snapshot."""
+    """Reuse a complete analysis for the same prompt hash and document snapshot.
+
+    A recorded replay pass must still go through the provider hook so request
+    order stays stable. Cache is used on a fresh run (including resume after
+    a crash), when the recorder has no outcomes yet.
+    """
     if session is None or prepared.opportunity_id is None:
+        return None
+    from govcon.ai.replay import active_recorder
+
+    recorder = active_recorder()
+    if recorder is not None and (recorder.calls_made > 0 or recorder.passes > 1):
         return None
     from sqlalchemy import select
 
@@ -565,7 +577,7 @@ def persist_committed_part(
     without losing the paid part. The ledger analysis_id is written only after
     this commit, so it never points at a row that does not exist.
     """
-    from govcon.ai.usage_log import attach_call_ids
+    from govcon.ai.usage_log import attach_call_ids, collected_call_ids
 
     if executed.cached_analysis is not None:
         analysis = executed.cached_analysis
@@ -580,7 +592,9 @@ def persist_committed_part(
         analysis.generation_settings = settings_blob
     engine = _engine_of(session)
     call_id = getattr(executed.result, "usage_call_id", None)
-    ids = [int(call_id)] if call_id is not None else []
+    ids = collected_call_ids()
+    if call_id is not None and int(call_id) not in ids:
+        ids.append(int(call_id))
 
     def _on_caller() -> StructuredCallResult:
         if session is None:
@@ -588,7 +602,7 @@ def persist_committed_part(
         session.add(analysis)
         session.flush()
         if ids:
-            attach_call_ids(session, ids, analysis_id=analysis.id, engine=engine)
+            attach_call_ids(session, ids, analysis_id=analysis.id)
         return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
 
     if engine is None:

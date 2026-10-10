@@ -65,7 +65,7 @@ def _cap_quote(value: object) -> object:
     return value
 
 
-def expand_compact_extraction(data: object) -> object:
+def expand_compact_extraction(data: object) -> dict | object:
     """Expand short extraction keys and cap quotes at 200 characters."""
     if not isinstance(data, dict):
         return data

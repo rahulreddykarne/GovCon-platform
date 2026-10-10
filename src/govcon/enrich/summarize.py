@@ -178,6 +178,7 @@ def _run_solicitation_analysis(
     planner = AdaptivePlanner(
         list(chunks), units=1, max_units=3,
         output_cap=settings.ai_max_output_tokens_per_call,
+        byte_budget=settings.ai_source_batch_bytes,
     )
     sent = 0
     part_no = 0

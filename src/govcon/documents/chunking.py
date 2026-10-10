@@ -169,17 +169,35 @@ class AdaptivePlanner:
     units: int = 1
     max_units: int = 3
     output_cap: int = 8_192
+    byte_budget: int | None = None
 
     def next_batch(self) -> list | None:
         if not self.pending:
             return None
-        return list(self.pending[: min(self.units, len(self.pending))])
+        take = min(self.units, len(self.pending))
+        batch = list(self.pending[:take])
+        if not self.byte_budget:
+            return batch
+        fitted: list = []
+        used = 0
+        for item in batch:
+            size = getattr(item, "size", None)
+            if size is None and isinstance(item, dict):
+                size = len(str(item.get("text") or "").encode("utf-8")) + 2
+            size = int(size or 1)
+            if fitted and used + size > int(self.byte_budget):
+                break
+            fitted.append(item)
+            used += size
+        return fitted or batch[:1]
 
     def consume(self, count: int, *, output_tokens: int = 0, input_tokens: int = 1,
                 truncated: bool = False) -> None:
         del self.pending[: max(0, count)]
         if truncated or (self.output_cap and output_tokens > int(self.output_cap * 0.55)):
             self.units = 1
+            return
+        if output_tokens <= 0:
             return
         ratio = output_tokens / max(input_tokens, 1)
         if ratio < 0.12:

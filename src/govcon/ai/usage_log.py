@@ -226,6 +226,11 @@ def stop_collecting(token: contextvars.Token[tuple[list[int], ...] | None]) -> N
     _link_stack.reset(token)
 
 
+def collected_call_ids() -> list[int]:
+    stack = _link_stack.get()
+    return list(stack[-1]) if stack else []
+
+
 def update_call_status(
     session: Session | None,
     call_id: int | None,
@@ -262,15 +267,12 @@ def attach_call_ids(
 ) -> None:
     if not ids:
         return
-    bind = _engine_for(session, engine)
-    if bind is None:
-        return
-    with Session(bind) as db, db.begin():
+    from govcon.models import AIAnalysis
+
+    def _apply(db: Session) -> None:
         rows = db.scalars(select(AIProviderCall).where(AIProviderCall.id.in_(ids))).all()
         for row in rows:
             if analysis_id is not None and row.analysis_id is None:
-                from govcon.models import AIAnalysis
-
                 if db.get(AIAnalysis, analysis_id) is None:
                     continue
                 row.analysis_id = analysis_id
@@ -278,6 +280,15 @@ def attach_call_ids(
                 row.decision_run_id = decision_run_id
             if compliance_run_id is not None:
                 row.compliance_run_id = compliance_run_id
+
+    if session is not None and engine is None:
+        _apply(session)
+        return
+    bind = _engine_for(session, engine)
+    if bind is None:
+        return
+    with Session(bind) as db, db.begin():
+        _apply(db)
 
 
 def _money(value: Decimal) -> str:

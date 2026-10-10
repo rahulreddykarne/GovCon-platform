@@ -188,7 +188,7 @@ def test_source_batch_size_is_set_apart_from_the_per_call_input_limit(db, monkey
 
     default = parts()
     assert parts(ai_max_input_tokens_per_call=400_000, ai_max_input_tokens_per_opportunity=2_000_000) == default
-    assert parts(ai_source_batch_bytes=8_000, ai_max_input_tokens_per_opportunity=2_000_000) > default
+    assert parts(ai_source_batch_bytes=3_000, ai_max_input_tokens_per_opportunity=2_000_000) > default
 
 
 def test_one_unusable_answer_leaves_a_gap_for_that_part_only(db, monkeypatch):

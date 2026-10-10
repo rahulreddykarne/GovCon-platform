@@ -422,7 +422,7 @@ def preparation_view(task: Task | None, *, steps: tuple[str, ...] | None = None)
     done = set(checkpoint.get("completed_steps") or [])
     data = checkpoint.get("data") or {}
     names = steps or (REVIEW_STEPS if task.task_type == REVIEW_TASK else STEPS)
-    steps = []
+    view_steps: list[dict[str, Any]] = []
     for name in names:
         if name in done:
             state = "done"
@@ -432,5 +432,5 @@ def preparation_view(task: Task | None, *, steps: tuple[str, ...] | None = None)
             state = task.status
         else:
             state = "pending"
-        steps.append({"name": name, "label": STEP_LABELS[name], "state": state, "data": data.get(name) or {}})
-    return {"task": task, "steps": steps, "active": task.status in ("queued", "running", "retrying")}
+        view_steps.append({"name": name, "label": STEP_LABELS[name], "state": state, "data": data.get(name) or {}})
+    return {"task": task, "steps": view_steps, "active": task.status in ("queued", "running", "retrying")}
