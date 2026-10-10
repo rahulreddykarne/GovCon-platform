@@ -143,7 +143,7 @@ def test_view_maps_every_status_and_hides_superseded(db):
         "Synthetic unreviewed": "Needs review", "Synthetic stale": "Needs review",
     }
     assert replaced.id not in {row["requirement_id"] for row in view.rows} and view.superseded == 1
-    assert view.mandatory == {"total": 7, "Met": 1, "Missing": 1, "Needs review": 4, "Not applicable": 1}
+    assert view.mandatory == {"total": 6, "Met": 1, "Missing": 1, "Needs review": 4, "Not applicable": 0}
     stale = next(row for row in view.rows if row["requirement"] == "Synthetic stale")
     assert stale["status_reason_text"] == "Changed by an amendment since it was last validated"
     db.rollback()

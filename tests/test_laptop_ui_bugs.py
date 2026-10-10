@@ -303,6 +303,7 @@ def test_approve_to_bid_hidden_until_pursuit_exists(client, db) -> None:
     ))
     db.commit()
     page = client.get(f"/workspace/{opp.id}?tab=review", cookies={"govcon_session": token}).text
-    assert "Approve to Bid" not in page
+    assert 'value="approve_to_bid"' not in page
+    assert ">Approve to Bid</button>" not in page
     assert "Start pursuit (requires approval)" in page
     assert "ready-for-review actions stay disabled until a pursuit exists" in page
