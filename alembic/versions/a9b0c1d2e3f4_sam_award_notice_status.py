@@ -4,11 +4,18 @@ Ingest used to store every active SAM notice as ``open``, so award notices and
 J&A notices appeared beside biddable solicitations and could be matched.
 They now get ``awarded`` / ``notice_only``; this reclassifies stored rows.
 
+It first repairs a database stamped ``f8a9b0c1d2e3`` by the AI usage branch,
+which never created ``market_price_runs``: the table, its index and the task
+type are created only when missing. The status updates only touch rows still
+``open``/``closed``, so running them again changes nothing.
+
 Revision ID: a9b0c1d2e3f4
 Revises: f8a9b0c1d2e3
 Create Date: 2026-10-10
 """
 from alembic import op
+
+from govcon.migration_helpers import ensure_market_price_runs_v1
 
 revision = "a9b0c1d2e3f4"
 down_revision = "f8a9b0c1d2e3"
@@ -19,6 +26,7 @@ _KIND = "lower(coalesce(opportunity_type, '') || ' ' || coalesce(raw->>'baseType
 
 
 def upgrade() -> None:
+    ensure_market_price_runs_v1()
     op.execute(f"""
         UPDATE opportunities SET status = 'awarded', updated_at = now()
         WHERE source = 'sam' AND status IN ('open', 'closed') AND {_KIND} LIKE '%award%'
