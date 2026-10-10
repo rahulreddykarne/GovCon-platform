@@ -1,53 +1,224 @@
-<!-- Compliance tab -->
-{% if not compliance_run %}
-<div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. <a href="/workspace/{{ opp.id }}?tab=overview#preparation">Prepare now on Overview</a>.</p>
-</div>
-{% else %}
-<div class="card">
+<!-- Compliance tab: every extracted requirement with status, source, company-fact evidence, checks and AI result -->
+{% set cv = compliance %}
+{% set analysis = cv.analysis %}
+
+<section class="card" aria-labelledby="compliance-heading">
   <div class="card-header">
-    <span class="card-title">Compliance Matrix <span class="label-ai">AI</span></span>
-    <span class="text-sm text-muted">{{ compliance_run.created_at.strftime('%Y-%m-%d') if compliance_run.created_at else '' }}</span>
+    <h2 class="card-title" id="compliance-heading">Compliance</h2>
+    <span class="pill pill-{{ 'ok' if analysis.state == 'complete' else ('muted' if analysis.state == 'not_run' else 'bad') }}"
+          data-analysis-state="{{ analysis.state }}">{{ analysis.label }}</span>
   </div>
 
-  <div class="stats-grid">
-    <div class="stat-card">
-      <div class="label">Mandatory Total</div>
-      <div class="value">{{ compliance_run.mandatory_total or 0 }}</div>
+  {% if analysis.state == 'not_run' %}
+    <div class="empty-state">
+      <p>{{ analysis.reasons[0] }}</p>
+      <p><a href="/workspace/{{ opp.id }}?tab=overview#preparation">Prepare the opportunity on Summary</a> to extract requirements.</p>
     </div>
-    <div class="stat-card">
-      <div class="label">Satisfied</div>
-      <div class="value success">{{ compliance_run.mandatory_satisfied or 0 }}</div>
+  {% else %}
+    {% if analysis.state == 'incomplete' %}
+      <div class="alert alert-error" role="alert">
+        <strong>Extraction incomplete.</strong> Requirements may be missing from this list; do not treat it as the full set.
+        <ul class="mb-0">{% for reason in analysis.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+      </div>
+    {% elif analysis.reasons %}
+      <div class="alert alert-warning"><ul class="mb-0">{% for reason in analysis.reasons %}<li>{{ reason }}</li>{% endfor %}</ul></div>
+    {% endif %}
+
+    <div class="metric-row" aria-label="Requirement counts">
+      {% for label, tone in (('Met','ok'), ('Missing','bad'), ('Needs review','warn'), ('Not applicable','muted')) %}
+      <div class="metric">
+        <div class="metric-label">{{ label }}</div>
+        <div class="metric-value tone-{{ tone }}">{{ cv.counts[label] }}</div>
+        <div class="metric-of">{{ cv.mandatory_counts[label] }} mandatory</div>
+      </div>
+      {% endfor %}
+      <div class="metric">
+        <div class="metric-label">Blocks submission</div>
+        <div class="metric-value {{ 'tone-bad' if cv.blocking else '' }}">{{ cv.blocking }}</div>
+        <div class="metric-of">{{ cv.unresolved_mandatory }} mandatory unresolved</div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="label">Missing</div>
-      <div class="value danger">{{ compliance_run.mandatory_missing or 0 }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Unknown</div>
-      <div class="value">{{ compliance_run.mandatory_unknown or 0 }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Needs Review</div>
-      <div class="value primary">{{ compliance_run.mandatory_needs_review or 0 }}</div>
-    </div>
+    <p class="text-sm text-muted">
+      {{ cv.total }} total requirement{{ '' if cv.total == 1 else 's' }}{% if cv.superseded %}, {{ cv.superseded }} superseded by amendments (not listed){% endif %}.
+      {% if cv.run and cv.run.created_at %}Last compliance run {{ cv.run.created_at.strftime('%Y-%m-%d %H:%M UTC') }}.{% endif %}
+      A finished extraction does not mean the bid is ready to submit.
+    </p>
+
+    {% if cv.missing_facts %}
+      <div class="alert alert-warning">
+        <strong>Missing company facts.</strong> These checks stay "Needs review" until the fact is added in
+        <a href="/settings#company-strategy">Settings</a> or the company facts file:
+        <ul class="mb-0">{% for fact in cv.missing_facts %}<li>{{ fact }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% for group in cv.groups %}
+<section class="card" aria-labelledby="group-{{ group.key }}">
+  <div class="card-header">
+    <h3 class="card-title" id="group-{{ group.key }}">{{ group.label }}</h3>
+    <span class="text-sm text-muted">{{ group.rows|length }}</span>
   </div>
+  <div class="table-wrap">
+    <table class="data-table compliance-table">
+      <thead>
+        <tr>
+          <th scope="col">Status</th>
+          <th scope="col">Requirement and source</th>
+          <th scope="col">Company facts</th>
+          <th scope="col">Deterministic checks</th>
+          <th scope="col">AI result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in group.rows %}
+        <tr id="req-{{ row.id }}">
+          <td class="nowrap">
+            <span class="pill pill-{{ row.tone }}">{{ row.label }}</span>
+            {% if row.why and row.label != 'Met' %}<div class="text-sm text-muted">{{ row.why }}</div>{% endif %}
+            {% if row.mandatory %}<div class="text-sm">Mandatory</div>{% elif row.mandatory is none %}<div class="text-sm text-muted">Mandatory: not stated</div>{% endif %}
+            {% if row.severity %}<div class="text-sm text-muted">Severity: {{ row.severity }}</div>{% endif %}
+            {% if row.blocks_submission %}<span class="pill pill-bad">Blocks submission</span>{% endif %}
+          </td>
+          <td class="wrap">
+            <div>{{ row.text }}</div>
+            {% if row.source.quote %}<blockquote class="source-quote">"{{ row.source.quote }}"</blockquote>{% else %}<div class="text-sm text-muted">No source quote recorded.</div>{% endif %}
+            <div class="text-sm text-muted">
+              {% if row.source.filename %}{{ row.source.filename }}{% elif row.source.file_id %}File #{{ row.source.file_id }}{% else %}Source file not recorded{% endif %}
+              · {% if row.source.page %}page {{ row.source.page }}{% else %}page not recorded{% endif %}
+              {% if row.source.section %} · {{ row.source.section }}{% endif %}
+              {% if row.source.other_refs %} · cited in {{ row.source.other_refs }} more place{{ '' if row.source.other_refs == 1 else 's' }}{% endif %}
+            </div>
+            <div class="text-sm text-muted">#{{ row.id }} · {{ row.type|replace('_', ' ') }}{% if row.found_by %} · found by {{ row.found_by|join(', ') }}{% endif %}{% if row.flags %} · flags: {{ row.flags|join(', ')|replace('_', ' ') }}{% endif %}</div>
+          </td>
+          <td class="wrap">
+            {% for fact in row.facts %}
+              <div class="{{ 'fact-missing' if fact.state == 'missing' else '' }}">{{ fact.text }}</div>
+            {% else %}
+              <span class="text-muted">No company fact applies.</span>
+            {% endfor %}
+            {% for item in row.evidence %}
+              <div class="text-sm">Evidence: {{ item.description or item.type }} <span class="text-muted">({{ item.status }})</span></div>
+            {% endfor %}
+          </td>
+          <td class="wrap">
+            {% for check in row.deterministic %}
+              <div><span class="pill pill-{{ {'pass':'ok','fail':'bad'}.get(check.status, 'warn') }}">{{ check.status }}</span> {{ check.label }}</div>
+              <div class="text-sm text-muted">{{ check.reason }}</div>
+            {% else %}
+              <span class="text-muted">No deterministic check applies.</span>
+            {% endfor %}
+          </td>
+          <td class="wrap">
+            {% for ai in (row.ai, row.ai_secondary) if ai %}
+              <div><span class="pill pill-{{ {'Met':'ok','Missing':'bad'}.get(ai.label, 'warn') }}">{{ ai.label }}</span>
+                {% if ai.confidence %}<span class="text-sm text-muted">confidence {{ ai.confidence }}</span>{% endif %}</div>
+              {% if ai.reason %}<div class="text-sm">{{ ai.reason }}</div>{% endif %}
+              {% if ai.model %}<div class="text-sm text-muted">{{ ai.model }}</div>{% endif %}
+            {% else %}
+              <span class="text-muted">Not checked by AI{% if not row.evidence and not row.deterministic %} (no evidence to check){% endif %}.</span>
+            {% endfor %}
+            {% if row.deterministic_failed and row.ai and row.ai.status == 'satisfied' %}
+              <div class="text-sm fact-missing">A deterministic check failed; the AI result cannot clear it.</div>
+            {% endif %}
+            {% if row.override %}
+              <div class="text-sm"><strong>Human override:</strong> {{ row.override.status|replace('_', ' ') }}, {{ row.override.reason }}</div>
+            {% endif %}
+            {% if can_override_compliance %}
+            <details class="override">
+              <summary>Override</summary>
+              <form method="post" action="/workspace/{{ opp.id }}/requirements/{{ row.id }}/override" class="form-stack">
+                <input type="hidden" name="expected_version" value="{{ row.version }}">
+                <label for="ov-status-{{ row.id }}">New status</label>
+                <select id="ov-status-{{ row.id }}" name="status" required>
+                  {% for value, label in cv.override_statuses %}<option value="{{ value }}" {% if value == row.status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+                <label for="ov-reason-{{ row.id }}">Reason (logged, at least 10 characters)</label>
+                <textarea id="ov-reason-{{ row.id }}" name="reason" minlength="10" required rows="2"></textarea>
+                {% if row.deterministic_failed %}
+                <label class="check"><input type="checkbox" name="acknowledge_deterministic_failure" value="yes"> I have checked the failed deterministic check and am overriding it</label>
+                {% endif %}
+                <button type="submit" class="btn btn-secondary btn-sm">Save override</button>
+              </form>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endfor %}
 
-</div>
-
+{% if not cv.total %}
+<section class="card"><p class="empty-state">No requirements extracted yet. Re-run preparation once the solicitation documents are downloaded.</p></section>
 {% endif %}
 
-{% include "workspace/requirements.html" %}
+{% if cv.pages > 1 %}
+<nav class="pager" aria-label="Requirement pages">
+  {% if cv.page > 1 %}<a class="btn btn-secondary btn-sm" href="?tab=compliance&amp;requirements_page={{ cv.page - 1 }}">Previous</a>{% endif %}
+  <span>Showing {{ cv.start }}–{{ cv.end }} of {{ cv.total }} · Page {{ cv.page }} of {{ cv.pages }}</span>
+  {% if cv.page < cv.pages %}<a class="btn btn-secondary btn-sm" href="?tab=compliance&amp;requirements_page={{ cv.page + 1 }}">Next</a>{% endif %}
+</nav>
+{% endif %}
+
+{% if cv.findings %}
+<section class="card" aria-labelledby="findings-heading">
+  <div class="card-header"><h3 class="card-title" id="findings-heading">Open findings</h3><span class="text-sm text-muted">{{ cv.findings|length }}</span></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th scope="col">Severity</th><th scope="col">Finding</th><th scope="col">Requirement</th><th scope="col">Blocks submission</th></tr></thead>
+      <tbody>
+        {% for f in cv.findings %}
+        <tr>
+          <td><span class="pill pill-{{ 'bad' if f.severity in ('critical', 'high') else 'warn' }}">{{ f.severity }}</span></td>
+          <td class="wrap"><div>{{ f.type }}</div><div class="text-sm text-muted">{{ f.description }}</div></td>
+          <td>{% if f.requirement_id %}<a href="#req-{{ f.requirement_id }}">#{{ f.requirement_id }}</a>{% else %}—{% endif %}</td>
+          <td>{{ 'Yes' if f.blocks_submission else 'No' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="override-log-heading">
+  <div class="card-header"><h3 class="card-title" id="override-log-heading">Override log</h3></div>
+  {% if cv.override_log %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th scope="col">When</th><th scope="col">Who</th><th scope="col">Requirement</th><th scope="col">Change</th><th scope="col">Reason</th></tr></thead>
+      <tbody>
+        {% for entry in cv.override_log %}
+        <tr>
+          <td class="nowrap">{{ entry.at.strftime('%Y-%m-%d %H:%M UTC') if entry.at else '—' }}</td>
+          <td>{{ entry.user }}</td>
+          <td><a href="#req-{{ entry.requirement_id }}">#{{ entry.requirement_id }}</a></td>
+          <td>{{ entry['from'] }} → {{ entry.to }}{% if entry.acknowledged %}<div class="text-sm text-muted">acknowledged failed checks: {{ entry.acknowledged|join(', ') }}</div>{% endif %}</td>
+          <td class="wrap">{{ entry.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-state">No overrides. Only owners and approvers can override a status, and every override is logged here and in Activity.</p>
+  {% endif %}
+</section>
 
 {% if preflight_run %}
-<div class="card">
+<section class="card" aria-labelledby="preflight-heading">
+  <div class="card-header"><h3 class="card-title" id="preflight-heading">Submission pre-flight</h3></div>
   {% set out = preflight_run.output_json %}
   {% if out.get('ready') and not preflight_blockers %}
-    <div class="alert alert-success mt-1">Pre-flight: PASS — ready to submit</div>
+    <div class="alert alert-success">Pre-flight: PASS. All checks pass for the package that was checked.</div>
   {% elif out.get('ready') %}
-    <div class="alert alert-warning mt-1">Pre-flight: STALE — re-run pre-flight before submitting</div>
+    <div class="alert alert-warning">Pre-flight: STALE. Re-run pre-flight before submitting.</div>
   {% else %}
-    <div class="alert alert-error mt-1">Pre-flight: FAIL — submission blocked</div>
+    <div class="alert alert-error">Pre-flight: FAIL. Submission is blocked.</div>
   {% endif %}
   <ul>
     {% for item in out.get('items', []) if item.get('status') not in ('pass', 'not_applicable') %}
@@ -55,5 +226,5 @@
     {% endfor %}
     {% for item in preflight_blockers %}<li>{{ item.description }}</li>{% endfor %}
   </ul>
-</div>
+</section>
 {% endif %}

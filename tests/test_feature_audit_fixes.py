@@ -305,7 +305,7 @@ def test_f8_protocol_reads_real_decision_history(db, client):
 
 
 def stat_value(text, label):
-    return int(re.search(r'<div class="label">' + re.escape(label) + r'</div>\s*<div class="value[^\"]*">(\d+)</div>', text).group(1))
+    return int(re.search(r'<div class="metric-label">' + re.escape(label) + r'</div>\s*<div class="metric-value[^\"]*">(\d+)</div>', text).group(1))
 
 
 def matrix_fixture(db, client):
@@ -328,8 +328,8 @@ def test_f4_preserves_empty_requirements_and_matrix_counts(db, client):
     opp, _counts, _ = matrix_fixture(db, client)
     page = client.get(f"/workspace/{opp.id}?tab=compliance")
     assert page.status_code == 200
-    assert stat_value(page.text, "Mandatory Total") == 3
-    for label, expected in [("Satisfied", 0), ("Missing", 1), ("Unknown", 1), ("Needs Review", 1)]:
+    assert "3 total requirements" in page.text
+    for label, expected in [("Met", 0), ("Missing", 1), ("Needs review", 2), ("Not applicable", 0)]:
         assert stat_value(page.text, label) == expected
     assert "Synthetic missing requirement" in page.text
     assert "Synthetic unknown requirement" in client.get(f"/workspace/{opp.id}?tab=requirements").text
@@ -344,7 +344,8 @@ def test_f4_matrix_survives_other_runs_and_failed_preflight_is_visible(db, clien
     record_run(db, opportunity_id=opp.id, run_type="document_inventory", run_version="test", output={})
     db.commit()
     page = client.get(f"/workspace/{opp.id}?tab=compliance")
-    assert stat_value(page.text, "Mandatory Total") == 3, "Inventory/preflight runs must not replace matrix counts"
+    assert stat_value(page.text, "Missing") == 1, "Inventory/preflight runs must not replace matrix counts"
+    assert stat_value(page.text, "Needs review") == 2
     assert "Pre-flight: FAIL" in page.text and "Synthetic pricing.xlsx missing" in page.text
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import Query, Request
+from fastapi import Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session as OrmSession
@@ -138,23 +138,14 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
 
             tab_ctx["stage_trace"] = opportunity_trace(db, opp)
 
-        if active_tab == "requirements" or active_tab == "compliance":
-            total = db.scalar(select(func.count()).select_from(Requirement).where(Requirement.opportunity_id == opp_id)) or 0
-            page_size = 200
-            pages = max(1, (total + page_size - 1) // page_size)
-            page = min(requirements_page, pages)
-            tab_ctx.update(requirements_total=total, requirements_page=page, requirements_pages=pages,
-                           requirements_start=(page - 1) * page_size + 1 if total else 0,
-                           requirements_end=min(total, page * page_size))
-            tab_ctx["requirements"] = db.scalars(
-                select(Requirement).where(Requirement.opportunity_id == opp_id)
-                .order_by(Requirement.severity.nullslast(), Requirement.id)
-                .offset((page - 1) * page_size).limit(page_size)
-            ).all()
+        if active_tab == "compliance":
             from govcon.compliance.matrix import latest_run
             from govcon.compliance.submission_preflight import readiness_blockers
+            from govcon.compliance.view import compliance_view
+            from govcon.decision.signals import load_company_profile
 
-            tab_ctx["compliance_run"] = latest_run(db, opp_id, "compliance_matrix")
+            tab_ctx["compliance"] = compliance_view(db, opp_id, load_company_profile(session=db), page=requirements_page)
+            tab_ctx["can_override_compliance"] = can(user, "override_compliance")
             tab_ctx["preflight_run"] = latest_run(db, opp_id, "submission_preflight")
             tab_ctx["preflight_blockers"] = readiness_blockers(db, opp_id) if tab_ctx["preflight_run"] else []
 
@@ -399,3 +390,37 @@ def workspace_prepare(request: Request, opp_id: int) -> Response:
     except _WORKFLOW_ERRORS as exc:
         return _redirect(target, error=_error_text(exc), request=request)
     return _redirect(target, notice="Preparation queued." if created else "Preparation is already queued or running.", request=request)
+
+
+def workspace_requirement_override(
+    request: Request,
+    opp_id: int,
+    requirement_id: int,
+    status: Annotated[str, Form()],
+    reason: Annotated[str, Form()] = "",
+    expected_version: Annotated[int, Form()] = 0,
+    acknowledge_deterministic_failure: Annotated[str | None, Form()] = None,
+) -> Response:
+    """A human compliance override: needs override_compliance, a reason, and the version the user saw; audited."""
+    from govcon.compliance.matrix import override_requirement
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=compliance#req-{requirement_id}"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "override_compliance")
+            requirement = db.get(Requirement, requirement_id)
+            if requirement is None or requirement.opportunity_id != opp_id:
+                raise ValueError("requirement not found on this opportunity")
+            override_requirement(
+                db, requirement_id=requirement_id, status=status, actor=actor, reason=reason,
+                expected_version=expected_version,
+                acknowledge_deterministic_failure=acknowledge_deterministic_failure == "yes",
+            )
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc), request=request)
+    return _redirect(target, notice=f"Requirement #{requirement_id} overridden; the change is in the override log.",
+                     request=request)

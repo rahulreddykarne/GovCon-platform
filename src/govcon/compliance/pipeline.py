@@ -101,6 +101,32 @@ def read_company_facts_file(settings: Settings) -> dict[str, Any]:
     return facts
 
 
+# A pass that read the documents but found less than this share of what the
+# keyword scanner flagged is too sparse to call complete. The scanner over-counts
+# ("shall" sentences, repeated clauses), so the bar is deliberately low.
+SPARSE_PASS_RATIO = 0.1
+SPARSE_PASS_MIN_SCANNER = 20
+
+
+def sparse_pass_warnings(scanner_candidates: int, ai_outcomes: list[Any]) -> list[dict[str, Any]]:
+    """Warnings for AI passes that finished but returned nothing, or far too little, to trust."""
+    out: list[dict[str, Any]] = []
+    for outcome in ai_outcomes:
+        if outcome.status != "complete":
+            continue
+        found = len(outcome.candidates)
+        label = outcome.pass_label
+        if found == 0:
+            out.append({"code": f"pass_{label.lower()}_no_requirements", "severity": "high", "message": (
+                f"Extraction pass {label} read the documents but returned no requirements; "
+                "the extraction is incomplete until it is re-run or reviewed.")})
+        elif scanner_candidates >= SPARSE_PASS_MIN_SCANNER and found < scanner_candidates * SPARSE_PASS_RATIO:
+            out.append({"code": f"pass_{label.lower()}_sparse", "severity": "high", "message": (
+                f"Extraction pass {label} returned {found} requirements where the keyword scanner flagged "
+                f"{scanner_candidates}; the AI output is too sparse to treat as complete.")})
+    return out
+
+
 def passes_independent(ai_outcomes: list[Any]) -> bool:
     """True when extraction passes A and B ran on different, known provider/model pairs."""
     identities = [(o.provider, o.model) for o in ai_outcomes if o.pass_label in {"A", "B"}]
@@ -181,7 +207,9 @@ def run_compliance_pipeline(
         for outcome in outcomes:
             warnings += outcome.warnings
         ai_outcomes = [o for o in outcomes if o.pass_label in {"A", "B"}]
-        ai_passes_ok = bool(ai_outcomes) and all(o.status == "complete" for o in ai_outcomes)
+        sparse = sparse_pass_warnings(len(outcomes[0].candidates), ai_outcomes)
+        warnings += sparse
+        ai_passes_ok = bool(ai_outcomes) and all(o.status == "complete" for o in ai_outcomes) and not sparse
         if not use_ai:
             warnings.append({"code": "ai_passes_not_run", "severity": "high", "message": "Independent AI extraction passes were not run; only the deterministic scanner extracted requirements."})
         candidates = [c for o in outcomes for c in o.candidates]
