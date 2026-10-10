@@ -23,11 +23,14 @@ _numbers = frozenset({
     "warnings", "blockers", "calls", "passes", "replayed_calls", "divergences",
     "completed_steps", "elapsed_ms", "result_items", "result_fields", "latency_ms",
     "input_tokens", "output_tokens", "max_output_tokens", "http_status", "timeout_seconds", "confidence",
+    "position", "dropped_keys",
 })
 _labels = frozenset({
     "provider", "model", "prompt", "prompt_version", "schema", "status", "quality",
     "reason", "result_type", "error_type", "task_type", "step", "stage", "bundle",
     "classification", "source", "text_source", "pass_label", "worker_id",
+    # A JSON parser message ("Expecting ',' delimiter") and a stop reason: never response text.
+    "parse_error", "finish_reason",
 })
 _flags = frozenset({"use_ai", "force", "cached", "independent", "ready", "lease_lost", "restored"})
 _error_reasons = frozenset({

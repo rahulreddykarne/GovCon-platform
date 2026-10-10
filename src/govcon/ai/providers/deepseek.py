@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -142,14 +143,32 @@ class DeepSeekProvider:
         )
 
 
-def parse_json_response(result: DeepSeekResult) -> dict:
-    """Extract and parse JSON from the model response.
+_FENCE = re.compile(r"^\s*```[A-Za-z0-9_-]*\s*$", re.MULTILINE)
 
-    Handles cases where the model wraps JSON in markdown code fences.
+
+def parse_json_response(result: CompletionResult) -> dict:
+    """Extract and parse the JSON object in a model response.
+
+    Tolerates what JSON-mode models still emit: markdown code fences anywhere,
+    raw newlines or tabs inside strings (``strict=False``), and a sentence
+    before or after the object. An empty answer, or text with no JSON object,
+    still raises :class:`json.JSONDecodeError`.
     """
-    text = result.content.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        text = "\n".join(lines)
-    return json.loads(text)
+    text = _FENCE.sub("", result.content or "").strip()
+    if not text:
+        raise json.JSONDecodeError("empty response", "", 0)
+    decoder = json.JSONDecoder(strict=False)
+    try:
+        return decoder.decode(text)
+    except json.JSONDecodeError as first:
+        start = text.find("{")
+        while start != -1:
+            try:
+                value, _end = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                start = text.find("{", start + 1)
+                continue
+            if isinstance(value, dict):
+                return value
+            start = text.find("{", start + 1)
+        raise first

@@ -181,6 +181,25 @@ class ExecutedCall:
 
 
 @trace_phase("ai.structured.prepare_structured_call")
+def _drop_unknown_root_keys(prepared: PreparedCall, data: Any) -> Any:
+    """Drop top-level keys a strict schema does not declare, instead of rejecting the answer.
+
+    JSON-mode models sometimes add an extra top-level key beside valid content;
+    rejecting the whole answer cost a paid retry. The schema's own validators
+    still reject an answer whose declared fields are empty.
+    """
+    schema_cls = prepared.schema_cls
+    if schema_cls.model_config.get("extra") != "forbid" or not isinstance(data, dict):
+        return data
+    known = set(schema_cls.model_fields) | {field.alias for field in schema_cls.model_fields.values() if field.alias}
+    unknown = [key for key in data if key not in known]
+    if not unknown:
+        return data
+    # The count only: key names are model output.
+    diagnostic_event("ai.unknown_keys_dropped", level=logging.INFO, schema=prepared.schema_version, dropped_keys=len(unknown))
+    return {key: value for key, value in data.items() if key in known}
+
+
 def prepare_structured_call(
     session: Session | None,
     *,
@@ -308,11 +327,16 @@ def execute_prepared_call(
         except Exception as exc:
             raise StructuredCallError("provider_error", type(exc).__name__) from exc
         try:
-            data = parse_json_response(result)
+            data = _drop_unknown_root_keys(prepared, parse_json_response(result))
             validated = prepared.schema_cls.model_validate(data)
         except (json.JSONDecodeError, ValueError, ValidationError) as exc:
+            # Parse-error metadata only (message, position, sizes); never the response text.
+            parse_detail = ({"parse_error": exc.msg, "position": exc.pos,
+                             "characters": len(getattr(result, "content", "") or "")}
+                            if isinstance(exc, json.JSONDecodeError) else {})
             diagnostic_event("ai.output_rejected", level=logging.WARNING, error_type=type(exc).__name__,
                              attempt=attempt + 1, schema=prepared.schema_version,
+                             finish_reason=getattr(result, "finish_reason", None), **parse_detail,
                              reason="truncated" if getattr(result, "finish_reason", None) in _TRUNCATED else "invalid_output")
             if isinstance(exc, ValidationError):
                 diagnostic_event("ai.schema_errors", warnings=exc.error_count(), schema=prepared.schema_version)

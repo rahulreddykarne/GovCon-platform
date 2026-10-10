@@ -6,6 +6,7 @@ import json
 import math
 import time
 from decimal import Decimal, InvalidOperation
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -176,8 +177,11 @@ class JevDecisionProvider:
         latency_ms = int((time.monotonic() - started) * 1000)
         # JEV has no guaranteed token/output contract: retain the conservative
         # reservation even on a successful response rather than crediting it.
+        # An answered call is recorded as succeeded (empty usage keeps the full
+        # reservation); an HTTP error stays failed.
         if reservation is not None:
-            reservation.finish()
+            answered = response.status_code < 400
+            reservation.finish(SimpleNamespace(usage={}, model=self._model) if answered else None)
         return response, latency_ms
 
     def _resolve_endpoint(self) -> str:

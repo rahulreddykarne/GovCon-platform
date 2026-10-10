@@ -82,6 +82,9 @@ def opp_start_workspace(request: Request, opp_id: int) -> Response:
             create_or_get_pursuit(db, opportunity_id=opp_id, actor=actor, origin="web_workspace")
     except PermissionDenied as exc:
         return _redirect(f"/opp/{opp_id}", error=_error_text(exc), request=request)
+    except _WORKFLOW_ERRORS as exc:
+        # e.g. an award notice or a closed solicitation: shown, not a server error.
+        return _redirect(f"/workspace/{opp_id}", error=_error_text(exc), request=request)
     return RedirectResponse(f"/workspace/{opp_id}", status_code=303)
 
 
