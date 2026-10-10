@@ -139,6 +139,8 @@ def owner_still_running(worker_id: str | None, heartbeats: dict[str, datetime]) 
 
 def _windows_process_running(pid: int) -> bool:
     """Query process status without sending Windows' signal-zero Ctrl+C event."""
+    if sys.platform != "win32":
+        raise RuntimeError("Windows process lookup called on a non-Windows platform")
     import ctypes
     from ctypes import wintypes
 

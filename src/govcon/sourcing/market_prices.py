@@ -670,7 +670,7 @@ def effective_cost_basis(session: Session, opportunity: Opportunity, pursuit: Pu
         cost = Decimal(best.total_price)
         return CostBasis(cost, cost / qty if qty else None, "supplier_quote", f"lowest current supplier quote #{best.id}")
     run = latest_estimate(session, opportunity.id)
-    if run is not None:
+    if run is not None and run.estimate_unit_cost is not None:
         unit = Decimal(run.estimate_unit_cost)
         total = Decimal(run.estimated_total_cost) if run.estimated_total_cost is not None else (unit * qty if qty else None)
         return CostBasis(total, unit, "web_estimate",
