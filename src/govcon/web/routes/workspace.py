@@ -141,9 +141,13 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
         bid_decision = db.scalar(
             select(BidDecision).where(BidDecision.opportunity_id == opp_id).order_by(desc(BidDecision.created_at))
         )
-        from govcon.enrich.summarize import latest_solicitation_summary
+        from govcon.enrich.summarize import (
+            display_solicitation_output,
+            latest_solicitation_summary,
+        )
 
         ai_summary = latest_solicitation_summary(db, opp_id)
+        ai_summary_display = display_solicitation_output(db, opp_id)
 
         # build tab-specific context
         tab_ctx: dict[str, Any] = {}
@@ -357,6 +361,7 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
                 for e in evts
             ]
 
+        estimate = _spend_estimate(db, opp_id)
         ctx: dict[str, Any] = {
             "opp": opp,
             "primary_source_url": primary_source_url(opp.links),
@@ -365,14 +370,15 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
             "preparation": preparation_view(latest_task(db, task_type=PREPARATION_TASK, opportunity_id=opp_id)),
             "review_analysis": preparation_view(latest_task(db, task_type=REVIEW_TASK, opportunity_id=opp_id)),
             "document_ready": document_ready_notice(db, opp_id),
-            "budget_status": _budget_panel(opportunity_budget_status(db, opp_id, get_settings())),
-            "spend_estimate": _spend_estimate(db, opp_id),
+            "spend_estimate": estimate,
+            "budget_status": _budget_panel(opportunity_budget_status(db, opp_id, get_settings()), estimate),
             "deadline_label": deadline_label,
             "deadline_class": deadline_cls,
             "pursuit": pursuit,
             "review_session": review_session,
             "bid_decision": bid_decision,
             "ai_summary": ai_summary,
+            "ai_summary_display": ai_summary_display,
             "active_tab": active_tab,
             "active_page": "pipeline",
             "workspace_tabs": WORKSPACE_TABS,
@@ -430,17 +436,39 @@ def _user_display_map(db: OrmSession) -> dict[int, str]:
     return {r.id: r.display_name for r in rows}
 
 
-def _budget_panel(status: dict[str, Any]) -> dict[str, Any]:
+def _budget_panel(status: dict[str, Any], estimate: dict[str, Any] | None = None) -> dict[str, Any]:
     limit = int(status.get("limit") or 0)
     used = int(status.get("used") or 0)
+    spendable = int(status.get("spendable") or 0)
+    remaining = max(spendable - used, 0)
+    tokens = int((estimate or {}).get("tokens") or 0)
+    exceeds = tokens > remaining
     pct = (used / limit) if limit else 0.0
-    return {**status, "pct_used": pct, "show_raise": limit > 0 and pct >= 0.8}
+    return {
+        **status,
+        "remaining": remaining,
+        "estimate_exceeds": exceeds,
+        "pct_used": pct,
+        "show_raise": (limit > 0 and pct >= 0.8) or exceeds,
+    }
 
 
 def _spend_estimate(db: OrmSession, opp_id: int) -> dict[str, Any]:
     from govcon.ai.spend_guard import estimate_review
 
     return estimate_review(db, opp_id, get_settings())
+
+
+def _reject_if_estimate_exceeds_budget(db: OrmSession, opp_id: int, estimate: dict[str, Any]) -> None:
+    status = _budget_panel(opportunity_budget_status(db, opp_id, get_settings()), estimate)
+    if not status["estimate_exceeds"]:
+        return
+    raise ValueError(
+        f"Estimated {int(estimate.get('tokens') or 0):,} tokens exceeds "
+        f"{int(status['remaining']):,} remaining "
+        f"({int(status['used']):,} used, {int(status['spendable']):,} spendable of "
+        f"{int(status['limit']):,} limit). Raise the budget before starting this run."
+    )
 
 
 def workspace_analyze(request: Request, opp_id: int) -> Response:
@@ -469,6 +497,7 @@ def workspace_analyze(request: Request, opp_id: int) -> Response:
                     f"This opportunity is classified as {classification.value}."
                 )
             estimate = _spend_estimate(db, opp_id)
+            _reject_if_estimate_exceeds_budget(db, opp_id, estimate)
             task, created = queue_review(
                 db, opportunity_id=opp_id, actor_user_id=actor.id, spend_estimate=estimate,
             )
@@ -508,6 +537,7 @@ def workspace_prepare(request: Request, opp_id: int) -> Response:
             if pursuit.stage in TERMINAL_PURSUIT_STAGES:
                 raise ValueError("A closed pursuit cannot be prepared. Reopen the review before preparing a no-bid decision.")
             estimate = _spend_estimate(db, opp_id)
+            _reject_if_estimate_exceeds_budget(db, opp_id, estimate)
             task, created = queue_preparation(
                 db, opportunity_id=opp_id, actor_user_id=actor.id, spend_estimate=estimate,
             )

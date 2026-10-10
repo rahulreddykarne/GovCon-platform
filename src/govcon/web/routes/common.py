@@ -51,7 +51,9 @@ def _add_template_globals(templates: Jinja2Templates) -> None:
     templates.env.globals["now"] = lambda: datetime.now(UTC)
     templates.env.filters["money"] = _money
     from govcon.display_time import format_pt
+    from govcon.enrich.summarize import strip_part_disclaimers
     templates.env.filters["pt"] = format_pt
+    templates.env.filters["strip_part_disclaimers"] = strip_part_disclaimers
 
 
 _add_template_globals(_templates)

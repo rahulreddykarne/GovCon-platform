@@ -331,6 +331,55 @@ def strip_part_disclaimers(text: str) -> str:
     return _PART_DISCLAIMER.sub("", text).strip()
 
 
+def _part_sort_key(row: AIAnalysis) -> tuple[int, int]:
+    blob = row.generation_settings or {}
+    raw = blob.get("part_index", blob.get("part"))
+    if raw is None:
+        return (1, int(row.id))
+    try:
+        return (0, int(raw))
+    except (TypeError, ValueError):
+        return (1, int(row.id))
+
+
+def display_solicitation_output(session: Session, opportunity_id: int) -> dict[str, Any] | None:
+    """Merged-or-latest summary with per-part disclaimers stripped for display.
+
+    Pre-fix part rows still carry 'only part X of N'. New runs persist a merged
+    row; this still cleans older stored text so the workspace does not repeat
+    those disclaimers.
+    """
+    from sqlalchemy import desc
+
+    rows = list(session.scalars(
+        select(AIAnalysis).where(
+            AIAnalysis.opportunity_id == opportunity_id,
+            AIAnalysis.analysis_type == AnalysisType.SOLICITATION_SUMMARY,
+        ).order_by(desc(AIAnalysis.created_at), desc(AIAnalysis.id))
+    ).all())
+    if not rows:
+        return None
+    merged = [row for row in rows if (row.generation_settings or {}).get("role") == "merged"]
+    parts = [row for row in rows if (row.generation_settings or {}).get("role") == "part"]
+    others = [row for row in rows if (row.generation_settings or {}).get("role") not in {"part", "merged"}]
+    coverage = ""
+    if merged:
+        out = dict(merged[0].output_json or {})
+    elif len(parts) > 1:
+        ordered = sorted(parts, key=_part_sort_key)
+        out = merge_summaries([dict(row.output_json or {}) for row in ordered])
+        coverage = coverage_note({"parts_sent": len(ordered), "parts": len(ordered)})
+    elif others:
+        out = dict(others[0].output_json or {})
+    else:
+        out = dict(rows[0].output_json or {})
+    if isinstance(out.get("summary"), str):
+        out["summary"] = strip_part_disclaimers(out["summary"])
+    if coverage and not out.get("coverage_note"):
+        out["coverage_note"] = coverage
+    return out
+
+
 def coverage_note(coverage: dict[str, Any]) -> str:
     sent = int(coverage.get("parts_sent") or 0)
     total = int(coverage.get("parts") or sent)

@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from govcon.ai.analysis_types import AnalysisType
 from govcon.bots.catalog import CATALOG
 from govcon.models import (
     AIAnalysis,
@@ -22,6 +23,7 @@ from govcon.models import (
     ComplianceRun,
     MarketPriceRun,
     Opportunity,
+    Requirement,
     StoredFile,
 )
 
@@ -57,9 +59,26 @@ def opportunity_trace(session: Session, opportunity: Opportunity) -> list[dict[s
         select(BidDecision).where(BidDecision.opportunity_id == opportunity.id)
         .order_by(BidDecision.created_at.desc()).limit(1)
     )
+    document_analysis = session.scalar(
+        select(AIAnalysis).where(
+            AIAnalysis.opportunity_id == opportunity.id,
+            AIAnalysis.analysis_type.in_((
+                AnalysisType.SOLICITATION_SUMMARY,
+                AnalysisType.COMPLIANCE_REVIEW,
+            )),
+        ).order_by(AIAnalysis.created_at.desc(), AIAnalysis.id.desc()).limit(1)
+    )
+    requirement_count = int(session.scalar(
+        select(func.count()).select_from(Requirement).where(
+            Requirement.opportunity_id == opportunity.id,
+            Requirement.status != "superseded",
+        )
+    ) or 0)
     stages = [_notice(opportunity), _files(files)]
     for name in _BOTS:
-        if name == "compliance":
+        if name == "document":
+            stages.append(_document_stage(runs.get(name), document_analysis, requirement_count))
+        elif name == "compliance":
             stages.append(_compliance_stage(runs.get(name), matrix))
             stages.append(_market_prices(market))
         elif name == "bid_decision":
@@ -69,6 +88,21 @@ def opportunity_trace(session: Session, opportunity: Opportunity) -> list[dict[s
     stages.append(_human(approval))
     stages.append(_analysis(analysis))
     return stages
+
+
+def _document_stage(
+    run: BotRun | None, analysis: AIAnalysis | None, requirement_count: int,
+) -> dict[str, Any]:
+    if analysis is not None:
+        when = _local(analysis.created_at)
+        detail = f"Analysis {analysis.id}. {when}."
+        if requirement_count:
+            detail = f"{requirement_count} requirement(s) stored. {detail}"
+        return _stage("document", "Document", "stored", "good", detail)
+    if requirement_count:
+        return _stage("document", "Document", "stored", "good",
+                      f"{requirement_count} requirement(s) stored.")
+    return _bot("document", run)
 
 
 def _compliance_stage(run: BotRun | None, matrix: ComplianceRun | None) -> dict[str, Any]:

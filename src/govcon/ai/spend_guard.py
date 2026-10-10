@@ -87,7 +87,10 @@ def note_spend(*, cost_usd: Decimal | None = None, tokens: int | None = None) ->
 
 
 def estimate_review(session: Session, opportunity_id: int, settings: Settings) -> dict[str, int | float | str | None]:
-    """Pages still needing a model call, with a conservative dollar/token estimate."""
+    """Pages still needing a model call, priced from the routed model's row."""
+    from govcon.ai.routing import describe_route
+    from govcon.ai.usage_log import ReportedTokens, cost_for, price_for
+
     pages = session.scalar(
         select(func.count()).select_from(FilePage).join(StoredFile, FilePage.file_id == StoredFile.id).where(
             StoredFile.opportunity_id == opportunity_id, StoredFile.active.is_(True),
@@ -110,22 +113,46 @@ def estimate_review(session: Session, opportunity_id: int, settings: Settings) -
     remaining = max(int(pages) - int(cached), 0)
     # Extraction + summary each read the pages; cached parts are not re-sent.
     calls = max(remaining, 1) if pages else 0
-    tokens_per = 4_000 + int(settings.ai_max_output_tokens_per_call)
-    tokens = calls * tokens_per
-    rate = None
-    if settings.ai_budget_usd_per_million_tokens is not None:
-        rate = float(settings.ai_budget_usd_per_million_tokens)
-    usd = None if rate is None else tokens * rate / 1_000_000
+    input_per = 4_000
+    output_per = int(settings.ai_max_output_tokens_per_call)
+    input_tokens = calls * input_per
+    output_tokens = calls * output_per
+    cached_tokens = int(cached) * input_per
+    tokens = input_tokens + output_tokens
+    route = describe_route(session, settings)
+    provider = str(route["analysis_provider"])
+    model = str(route["analysis_model"])
+    price = price_for(session, provider, model)
+    cached_for_price = cached_tokens if cached_tokens and price is not None and price.cached_usd_per_million is not None else None
+    priced = cost_for(
+        ReportedTokens(input_tokens or None, output_tokens or None, cached_for_price, None),
+        price,
+    )
+    usd: float | None
+    if priced is not None:
+        usd = float(priced)
+    elif settings.ai_budget_usd_per_million_tokens is not None and tokens:
+        usd = tokens * float(settings.ai_budget_usd_per_million_tokens) / 1_000_000
+    elif price is not None and tokens == 0:
+        usd = 0.0
+    else:
+        usd = None
     return {
         "pages": int(pages),
         "cached_parts": int(cached),
         "calls": calls,
         "tokens": tokens,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cached_tokens": cached_tokens,
+        "provider": provider,
+        "model": model,
         "usd": usd,
         "cap_usd": None if usd is None else usd * 2,
         "cap_tokens": tokens * 2,
         "note": (
-            f"About {calls} model call(s) for unread pages; cached parts are reused and not re-billed. "
+            f"About {calls} model call(s) for unread pages; {int(cached)} cached part(s) "
+            f"reused and not re-billed at full input rate ({provider} {model}). "
             "The run stops if spend exceeds twice this estimate."
         ),
     }

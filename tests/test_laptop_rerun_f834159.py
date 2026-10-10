@@ -242,6 +242,8 @@ def test_trace_uses_stored_matrix_and_decision(db) -> None:
     assert "Matrix run" in stages["compliance"]["detail"]
     assert stages["bid_decision"]["status"] == "no bid"
     assert "Decision" in stages["bid_decision"]["detail"]
+    assert stages["document"]["status"] == "stored"
+    assert "Analysis" in stages["document"]["detail"]
     assert latest_solicitation_summary(db, opp.id).id == merged.id
 
 
@@ -253,6 +255,10 @@ def test_analyze_without_pursuit_is_audited(db, client) -> None:
     page = client.get(f"/workspace/{opp.id}?tab=overview").text
     assert "Analyze this opportunity" in page
     assert "Estimated spend for this run" in page
+    assert "cached part" in page
+    assert "spendable" in page
+    assert page.count('id="analyze-opportunity"') == 1
+    assert page.count(f'action="/workspace/{opp.id}/analyze"') == 1
     assert "Start a pursuit first" not in page
     response = client.post(f"/workspace/{opp.id}/analyze")
     assert response.status_code == 303
@@ -313,6 +319,10 @@ def test_budget_panel_show_raise_at_80_percent() -> None:
     assert _budget_panel({"limit": 100, "used": 80, "spendable": 20})["show_raise"] is True
     assert _budget_panel({"limit": 100, "used": 79, "spendable": 21})["show_raise"] is False
     assert _budget_panel({"limit": 0, "used": 0, "spendable": 0})["show_raise"] is False
+    over = _budget_panel({"limit": 100, "used": 10, "spendable": 80}, {"tokens": 100})
+    assert over["remaining"] == 70
+    assert over["estimate_exceeds"] is True
+    assert over["show_raise"] is True
 
 
 def test_compliance_requirements_paginate_and_collapse(db, client) -> None:
@@ -382,3 +392,6 @@ def test_estimate_review_skips_cached_parts(db) -> None:
     assert estimate["cached_parts"] == 1
     assert estimate["calls"] == 2
     assert estimate["cap_tokens"] == estimate["tokens"] * 2
+    assert estimate["usd"] is not None
+    assert estimate["usd"] > 0
+    assert estimate["model"]

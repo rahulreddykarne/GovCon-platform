@@ -4,24 +4,40 @@
     <span class="card-title">{% if ai_summary or review_analysis or bid_decision %}Rerun analysis &amp; compliance{% else %}Analyze this opportunity{% endif %}</span>
   </div>
   <p class="text-sm">Runs solicitation analysis and the compliance matrix. Does not start a pursuit and does not contact anyone.</p>
+  {% if budget_status %}
+  <p class="text-sm" id="opportunity-budget-figures">
+    Budget: {{ budget_status.used }} used / {{ budget_status.limit }} limit
+    ({{ budget_status.spendable }} spendable, {{ budget_status.remaining }} remaining).
+  </p>
+  {% endif %}
   {% if spend_estimate %}
   <div class="alert alert-info" role="status" id="spend-estimate">
     <strong>Estimated spend for this run:</strong>
     {% if spend_estimate.usd is not none %}
-      ${{ "%.2f"|format(spend_estimate.usd) }}
-      (hard stop at ${{ "%.2f"|format(spend_estimate.cap_usd) }} = 2×)
+      {{ spend_estimate.usd | money }}
+      (hard stop at {{ spend_estimate.cap_usd | money }} = 2×)
     {% else %}
       {{ spend_estimate.tokens }} tokens
       (hard stop at {{ spend_estimate.cap_tokens }} tokens = 2×)
     {% endif %}
+    <div class="text-sm">{{ spend_estimate.tokens }} tokens
+      · {{ spend_estimate.cached_parts }} cached part{{ 's' if spend_estimate.cached_parts != 1 else '' }}</div>
     <div class="text-sm">{{ spend_estimate.note }}</div>
   </div>
   {% endif %}
+  {% if budget_status and budget_status.estimate_exceeds %}
+  <div class="alert alert-error" role="alert" id="estimate-exceeds-budget">
+    Estimated {{ spend_estimate.tokens }} tokens exceeds {{ budget_status.remaining }} remaining
+    ({{ budget_status.used }} used, {{ budget_status.spendable }} spendable of {{ budget_status.limit }} limit).
+    Raise the budget before starting this run.
+  </div>
+  {% else %}
   <form method="post" action="/workspace/{{ opp.id }}/analyze">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <button type="submit" class="btn btn-secondary btn-sm">
       {% if ai_summary or review_analysis or bid_decision %}Rerun analysis &amp; compliance{% else %}Analyze this opportunity{% endif %}
     </button>
   </form>
+  {% endif %}
 </div>
 {% endif %}

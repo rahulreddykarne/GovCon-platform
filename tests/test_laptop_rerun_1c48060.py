@@ -342,3 +342,5 @@ def test_document_ready_banner_renders(client, db) -> None:
     page = client.get(f"/workspace/{opp.id}?tab=overview", cookies={"govcon_session": token}).text
     assert "Document now available, rerun analysis?" in page
     assert f'action="/workspace/{opp.id}/analyze"' in page
+    assert page.count(f'action="/workspace/{opp.id}/analyze"') == 1
+    assert "Use Analyze / Rerun below." in page

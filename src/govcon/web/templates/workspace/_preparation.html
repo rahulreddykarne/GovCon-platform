@@ -4,10 +4,7 @@
   <strong>Document now available, rerun analysis?</strong>
   A previously missing attachment was downloaded. This did not start analysis, compliance, decision, or market work.
   {% if can_run_analysis %}
-  <form method="post" action="/workspace/{{ opp.id }}/analyze" class="mt-1">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-    <button type="submit" class="btn btn-secondary btn-sm">Rerun analysis &amp; compliance</button>
-  </form>
+  <p class="text-sm mt-1"><a href="#analyze-opportunity">Use Analyze / Rerun below.</a></p>
   {% endif %}
 </div>
 {% endif %}
