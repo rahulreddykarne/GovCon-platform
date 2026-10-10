@@ -213,6 +213,16 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
             )
 
         if active_tab == "review":
+            from govcon.decision.engine import build_decision_state
+            from govcon.decision.scorecard import build_scorecard
+
+            stored = (bid_decision.rules_result or {}) if bid_decision is not None else {}
+            live = build_scorecard(build_decision_state(db, opp_id)).as_dict()
+            tab_ctx["scorecard"] = stored.get("scorecard") or live
+            tab_ctx["arbitration"] = stored.get("arbitration")
+            tab_ctx["decision_needs_information"] = stored.get("needs_information") or []
+            tab_ctx["decision_blockers"] = stored.get("hard_rule_blockers") or []
+            tab_ctx["estimated_value_note"] = (tab_ctx["scorecard"] or {}).get("estimated_value_note")
             tab_ctx["no_bid_categories"] = sorted(NO_BID_CATEGORIES)
             tab_ctx["assignments"] = _get_assignments_with_names(db, opp_id)
             comments_raw = list_comments(db, opportunity_id=opp_id)

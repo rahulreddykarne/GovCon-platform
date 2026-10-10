@@ -68,6 +68,10 @@ class BidDecisionResult(BaseModel):
     human_review_required: bool
     recommend_bid_approval: bool
     hard_rule_blockers: list[str] = Field(default_factory=list)
+    # Hard rules that force NEEDS-INFO (a required input is unknown), and how
+    # the rules result and the JEV/LLM answer were reconciled.
+    needs_information: list[str] = Field(default_factory=list)
+    arbitration: dict[str, Any] | None = None
 
 
 class RequirementDecision(BaseModel):

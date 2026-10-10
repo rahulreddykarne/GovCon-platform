@@ -699,4 +699,5 @@ fieldset.form-group input[type="checkbox"] { width: auto; }
 .stack-form { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .stack-form label { margin-bottom: 0; }
 .check-label { display: inline-flex; gap: 6px; align-items: center; font-weight: 400; }
+.scorecard-table td ul { margin: 0; padding-left: 1.1rem; }
 .check-label input { width: auto; }

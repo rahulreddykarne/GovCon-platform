@@ -27,11 +27,15 @@ from govcon.decision.providers import (
 )
 from govcon.decision.rules import (
     apply_hard_rule_override,
+    arbitrate_bid,
     confidence_to_score,
+    coverage_adjusted_confidence,
     enforce_low_confidence_escalation,
     evaluate_hard_rules,
+    finalize_arbitration,
 )
 from govcon.decision.schemas import PreliminaryRecommendation, validate_bundle_result
+from govcon.decision.scorecard import build_scorecard
 from govcon.decision.signals import (
     Signals,
     amendment_signal,
@@ -142,6 +146,18 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
             select(func.count())
             .select_from(Requirement)
             .where(Requirement.opportunity_id == opportunity_id, Requirement.mandatory.is_(True))
+        )
+        or 0
+    )
+    mandatory_unmet = int(
+        session.scalar(
+            select(func.count())
+            .select_from(Requirement)
+            .where(
+                Requirement.opportunity_id == opportunity_id,
+                Requirement.mandatory.is_(True),
+                Requirement.status == "missing",
+            )
         )
         or 0
     )
@@ -285,8 +301,12 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
             # Whole-contract totals are context only, never a price benchmark.
             "historical_median_award_total": sig["historical_median_award_total"],
         },
+        "company_inputs": {
+            "past_performance": [str(r).strip() for r in (profile.get("past_performance") or []) if str(r).strip()],
+        },
         "compliance": {
             "mandatory_total": mandatory_total,
+            "mandatory_unmet": mandatory_unmet,
             "mandatory_missing": mandatory_missing,
             "needs_review": needs_review,
             "critical_total": critical_total,
@@ -481,18 +501,45 @@ def _run_decision_bundle(
             diagnostic_event("decision.fallback_unavailable", level=logging.WARNING, provider="llm",
                              source="rules", error_type=type(exc).__name__)
 
-    result_data = apply_hard_rule_override(bundle_name, active.result, hard_findings)
     threshold = settings.jev_human_review_threshold or 0.7
-    result_data = enforce_low_confidence_escalation(
-        bundle_name,
-        result_data,
-        confidence=active.confidence,
-        threshold=threshold,
-    )
+    scorecard = build_scorecard(state) if bundle_name == "bid_decision" else None
+    coverage = scorecard.coverage if scorecard is not None else 1.0
+    if bundle_name == "bid_decision":
+        model_note = None
+        if jev_error is not None and active.provider == "rules":
+            model_note = f"JEV unavailable ({type(jev_error).__name__}); the rules result stands."
+        reconciled, record = arbitrate_bid(
+            baseline.result,
+            baseline.confidence,
+            model_provider=None if active.provider == "rules" else active.provider,
+            model_result=None if active.provider == "rules" else active.result,
+            model_confidence=None if active.provider == "rules" else active.confidence,
+            model_note=model_note,
+        )
+        before = dict(reconciled)
+        after_rules = apply_hard_rule_override(bundle_name, reconciled, hard_findings)
+        raw_confidence = active.confidence
+        adjusted = coverage_adjusted_confidence(raw_confidence, coverage)
+        result_data = enforce_low_confidence_escalation(
+            bundle_name, after_rules, confidence=adjusted, threshold=threshold,
+        )
+        result_data["arbitration"] = finalize_arbitration(
+            record, before, after_rules, result_data, hard_findings,
+            raw_confidence=raw_confidence, confidence=adjusted, coverage=coverage, threshold=threshold,
+        )
+        result_data.setdefault("needs_information", after_rules.get("needs_information") or [])
+        result_data.setdefault("hard_rule_blockers", after_rules.get("hard_rule_blockers") or [])
+        persisted_confidence = adjusted
+    else:
+        result_data = apply_hard_rule_override(bundle_name, active.result, hard_findings)
+        result_data = enforce_low_confidence_escalation(
+            bundle_name, result_data, confidence=active.confidence, threshold=threshold,
+        )
+        persisted_confidence = active.confidence
 
     validated = validate_bundle_result(bundle_name, result_data).model_dump(mode="json")
     diagnostic_event("decision.validated", provider=active.provider, model=active.model,
-                     confidence=active.confidence, blockers=len(hard_findings), schema=definition.input_schema)
+                     confidence=persisted_confidence, blockers=len(hard_findings), schema=definition.input_schema)
     spec_meta = load_decision_spec_metadata(bundle_name, settings=settings)
     row = DecisionRun(
         opportunity_id=opportunity_id,
@@ -506,7 +553,7 @@ def _run_decision_bundle(
         input_state=json_safe(state),
         input_state_hash=state_hash,
         result=validated,
-        confidence=Decimal(str(active.confidence)) if active.confidence is not None else None,
+        confidence=Decimal(str(persisted_confidence)) if persisted_confidence is not None else None,
         cost=active.cost,
         latency_ms=active.latency_ms,
         source_snapshot_ids=state.get("source_snapshot_ids") or None,
@@ -525,7 +572,7 @@ def _run_decision_bundle(
         result=validated,
         provider=active.provider,
         model=active.model,
-        confidence=active.confidence,
+        confidence=persisted_confidence,
         hard_rule_findings=tuple(item.reason for item in hard_findings),
         fallback_reason=fallback_reason,
     )
@@ -570,8 +617,13 @@ def _margin(pursuit: Pursuit | None, cost_basis: Any, historical_unit_price: flo
     return {"margin_pct": None, "margin_basis": None}
 
 
-def _rules_payload(bid_bundle: dict[str, Any], runs: list[BundleExecution]) -> dict[str, Any]:
-    payload: dict[str, Any] = {"hard_rule_blockers": bid_bundle.get("hard_rule_blockers", [])}
+def _rules_payload(bid_bundle: dict[str, Any], runs: list[BundleExecution], scorecard: Any | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "hard_rule_blockers": bid_bundle.get("hard_rule_blockers", []),
+        "needs_information": bid_bundle.get("needs_information", []),
+        "arbitration": bid_bundle.get("arbitration"),
+        "scorecard": scorecard.as_dict() if scorecard is not None else None,
+    }
     reasons = [run.fallback_reason for run in runs if run.fallback_reason]
     if reasons:
         payload["fallback"] = {"from": "jev", "to": "rules", "why": reasons}
@@ -623,14 +675,17 @@ def run_preliminary_decision_package(
     market_bundle = state["bundle_results"]["market_and_pricing"]
     eligibility_bundle = state["bundle_results"]["eligibility_and_execution"]
     compliance_bundle = state["bundle_results"]["compliance_and_amendment"]
+    scorecard = build_scorecard(state)
+    past_factor = next((f for f in scorecard.factors if f.key == "past_performance"), None)
 
+    bid_run = next((run for run in runs if run.bundle_name == "bid_decision"), None)
     bid_decision = BidDecision(
         opportunity_id=opportunity_id,
         recommendation=recommendation.recommendation,
-        recommendation_score=Decimal(str(recommendation.score)),
+        recommendation_score=Decimal(str(bid_run.confidence if bid_run is not None and bid_run.confidence is not None else recommendation.score)),
         capability_score=Decimal(str(state["scores"]["capability_fit_score"])) if state["scores"]["capability_fit_score"] is not None else None,
         pricing_score=Decimal(str(_score_from_level(market_bundle.get("commercial_attractiveness")))),
-        past_performance_score=None,
+        past_performance_score=Decimal(str(past_factor.score)) if past_factor is not None and past_factor.score is not None else None,
         deadline_score=Decimal(
             str(
                 _score_from_level(
@@ -655,7 +710,7 @@ def run_preliminary_decision_package(
         risks={"items": recommendation.risks},
         missing_information={"items": recommendation.missing_information},
         evidence={"items": recommendation.evidence},
-        rules_result=_rules_payload(bid_bundle, runs),
+        rules_result=_rules_payload(bid_bundle, runs, scorecard),
         jev_result=_find_provider_payload(runs, "jev"),
         llm_result=_find_provider_payload(runs, "llm"),
         human_decision=None,
@@ -717,6 +772,9 @@ def run_preliminary_decision_package(
         ],
         "next_state": next_state,
         "human_decision_authority": "required",
+        "estimated_value_note": scorecard.estimated_value_note,
+        "scorecard": scorecard.as_dict(),
+        "arbitration": bid_bundle.get("arbitration"),
         "bid_decision_id": bid_decision.id,
         "guardrails": {
             "bid_approval_requires_human_decision": True,
