@@ -715,10 +715,12 @@ def test_workspace_requirements_over_200_are_counted_and_reachable(db, client, t
     assert "205 total" in first.text and "REQUIREMENT-0204-PAGING" not in first.text
     assert "requirements_page=2" in first.text
     second = client.get(f"/workspace/{opportunity.id}?tab={tab}&requirements_page=2")
-    assert "REQUIREMENT-0204-PAGING" in second.text and "REQUIREMENT-0000-PAGING" not in second.text
+    assert "REQUIREMENT-0025-PAGING" in second.text and "REQUIREMENT-0000-PAGING" not in second.text
+    assert "REQUIREMENT-0204-PAGING" not in second.text
     assert "requirements_page=1" in second.text
     assert client.get(f"/workspace/{opportunity.id}?tab={tab}&requirements_page=0").status_code == 422
-    assert "REQUIREMENT-0204-PAGING" in client.get(f"/workspace/{opportunity.id}?tab={tab}&requirements_page=99").text
+    last = client.get(f"/workspace/{opportunity.id}?tab={tab}&requirements_page=99")
+    assert "REQUIREMENT-0204-PAGING" in last.text and "REQUIREMENT-0000-PAGING" not in last.text
 
 
 @pytest.mark.parametrize("score,provider,label", [(0.35, "rules", "Rules engine"), (0, "jev", "AI"), (0.35, None, "Engine not recorded")])

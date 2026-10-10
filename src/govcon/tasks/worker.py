@@ -157,8 +157,9 @@ def _spend_guard_context(settings: Settings, claim: queue.Claim):
     from govcon.ai.spend_guard import hold_spend_guard
 
     with session_scope(settings) as db:
-        task = db.get(Task, claim.task_id)
-        payload = dict(task.payload or {}) if task is not None else {}
+        task = db.get(Task, claim.task_id) if db is not None else None
+        raw = getattr(task, "payload", None) if task is not None else None
+        payload = dict(raw) if isinstance(raw, dict) else {}
     usd = payload.get("spend_estimate_usd") or 0
     tokens = int(payload.get("spend_estimate_tokens") or 0)
     if usd or tokens:
