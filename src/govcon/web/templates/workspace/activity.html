@@ -13,7 +13,7 @@
       <tbody>
         {% for ev in audit_events %}
         <tr>
-          <td class="text-sm text-muted">{{ ev.created_at.strftime('%Y-%m-%d %H:%M') if ev.created_at else '' }}</td>
+          <td class="text-sm text-muted">{{ ev.created_at|pt if ev.created_at else '' }}</td>
           <td>{{ ev.user_display_name or "system" }}</td>
           <td>{{ ev.action_type }}</td>
           <td>{% if ev.entity_type %}{{ ev.entity_type }}{% if ev.entity_id %}:{{ ev.entity_id }}{% endif %}{% endif %}</td>

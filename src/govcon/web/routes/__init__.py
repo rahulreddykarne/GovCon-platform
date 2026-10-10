@@ -83,6 +83,7 @@ from govcon.web.routes.workspace import opp_detail as opp_detail
 from govcon.web.routes.workspace import opp_start_workspace as opp_start_workspace
 from govcon.web.routes.workspace import workspace as workspace
 from govcon.web.routes.workspace import workspace_prepare as workspace_prepare
+from govcon.web.routes.workspace import workspace_raise_budget as workspace_raise_budget
 from govcon.web.routes.workspace import (
     workspace_requirement_override as workspace_requirement_override,
 )

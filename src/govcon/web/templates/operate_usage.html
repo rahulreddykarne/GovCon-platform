@@ -4,12 +4,21 @@
   <p class="mission-lead">Token counts are copied from provider usage fields. If a response omits them, the row says usage not reported. Cost uses the price table below. A model with no price says price not set. Times are America/Los_Angeles (PT).</p>
   <p class="text-sm text-muted">
     {% if usage.include_local %}
-    <a href="/operate/usage{% if usage.show_more %}?more=1{% endif %}">Hide local embeddings</a>
+    <a href="/operate/usage{% if usage.show_more %}?more=1{% endif %}{% if usage.status_filter %}{% if usage.show_more %}&amp;{% else %}?{% endif %}status={{ usage.status_filter }}{% endif %}">Hide local embeddings</a>
     {% else %}
-    <a href="/operate/usage?local=1{% if usage.show_more %}&amp;more=1{% endif %}">Show local embeddings</a>
+    <a href="/operate/usage?local=1{% if usage.show_more %}&amp;more=1{% endif %}{% if usage.status_filter %}&amp;status={{ usage.status_filter }}{% endif %}">Show local embeddings</a>
     {% endif %}
     · Local embedding batches are hidden from this view by default.
   </p>
+  {% if usage.status_counts %}
+  <p class="text-sm" style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+    Status:
+    <a class="tag {{ 'info' if not usage.status_filter else '' }}" href="/operate/usage{% if usage.include_local %}?local=1{% endif %}{% if usage.show_more %}{% if usage.include_local %}&amp;{% else %}?{% endif %}more=1{% endif %}">all</a>
+    {% for name in usage.statuses %}
+    <a class="tag {{ 'info' if usage.status_filter == name else '' }}" href="/operate/usage?status={{ name }}{% if usage.include_local %}&amp;local=1{% endif %}{% if usage.show_more %}&amp;more=1{% endif %}">{{ name }} ({{ usage.status_counts.get(name, 0) }})</a>
+    {% endfor %}
+  </p>
+  {% endif %}
 </header>
 
 {% if usage.empty %}
@@ -80,10 +89,10 @@
         {% for row in usage.recent %}
         <tr>
           <td>{{ row.when }}</td>
-          <td><span class="tag {% if row.status == 'succeeded' or row.status == 'local' %}good{% elif row.status == 'failed' or row.status == 'blocked' %}bad{% else %}info{% endif %}">{{ row.status }}</span></td>
+          <td><span class="tag {% if row.status == 'succeeded' or row.status == 'local' %}good{% elif row.status == 'failed' or row.status == 'blocked' %}bad{% elif row.status == 'truncated' or row.status == 'output_rejected' %}info{% else %}info{% endif %}">{{ row.status }}{% if row.count and row.count > 1 %} ×{{ row.count }}{% endif %}</span></td>
           <td>{{ row.provider }}</td>
           <td>{{ row.model }}</td>
-          <td>{{ row.purpose }}</td>
+          <td>{{ row.purpose }}{% if row.grouped_jev and row.count and row.count > 1 %} ({{ row.count }} blocked JEV calls){% endif %}</td>
           <td>{% if row.opportunity_id %}<a href="/opp/{{ row.opportunity_id }}">#{{ row.opportunity_id }}</a>{% else %}—{% endif %}</td>
           <td>{{ row.input }}</td>
           <td>{{ row.output }}</td>

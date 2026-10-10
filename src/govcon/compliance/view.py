@@ -190,6 +190,8 @@ class ComplianceView:
     run_warnings: list[dict[str, Any]] = field(default_factory=list)
     methods: list[str] = field(default_factory=list)
     ai_run: bool = False
+    pass_b_independent: bool = True
+    pass_b_note: str | None = None
 
 
 def _row(req: Requirement, base: dict[str, Any], opportunity: Opportunity, facts: dict[str, Any]) -> dict[str, Any]:
@@ -266,6 +268,20 @@ def compliance_view(session: Session, opportunity_id: int, *, facts: dict[str, A
     run = latest_run(session, opportunity_id, "compliance_matrix")
     ai_run = any(row["ai"] or row["ai_secondary"] for row in rows)
     methods = sorted({m for row in rows for m in (row["validation_methods"] or [])})
+    from govcon.compliance.extractor import independence_warnings
+    from govcon.compliance.pipeline import dedupe_warnings
+    from govcon.config import get_settings
+
+    raw_warnings = list(run.warnings or []) if run is not None else []
+    run_warnings = dedupe_warnings(raw_warnings)
+    settings = get_settings()
+    same_model = independence_warnings(
+        settings, settings.compliance_pass_b_provider, settings.compliance_pass_b_model,
+        code="pass_b_not_independent", what="Pass B",
+    )
+    stored_same = any(w.get("code") == "pass_b_not_independent" for w in run_warnings)
+    pass_b_independent = not same_model and not stored_same
+    pass_b_note = None if pass_b_independent else "Pass B: same model, not independent"
     return ComplianceView(
         rows=rows,
         groups=groups,
@@ -275,7 +291,9 @@ def compliance_view(session: Session, opportunity_id: int, *, facts: dict[str, A
         missing_facts=sum(1 for row in rows if row["company_fact"].missing),
         run=run,
         run_complete=run is not None and run.status == "complete",
-        run_warnings=list(run.warnings or []) if run is not None else [],
+        run_warnings=run_warnings,
         methods=methods,
         ai_run=ai_run,
+        pass_b_independent=pass_b_independent,
+        pass_b_note=pass_b_note,
     )

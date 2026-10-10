@@ -17,11 +17,30 @@ from sqlalchemy.orm import Session
 
 from govcon.config import Settings
 from govcon.diagnostics import diagnostic_event, trace_phase
-from govcon.models import AICallUsage
+from govcon.models import AICallUsage, Opportunity
 
 
 class AIBudgetExceeded(RuntimeError):
-    pass
+    """Raised when a call would exceed a configured token or dollar cap.
+
+    ``used`` / ``limit`` / ``spendable`` are set for opportunity input-budget
+    exhaustion so the UI can show exact numbers.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        used: int | None = None,
+        limit: int | None = None,
+        spendable: int | None = None,
+        requested: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.used = used
+        self.limit = limit
+        self.spendable = spendable
+        self.requested = requested
 
 
 # Proposal-stage prompts. They may spend the share of an opportunity's budget
@@ -55,11 +74,61 @@ def ledger_status_for_result(result: object) -> str:
 
 
 def budget_fingerprint(settings: Settings) -> str:
-    """Identifies the configured limits; a budget-blocked task resumes when it changes."""
+    """Identifies the configured limits. Changing them does not auto-start parked tasks."""
     limits = (settings.ai_max_input_tokens_per_opportunity, settings.ai_max_input_tokens_per_call,
               settings.ai_max_output_tokens_per_call, settings.ai_max_cost_usd_per_opportunity,
               settings.ai_budget_usd_per_million_tokens, settings.ai_proposal_budget_share)
     return hashlib.sha256(repr(limits).encode()).hexdigest()[:16]
+
+
+def opportunity_input_limit(session: Session, opportunity_id: int | None, settings: Settings) -> int:
+    """Per-opportunity override when set; otherwise the process default (not silently changed)."""
+    if opportunity_id is not None:
+        opp = session.get(Opportunity, opportunity_id)
+        if opp is not None and opp.ai_max_input_tokens is not None and opp.ai_max_input_tokens > 0:
+            return int(opp.ai_max_input_tokens)
+    return settings.ai_max_input_tokens_per_opportunity
+
+
+def _counts_toward_budget(row: AICallUsage) -> bool:
+    """A truncated parent that was split and retried is not counted again."""
+    usage = row.usage if isinstance(row.usage, dict) else {}
+    return usage.get("replaced_by_split") is not True
+
+
+def opportunity_input_used(session: Session, opportunity_id: int) -> int:
+    """Lifetime input tokens that still count against the opportunity cap."""
+    rows = session.scalars(select(AICallUsage).where(AICallUsage.opportunity_id == opportunity_id)).all()
+    return sum(int(row.input_tokens or 0) for row in rows if _counts_toward_budget(row))
+
+
+def opportunity_budget_status(session: Session, opportunity_id: int, settings: Settings) -> dict[str, int | float | None]:
+    """Used / limit numbers for the workspace budget panel."""
+    used = opportunity_input_used(session, opportunity_id)
+    limit = opportunity_input_limit(session, opportunity_id, settings)
+    share = float(_spendable_share(settings, "solicitation_analysis"))
+    spendable = int(limit * share)
+    opp = session.get(Opportunity, opportunity_id)
+    return {
+        "used": used,
+        "limit": limit,
+        "spendable": spendable,
+        "share": share,
+        "override": None if opp is None else opp.ai_max_input_tokens,
+    }
+
+
+def mark_replaced_by_split(reservation: Reservation | None) -> None:
+    """The truncated parent reservation must not count against the split children."""
+    if reservation is None:
+        return
+    with Session(reservation.engine) as db, db.begin():
+        row = db.get(AICallUsage, reservation.id, with_for_update=True)
+        if row is None:
+            return
+        usage = dict(row.usage or {})
+        usage["replaced_by_split"] = True
+        row.usage = usage
 
 
 def _spendable_share(settings: Settings, purpose: str) -> Decimal:
@@ -145,8 +214,17 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
     max_output = output_token_limit(settings, provider)
     diagnostic_event("ai.budget_check", provider=provider, model=model, prompt=purpose,
                      input_tokens=tokens, max_output_tokens=max_output)
-    if tokens > min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity):
-        raise AIBudgetExceeded("Combined context exceeds the input limit; no source text was sent. Reduce the source set or explicitly chunk it; omitted sources remain unreviewed.")
+    opp_limit = settings.ai_max_input_tokens_per_opportunity
+    if session is not None:
+        opp_limit = opportunity_input_limit(session, opportunity_id, settings)
+    if tokens > min(settings.ai_max_input_tokens_per_call, opp_limit):
+        raise AIBudgetExceeded(
+            f"Combined context exceeds the input limit ({tokens:,} requested; "
+            f"per-call {settings.ai_max_input_tokens_per_call:,}, opportunity {opp_limit:,}); "
+            "no source text was sent. Reduce the source set or explicitly chunk it; "
+            "omitted sources remain unreviewed.",
+            used=0, limit=opp_limit, spendable=opp_limit, requested=tokens,
+        )
     rate = Decimal(str(settings.ai_budget_usd_per_million_tokens)) if settings.ai_budget_usd_per_million_tokens is not None else None
     if settings.ai_max_cost_usd_per_opportunity is not None and rate is None:
         raise AIBudgetExceeded("A dollar budget requires AI_BUDGET_USD_PER_MILLION_TOKENS covering all enabled models.")
@@ -166,23 +244,35 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
                 raise AIBudgetExceeded("Opportunity reservations require PostgreSQL atomic budget locking.")
             key = int.from_bytes(hashlib.sha256(f"govcon:ai-budget:{opportunity_id}".encode()).digest()[:8], "big", signed=True)
             db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
-            totals = db.execute(select(
-                func.coalesce(func.sum(AICallUsage.input_tokens), 0),
-                func.coalesce(func.sum(AICallUsage.output_tokens), 0),
-                func.coalesce(func.sum(AICallUsage.cost_usd), 0),
-                func.coalesce(func.sum(AICallUsage.input_tokens + AICallUsage.output_tokens).filter(AICallUsage.cost_usd.is_(None)), 0),
-            ).where(AICallUsage.opportunity_id == opportunity_id)).one()
+            counted = [row for row in db.scalars(
+                select(AICallUsage).where(AICallUsage.opportunity_id == opportunity_id)
+            ).all() if _counts_toward_budget(row)]
+            used_input = sum(int(row.input_tokens or 0) for row in counted)
+            used_cost = sum(_decimal_amount(row.cost_usd) for row in counted if row.cost_usd is not None)
+            unpriced = sum(int(row.input_tokens or 0) + int(row.output_tokens or 0)
+                           for row in counted if row.cost_usd is None)
+            opp_limit = opportunity_input_limit(db, opportunity_id, settings)
             share = _spendable_share(settings, purpose)
+            spendable = int(opp_limit * share)
             kept = (f" The last {settings.ai_proposal_budget_share:.0%} is kept for proposal drafting and review "
                     "(AI_PROPOSAL_BUDGET_SHARE).") if share < 1 else ""
-            if totals[0] + tokens > settings.ai_max_input_tokens_per_opportunity * share:
-                raise AIBudgetExceeded("Opportunity input budget exhausted, including previous calls and retries." + kept)
+            if used_input + tokens > spendable:
+                raise AIBudgetExceeded(
+                    f"Opportunity input budget exhausted: {used_input:,} used of {spendable:,} spendable "
+                    f"(limit {opp_limit:,}).{kept} Raise the budget for this opportunity, then resume the task.",
+                    used=used_input, limit=opp_limit, spendable=spendable, requested=tokens,
+                )
             if settings.ai_max_cost_usd_per_opportunity is not None:
                 if rate is None or cost is None:
                     raise AIBudgetExceeded("A dollar budget requires AI_BUDGET_USD_PER_MILLION_TOKENS covering all enabled models.")
-                previous_cost = Decimal(totals[2] or 0) + Decimal(totals[3]) * rate / 1_000_000
-                if previous_cost + cost > Decimal(str(settings.ai_max_cost_usd_per_opportunity)) * share:
-                    raise AIBudgetExceeded("Opportunity dollar budget exhausted, including pending reservations." + kept)
+                previous_cost = used_cost + Decimal(unpriced) * rate / 1_000_000
+                dollar_cap = Decimal(str(settings.ai_max_cost_usd_per_opportunity)) * share
+                if previous_cost + cost > dollar_cap:
+                    raise AIBudgetExceeded(
+                        f"Opportunity dollar budget exhausted: {previous_cost} used of {dollar_cap} spendable."
+                        + kept,
+                        used=used_input, limit=opp_limit, spendable=spendable, requested=tokens,
+                    )
         row = AICallUsage(opportunity_id=opportunity_id, purpose=purpose, provider=provider,
                          model=model, status="reserved", input_tokens=tokens,
                          output_tokens=max_output, cost_usd=cost)

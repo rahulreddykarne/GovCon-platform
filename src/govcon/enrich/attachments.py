@@ -522,20 +522,10 @@ def _download_one(
 
 
 def _schedule_download_retry(session: Session, opportunity_id: int, retry_after: float | None) -> None:
-    """Queue a later preparation pass so a 429 is not a hard download failure."""
-    from datetime import UTC, datetime, timedelta
+    """Queue a documents-only retry. Never starts analysis, compliance, decision, or market."""
+    from govcon.workflow.attachment_download import queue_attachment_download
 
-    from govcon.tasks.queue import enqueue
-
-    delay = max(1.0, retry_after if retry_after is not None else 60.0)
-    task, _created = enqueue(
-        session,
-        task_type="opportunity_preparation",
-        opportunity_id=opportunity_id,
-        input_revision={"reason": "attachment_rate_limited"},
-        payload={"retry_reason": "rate_limited"},
-    )
-    task.next_attempt_at = datetime.now(UTC) + timedelta(seconds=delay)
+    queue_attachment_download(session, opportunity_id=opportunity_id, retry_after=retry_after)
 
 
 @trace_phase("enrich.attachments.process_local_file")

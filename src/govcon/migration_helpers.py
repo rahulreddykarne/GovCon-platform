@@ -240,6 +240,29 @@ def ensure_ai_usage_v2() -> None:
         )
 
 
+# ── download-only retry + per-opportunity budget (revision d2e3f4a5b6c7) ──
+
+DOWNLOAD_RETRY_TASK_TYPES = (
+    "('proposal_generation','ai_analysis','solicitation_summary','scheduler_chain','opportunity_preparation',"
+    "'notification_email','quote_extraction','bot_run','market_price_research','attachment_download')"
+)
+
+
+def ensure_download_retry_v1() -> None:
+    """Allow ``attachment_download`` tasks and store a per-opportunity token cap.
+
+    ``ensure_market_price_runs_v1`` must not change once released. A laptop
+    database that already ran it keeps its rows; this widens the task-type
+    check and adds ``opportunities.ai_max_input_tokens``.
+    """
+    current = constraint_definition("tasks", "ck_tasks_task_type")
+    if current is None or "attachment_download" not in current:
+        if current is not None:
+            op.drop_constraint("ck_tasks_task_type", "tasks")
+        op.create_check_constraint("ck_tasks_task_type", "tasks", f"task_type IN {DOWNLOAD_RETRY_TASK_TYPES}")
+    add_column_if_missing("opportunities", sa.Column("ai_max_input_tokens", sa.Integer()))
+
+
 def seed_model_prices(rows: tuple[dict[str, object], ...]) -> None:
     """Insert cited prices that are not stored yet. Existing (possibly edited) rows are kept.
 

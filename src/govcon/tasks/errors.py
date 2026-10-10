@@ -80,9 +80,9 @@ class Outcome:
 
 
 _BUDGET_NEXT = (
-    "This opportunity's AI budget is a lifetime total and does not refill by waiting. Raise "
-    "AI_MAX_INPUT_TOKENS_PER_OPPORTUNITY (or AI_MAX_COST_USD_PER_OPPORTUNITY) and restart the worker; "
-    "the task then resumes automatically. A person can also retry or cancel it on /ops."
+    "This opportunity's AI budget is a lifetime total and does not refill by waiting. Raise the "
+    "budget for this opportunity (audited) or AI_MAX_INPUT_TOKENS_PER_OPPORTUNITY, then resume the "
+    "task on /ops. Waiting never starts it."
 )
 
 

@@ -10,26 +10,60 @@ _FIELD_LABELS = {
     "delivery": "Delivery terms",
     "eligibility": "Eligibility",
     "submission": "Submission instructions",
+    "submission.method": "Submission method",
     "pricing_structure": "Pricing structure",
+    "pricing_structure.format": "Pricing structure",
     "items": "Line items",
+    "items.quantity": "Line items",
     "key_dates": "Key dates",
     "summary": "Solicitation summary",
+    "clin": "CLIN",
+    "nsn": "NSN",
+}
+_ACRONYMS = {
+    "clin": "CLIN",
+    "nsn": "NSN",
+    "fob": "FOB",
+    "psc": "PSC",
+    "naics": "NAICS",
+    "rfq": "RFQ",
+    "rfp": "RFP",
 }
 _PART_LEAK = re.compile(
     r"remaining pages\s*\([^)]*\)|part\s+\d+\s+of\s+\d+|pages?\s+\d+\s*[-–]\s*\d+",
     re.I,
 )
+_ARTIFACT = re.compile(r"\(\s*['\"]?[ri]['\"]?\s*/\s*['\"]?[ri]['\"]?\s*\)", re.I)
+_INDEX = re.compile(r"\[\d*\]")
+
+
+def _canonical_key(field: str) -> str:
+    cleaned = _ARTIFACT.sub("", field)
+    cleaned = _INDEX.sub("", cleaned)
+    cleaned = cleaned.replace(" ", "_").strip(" ._")
+    return cleaned.casefold()
 
 
 def _label(field: str) -> str:
-    key = field.strip()
+    key = _canonical_key(field)
     if not key:
         return ""
-    return _FIELD_LABELS.get(key, key.replace("_", " ").strip().capitalize())
+    if key in _FIELD_LABELS:
+        return _FIELD_LABELS[key]
+    if "." in key:
+        root = key.split(".", 1)[0]
+        if root in _FIELD_LABELS:
+            return _FIELD_LABELS[root]
+        parent = key.rsplit(".", 1)[0]
+        if parent in _FIELD_LABELS:
+            return _FIELD_LABELS[parent]
+    words = [part for part in key.replace(".", " ").replace("_", " ").split() if part]
+    mapped = [_ACRONYMS.get(word, word.capitalize()) for word in words]
+    return " ".join(mapped)
 
 
 def normalize_missing_information(items: object) -> list[str]:
-    """Dedupe analysis gaps and drop per-part page notes that leak chunking."""
+    """Dedupe analysis gaps, collapse path near-dupes, and drop chunking artifacts."""
     if not items:
         return []
     seen: set[str] = set()
@@ -44,11 +78,17 @@ def normalize_missing_information(items: object) -> list[str]:
             reason = item.strip()
         else:
             continue
+        field = _ARTIFACT.sub("", field).strip()
+        reason = _ARTIFACT.sub("", reason).strip()
         if _PART_LEAK.search(field) or _PART_LEAK.search(reason):
             reason = _PART_LEAK.sub("", reason).strip(" ;,")
             if not field and not reason:
                 continue
-        label = _label(field)
+        label = _label(field) if field else ""
+        if not label and reason:
+            # A bare path like "Pricing structure.format" is a field, not a sentence.
+            if "." in reason or reason.casefold() in _FIELD_LABELS or _canonical_key(reason) in _FIELD_LABELS:
+                label = _label(reason)
         text = label or reason
         if not text:
             continue

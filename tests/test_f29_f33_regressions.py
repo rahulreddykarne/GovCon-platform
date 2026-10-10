@@ -118,9 +118,20 @@ def test_f30_repeated_calls_and_rollback_cannot_reset_budget(db, monkeypatch):
     opp_id = opp.id
     calls = provider(monkeypatch)
     structured_call(db, opp_id, configured)
-    structured_call(db, opp_id, configured)
+    from govcon.ai.structured import run_structured_prompt
+    run_structured_prompt(
+        db, opportunity_id=opp_id, prompt_name="solicitation_analysis",
+        analysis_type="solicitation_summary",
+        variables={"OPPORTUNITY_JSON": {}, "SOURCE_PACKAGE_JSON": "a different public source part"},
+        context_manifest={"part": 2}, settings=configured, classification=DataClassification.PUBLIC,
+    )
     with pytest.raises(StructuredCallError, match="budget_exceeded"):
-        structured_call(db, opp_id, configured)
+        run_structured_prompt(
+            db, opportunity_id=opp_id, prompt_name="solicitation_analysis",
+            analysis_type="solicitation_summary",
+            variables={"OPPORTUNITY_JSON": {}, "SOURCE_PACKAGE_JSON": "a third public source part"},
+            context_manifest={"part": 3}, settings=configured, classification=DataClassification.PUBLIC,
+        )
     assert len(calls) == 2 and all(c["max_tokens"] == configured.ai_max_output_tokens_per_call for c in calls)
     db.rollback()
     with Session(db.get_bind()) as independent:
@@ -149,8 +160,14 @@ def test_f30_dollar_reservation_and_unknown_usage(db, monkeypatch):
     calls = provider(monkeypatch, usage={})
     first = structured_call(db, opp.id, configured)
     assert first.analysis.estimated_cost is not None
+    from govcon.ai.structured import run_structured_prompt
     with pytest.raises(StructuredCallError, match="budget_exceeded"):
-        structured_call(db, opp.id, configured)
+        run_structured_prompt(
+            db, opportunity_id=opp.id, prompt_name="solicitation_analysis",
+            analysis_type="solicitation_summary",
+            variables={"OPPORTUNITY_JSON": {}, "SOURCE_PACKAGE_JSON": "another public source part"},
+            context_manifest={"part": 2}, settings=configured, classification=DataClassification.PUBLIC,
+        )
     assert len(calls) == 1
 
 

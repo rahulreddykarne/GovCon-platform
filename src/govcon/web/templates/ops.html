@@ -74,7 +74,7 @@
     {% endfor %}
   </div>
   {% if oldest_queued %}
-  <p class="text-sm text-muted">Oldest queued task since {{ oldest_queued.strftime('%Y-%m-%d %H:%M') }} UTC.</p>
+  <p class="text-sm text-muted">Oldest queued task since {{ oldest_queued|pt }}.</p>
   {% endif %}
 
   <h4>Failed tasks</h4>
@@ -188,13 +188,13 @@
           <td><code>{{ chain.cron }}</code></td>
           <td>
             {% if chain.last_success %}
-              {{ chain.last_success.finished_at.strftime('%Y-%m-%d %H:%M') if chain.last_success.finished_at else 'running' }} UTC
+              {{ chain.last_success.finished_at|pt if chain.last_success.finished_at else 'running' }}
               <span class="badge badge-{% if chain.last_success.status == 'succeeded' %}success{% else %}warning{% endif %}">{{ chain.last_success.status }}</span>
             {% else %}<span class="text-muted">never</span>{% endif %}
           </td>
           <td>
             {% if chain.last_failure %}
-              <span class="text-danger">{{ chain.last_failure.started_at.strftime('%Y-%m-%d %H:%M') if chain.last_failure.started_at else '—' }} UTC</span>
+              <span class="text-danger">{{ chain.last_failure.started_at|pt if chain.last_failure.started_at else '—' }}</span>
               <br><small>{{ chain.last_failure.error or chain.last_failure.failed_step or 'failed' }}</small>
             {% else %}<span class="text-muted">none</span>{% endif %}
           </td>
@@ -226,7 +226,7 @@
           <td>
             <span class="badge badge-{% if r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% elif r.status == 'completed_with_errors' %}warning{% else %}danger{% endif %}">{{ r.status }}</span>
           </td>
-          <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '—' }}</td>
+          <td>{{ r.started_at|pt if r.started_at else '—' }}</td>
           <td>{% if r.finished_at and r.started_at %}{{ "%.1f"|format((r.finished_at - r.started_at).total_seconds()) }}s{% else %}—{% endif %}</td>
           <td>{{ r.steps_completed | join(', ') if r.steps_completed else '—' }}</td>
           <td>{% if r.failed_step %}<span class="text-danger">{{ r.failed_step }}</span>{% else %}—{% endif %}</td>
@@ -256,7 +256,7 @@
           <td>
             <span class="badge badge-{% if r.status == 'success' or r.status == 'succeeded' %}success{% elif r.status == 'running' %}primary{% elif r.status == 'skipped' %}{% elif r.status == 'completed_with_errors' %}warning{% else %}danger{% endif %}">{{ r.status or '?' }}</span>
           </td>
-          <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '—' }}</td>
+          <td>{{ r.started_at|pt if r.started_at else '—' }}</td>
           <td>{% if r.finished_at and r.started_at %}{{ "%.1f"|format((r.finished_at - r.started_at).total_seconds()) }}s{% else %}—{% endif %}</td>
           <td>{% if r.fetched is not none %}{{ r.fetched }}{% else %}—{% endif %}</td>
           <td>{% if r.inserted is not none %}{{ r.inserted }}{% else %}—{% endif %}</td>

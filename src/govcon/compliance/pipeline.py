@@ -139,6 +139,19 @@ def mark_sparse_ai_passes(session: Session, outcomes: list[Any]) -> list[dict[st
     return warnings
 
 
+def dedupe_warnings(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the first warning for each (code, message) pair."""
+    seen: set[tuple[str, str]] = set()
+    out: list[dict[str, Any]] = []
+    for warning in warnings:
+        key = (str(warning.get("code") or ""), str(warning.get("message") or warning))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(warning)
+    return out
+
+
 def passes_independent(ai_outcomes: list[Any]) -> bool:
     """True when extraction passes A and B ran on different, known provider/model pairs."""
     identities = [(o.provider, o.model) for o in ai_outcomes if o.pass_label in {"A", "B"}]
@@ -186,6 +199,29 @@ def run_compliance_pipeline(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     settings = settings or get_settings()
+    from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
+    from govcon.workflow.analysis_lock import hold_analysis_lock
+
+    with hold_analysis_lock(session, opportunity_id):
+        return _run_locked_compliance_pipeline(
+            session, opportunity_id,
+            use_ai=use_ai, force=force, company_facts=company_facts, package=package,
+            supplier=supplier, settings=settings, now=now,
+        )
+
+
+def _run_locked_compliance_pipeline(
+    session: Session,
+    opportunity_id: int,
+    *,
+    use_ai: bool,
+    force: bool,
+    company_facts: dict[str, Any] | None,
+    package: SubmissionPackage | None,
+    supplier: dict[str, Any] | None,
+    settings: Any,
+    now: datetime | None,
+) -> dict[str, Any]:
     from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
     link_token, linked_ids = collect_call_ids()
     try:
@@ -313,6 +349,7 @@ def _run_compliance_pipeline(
         bid_rerun = run_decision_bundle(session, opportunity_id=opportunity_id, bundle_name="bid_decision", settings=settings).run.id
 
     complete = inventory.complete and ai_passes_ok and validation.get("ai_complete", True)
+    warnings = dedupe_warnings(warnings)
     diagnostic_event("compliance.result", status="complete" if complete else "incomplete",
                      independent=passes_independent(ai_outcomes) if extraction_needed else None,
                      cached=not extraction_needed, warnings=len(warnings))

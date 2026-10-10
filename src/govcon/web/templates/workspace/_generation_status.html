@@ -18,7 +18,7 @@
     {% if task.status == 'running' and task.current_step %}Step: {{ task.current_step }}.{% endif %}
     {% if task.status == 'retrying' %}
       Attempt {{ task.attempts }} of {{ task.max_attempts }} failed{% if task.last_error %}: {{ task.last_error }}{% endif %}.
-      {% if task.next_attempt_at %}Next attempt after {{ task.next_attempt_at.strftime('%Y-%m-%d %H:%M') }} UTC.{% endif %}
+      {% if task.next_attempt_at %}Next attempt after {{ task.next_attempt_at|pt }}.{% endif %}
     {% endif %}
     <div class="text-sm text-muted mt-1">The bid approval is recorded. This page updates automatically.</div>
   </div>
@@ -31,7 +31,7 @@
       <div class="mt-1"><strong>Next action{% if task.blocker_owner_role %} ({{ task.blocker_owner_role }}){% endif %}:</strong> {{ task.blocker_next_action }}</div>
     {% endif %}
     {% if task.finished_at or task.updated_at %}
-      <div class="text-sm text-muted mt-1">Last update: {{ (task.finished_at or task.updated_at).strftime('%Y-%m-%d %H:%M') }} UTC</div>
+      <div class="text-sm text-muted mt-1">Last update: {{ (task.finished_at or task.updated_at)|pt }}</div>
     {% endif %}
   </div>
   {% elif task.status == 'cancelled' %}

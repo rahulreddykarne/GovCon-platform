@@ -34,6 +34,7 @@ def _usage(db, request: Request):
         db,
         include_local=request.query_params.get("local") == "1",
         show_more=request.query_params.get("more") == "1",
+        status=request.query_params.get("status") or None,
     )
 
 

@@ -190,6 +190,24 @@ def test_missing_information_dedupes_and_drops_part_notes() -> None:
         "Unread source pages",
         "Delivery terms",
     ]
+    near = [
+        {"field": "Pricing structure", "reason": "missing"},
+        {"field": "Pricing structure.format", "reason": "missing"},
+        {"field": "Items[].quantity", "reason": "dup"},
+        {"field": "items.quantity", "reason": "dup2"},
+        {"field": "Submission.method", "reason": "portal"},
+        {"field": "Clin", "reason": "not listed"},
+        {"field": "nsn", "reason": "blank"},
+        {"field": "delivery ('r'/'i')", "reason": "FOB"},
+    ]
+    assert normalize_missing_information(near) == [
+        "Pricing structure",
+        "Line items",
+        "Submission method",
+        "CLIN",
+        "NSN",
+        "Delivery terms",
+    ]
 
 
 def test_usda_forest_awards_are_not_dla_comparables(db) -> None:
@@ -271,7 +289,7 @@ def test_rate_limited_download_records_gap_and_queues_retry(db, tmp_path) -> Non
     task = db.scalar(
         select(Task).where(
             Task.opportunity_id == opp.id,
-            Task.task_type == "opportunity_preparation",
+            Task.task_type == "attachment_download",
             Task.payload["retry_reason"].astext == "rate_limited",
         )
     )

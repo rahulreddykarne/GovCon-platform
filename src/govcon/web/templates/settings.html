@@ -141,8 +141,8 @@
   Status: <strong>unknown</strong>.
   {% endif %}
   <span class="text-muted text-sm">Freshness {{ freshness }}.
-  Fetched {{ registration.fetched_at.strftime('%Y-%m-%d %H:%M') if registration.fetched_at else 'never' }} UTC;
-  source updated {{ registration.source_updated_at.strftime('%Y-%m-%d %H:%M') if registration.source_updated_at else 'unknown' }} UTC.</span></p>
+  Fetched {{ registration.fetched_at|pt if registration.fetched_at else 'never' }};
+  source updated {{ registration.source_updated_at|pt if registration.source_updated_at else 'unknown' }}.</span></p>
   {% else %}
   <p class="text-muted">Not refreshed yet. Set COMPANY_UEI (or uei in the company facts file) and SAM_API_KEY; the midday job refreshes it daily.</p>
   {% endif %}

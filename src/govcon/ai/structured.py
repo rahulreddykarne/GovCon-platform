@@ -30,7 +30,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from govcon.ai.budget import AIBudgetExceeded, complete_with_budget, output_token_limit
+from govcon.ai.budget import AIBudgetExceeded, complete_with_budget, mark_replaced_by_split, output_token_limit
 from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
@@ -178,6 +178,7 @@ class ExecutedCall:
     reservation: Any
     quality: str = "accepted"
     quality_reason: str = ""
+    cached_analysis: AIAnalysis | None = None
 
 
 @trace_phase("ai.structured.prepare_structured_call")
@@ -315,6 +316,22 @@ def execute_prepared_call(
     during the call; budget accounting commits on its own connection.
     """
     settings = settings or get_settings()
+    cache_session = session
+    opened: Session | None = None
+    if cache_session is None and engine is not None:
+        from sqlalchemy.orm import Session as OrmSession
+
+        opened = OrmSession(engine)
+        cache_session = opened
+    try:
+        cached = lookup_cached_analysis(cache_session, prepared)
+    finally:
+        if opened is not None:
+            opened.close()
+    if cached is not None:
+        diagnostic_event("ai.part_cache_hit", prompt=prepared.prompt.name,
+                         prompt_hash=prepared.prompt.content_hash, analysis_id=cached.id)
+        return cached_execution(prepared, cached)
     attempts = 1 + max(0, int(settings.prompt_max_retries_on_invalid_json or 0))
     last_error: StructuredCallError | None = None
     for attempt in range(attempts):
@@ -365,7 +382,9 @@ def execute_prepared_call(
             logger.warning("structured output rejected prompt=%s attempt=%d: %s", prepared.prompt.name, attempt + 1, type(exc).__name__)
             if getattr(result, "finish_reason", None) in _TRUNCATED:
                 # The same request stops at the same cap; another attempt only spends tokens.
-                # The caller splits this part and retries the halves.
+                # The caller splits this part and retries the halves. Do not count this
+                # parent reservation against the children.
+                mark_replaced_by_split(reservation)
                 raise StructuredCallError(
                     "output_truncated",
                     f"the provider stopped at the {output_token_limit(settings, prepared.provider_name)}-token "
@@ -400,6 +419,60 @@ def execute_prepared_call(
     raise last_error
 
 
+def analysis_input_hash(prepared: PreparedCall) -> str:
+    """Stable key for a successful part: variables + manifest (includes document sha)."""
+    manifest = dict(prepared.context_manifest)
+    manifest.setdefault("opportunity_id", prepared.opportunity_id)
+    return hashlib.sha256(
+        json.dumps({"variables": prepared.variables, "manifest": manifest}, sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
+def lookup_cached_analysis(session: Session | None, prepared: PreparedCall) -> AIAnalysis | None:
+    """Reuse a complete analysis for the same prompt hash and document snapshot."""
+    if session is None or prepared.opportunity_id is None:
+        return None
+    from sqlalchemy import select
+
+    row = session.scalar(
+        select(AIAnalysis)
+        .where(
+            AIAnalysis.opportunity_id == prepared.opportunity_id,
+            AIAnalysis.prompt_name == prepared.prompt.name,
+            AIAnalysis.prompt_hash == prepared.prompt.content_hash,
+            AIAnalysis.input_snapshot_hash == analysis_input_hash(prepared),
+        )
+        .order_by(AIAnalysis.id.desc())
+        .limit(1)
+    )
+    if row is None:
+        return None
+    quality = (row.generation_settings or {}).get("quality")
+    if quality == "incomplete":
+        return None
+    return row
+
+
+def cached_execution(prepared: PreparedCall, cached: AIAnalysis) -> ExecutedCall:
+    """Rebuild an executed call from a stored successful part. No provider spend."""
+    output = prepared.schema_cls.model_validate(cached.output_json)
+    quality = (cached.generation_settings or {}).get("quality") or "accepted"
+    reason = (cached.generation_settings or {}).get("quality_reason") or "cached"
+    result = type("CachedResult", (), {
+        "provider": cached.provider or "cache",
+        "model": cached.model,
+        "usage": cached.token_usage or {},
+        "latency_ms": 0,
+        "finish_reason": "cached",
+        "content": json.dumps(cached.output_json),
+        "usage_call_id": None,
+    })()
+    return ExecutedCall(
+        output=output, result=result, reservation=None, quality=quality, quality_reason=reason,
+        cached_analysis=cached,
+    )
+
+
 def _output_quality(schema_cls: type[BaseModel], output: BaseModel) -> tuple[str, str]:
     """Sparse solicitation analysis is incomplete. Other schemas may be legitimately empty."""
     from govcon.ai.schemas import SolicitationAnalysisV1
@@ -413,9 +486,7 @@ def build_analysis(prepared: PreparedCall, executed: ExecutedCall) -> AIAnalysis
     """The ``ai_analyses`` row for a validated call (not yet added to a session)."""
     manifest = dict(prepared.context_manifest)
     manifest.setdefault("opportunity_id", prepared.opportunity_id)
-    input_hash = hashlib.sha256(
-        json.dumps({"variables": prepared.variables, "manifest": manifest}, sort_keys=True, default=str).encode()
-    ).hexdigest()
+    input_hash = analysis_input_hash(prepared)
     result = executed.result
     reservation = executed.reservation
     return AIAnalysis(
@@ -447,6 +518,11 @@ def persist_structured_result(
     session: Session | None, prepared: PreparedCall, executed: ExecutedCall
 ) -> StructuredCallResult:
     """Record the validated call as an ``ai_analyses`` row in the caller's transaction."""
+    if executed.cached_analysis is not None:
+        analysis = executed.cached_analysis
+        if session is not None and analysis not in session:
+            analysis = session.merge(analysis)
+        return StructuredCallResult(output=executed.output, analysis=analysis, prompt=prepared.prompt)
     analysis = build_analysis(prepared, executed)
     if session is not None:
         session.add(analysis)

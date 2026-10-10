@@ -107,21 +107,25 @@ def _claim_and_block(task_id: int, settings: Settings) -> bool:
     return True
 
 
-def test_budget_block_retries_once_then_parks_until_the_limits_change(db):
+def test_budget_block_never_auto_starts(db):
+    from govcon.tasks import queue
     from govcon.tasks.queue import budget_parked
 
     task_id = _blocked_task(db).id
     limits = Settings(_env_file=None)
     assert _claim_and_block(task_id, limits), "first claim"
-    assert _claim_and_block(task_id, limits), "one automatic retry after a budget block"
     db.expire_all()
     assert budget_parked(db.get(Task, task_id))
-    assert not _claim_and_block(task_id, limits), "parked: the same lifetime cap cannot have refilled"
+    assert not _claim_and_block(task_id, limits), "waiting_for_budget is never claimed"
     raised = Settings(_env_file=None, ai_max_input_tokens_per_opportunity=limits.ai_max_input_tokens_per_opportunity * 2)
-    assert _claim_and_block(task_id, raised), "a raised cap resumes the task"
+    assert not _claim_and_block(task_id, raised), "a raised env cap still does not auto-start"
+    with session_scope() as s:
+        task = s.get(Task, task_id)
+        queue.requeue(s, task, actor_user_id=None, reason="human resume")
+    assert _claim_and_block(task_id, limits), "explicit requeue is the only resume"
     audits = db.scalar(select(func.count()).select_from(AuditEvent).where(
         AuditEvent.entity_type == "tasks", AuditEvent.entity_id == task_id, AuditEvent.action_type == "task_blocked"))
-    assert audits == 1, "an identical block is audited once, not on every retry"
+    assert audits == 2, "the second block after a human resume is a new event"
 
 
 def test_budget_next_action_says_the_cap_does_not_refill():
@@ -130,6 +134,7 @@ def test_budget_next_action_says_the_cap_does_not_refill():
 
     outcome = classify(AIBudgetExceeded("exhausted"))
     assert outcome.status == "waiting_for_budget" and "does not refill" in outcome.next_action
+    assert "never starts" in outcome.next_action
 
 
 # ── 2. recorded passes: no transaction or lock during an AI call ─────────────

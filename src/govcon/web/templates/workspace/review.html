@@ -153,7 +153,7 @@
   <div class="comment {% if c.parent_comment_id %}indent{% endif %}">
     <div class="comment-header">
       <strong>{{ c.user_display_name }}</strong>
-      <span>{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at else '' }}</span>
+      <span>{{ c.created_at|pt if c.created_at else '' }}</span>
       {% if c.topic %}<span class="badge badge-secondary">{{ c.topic }}</span>{% endif %}
       {% if c.user_recommendation %}<span class="badge badge-primary">{{ c.user_recommendation }}</span>{% endif %}
     </div>

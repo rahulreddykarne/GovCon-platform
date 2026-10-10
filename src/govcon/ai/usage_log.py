@@ -22,6 +22,8 @@ from govcon.display_time import format_pt
 from govcon.models import AIModelPrice, AIProviderCall
 
 USAGE_TABLE_LIMIT = 25
+USAGE_STATUSES = ("succeeded", "truncated", "output_rejected", "blocked", "failed")
+_JEV_PURPOSES = ("jev_decision_package", "jev_routing")
 
 _MILLION = Decimal(1_000_000)
 _THOUSAND = Decimal(1_000)
@@ -388,17 +390,55 @@ def _window(rows: list[AIProviderCall], start: datetime | None) -> list[AIProvid
     return [row for row in rows if row.created_at >= start]
 
 
+def _is_blocked_jev(row: AIProviderCall) -> bool:
+    purpose = (row.purpose or "")
+    return row.status == "blocked" and (
+        row.provider == "jev"
+        or purpose.startswith("decision_bundle:")
+        or purpose in _JEV_PURPOSES
+        or purpose.startswith("jev_")
+    )
+
+
+def _collapse_blocked_jev(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse consecutive blocked JEV rows that share purpose/provider/model."""
+    collapsed: list[dict[str, Any]] = []
+    for item in items:
+        prev = collapsed[-1] if collapsed else None
+        if (
+            prev
+            and item.get("grouped_jev")
+            and prev.get("grouped_jev")
+            and prev["purpose"] == item["purpose"]
+            and prev["provider"] == item["provider"]
+            and prev["model"] == item["model"]
+            and prev["status"] == "blocked"
+        ):
+            prev["count"] = int(prev.get("count") or 1) + 1
+            continue
+        collapsed.append(item)
+    return collapsed
+
+
 def usage_page(
     session: Session,
     *,
     include_local: bool = False,
     show_more: bool = False,
+    status: str | None = None,
 ) -> dict[str, Any]:
     """View model for /operate/usage and the /ops summary. No placeholder numbers."""
     query = select(AIProviderCall).order_by(AIProviderCall.id.desc())
     if not include_local:
         query = query.where(AIProviderCall.status != "local")
     rows = list(session.scalars(query).all())
+    status_counts = {name: 0 for name in USAGE_STATUSES}
+    for row in rows:
+        if row.status in status_counts:
+            status_counts[row.status] += 1
+    status_filter = status if status in USAGE_STATUSES else None
+    if status_filter:
+        rows = [row for row in rows if row.status == status_filter]
     now = datetime.now(UTC)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     windows = (
@@ -441,7 +481,10 @@ def usage_page(
             "latency": f"{row.latency_ms} ms" if row.latency_ms is not None else "—",
             "analysis_id": row.analysis_id,
             "decision_run_id": row.decision_run_id,
+            "count": 1,
+            "grouped_jev": _is_blocked_jev(row),
         })
+    recent = _collapse_blocked_jev(recent)
     prices = list(session.scalars(select(AIModelPrice).order_by(AIModelPrice.provider, AIModelPrice.model)).all())
     summary_rows = _window(rows, today)
     month_rows = _window(rows, now - timedelta(days=30))
@@ -458,6 +501,9 @@ def usage_page(
         "show_more": show_more,
         "table_limit": USAGE_TABLE_LIMIT,
         "recent_total": len(rows),
+        "status_counts": status_counts,
+        "status_filter": status_filter,
+        "statuses": USAGE_STATUSES,
     }
 
 

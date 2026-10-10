@@ -10,5 +10,6 @@ from govcon.tasks.handlers import (  # noqa: F401
     quote_extraction,
 )
 from govcon.workflow import (
+    attachment_download,  # noqa: F401  (registers attachment_download)
     preparation,  # noqa: F401  (registers opportunity_preparation)
 )

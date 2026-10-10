@@ -100,6 +100,8 @@ class Opportunity(TimestampMixin, Base):
     embedding_model: Mapped[str | None] = mapped_column(Text)
     embedding_dimension: Mapped[int | None] = mapped_column(Integer)
     embedding_source_hash: Mapped[str | None] = mapped_column(Text)
+    # Per-opportunity override of AI_MAX_INPUT_TOKENS_PER_OPPORTUNITY. NULL uses the env default.
+    ai_max_input_tokens: Mapped[int | None] = mapped_column(Integer)
 
 
 class OpportunitySnapshot(Base):
@@ -1209,7 +1211,7 @@ class AlertDelivery(Base):
 
 TASK_TYPES = (
     "proposal_generation", "ai_analysis", "solicitation_summary", "scheduler_chain", "opportunity_preparation",
-    "notification_email", "quote_extraction", "bot_run", "market_price_research",
+    "notification_email", "quote_extraction", "bot_run", "market_price_research", "attachment_download",
 )
 TASK_STATUSES = (
     "queued", "running", "waiting_for_input", "waiting_for_budget", "retrying",

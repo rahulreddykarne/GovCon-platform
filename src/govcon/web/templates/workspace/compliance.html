@@ -18,11 +18,13 @@
     <div class="alert alert-success" data-run-state="complete">
       <strong>Run complete.</strong> Every extraction and validation step returned a full result.
       {% if cv.methods %}Methods used: {{ cv.methods|join(', ') }}.{% endif %}
+      {% if cv.pass_b_note %}<div class="mt-1"><span class="pill pill-warning">{{ cv.pass_b_note }}</span> Agreement between Pass A and Pass B is not an independent confirmation.</div>{% endif %}
       Complete means the analysis finished, not that the company is compliant.
     </div>
   {% else %}
     <div class="alert alert-warning" data-run-state="incomplete">
       <strong>Run incomplete.</strong> Part of the extraction or validation did not finish or came back sparse. Treat this list as partial and re-run preparation before relying on it.
+      {% if cv.pass_b_note %}<div class="mt-1"><span class="pill pill-warning">{{ cv.pass_b_note }}</span> Agreement between Pass A and Pass B is not an independent confirmation.</div>{% endif %}
       {% if cv.run_warnings %}
       <ul class="mt-1">
         {% for w in cv.run_warnings[:12] %}<li><span class="pill pill-{{ 'danger' if w.get('severity') in ('high', 'critical') else 'warning' }}">{{ w.get('severity', 'note') }}</span> {{ w.get('message') or w.get('code') }}</li>{% endfor %}

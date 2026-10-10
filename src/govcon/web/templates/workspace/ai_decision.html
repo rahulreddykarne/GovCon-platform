@@ -27,7 +27,7 @@
     <span class="card-title">Recommendation
       {{ engine_badge(decision_package_analysis) }}
     </span>
-    <span class="text-sm text-muted">{{ bid_decision.created_at.strftime('%Y-%m-%d %H:%M') if bid_decision.created_at else '' }}</span>
+    <span class="text-sm text-muted">{{ bid_decision.created_at|pt if bid_decision.created_at else '' }}</span>
   </div>
   <div class="stats-grid">
     <div class="stat-card">

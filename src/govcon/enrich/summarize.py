@@ -76,8 +76,23 @@ def run_solicitation_analysis(
 
     AI errors are logged but never alter source data.
     """
-    settings = settings or get_settings()
+    from govcon.workflow.analysis_lock import hold_analysis_lock
 
+    settings = settings or get_settings()
+    with hold_analysis_lock(session, opportunity.id):
+        return _run_solicitation_analysis(
+            session, opportunity, settings=settings, force=force, refusals=refusals,
+        )
+
+
+def _run_solicitation_analysis(
+    session: Session,
+    opportunity: Opportunity,
+    *,
+    settings: Settings,
+    force: bool,
+    refusals: list[str] | None,
+) -> AIAnalysis | None:
     source_revision = current_source_revision(session, opportunity.id)
     if not force:
         existing = session.scalars(

@@ -12,10 +12,9 @@ decrements it, so a worker that lost its lease can never publish over its
 successor. ``attempts`` counts attempts against ``max_attempts``.
 
 Per-opportunity AI budgets are lifetime totals, so waiting does not refill
-them. A ``waiting_for_budget`` task is retried automatically once, in case
-another task's reservation was still settling, and then stays parked until
-the configured limits change (``checkpoint["budget_block"]`` records them) or
-a person re-queues it.
+them. A ``waiting_for_budget`` task stays parked until a person raises the
+budget and explicitly resumes it. Limits changing, or a later hour, never
+auto-starts it.
 """
 
 from __future__ import annotations
@@ -157,11 +156,9 @@ def claim(
 ) -> Claim | None:
     """Claim one due task, or one whose lease expired. Commit right after.
 
-    A budget-blocked task is due only for its one automatic retry, or once
-    the budget limits differ from those it was blocked under.
+    ``waiting_for_budget`` is never claimed. A person must raise the budget
+    and re-queue the task.
     """
-    from govcon.ai.budget import budget_fingerprint
-
     settings = settings or get_settings()
     type_filter = "AND task_type = ANY(:types)" if task_types else ""
     id_filter = "AND id = :task_id" if task_id is not None else ""
@@ -179,9 +176,6 @@ def claim(
             WHERE id = (
                 SELECT id FROM tasks
                 WHERE ((status IN ('queued', 'retrying') AND next_attempt_at <= now())
-                       OR (status = 'waiting_for_budget' AND next_attempt_at <= now()
-                           AND (COALESCE((checkpoint->'budget_block'->>'auto_retry')::boolean, true)
-                                OR checkpoint->'budget_block'->>'fingerprint' IS DISTINCT FROM :budget_fp))
                        OR (status = 'running' AND lease_expires_at < now()))
                   {type_filter} {id_filter} {opp_filter}
                 ORDER BY next_attempt_at, id
@@ -192,7 +186,7 @@ def claim(
             """
         ),
         {"worker": worker_id, "lease": lease_seconds, "types": task_types or [], "task_id": task_id,
-         "opp_id": opportunity_id, "budget_fp": budget_fingerprint(settings)},
+         "opp_id": opportunity_id},
     ).first()
     if row is None:
         return None
@@ -344,8 +338,7 @@ def block(
     task.blocker_owner_role = owner_role
     task.blocker_owner_user_id = owner_user_id
     task.blocker_next_action = next_action
-    # A budget block is retried once after ``next_attempt_at``, then only when
-    # the limits change (see ``claim``); an input block waits for a person.
+    # A budget block waits for a person. Limits changing never auto-starts it.
     task.next_attempt_at = resume_at or (_now() + timedelta(hours=1))
     # A block is not a failed attempt; give back the claim's attempt.
     task.attempts = max(0, task.attempts - 1)
@@ -361,21 +354,18 @@ def block(
 
 
 def _record_budget_block(task: Task, settings: Settings) -> None:
-    """Allow one automatic retry per budget limits and per amount of progress."""
+    """Record the limits at the block. Never auto-retry; a person must resume."""
     from govcon.ai.budget import budget_fingerprint
 
     fingerprint = budget_fingerprint(settings)
     steps_done = len((task.checkpoint or {}).get("completed_steps") or [])
-    previous = (task.checkpoint or {}).get("budget_block") or {}
-    first = previous.get("fingerprint") != fingerprint or previous.get("steps_done") != steps_done
     task.checkpoint = {**(task.checkpoint or {}),
-                       "budget_block": {"fingerprint": fingerprint, "steps_done": steps_done, "auto_retry": first}}
+                       "budget_block": {"fingerprint": fingerprint, "steps_done": steps_done, "auto_retry": False}}
 
 
 def budget_parked(task: Task) -> bool:
-    """True when a budget-blocked task will not be retried until limits change or a person acts."""
-    block_ = (task.checkpoint or {}).get("budget_block") or {}
-    return task.status == "waiting_for_budget" and block_.get("auto_retry") is False
+    """True when a budget-blocked task will not run until a person resumes it."""
+    return task.status == "waiting_for_budget"
 
 
 def cancel(session: Session, task: Task, *, reason: str, superseded_by: int | None = None,

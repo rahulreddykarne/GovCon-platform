@@ -10,10 +10,12 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from govcon.ai.analysis_types import AnalysisType
+from govcon.ai.budget import opportunity_budget_status
 from govcon.audit import record_audit
 from govcon.collaboration.comments import list_comments
 from govcon.collaboration.review_sessions import approval_context
 from govcon.collaboration.users import PermissionDenied, can
+from govcon.config import get_settings
 from govcon.db import session_scope
 from govcon.intelligence.analysis_tasks import latest_analysis_tasks
 from govcon.learning.outcomes import NO_BID_CATEGORIES
@@ -52,6 +54,7 @@ from govcon.web.routes.common import (
 )
 from govcon.web.routes.proposals import _generation_status
 from govcon.web.routes.sourcing import _sourcing_context
+from govcon.workflow.attachment_download import document_ready_notice
 from govcon.workflow.invalidation import lock_opportunity
 from govcon.workflow.preparation import PREPARATION_TASK, preparation_view
 from govcon.workflow.proposal_generation import artifacts_exist
@@ -353,6 +356,8 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
             "can_run_analysis": can(user, "review") and (not pursuit or pursuit.stage not in TERMINAL_PURSUIT_STAGES),
             "analysis_tasks": latest_analysis_tasks(db, opp_id),
             "preparation": preparation_view(latest_task(db, task_type=PREPARATION_TASK, opportunity_id=opp_id)),
+            "document_ready": document_ready_notice(db, opp_id),
+            "budget_status": opportunity_budget_status(db, opp_id, get_settings()),
             "deadline_label": deadline_label,
             "deadline_class": deadline_cls,
             "pursuit": pursuit,
@@ -441,6 +446,52 @@ def workspace_prepare(request: Request, opp_id: int) -> Response:
     except _WORKFLOW_ERRORS as exc:
         return _redirect(target, error=_error_text(exc), request=request)
     return _redirect(target, notice="Preparation queued." if created else "Preparation is already queued or running.", request=request)
+
+
+def workspace_raise_budget(
+    request: Request,
+    opp_id: int,
+    new_limit: Annotated[str, Form()] = "",
+) -> Response:
+    """Audited per-opportunity token cap. Does not change the process default or auto-start tasks."""
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=overview"
+    try:
+        raised = int(str(new_limit).replace(",", "").strip())
+        if raised <= 0:
+            raise ValueError("the new token limit must be a positive integer")
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            opp = lock_opportunity(db, opp_id)
+            if opp is None:
+                raise ValueError("opportunity not found")
+            settings = get_settings()
+            status = opportunity_budget_status(db, opp_id, settings)
+            previous = opp.ai_max_input_tokens
+            if raised <= int(status["limit"]):
+                raise ValueError(
+                    f"new limit {raised:,} must be greater than the current limit {status['limit']:,} "
+                    f"({status['used']:,} used of {status['spendable']:,} spendable)"
+                )
+            opp.ai_max_input_tokens = raised
+            record_audit(
+                db, action_type="opportunity_budget_raised", user_id=actor.id, opportunity_id=opp_id,
+                entity_type="opportunities", entity_id=opp_id,
+                old_value={"ai_max_input_tokens": previous, "used": status["used"], "limit": status["limit"]},
+                new_value={"ai_max_input_tokens": raised, "default_unchanged": settings.ai_max_input_tokens_per_opportunity},
+            )
+    except PermissionDenied as exc:
+        return _redirect(target, error=_error_text(exc), request=request)
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc), request=request)
+    return _redirect(
+        target,
+        notice=f"Budget for this opportunity raised to {raised:,} input tokens. Resume the parked task on /ops; it will not start on its own.",
+        request=request,
+    )
 
 
 def workspace_requirement_override(

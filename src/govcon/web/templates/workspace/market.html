@@ -15,7 +15,7 @@
   {{ ai.bullet_list("Competition signals", out.get('competition_signals')) }}
   {{ ai.bullet_list("Recompete signals", out.get('recompete_signals')) }}
   {{ ai.bullet_list("Comparability weaknesses", out.get('comparability_weaknesses')) }}
-  <p class="text-sm text-muted mt-1">Generated {{ ai_market.created_at.strftime('%Y-%m-%d %H:%M') if ai_market.created_at else '' }}</p>
+  <p class="text-sm text-muted mt-1">Generated {{ ai_market.created_at|pt if ai_market.created_at else '' }}</p>
 </div>
 {% else %}
 <div class="card">
