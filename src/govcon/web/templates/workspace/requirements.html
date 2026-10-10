@@ -1,53 +1,105 @@
-<!-- Requirements tab -->
-{% if not requirements %}
+<!-- Requirement list: one row per extracted requirement, grouped by category -->
+{% if not requirement_rows %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">
-    No requirements extracted yet. Run the compliance pipeline to populate.
-  </p>
+  <p class="empty-state text-center">No requirements extracted yet. Run the compliance pipeline to populate.</p>
 </div>
 {% else %}
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Requirements <span class="label-ai">AI extracted</span></span>
+    <span class="card-title">Requirements</span>
     <span class="text-sm text-muted">{{ requirements_total }} total</span>
   </div>
+  <nav class="chip-row mb-1" aria-label="Requirement categories">
+    {% for g in compliance.groups %}<span class="chip">{{ g.label }} <strong>{{ g.count }}</strong>{% if g.open %} · {{ g.open }} open{% endif %}</span>{% endfor %}
+  </nav>
   <div class="table-wrap">
-    <table>
+    <table class="req-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Requirement</th>
-          <th>Type</th>
-          <th>Severity</th>
-          <th>Mandatory</th>
-          <th>Status</th>
-          <th>Source</th>
+          <th scope="col">Requirement</th>
+          <th scope="col">Source</th>
+          <th scope="col">Company fact</th>
+          <th scope="col">Deterministic checks</th>
+          <th scope="col">AI validation</th>
+          <th scope="col">Status</th>
         </tr>
       </thead>
       <tbody>
-        {% for req in requirements %}
-        <tr>
-          <td>{{ req.id }}</td>
-          <td style="max-width:400px;">
-            {{ req.requirement_text[:200] }}{% if req.requirement_text|length > 200 %}…{% endif %}
-            {% if req.source_quote %}<div class="text-sm text-muted source-link">{{ req.source_quote[:80] }}</div>{% endif %}
+        {% set ns = namespace(category=None) %}
+        {% for row in requirement_rows %}
+        {% if row.category != ns.category %}
+          {% set ns.category = row.category %}
+          <tr class="group-row"><th colspan="6" scope="colgroup">{{ row.category_label }}</th></tr>
+        {% endif %}
+        <tr id="req-{{ row.requirement_id }}">
+          <td class="req-text">
+            <div class="text-sm text-muted">#{{ row.requirement_id }} · {{ row.requirement_type or 'type not set' }}
+              {% if row.severity %} · <span class="pill pill-{{ 'danger' if row.severity == 'critical' else ('warning' if row.severity == 'high' else 'secondary') }}">{{ row.severity }}</span>{% endif %}
+              · {{ 'mandatory' if row.mandatory else ('optional' if row.mandatory is false else 'mandatory (assumed)') }}
+            </div>
+            <div>{{ row.requirement }}</div>
+            {% if row.clause %}<div class="text-sm text-muted">Clause guidance: {{ row.clause.get('clause') }}{% if row.clause.get('title') %} — {{ row.clause.get('title') }}{% endif %}</div>{% endif %}
+            {% if row.blocking %}<span class="pill pill-danger mt-1">blocks submission</span>{% endif %}
           </td>
-          <td>{{ req.requirement_type or "—" }}</td>
-          <td>
-            {% if req.severity %}
-              <span class="badge badge-{% if req.severity == 'critical' %}danger{% elif req.severity == 'high' %}warning{% else %}secondary{% endif %}">{{ req.severity }}</span>
-            {% else %}—{% endif %}
+          <td class="req-source">
+            {% set src = row.source %}
+            <div class="text-sm">
+              {% if src.filename %}{% if src.url %}<a href="{{ src.url }}" rel="noopener noreferrer" target="_blank">{{ src.filename }}</a>{% else %}{{ src.filename }}{% endif %}{% else %}<span class="text-muted">attachment not recorded</span>{% endif %}
+              · {% if src.page %}page {{ src.page }}{% else %}<span class="text-muted">page not recorded</span>{% endif %}
+              {% if src.section %}· {{ src.section }}{% endif %}
+            </div>
+            {% if src.quote %}<blockquote class="quote">“{{ src.quote }}”</blockquote>{% else %}<div class="text-sm text-muted">No source quote recorded</div>{% endif %}
           </td>
-          <td>{{ "✓" if req.mandatory else ("—" if req.mandatory is none else "✗") }}</td>
-          <td>
-            <span class="badge badge-{% if req.status == 'satisfied' %}success{% elif req.status in ('missing','stale') %}danger{% elif req.status == 'unknown' %}secondary{% else %}warning{% endif %}">
-              {{ req.status }}
-            </span>
+          <td class="req-fact">
+            {% set fact = row.company_fact %}
+            <span class="pill pill-{{ {'present': 'success', 'contradicts': 'danger', 'missing': 'warning', 'not_applicable': 'secondary'}[fact.state] }}">{{ {'present': 'on file', 'contradicts': 'contradicts', 'missing': 'missing', 'not_applicable': 'n/a'}[fact.state] }}</span>
+            <div class="text-sm">{{ fact.text }}</div>
+            {% for e in row.verified_evidence %}<div class="text-sm text-muted">Evidence #{{ e.evidence_id }} ({{ e.verification_method }}): {{ e.description }}</div>{% endfor %}
           </td>
-          <td>
-            {% if req.source_page %}p.{{ req.source_page }}{% endif %}
-            {% if req.source_section %} · {{ req.source_section[:30] }}{% endif %}
-            {% if req.blocks_submission %}<span class="badge badge-danger ml-1">blocks submit</span>{% endif %}
+          <td class="req-checks">
+            {% if row.deterministic %}
+              <ul class="check-list">
+              {% for d in row.deterministic %}
+                <li><span class="pill pill-{{ {'pass': 'success', 'fail': 'danger'}.get(d.get('status'), 'secondary') }}">{{ d.get('status') }}</span> <code>{{ d.get('validator') }}</code><div class="text-sm text-muted">{{ d.get('reason') }}</div></li>
+              {% endfor %}
+              </ul>
+            {% else %}<span class="text-sm text-muted">No deterministic check applies</span>{% endif %}
+          </td>
+          <td class="req-ai">
+            {% for label, ai in (('Primary', row.ai), ('Second review', row.ai_secondary)) if ai %}
+              <div class="mb-1"><span class="pill pill-ai">{{ label }}: {{ ai.status }}</span>
+                {% if ai.confidence is not none %}<span class="text-sm text-muted">{{ ai.confidence }}% confidence</span>{% endif %}
+                <div class="text-sm text-muted">{{ ai.provider or 'provider not recorded' }}{% if ai.model %} / {{ ai.model }}{% endif %}</div>
+                {% if ai.reason %}<div class="text-sm">{{ ai.reason }}</div>{% endif %}
+              </div>
+            {% else %}<span class="text-sm text-muted">Not run</span>{% endfor %}
+            {% for claim in row.blocked_ai_claims %}<div class="text-sm text-danger">AI claim not accepted: {{ claim.get('reason') if claim is mapping else claim }}</div>{% endfor %}
+          </td>
+          <td class="req-status">
+            <span class="pill pill-{{ row.status_tone }} pill-lg" data-status="{{ row.status }}">{{ row.status_label }}</span>
+            {% if row.status_reason_text %}<div class="text-sm text-muted">{{ row.status_reason_text }}</div>{% endif %}
+            {% if row.override %}
+              <div class="text-sm mt-1">Human override to {{ row.override.get('status') }} by user #{{ row.override.get('user_id') }} at {{ (row.override.get('at') or '')[:16] }}</div>
+            {% endif %}
+            {% if can_override %}
+            <details class="mt-1">
+              <summary class="text-sm">Override</summary>
+              <form method="post" action="/workspace/{{ opp.id }}/requirements/{{ row.requirement_id }}/override" class="stack-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <input type="hidden" name="expected_version" value="{{ row.version }}">
+                <label for="ovr-status-{{ row.requirement_id }}">New status</label>
+                <select id="ovr-status-{{ row.requirement_id }}" name="status">
+                  {% for value, label in override_statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+                <label for="ovr-reason-{{ row.requirement_id }}">Reason (recorded in the audit log)</label>
+                <textarea id="ovr-reason-{{ row.requirement_id }}" name="reason" rows="2" minlength="10" required></textarea>
+                {% if row.has_deterministic_failure %}
+                <label class="check-label"><input type="checkbox" name="acknowledge_deterministic_failure" value="yes"> I have reviewed the failed deterministic check</label>
+                {% endif %}
+                <button type="submit" class="btn btn-secondary btn-sm">Record override</button>
+              </form>
+            </details>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

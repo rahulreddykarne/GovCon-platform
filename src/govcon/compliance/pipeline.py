@@ -101,6 +101,44 @@ def read_company_facts_file(settings: Settings) -> dict[str, Any]:
     return facts
 
 
+# An AI pass that returns under half of what the deterministic scanner found
+# (once the scanner found at least this many) read the documents too thinly to
+# count as a complete extraction.
+SPARSE_SCANNER_FLOOR = 4
+
+
+def mark_sparse_ai_passes(session: Session, outcomes: list[Any]) -> list[dict[str, Any]]:
+    """Downgrade AI passes whose output is sparse next to the scanner's; returns the warnings.
+
+    A pass that returned nothing while the scanner found requirements, or under
+    half the scanner's count, is recorded as ``incomplete`` so the run is never
+    reported complete on thin AI output.
+    """
+    from govcon.models import ComplianceRun
+
+    scanner = next((o for o in outcomes if o.pass_label == "D"), None)
+    found = len(scanner.candidates) if scanner is not None else 0
+    warnings: list[dict[str, Any]] = []
+    for outcome in outcomes:
+        if outcome.pass_label not in {"A", "B"} or outcome.status != "complete":
+            continue
+        count = len(outcome.candidates)
+        sparse = (count == 0 and found > 0) or (found >= SPARSE_SCANNER_FLOOR and count * 2 < found)
+        if not sparse:
+            continue
+        warning = {"code": f"pass_{outcome.pass_label.lower()}_sparse", "severity": "high", "message": (
+            f"Extraction pass {outcome.pass_label} returned {count} requirement(s) where the deterministic scanner "
+            f"found {found}; the AI output is treated as incomplete.")}
+        outcome.status = "incomplete"
+        outcome.warnings.append(warning)
+        warnings.append(warning)
+        run = session.get(ComplianceRun, outcome.run_id) if outcome.run_id is not None else None
+        if run is not None:
+            run.status = "incomplete"
+            run.warnings = [*(run.warnings or []), warning]
+    return warnings
+
+
 def passes_independent(ai_outcomes: list[Any]) -> bool:
     """True when extraction passes A and B ran on different, known provider/model pairs."""
     identities = [(o.provider, o.model) for o in ai_outcomes if o.pass_label in {"A", "B"}]
@@ -178,6 +216,7 @@ def run_compliance_pipeline(
         outcomes = [run_scanner_pass(session, opportunity_id, inventory)]
         if use_ai:
             outcomes += [run_ai_pass(session, opportunity, inventory, label, settings=settings) for label in ("A", "B")]
+            mark_sparse_ai_passes(session, outcomes)
         for outcome in outcomes:
             warnings += outcome.warnings
         ai_outcomes = [o for o in outcomes if o.pass_label in {"A", "B"}]
@@ -247,7 +286,7 @@ def run_compliance_pipeline(
 
         bid_rerun = run_decision_bundle(session, opportunity_id=opportunity_id, bundle_name="bid_decision", settings=settings).run.id
 
-    complete = inventory.complete and ai_passes_ok
+    complete = inventory.complete and ai_passes_ok and validation["ai_complete"]
     diagnostic_event("compliance.result", status="complete" if complete else "incomplete",
                      independent=passes_independent(ai_outcomes) if extraction_needed else None,
                      cached=not extraction_needed, warnings=len(warnings))

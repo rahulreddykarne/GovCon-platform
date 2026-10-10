@@ -670,3 +670,33 @@ fieldset.form-group input[type="checkbox"] { width: auto; }
 @media (max-width: 900px) {
   .metric-row, .mission-split, .mission-work { grid-template-columns: 1fr; }
 }
+
+/* ── Status pills ───────────────────────────────────────────────── */
+.pill {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; white-space: nowrap; background: #eef2f6; color: #3d5166;
+}
+.pill-lg { font-size: 12px; padding: 3px 10px; }
+.pill-success { background: var(--color-good-bg); color: var(--color-success); }
+.pill-warning { background: var(--color-warn-bg); color: var(--color-warning); }
+.pill-danger { background: var(--color-bad-bg); color: var(--color-danger); }
+.pill-info, .pill-primary { background: var(--color-info-bg); color: var(--color-primary); }
+.pill-secondary { background: #eef2f6; color: #3d5166; }
+.pill-ai { background: #f2f3ff; color: var(--color-ai); }
+.text-danger { color: var(--color-danger); }
+.stat-card .value.warning { color: var(--color-warning); }
+
+/* ── Compliance matrix ──────────────────────────────────────────── */
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 3px 9px; border: 1px solid var(--color-border); border-radius: 999px; background: #fff; color: var(--color-muted); }
+.chip strong { color: var(--color-text); }
+.req-table td { min-width: 150px; }
+.req-table td.req-text { min-width: 260px; max-width: 360px; }
+.req-table td.req-source { min-width: 220px; max-width: 320px; }
+.req-table tr.group-row th { background: #f7f9fc; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--color-muted); }
+.quote { margin: 4px 0 0; padding: 4px 8px; border-left: 3px solid var(--color-border); color: var(--color-text); font-size: 12px; white-space: pre-wrap; }
+.check-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.stack-form { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.stack-form label { margin-bottom: 0; }
+.check-label { display: inline-flex; gap: 6px; align-items: center; font-weight: 400; }
+.check-label input { width: auto; }

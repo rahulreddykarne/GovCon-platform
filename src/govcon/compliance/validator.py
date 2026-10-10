@@ -149,6 +149,7 @@ def run_validation(
     warnings: list[dict[str, Any]] = []
     primary: dict[int, dict[str, Any]] = {}
     secondary: dict[int, dict[str, Any]] = {}
+    ai_complete = True
     if use_ai:
         candidates = [
             r for r in requirements
@@ -156,6 +157,13 @@ def run_validation(
             or any(d.get("status") == "pass" for d in (r.validation or {}).get("deterministic", []))
         ]
         primary = _ai_validate(session, opportunity_id, candidates, evidence, settings=settings, provider_name=None, label="ai_validation", warnings=warnings)
+        unanswered = [r.id for r in candidates if r.id not in primary]
+        if unanswered:
+            ai_complete = False
+            warnings.append({"code": "ai_validation_partial", "severity": "high", "message": (
+                f"AI validation returned no result for {len(unanswered)} of {len(candidates)} requirement(s) "
+                f"(ids {', '.join(str(i) for i in unanswered[:10])}{'…' if len(unanswered) > 10 else ''}); "
+                "they stay unresolved and the run is incomplete.")})
         second_provider = settings.ai_secondary_review_provider or settings.ai_review_provider
         redundant = [
             r for r in candidates
@@ -216,7 +224,7 @@ def run_validation(
             )
     run.output_json = {"decisions": decisions, "changed": changed, "ai_primary": len(primary), "ai_secondary": len(secondary)}
     session.flush()
-    return {"run_id": run.id, "changed": changed, "warnings": warnings, "decisions": decisions}
+    return {"run_id": run.id, "changed": changed, "warnings": warnings, "decisions": decisions, "ai_complete": ai_complete}
 
 
 def compliance_state(requirements: list[Requirement], counts: dict[str, Any]) -> dict[str, Any]:

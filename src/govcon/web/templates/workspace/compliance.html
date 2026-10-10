@@ -1,40 +1,68 @@
 <!-- Compliance tab -->
+{% set cv = compliance %}
+{% if company_facts_error %}
+<div class="alert alert-error">Company facts could not be read: {{ company_facts_error }}. Every company-fact column below reads as missing until the file is fixed.</div>
+{% endif %}
+
 {% if not compliance_run %}
 <div class="card">
-  <p class="text-muted text-center" style="padding:2rem 0;">No compliance run yet. <a href="/workspace/{{ opp.id }}?tab=overview#preparation">Prepare now on Overview</a>.</p>
+  <p class="empty-state text-center">No compliance run yet. <a href="/workspace/{{ opp.id }}?tab=overview#preparation">Prepare now on Overview</a>.</p>
 </div>
 {% else %}
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Compliance Matrix <span class="label-ai">AI</span></span>
-    <span class="text-sm text-muted">{{ compliance_run.created_at.strftime('%Y-%m-%d') if compliance_run.created_at else '' }}</span>
+    <span class="card-title">Compliance matrix</span>
+    <span class="text-sm text-muted">Last run {{ compliance_run.created_at.strftime('%Y-%m-%d %H:%M UTC') if compliance_run.created_at else 'time not recorded' }}</span>
   </div>
+  {% if cv.run_complete %}
+    <div class="alert alert-success" data-run-state="complete">
+      <strong>Run complete.</strong> Every extraction and validation step returned a full result.
+      {% if cv.methods %}Methods used: {{ cv.methods|join(', ') }}.{% endif %}
+      Complete means the analysis finished, not that the company is compliant.
+    </div>
+  {% else %}
+    <div class="alert alert-warning" data-run-state="incomplete">
+      <strong>Run incomplete.</strong> Part of the extraction or validation did not finish or came back sparse. Treat this list as partial and re-run preparation before relying on it.
+      {% if cv.run_warnings %}
+      <ul class="mt-1">
+        {% for w in cv.run_warnings[:12] %}<li><span class="pill pill-{{ 'danger' if w.get('severity') in ('high', 'critical') else 'warning' }}">{{ w.get('severity', 'note') }}</span> {{ w.get('message') or w.get('code') }}</li>{% endfor %}
+        {% if cv.run_warnings|length > 12 %}<li>{{ cv.run_warnings|length - 12 }} more warning(s) in the run record.</li>{% endif %}
+      </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+  {% if not cv.ai_run %}
+    <p class="text-sm text-muted mb-1">No AI validation result is stored for these requirements; statuses come from deterministic checks, evidence and human review only.</p>
+  {% endif %}
 
   <div class="stats-grid">
     <div class="stat-card">
-      <div class="label">Mandatory Total</div>
-      <div class="value">{{ compliance_run.mandatory_total or 0 }}</div>
+      <div class="label">Mandatory</div>
+      <div class="value">{{ cv.mandatory.total }}</div>
     </div>
     <div class="stat-card">
-      <div class="label">Satisfied</div>
-      <div class="value success">{{ compliance_run.mandatory_satisfied or 0 }}</div>
+      <div class="label">Met</div>
+      <div class="value success">{{ cv.mandatory['Met'] }}</div>
     </div>
     <div class="stat-card">
       <div class="label">Missing</div>
-      <div class="value danger">{{ compliance_run.mandatory_missing or 0 }}</div>
+      <div class="value danger">{{ cv.mandatory['Missing'] }}</div>
     </div>
     <div class="stat-card">
-      <div class="label">Unknown</div>
-      <div class="value">{{ compliance_run.mandatory_unknown or 0 }}</div>
+      <div class="label">Needs review</div>
+      <div class="value warning">{{ cv.mandatory['Needs review'] }}</div>
     </div>
     <div class="stat-card">
-      <div class="label">Needs Review</div>
-      <div class="value primary">{{ compliance_run.mandatory_needs_review or 0 }}</div>
+      <div class="label">Not applicable</div>
+      <div class="value">{{ cv.mandatory['Not applicable'] }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Missing company facts</div>
+      <div class="value{{ ' danger' if cv.missing_facts else '' }}">{{ cv.missing_facts }}</div>
     </div>
   </div>
-
+  <p class="text-sm text-muted">Counts are mandatory requirements as they stand now, including human overrides since the run.{% if cv.superseded %} {{ cv.superseded }} superseded requirement(s) are hidden.{% endif %}</p>
 </div>
-
 {% endif %}
 
 {% include "workspace/requirements.html" %}

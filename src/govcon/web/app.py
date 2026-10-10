@@ -140,6 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         workspace_proposal_status,
         workspace_pursuit_facts,
         workspace_record_outcome,
+        workspace_requirement_override,
         workspace_run_analysis,
         workspace_submission_approve,
         workspace_use_quote,
@@ -222,6 +223,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/workspace/{opp_id}/rfq", workspace_draft_rfq, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/market-prices", workspace_market_prices, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/prepare", workspace_prepare, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/requirements/{req_id}/override", workspace_requirement_override, methods=["POST"])
     app.add_api_route("/ops/tasks/{task_id}/{action}", ops_task_action, methods=["POST"])
 
     # Learning

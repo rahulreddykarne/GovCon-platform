@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import Query, Request
+from fastapi import Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session as OrmSession
@@ -44,6 +44,7 @@ from govcon.web.routes.common import (
     _WORKFLOW_ERRORS,
     _actor,
     _error_text,
+    _form_int,
     _NeedsLogin,
     _redirect,
     _render,
@@ -95,6 +96,12 @@ WORKSPACE_TABS = [
 ]
 
 
+REQUIREMENTS_PAGE_SIZE = 200
+OVERRIDE_STATUS_LABELS = (
+    ("satisfied", "Met"), ("missing", "Missing"), ("needs_review", "Needs review"), ("not_applicable", "Not applicable"),
+)
+
+
 def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Query(ge=1, le=1_000_000)] = 1) -> Response:
     from govcon.web.progress import progress_state
     try:
@@ -138,23 +145,35 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
 
             tab_ctx["stage_trace"] = opportunity_trace(db, opp)
 
-        if active_tab == "requirements" or active_tab == "compliance":
-            total = db.scalar(select(func.count()).select_from(Requirement).where(Requirement.opportunity_id == opp_id)) or 0
-            page_size = 200
+        if active_tab == "compliance":
+            from govcon.compliance.matrix import OVERRIDE_STATUSES, latest_run
+            from govcon.compliance.pipeline import (
+                CompanyFactsInvalid,
+                load_company_facts,
+            )
+            from govcon.compliance.submission_preflight import readiness_blockers
+            from govcon.compliance.view import compliance_view
+            from govcon.config import get_settings
+
+            try:
+                facts = load_company_facts(get_settings(), db)
+                tab_ctx["company_facts_error"] = None
+            except CompanyFactsInvalid as exc:
+                facts = {}
+                tab_ctx["company_facts_error"] = str(exc)
+            view = compliance_view(db, opp_id, facts=facts)
+            total = len(view.rows)
+            page_size = REQUIREMENTS_PAGE_SIZE
             pages = max(1, (total + page_size - 1) // page_size)
             page = min(requirements_page, pages)
             tab_ctx.update(requirements_total=total, requirements_page=page, requirements_pages=pages,
                            requirements_start=(page - 1) * page_size + 1 if total else 0,
                            requirements_end=min(total, page * page_size))
-            tab_ctx["requirements"] = db.scalars(
-                select(Requirement).where(Requirement.opportunity_id == opp_id)
-                .order_by(Requirement.severity.nullslast(), Requirement.id)
-                .offset((page - 1) * page_size).limit(page_size)
-            ).all()
-            from govcon.compliance.matrix import latest_run
-            from govcon.compliance.submission_preflight import readiness_blockers
-
-            tab_ctx["compliance_run"] = latest_run(db, opp_id, "compliance_matrix")
+            tab_ctx["compliance"] = view
+            tab_ctx["requirement_rows"] = view.rows[(page - 1) * page_size: page * page_size]
+            tab_ctx["compliance_run"] = view.run
+            tab_ctx["can_override"] = can(user, "override_compliance")
+            tab_ctx["override_statuses"] = [(s, label) for s, label in OVERRIDE_STATUS_LABELS if s in OVERRIDE_STATUSES]
             tab_ctx["preflight_run"] = latest_run(db, opp_id, "submission_preflight")
             tab_ctx["preflight_blockers"] = readiness_blockers(db, opp_id) if tab_ctx["preflight_run"] else []
 
@@ -399,3 +418,38 @@ def workspace_prepare(request: Request, opp_id: int) -> Response:
     except _WORKFLOW_ERRORS as exc:
         return _redirect(target, error=_error_text(exc), request=request)
     return _redirect(target, notice="Preparation queued." if created else "Preparation is already queued or running.", request=request)
+
+
+def workspace_requirement_override(
+    request: Request,
+    opp_id: int,
+    req_id: int,
+    status: Annotated[str, Form()],
+    reason: Annotated[str, Form()],
+    expected_version: Annotated[str, Form()],
+    acknowledge_deterministic_failure: Annotated[str | None, Form()] = None,
+) -> Response:
+    """Record an authorized human compliance override; the matrix service checks the permission and audits it."""
+    from govcon.compliance.matrix import override_requirement
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=compliance#req-{req_id}"
+    try:
+        version = _form_int(expected_version)
+        if version is None:
+            raise ValueError("reload the page and enter the override again")
+        with session_scope() as db:
+            actor = _actor(db, user, "override_compliance")
+            requirement = db.get(Requirement, req_id)
+            if requirement is None or requirement.opportunity_id != opp_id:
+                raise ValueError("requirement not found for this opportunity")
+            override_requirement(
+                db, requirement_id=req_id, status=status, actor=actor, reason=reason,
+                expected_version=version, acknowledge_deterministic_failure=acknowledge_deterministic_failure == "yes",
+            )
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc), request=request)
+    return _redirect(target, notice=f"Requirement {req_id} override recorded in the audit log.", request=request)
