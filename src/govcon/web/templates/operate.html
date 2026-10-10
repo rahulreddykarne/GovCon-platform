@@ -15,6 +15,7 @@
     <a href="/operate/agents" {% if view == 'agents' %}class="active" aria-current="page"{% endif %}>Agents</a>
     <a href="/operate/architecture" {% if view == 'architecture' %}class="active" aria-current="page"{% endif %}>Architecture</a>
     <a href="/operate/integrations" {% if view == 'integrations' %}class="active" aria-current="page"{% endif %}>Integrations &amp; models</a>
+    <a href="/operate/usage" {% if view == 'usage' %}class="active" aria-current="page"{% endif %}>AI usage &amp; cost</a>
     <a href="/operate/how" {% if view == 'how' %}class="active" aria-current="page"{% endif %}>How GovCon works</a>
   </nav>
 
@@ -162,6 +163,10 @@
     {% include "operate_inspector.html" %}
   </div>
   <p class="architecture-note"><strong>Human control.</strong> Pursuit, compliance overrides, sensitive-data sharing, external messages, agency contact, and bid submission stay manual.</p>
+  {% endif %}
+
+  {% if view == 'usage' and usage %}
+  {% include "operate_usage.html" %}
   {% endif %}
 
   {% if view == 'how' and guide %}

@@ -88,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Import routes (late import to avoid circular deps at module load time)
     from govcon.web.bot_pages import bots_decide, bots_page, bots_run
-    from govcon.web.operate_pages import operate
+    from govcon.web.operate_pages import operate, usage_price_save
     from govcon.web.routes import (
         admin_invite_get,
         admin_invite_post,
@@ -200,6 +200,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/ops", ops, methods=["GET"])
     app.add_api_route("/operate", operate, methods=["GET"])
     app.add_api_route("/operate/{view}", operate, methods=["GET"])
+    app.add_api_route("/operate/usage/prices", usage_price_save, methods=["POST"])
     app.add_api_route("/bots", bots_page, methods=["GET"])
     app.add_api_route("/bots/run/{bot_name}", bots_run, methods=["POST"])
     app.add_api_route("/bots/approvals/{approval_id}/{action}", bots_decide, methods=["POST"])
