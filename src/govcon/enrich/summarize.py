@@ -35,6 +35,7 @@ from govcon.documents.chunking import (
     gaps_for,
     nbytes,
     render_batch,
+    split_source_batch,
 )
 from govcon.models import AIAnalysis, FilePage, Opportunity, StoredFile
 from govcon.security.classification import strictest_classification
@@ -156,76 +157,99 @@ def run_solicitation_analysis(
         execute_prepared_call,
         prepare_structured_call,
     )
+    from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
 
     calls: list[tuple[Any, Any]] = []
     gaps: list[Gap] = []
-    for index, batch in enumerate(batches):
-        diagnostic_event("summary.batch_start", part=index + 1, parts=len(batches), candidates=len(batch))
-        part = f" (part {index + 1} of {len(batches)}; other parts are analysed separately)" if len(batches) > 1 else ""
-        source = f"{header}\n\n## Extracted Source Content{part}\n{render_batch(batch)}"
-        try:
-            prepared = prepare_structured_call(
-                session,
-                opportunity_id=opportunity.id,
-                prompt_name="solicitation_analysis",
-                analysis_type=AnalysisType.SOLICITATION_SUMMARY,
-                variables={
-                    "OPPORTUNITY_JSON": json.dumps({
-                        "id": opportunity.id, "source": opportunity.source,
-                        "source_id": opportunity.source_id, "title": opportunity.title,
-                        "response_deadline": opportunity.response_deadline,
-                    }, default=str),
-                    "SOURCE_PACKAGE_JSON": source,
-                },
-                context_manifest=context_manifest,
-                settings=settings,
-                classification=classification,
+    pending = list(batches)
+    index = 0
+    sent = 0
+    link_token, linked_ids = collect_call_ids()
+    try:
+        while index < len(pending):
+            batch = pending[index]
+            diagnostic_event("summary.batch_start", part=index + 1, parts=len(pending), candidates=len(batch))
+            part = (
+                f" (part {index + 1} of {len(pending)}; other parts are analysed separately)"
+                if len(pending) > 1 else ""
             )
-            executed = execute_prepared_call(prepared, settings=settings, session=session)
-        except StructuredCallError as exc:
-            diagnostic_event("summary.batch_refused", level=logging.WARNING, reason=exc.reason,
-                             part=index + 1, parts=len(batches))
-            if not calls:
-                if exc.reason == "no_provider":
-                    import warnings
-                    warnings.warn("No AI provider configured; solicitation analysis skipped", AnalysisWarning, stacklevel=2)
-                logger.warning("solicitation analysis refused for opportunity %d: %s", opportunity.id, exc.reason)
-                if refusals is not None:
-                    refusals.append(f"{exc.reason}: {exc.detail}")
-                return None
-            reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
-            for rest in batches[index:]:
-                gaps.extend(gaps_for(rest, reason))
-            logger.warning("solicitation analysis for opportunity %d stopped at part %d: %s",
-                           opportunity.id, index + 1, exc.reason)
-            break
-        calls.append((prepared, executed))
-        diagnostic_event("summary.batch_complete", part=index + 1, quality=executed.quality)
+            source = f"{header}\n\n## Extracted Source Content{part}\n{render_batch(batch)}"
+            try:
+                prepared = prepare_structured_call(
+                    session,
+                    opportunity_id=opportunity.id,
+                    prompt_name="solicitation_analysis",
+                    analysis_type=AnalysisType.SOLICITATION_SUMMARY,
+                    variables={
+                        "OPPORTUNITY_JSON": json.dumps({
+                            "id": opportunity.id, "source": opportunity.source,
+                            "source_id": opportunity.source_id, "title": opportunity.title,
+                            "response_deadline": opportunity.response_deadline,
+                        }, default=str),
+                        "SOURCE_PACKAGE_JSON": source,
+                    },
+                    context_manifest=context_manifest,
+                    settings=settings,
+                    classification=classification,
+                )
+                executed = execute_prepared_call(prepared, settings=settings, session=session)
+            except StructuredCallError as exc:
+                diagnostic_event("summary.batch_refused", level=logging.WARNING, reason=exc.reason,
+                                 part=index + 1, parts=len(pending))
+                if exc.reason == "output_truncated":
+                    halves = split_source_batch(batch)
+                    if halves:
+                        pending[index:index + 1] = halves
+                        continue
+                if not calls:
+                    if exc.reason == "no_provider":
+                        import warnings
+                        warnings.warn("No AI provider configured; solicitation analysis skipped", AnalysisWarning, stacklevel=2)
+                    logger.warning("solicitation analysis refused for opportunity %d: %s", opportunity.id, exc.reason)
+                    if refusals is not None:
+                        refusals.append(f"{exc.reason}: {exc.detail}")
+                    return None
+                reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
+                if exc.reason == "output_truncated":
+                    gaps.extend(gaps_for(batch, reason))
+                    index += 1
+                    continue
+                for rest in pending[index:]:
+                    gaps.extend(gaps_for(rest, reason))
+                logger.warning("solicitation analysis for opportunity %d stopped at part %d: %s",
+                               opportunity.id, index + 1, exc.reason)
+                break
+            calls.append((prepared, executed))
+            sent += len(batch)
+            index += 1
+            diagnostic_event("summary.batch_complete", part=index, quality=executed.quality)
 
-    merged = merge_summaries([executed.output.model_dump(mode="json") for _, executed in calls])
-    sent = sum(len(batch) for batch in batches[: len(calls)])
-    context_manifest["coverage"] = {
-        "chunks_total": len(chunks), "chunks_sent": sent, "parts": len(batches),
-        "parts_sent": len(calls), "gaps": [gap.as_dict() for gap in gaps],
-    }
-    # Kept under its earlier name for consumers that read omitted sources.
-    context_manifest["omitted_sources"] = [gap.as_dict() for gap in gaps]
-    context_manifest["warnings"] = ([{"code": "context_truncated", "severity": "high",
-        "message": "Part of the source set was not analysed; the listed files and pages remain unreviewed."}] if gaps else [])
-    if gaps:
-        # Keep the gap visible in the user-facing result as well as the
-        # provenance manifest; it cannot imply complete review.
-        merged["missing_information"] = [*merged.get("missing_information", []), {
-            "field": "source_package",
-            "reason": "Not analysed: " + "; ".join(
-                f"{g.filename or g.file_id} pages {', '.join(str(p) for p in g.pages)} ({g.reason})" for g in gaps),
-            "impact": "Incomplete summary; review these pages separately.",
-        }]
-    analysis = _merged_analysis(calls, merged, context_manifest)
-    session.add(analysis)
-    analysis.source_refs = analysis.output_json.get("source_refs") or None
-    session.flush()
-    return analysis
+        merged = merge_summaries([executed.output.model_dump(mode="json") for _, executed in calls])
+        context_manifest["coverage"] = {
+            "chunks_total": len(chunks), "chunks_sent": sent, "parts": len(pending),
+            "parts_sent": len(calls), "gaps": [gap.as_dict() for gap in gaps],
+        }
+        # Kept under its earlier name for consumers that read omitted sources.
+        context_manifest["omitted_sources"] = [gap.as_dict() for gap in gaps]
+        context_manifest["warnings"] = ([{"code": "context_truncated", "severity": "high",
+            "message": "Part of the source set was not analysed; the listed files and pages remain unreviewed."}] if gaps else [])
+        if gaps:
+            # Keep the gap visible in the user-facing result as well as the
+            # provenance manifest; it cannot imply complete review.
+            merged["missing_information"] = [*merged.get("missing_information", []), {
+                "field": "source_package",
+                "reason": "Not analysed: " + "; ".join(
+                    f"{g.filename or g.file_id} pages {', '.join(str(p) for p in g.pages)} ({g.reason})" for g in gaps),
+                "impact": "Incomplete summary; review these pages separately.",
+            }]
+        analysis = _merged_analysis(calls, merged, context_manifest)
+        session.add(analysis)
+        analysis.source_refs = analysis.output_json.get("source_refs") or None
+        session.flush()
+        attach_call_ids(session, linked_ids, analysis_id=analysis.id)
+        return analysis
+    finally:
+        stop_collecting(link_token)
 
 
 def _source_chunks(session: Session, files: Sequence[StoredFile]) -> list[SourceChunk]:

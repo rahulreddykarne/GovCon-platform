@@ -33,6 +33,7 @@ from govcon.ai.structured import (
     checked_output,
     run_structured_prompt,
 )
+from govcon.documents.chunking import split_text_batch
 from govcon.compliance.matrix import record_run
 from govcon.compliance.records import (
     REQUIREMENT_TYPES,
@@ -411,9 +412,32 @@ def run_ai_pass(
         "files": [{"file_id": d.file_id, "sha256": d.sha256, "pages": d.page_count, "classification": d.classification, "source_origin": d.source_origin} for d in inventory.documents],
     }
     run_type = f"extraction_pass_{pass_label.lower()}"
-    from govcon.security.classification import strictest_classification
+    from govcon.security.classification import has_sendable_content, payload_classification
 
-    classification = strictest_classification(*(d.classification for d in inventory.documents))
+    classification = payload_classification(*inventory.documents)
+    empty_gaps = [
+        {
+            "file_id": doc.file_id,
+            "filename": doc.filename,
+            "pages": [],
+            "reason": "download_failed" if doc.text_extraction_status == "download_failed" else "no_extracted_content",
+        }
+        for doc in inventory.documents
+        if not has_sendable_content(doc)
+    ]
+    if empty_gaps:
+        warnings.append({
+            "code": "source_ingestion_incomplete",
+            "severity": "high",
+            "message": (
+                "Listed attachments with no extracted content were excluded from this pass and "
+                "from classification: "
+                + "; ".join(
+                    f"{gap['filename'] or gap['file_id']} ({gap['reason']})" for gap in empty_gaps
+                )
+                + ". Re-download or ingest readable copies; they remain a coverage gap."
+            ),
+        })
     if not batches:
         # No document text (nothing downloaded, or nothing readable): no call is made,
         # and the pass is recorded as failed so the extraction stays incomplete.
@@ -426,47 +450,62 @@ def run_ai_pass(
             run_type=run_type,
             run_version=EXTRACTOR_VERSION,
             output={"error": "no_source_text", "manifest": {**base_manifest, "part": 0, "parts": 0, "chunks": []},
-                    "coverage": {"chunks_total": 0, "chunks_sent": 0, "gaps": []}},
+                    "coverage": {"chunks_total": 0, "chunks_sent": 0, "gaps": empty_gaps}},
             status="failed",
             warnings=warnings,
             source_snapshot_ids=source_snapshot_ids,
         )
         return PassOutcome(pass_label, [], "failed", run.id, warnings=warnings)
     results = []
-    gaps: list[dict[str, Any]] = []
+    gaps: list[dict[str, Any]] = list(empty_gaps)
     sent = 0
     last_error: StructuredCallError | None = None
-    for index, batch in enumerate(batches):
-        manifest = {
-            **base_manifest,
-            "part": index + 1,
-            "parts": len(batches),
-            "chunks": [{"chunk_id": c["chunk_id"], "file_id": c["file_id"], "page": c["page"]} for c in batch],
-        }
-        try:
-            results.append(run_structured_prompt(
-                session,
-                classification=classification,
-                opportunity_id=opportunity.id,
-                prompt_name=prompt_name,
-                analysis_type=AnalysisType.COMPLIANCE_REVIEW,
-                variables={**base_variables, "SOURCE_CHUNKS": "\n\n".join(c["text"] for c in batch)},
-                context_manifest=manifest,
-                settings=settings,
-                provider_name=provider_name,
-                model=model,
-            ))
-            sent += len(batch)
-        except StructuredCallError as exc:
-            last_error = exc
-            reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
-            if exc.reason in _PART_LOCAL_FAILURES:
-                # One unusable answer: this part is a gap, the rest is still read.
-                gaps += _gaps(batch, inventory, reason)
-                continue
-            # Budget, policy or prompt problems fail every later part the same way.
-            gaps += _gaps([c for rest in batches[index:] for c in rest], inventory, reason)
-            break
+    pending = list(batches)
+    index = 0
+    from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
+    link_token, linked_ids = collect_call_ids()
+    try:
+        while index < len(pending):
+            batch = pending[index]
+            manifest = {
+                **base_manifest,
+                "part": index + 1,
+                "parts": len(pending),
+                "chunks": [{"chunk_id": c["chunk_id"], "file_id": c["file_id"], "page": c["page"]} for c in batch],
+            }
+            try:
+                results.append(run_structured_prompt(
+                    session,
+                    classification=classification,
+                    opportunity_id=opportunity.id,
+                    prompt_name=prompt_name,
+                    analysis_type=AnalysisType.COMPLIANCE_REVIEW,
+                    variables={**base_variables, "SOURCE_CHUNKS": "\n\n".join(c["text"] for c in batch)},
+                    context_manifest=manifest,
+                    settings=settings,
+                    provider_name=provider_name,
+                    model=model,
+                ))
+                sent += len(batch)
+                index += 1
+            except StructuredCallError as exc:
+                last_error = exc
+                reason = "budget_exhausted" if exc.reason == "budget_exceeded" else exc.reason
+                if exc.reason == "output_truncated":
+                    halves = split_text_batch(batch)
+                    if halves:
+                        pending[index:index + 1] = halves
+                        continue
+                if exc.reason in _PART_LOCAL_FAILURES:
+                    # One unusable answer: this part is a gap, the rest is still read.
+                    gaps += _gaps(batch, inventory, reason)
+                    index += 1
+                    continue
+                # Budget, policy or prompt problems fail every later part the same way.
+                gaps += _gaps([c for rest in pending[index:] for c in rest], inventory, reason)
+                break
+    finally:
+        stop_collecting(link_token)
 
     if not results:
         failure = last_error
@@ -478,19 +517,21 @@ def run_ai_pass(
             opportunity_id=opportunity.id,
             run_type=run_type,
             run_version=EXTRACTOR_VERSION,
-            output={"error": failure.reason, "detail": failure.detail, "manifest": {**base_manifest, "parts": len(batches)},
+            output={"error": failure.reason, "detail": failure.detail, "manifest": {**base_manifest, "parts": len(pending)},
                     "coverage": {"chunks_total": len(chunks), "chunks_sent": 0,
-                                 "gaps": _gaps(chunks, inventory, failure.reason)}},
+                                 "gaps": empty_gaps + _gaps(chunks, inventory, failure.reason)}},
             status="failed",
             warnings=warnings,
             source_snapshot_ids=source_snapshot_ids,
         )
+        attach_call_ids(session, linked_ids, compliance_run_id=run.id)
         return PassOutcome(pass_label, [], "failed", run.id, warnings=warnings)
 
-    if gaps:
+    read_gaps = [gap for gap in gaps if gap.get("reason") not in {"download_failed", "no_extracted_content"}]
+    if read_gaps:
         warnings.append({"code": "context_truncated", "severity": "high", "message": (
-            f"Pass {pass_label} could not read part of the source set ({gaps[0]['reason']}): "
-            + "; ".join(f"{g['filename'] or g['file_id']} pages {', '.join(str(p) for p in g['pages'])}" for g in gaps)
+            f"Pass {pass_label} could not read part of the source set ({read_gaps[0]['reason']}): "
+            + "; ".join(f"{g['filename'] or g['file_id']} pages {', '.join(str(p) for p in g['pages'])}" for g in read_gaps)
             + ". Requirements there are not extracted.")})
     candidates = [c for result in results for c in candidates_from_output(pass_label, checked_output(result.output, RequirementExtractionV1).requirements, inventory)]
     first = results[0]
@@ -505,7 +546,7 @@ def run_ai_pass(
             "prompt": {"name": first.prompt.name, "version": first.prompt.version, "hash": first.prompt.content_hash},
             "candidates": [c.__dict__ for c in candidates],
             "extraction_notes": [note for r in results for note in checked_output(r.output, RequirementExtractionV1).extraction_notes],
-            "coverage": {"chunks_total": len(chunks), "chunks_sent": sent, "parts": len(batches),
+            "coverage": {"chunks_total": len(chunks), "chunks_sent": sent, "parts": len(pending),
                          "parts_sent": len(results), "gaps": gaps},
         },
         status="incomplete" if gaps else "complete",
@@ -514,6 +555,7 @@ def run_ai_pass(
         input_hash=first.analysis.input_snapshot_hash if len(results) == 1 else hashlib.sha256(
             "".join(r.analysis.input_snapshot_hash or "" for r in results).encode()).hexdigest(),
     )
+    attach_call_ids(session, linked_ids, compliance_run_id=run.id)
     return PassOutcome(
         pass_label, candidates, "incomplete" if gaps else "complete", run.id, first.analysis.id,
         first.analysis.provider, first.analysis.model, warnings,

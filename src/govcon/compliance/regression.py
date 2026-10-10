@@ -166,11 +166,11 @@ def _live_candidates(inventory: Inventory, settings, candidate=None) -> list[Can
     from govcon.prompting.behavioral import evaluation_identity
     from govcon.prompting.registry import load_prompt_from_disk
     from govcon.prompting.renderer import render_system_prompt, render_user_context
-    from govcon.security.classification import strictest_classification
+    from govcon.security.classification import payload_classification
 
     settings = settings or get_settings()
     out: list[Candidate] = []
-    classification = strictest_classification(*(doc.classification for doc in inventory.documents))
+    classification = payload_classification(*inventory.documents)
     for label, prompt in PASS_PROMPTS.items():
         chunks = build_context(inventory, label, char_budget=10**7)
         variables = {"DOCUMENT_INVENTORY_JSON": _inventory_json(inventory), "SOURCE_CHUNKS": "\n\n".join(c["text"] for c in chunks), "AMENDMENT_JSON": _amendment_json(inventory)}

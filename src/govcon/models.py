@@ -610,15 +610,18 @@ class AIProviderCall(CreatedAtMixin, Base):
 
     ``input_tokens`` is NULL when the response had no usage fields. Blocked calls
     store zero tokens and a zero cost because nothing was sent. Local work stores
-    a zero cost. A NULL cost on a succeeded or failed call means the price is not set
-    or the usage was not reported. ``web_search_requests``/``web_fetch_requests``
-    are the server-tool counts the provider reported; NULL means not reported.
+    a zero cost. A NULL cost on a succeeded, failed, truncated or discarded call
+    means the price is not set or the usage was not reported.
+    ``web_search_requests``/``web_fetch_requests`` are the server-tool counts the
+    provider reported; NULL means not reported. ``truncated`` is a call whose
+    ``finish_reason`` was ``length``/``max_tokens``; ``output_rejected`` is a
+    completed HTTP call whose JSON was discarded.
     """
 
     __tablename__ = "ai_provider_calls"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('succeeded', 'failed', 'blocked', 'local')",
+            "status IN ('succeeded', 'failed', 'blocked', 'local', 'truncated', 'output_rejected')",
             name="ck_ai_provider_calls_status",
         ),
         CheckConstraint(
@@ -652,6 +655,8 @@ class AIProviderCall(CreatedAtMixin, Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     analysis_id: Mapped[int | None] = mapped_column(BigInteger)
     decision_run_id: Mapped[int | None] = mapped_column(BigInteger)
+    compliance_run_id: Mapped[int | None] = mapped_column(BigInteger)
+    finish_reason: Mapped[str | None] = mapped_column(Text)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric)
     price_id: Mapped[int | None] = mapped_column(ForeignKey("ai_model_prices.id"))
 

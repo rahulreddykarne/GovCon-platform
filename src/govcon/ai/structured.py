@@ -30,7 +30,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from govcon.ai.budget import AIBudgetExceeded, complete_with_budget
+from govcon.ai.budget import AIBudgetExceeded, complete_with_budget, output_token_limit
 from govcon.ai.gateway import AIGatewayBlocked, authorize_external_call
 from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
@@ -232,7 +232,20 @@ def prepare_structured_call(
 
     # Policy first: a disallowed call is refused before any content is assembled.
     resolved_provider = (provider_name or settings.ai_primary_provider or "").strip().lower()
-    enforce_prompt_policy(prompt, classification=classification, provider_name=resolved_provider)
+
+    def _record_blocked(reason: str) -> None:
+        from govcon.ai.usage_log import record_call
+        record_call(
+            session, provider=resolved_provider or "none", purpose=prompt_name, status="blocked",
+            model=model, opportunity_id=opportunity_id, finish_reason=reason,
+        )
+
+    try:
+        enforce_prompt_policy(prompt, classification=classification, provider_name=resolved_provider)
+    except StructuredCallError as exc:
+        if exc.reason == "blocked_by_policy":
+            _record_blocked(exc.detail)
+        raise
     try:
         authorize_external_call(
             classification=classification,
@@ -242,9 +255,7 @@ def prepare_structured_call(
             settings=settings,
         )
     except AIGatewayBlocked as exc:
-        from govcon.ai.usage_log import record_call
-        record_call(session, provider=resolved_provider, purpose=prompt_name, status="blocked",
-                    model=model, opportunity_id=opportunity_id)
+        _record_blocked(str(exc))
         raise StructuredCallError("blocked_by_policy", str(exc)) from exc
 
     try:
@@ -262,7 +273,7 @@ def prepare_structured_call(
         "temperature": 0.0,
         "json_mode": True,
         "classification": classification.value,
-        "max_tokens": settings.ai_max_output_tokens_per_call,
+        "max_tokens": output_token_limit(settings, resolved_provider),
     }
     if model:
         generation_settings["model"] = model
@@ -354,12 +365,21 @@ def execute_prepared_call(
             logger.warning("structured output rejected prompt=%s attempt=%d: %s", prepared.prompt.name, attempt + 1, type(exc).__name__)
             if getattr(result, "finish_reason", None) in _TRUNCATED:
                 # The same request stops at the same cap; another attempt only spends tokens.
+                # The caller splits this part and retries the halves.
                 raise StructuredCallError(
                     "output_truncated",
-                    f"the provider stopped at the {settings.ai_max_output_tokens_per_call}-token output limit "
-                    "before finishing (a reasoning model's thinking counts against it); raise "
-                    "AI_MAX_OUTPUT_TOKENS_PER_CALL and retry",
+                    f"the provider stopped at the {output_token_limit(settings, prepared.provider_name)}-token "
+                    "output limit before finishing (a reasoning model's thinking counts against it); "
+                    "the part will be split and retried. If a split part still hits the cap, raise "
+                    "AI_MAX_OUTPUT_TOKENS_PER_CALL",
                 ) from exc
+            call_id = getattr(result, "usage_call_id", None)
+            if call_id is not None:
+                from govcon.ai.usage_log import update_call_status
+                update_call_status(
+                    session, int(call_id), status="output_rejected",
+                    finish_reason=getattr(result, "finish_reason", None), engine=engine,
+                )
             last_error = StructuredCallError("invalid_output", f"attempt {attempt + 1}: {type(exc).__name__}")
             continue
         quality, reason = _output_quality(prepared.schema_cls, validated)

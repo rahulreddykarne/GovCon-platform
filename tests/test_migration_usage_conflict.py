@@ -21,7 +21,7 @@ from sqlalchemy.engine import Engine, make_url
 from alembic import command
 from govcon.cli import alembic_config
 
-HEAD = "b0c1d2e3f4a5"
+HEAD = "c1d2e3f4a5b6"
 BEFORE_CONFLICT = "e7f8a9b0c1d2"
 CONFLICT = "f8a9b0c1d2e3"
 

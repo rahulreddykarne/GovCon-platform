@@ -29,6 +29,36 @@ def strictest_classification(*values: DataClassification | str | None) -> DataCl
     return max(classes, key=order.index, default=DataClassification.PUBLIC)
 
 
+def has_sendable_content(row: object) -> bool:
+    """True when this file contributed extracted text that a model call would send.
+
+    A failed download or a stored row with no extracted text is not document
+    content: its classification must not decide whether a call is allowed.
+    """
+    status = getattr(row, "extraction_status", None) or getattr(row, "text_extraction_status", None)
+    if status == "download_failed":
+        return False
+    pages = getattr(row, "page_texts", None)
+    if isinstance(pages, list) and any(isinstance(page, str) and page.strip() for page in pages):
+        return True
+    for attr in ("extracted_text", "text"):
+        value = getattr(row, attr, None)
+        if isinstance(value, str) and value.strip():
+            return True
+    return False
+
+
+def payload_classification(*items: object) -> DataClassification:
+    """Strictest class of files whose content is actually sent.
+
+    Failed downloads and empty extractions are omitted. An empty set is PUBLIC
+    (no content is leaving); a sendable UNKNOWN file still fails closed.
+    """
+    return strictest_classification(*(
+        getattr(item, "classification", None) for item in items if has_sendable_content(item)
+    ))
+
+
 def opportunity_classification(session: Session, opportunity_id: int, declared: DataClassification) -> DataClassification:
     # Retained historical documents can still contribute to derived content.
     # A failed download has no bytes: its UNKNOWN class is not document content.
@@ -47,9 +77,7 @@ def _counts_toward_gateway(row: object) -> bool:
     classification = getattr(row, "classification", None)
     if classification in {"PROPRIETARY", "FCI", "CUI", "SECRET_CREDENTIAL"}:
         return True
-    if classification == "UNKNOWN" and not getattr(row, "sha256", None):
-        return False
-    return True
+    return has_sendable_content(row)
 
 
 # FCI and CUI are never inferred. Callers must pass them explicitly.

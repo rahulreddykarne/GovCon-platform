@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     # Source text per extraction/summary call. Kept apart from the per-call input
     # limit: single-call steps (reconciliation, contradictions) need a high limit,
     # while smaller source batches keep long answers under the output cap.
-    ai_source_batch_bytes: int = Field(default=24_000, ge=2_000)
+    ai_source_batch_bytes: int = Field(default=10_000, ge=2_000)
     ai_max_provider_retries: int = Field(default=2, ge=0, le=5)
     ai_max_cost_usd_per_opportunity: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     # Operator-supplied upper rate covering input/output, caching, and fallback

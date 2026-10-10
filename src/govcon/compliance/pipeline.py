@@ -55,7 +55,7 @@ from govcon.compliance.validator import run_jev_routing, run_validation
 from govcon.config import Settings, get_settings
 from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.models import Opportunity
-from govcon.security.classification import strictest_classification
+from govcon.security.classification import payload_classification
 
 logger = logging.getLogger("govcon.compliance.pipeline")
 
@@ -151,7 +151,7 @@ def _ai_reconciliation_hints(session, opportunity_id, candidates, canonicals, in
     try:
         result = run_structured_prompt(
             session,
-            classification=strictest_classification(*(d.classification for d in inventory.documents)),
+            classification=payload_classification(*inventory.documents),
             opportunity_id=opportunity_id,
             prompt_name="requirement_reconciliation",
             analysis_type=AnalysisType.COMPLIANCE_REVIEW,
@@ -186,6 +186,32 @@ def run_compliance_pipeline(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     settings = settings or get_settings()
+    from govcon.ai.usage_log import attach_call_ids, collect_call_ids, stop_collecting
+    link_token, linked_ids = collect_call_ids()
+    try:
+        result = _run_compliance_pipeline(
+            session, opportunity_id,
+            use_ai=use_ai, force=force, company_facts=company_facts, package=package,
+            supplier=supplier, settings=settings, now=now,
+        )
+        attach_call_ids(session, linked_ids, compliance_run_id=result.get("matrix_run_id"))
+        return result
+    finally:
+        stop_collecting(link_token)
+
+
+def _run_compliance_pipeline(
+    session: Session,
+    opportunity_id: int,
+    *,
+    use_ai: bool,
+    force: bool,
+    company_facts: dict[str, Any] | None,
+    package: SubmissionPackage | None,
+    supplier: dict[str, Any] | None,
+    settings: Any,
+    now: datetime | None,
+) -> dict[str, Any]:
     opportunity = session.get(Opportunity, opportunity_id)
     if opportunity is None:
         raise ValueError(f"opportunity not found: {opportunity_id}")

@@ -49,6 +49,93 @@ def test_seeded_prices_match_the_cited_catalog(db) -> None:
     assert anthropic and all(item["web_search_usd_per_thousand"] == Decimal(10) for item in anthropic)
 
 
+def test_a_capped_completion_is_recorded_as_truncated_not_succeeded(db, monkeypatch) -> None:
+    from govcon.ai.budget import complete_with_budget
+
+    class Provider:
+        name = "deepseek"
+
+        def complete(self, **kwargs):
+            return SimpleNamespace(
+                content='{"summary":',
+                model="deepseek-flash",
+                provider="deepseek",
+                usage={"prompt_tokens": 40, "completion_tokens": 8192},
+                latency_ms=20,
+                finish_reason="length",
+            )
+
+    complete_with_budget(
+        Provider(), db, opportunity_id=None, settings=_settings(),
+        system_prompt="s", user_prompt="u", classification=DataClassification.PUBLIC, purpose="solicitation_analysis",
+    )
+    row = _rows(db)[-1]
+    assert row.status == "truncated"
+    assert row.finish_reason == "length"
+    assert row.output_tokens == 8192
+
+
+def test_discarded_json_is_recorded_as_output_rejected(db, monkeypatch) -> None:
+    from pathlib import Path
+
+    from govcon.ai.structured import StructuredCallError, execute_prepared_call, prepare_structured_call
+    from govcon.prompting.registry import sync_prompts
+
+    sync_prompts(db, Path(__file__).parent.parent / "src" / "govcon" / "prompts", settings=_settings())
+    db.commit()
+
+    class Provider:
+        name = "deepseek"
+
+        def complete(self, **kwargs):
+            return SimpleNamespace(
+                content="not json",
+                model="deepseek-flash",
+                provider="deepseek",
+                usage={"prompt_tokens": 10, "completion_tokens": 4},
+                latency_ms=3,
+                finish_reason="stop",
+            )
+
+    monkeypatch.setattr("govcon.ai.structured.get_provider", lambda *a, **k: Provider())
+    before = len(_rows(db))
+    prepared = prepare_structured_call(
+        db, opportunity_id=None, prompt_name="solicitation_analysis",
+        analysis_type="solicitation_summary",
+        variables={"OPPORTUNITY_JSON": {}, "SOURCE_PACKAGE_JSON": "synthetic public source"},
+        context_manifest={}, settings=_settings(), classification=DataClassification.PUBLIC,
+    )
+    with pytest.raises(StructuredCallError, match="invalid_output"):
+        execute_prepared_call(prepared, settings=_settings(), session=db)
+    rows = _rows(db)[before:]
+    assert rows and all(row.status == "output_rejected" for row in rows)
+    assert all(row.finish_reason == "stop" for row in rows)
+
+
+def test_prompt_classification_gate_writes_a_blocked_ledger_row(db) -> None:
+    from pathlib import Path
+
+    from govcon.ai.structured import StructuredCallError, prepare_structured_call
+    from govcon.prompting.registry import sync_prompts
+
+    sync_prompts(db, Path(__file__).parent.parent / "src" / "govcon" / "prompts", settings=_settings())
+    db.commit()
+    before = len(_rows(db))
+    with pytest.raises(StructuredCallError, match="does not allow UNKNOWN"):
+        prepare_structured_call(
+            db, opportunity_id=None, prompt_name="requirement_extraction_a",
+            analysis_type="compliance_review",
+            variables={"OPPORTUNITY_JSON": {}, "DOCUMENT_INVENTORY_JSON": [], "SOURCE_CHUNKS": "x",
+                       "AMENDMENT_JSON": {}},
+            context_manifest={}, settings=_settings(), classification=DataClassification.UNKNOWN,
+        )
+    added = _rows(db)[before:]
+    assert len(added) == 1
+    assert added[0].status == "blocked"
+    assert added[0].purpose == "requirement_extraction_a"
+    assert "UNKNOWN" in (added[0].finish_reason or "")
+
+
 def test_usage_is_taken_from_the_provider_response(db, monkeypatch) -> None:
     from govcon.ai.budget import complete_with_budget
 

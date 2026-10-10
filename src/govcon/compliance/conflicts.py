@@ -330,13 +330,22 @@ def _ai_conflicts(session, opportunity_id, inventory, requirements, docs, run_id
     inventory_json = [d.manifest() for d in inventory.documents]
     # Half the call's input limit for requirements; the rest covers the prompt,
     # schema and document inventory.
-    max_bytes = max(min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity) // 2
-                    - len(json.dumps(inventory_json, default=str)), 2_000)
+    max_bytes = max(
+        min(
+            settings.ai_max_input_tokens_per_call // 2,
+            settings.ai_max_input_tokens_per_opportunity // 2,
+            settings.ai_source_batch_bytes,
+        ) - len(json.dumps(inventory_json, default=str)),
+        2_000,
+    )
     parts = contradiction_parts(requirements, max_bytes)
     analysis_ids: list[int] = []
     raised = 0
     failed_parts = 0
-    for index, part in enumerate(parts):
+    pending = list(parts)
+    index = 0
+    while index < len(pending):
+        part = pending[index]
         try:
             result = run_structured_prompt(
                 session,
@@ -348,26 +357,41 @@ def _ai_conflicts(session, opportunity_id, inventory, requirements, docs, run_id
                     "REQUIREMENTS_JSON": [_requirement_payload(r) for r in part],
                     "DOCUMENT_INVENTORY_JSON": inventory_json,
                 },
-                context_manifest={"requirement_ids": sorted(r.id for r in part), "part": index + 1, "parts": len(parts),
+                context_manifest={"requirement_ids": sorted(r.id for r in part), "part": index + 1, "parts": len(pending),
                                   "files": [d.file_id for d in inventory.documents]},
                 settings=settings,
             )
         except StructuredCallError as exc:
+            if exc.reason == "output_truncated":
+                halves = _split_requirement_part(part)
+                if halves:
+                    pending[index:index + 1] = halves
+                    continue
             failed_parts += 1
             warnings.append({"code": f"contradiction_ai_{exc.reason}", "severity": "medium",
-                             "message": f"part {index + 1} of {len(parts)}: {exc.detail}"})
+                             "message": f"part {index + 1} of {len(pending)}: {exc.detail}"})
             if exc.reason in _PART_LOCAL_FAILURES:
+                index += 1
                 continue
             break  # budget, policy or prompt problems fail every later part the same way
         analysis_ids.append(result.analysis.id)
         for item in checked_output(result.output, ContradictionDetectionV1).conflicts:
             _apply_ai_conflict(session, opportunity_id, item, by_id, docs, run_id, result.prompt)
             raised += 1
+        index += 1
     if not analysis_ids:
-        return {"status": "failed", "reason": warnings[-1]["code"].removeprefix("contradiction_ai_"), "parts": len(parts)}
+        return {"status": "failed", "reason": warnings[-1]["code"].removeprefix("contradiction_ai_"), "parts": len(pending)}
     status = "complete" if failed_parts == 0 else "partial"
     return {"status": status, "ai_analysis_id": analysis_ids[0], "ai_analysis_ids": analysis_ids,
-            "conflicts_raised": raised, "parts": len(parts), "parts_failed": failed_parts}
+            "conflicts_raised": raised, "parts": len(pending), "parts_failed": failed_parts}
+
+
+def _split_requirement_part(part: list) -> list[list]:
+    """Halve a truncated contradiction part so it can be retried as smaller calls."""
+    if len(part) < 2:
+        return []
+    mid = len(part) // 2
+    return [part[:mid], part[mid:]]
 
 
 def _apply_ai_conflict(session, opportunity_id, item, by_id, docs, run_id, prompt) -> None:

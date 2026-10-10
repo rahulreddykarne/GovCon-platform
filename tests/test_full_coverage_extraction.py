@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.compliance.extractor import run_ai_pass
@@ -136,17 +137,20 @@ def _stopping_provider(monkeypatch, content: str):
     return calls
 
 
-def test_output_cut_off_at_the_token_cap_fails_once_with_its_reason(db, monkeypatch):
-    """deepseek-flash spent 8,192 tokens (reasoning included) and stopped mid-JSON; retrying cannot help."""
+def test_output_cut_off_at_the_token_cap_is_split_and_retried(db, monkeypatch):
+    """A part that hits the output cap is split into smaller calls instead of being discarded."""
     calls = _stopping_provider(monkeypatch, '{"requirements": [{"requirement_text": "The contractor sh')
     opp, inventory = long_solicitation(db)
     outcome = run_ai_pass(db, opp, inventory, "A", settings=Settings(_env_file=None))
     assert outcome.status == "failed"
     warning = next(w for w in outcome.warnings if w["code"] == "pass_a_output_truncated")
     assert "AI_MAX_OUTPUT_TOKENS_PER_CALL" in warning["message"]
-    from govcon.models import ComplianceRun
+    from govcon.models import AIProviderCall, ComplianceRun
     parts = db.get(ComplianceRun, outcome.run_id).output_json["manifest"]["parts"]
-    assert parts > 1 and len(calls) == parts  # every part tried once; none retried at the same cap
+    assert parts > 1 and len(calls) > parts  # truncated parts were split and retried
+    rows = db.scalars(select(AIProviderCall).where(AIProviderCall.opportunity_id == opp.id)).all()
+    assert any(row.status == "truncated" and row.finish_reason == "length" for row in rows)
+    assert all(row.status != "succeeded" for row in rows)
 
 
 def test_a_complete_answer_that_reports_the_cap_is_still_accepted(db, monkeypatch):

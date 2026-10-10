@@ -29,6 +29,30 @@ class AIBudgetExceeded(RuntimeError):
 PROPOSAL_PURPOSES = frozenset({"proposal_drafting", "proposal_red_team", "proposal_coverage",
                                "submission_preflight_ai"})
 
+# Provider stop reasons meaning the completion hit the output-token cap.
+TRUNCATED_FINISH_REASONS = frozenset({"length", "max_tokens"})
+
+# Models that accept a larger completion than the DeepSeek-era 8,192 default.
+_PROVIDER_OUTPUT_FLOORS = {
+    "anthropic": 16_384,
+    "openai": 16_384,
+}
+
+
+def output_token_limit(settings: Settings, provider_name: str | None) -> int:
+    """Per-call output cap: the configured value, raised where the model allows it."""
+    configured = settings.ai_max_output_tokens_per_call
+    floor = _PROVIDER_OUTPUT_FLOORS.get((provider_name or "").strip().lower())
+    return max(configured, floor) if floor is not None else configured
+
+
+def ledger_status_for_result(result: object) -> str:
+    """A capped completion is not a plain success; the ledger must say truncated."""
+    reason = getattr(result, "finish_reason", None)
+    if reason in TRUNCATED_FINISH_REASONS:
+        return "truncated"
+    return "succeeded"
+
 
 def budget_fingerprint(settings: Settings) -> str:
     """Identifies the configured limits; a budget-blocked task resumes when it changes."""
@@ -118,8 +142,9 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
     open (ADR-061); accounting commits on its own connection either way.
     """
     tokens = input_bound(system_prompt, user_prompt)
+    max_output = output_token_limit(settings, provider)
     diagnostic_event("ai.budget_check", provider=provider, model=model, prompt=purpose,
-                     input_tokens=tokens, max_output_tokens=settings.ai_max_output_tokens_per_call)
+                     input_tokens=tokens, max_output_tokens=max_output)
     if tokens > min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity):
         raise AIBudgetExceeded("Combined context exceeds the input limit; no source text was sent. Reduce the source set or explicitly chunk it; omitted sources remain unreviewed.")
     rate = Decimal(str(settings.ai_budget_usd_per_million_tokens)) if settings.ai_budget_usd_per_million_tokens is not None else None
@@ -134,7 +159,7 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
             raise AIBudgetExceeded("Persistent budget accounting requires a database session.")
         bind = session.get_bind()
         engine = getattr(bind, "engine", bind)
-    cost = Decimal(tokens + settings.ai_max_output_tokens_per_call) * rate / 1_000_000 if rate is not None else None
+    cost = Decimal(tokens + max_output) * rate / 1_000_000 if rate is not None else None
     with Session(engine) as db, db.begin():
         if opportunity_id is not None:
             if engine.dialect.name != "postgresql":
@@ -160,7 +185,7 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
                     raise AIBudgetExceeded("Opportunity dollar budget exhausted, including pending reservations." + kept)
         row = AICallUsage(opportunity_id=opportunity_id, purpose=purpose, provider=provider,
                          model=model, status="reserved", input_tokens=tokens,
-                         output_tokens=settings.ai_max_output_tokens_per_call, cost_usd=cost)
+                         output_tokens=max_output, cost_usd=cost)
         db.add(row)
         db.flush()
         reservation = Reservation(engine, row.id, rate, cost)
@@ -248,7 +273,7 @@ def _call_provider(provider, session: Session | None, *, opportunity_id: int | N
                               purpose=kwargs["purpose"], provider=str(provider.name), model=requested_model,
                               engine=engine)
         try:
-            result = provider.complete(**kwargs, max_tokens=settings.ai_max_output_tokens_per_call)
+            result = provider.complete(**kwargs, max_tokens=output_token_limit(settings, str(provider.name)))
         except Exception as exc:
             diagnostic_event("ai.provider_failed", level=logging.WARNING, error_type=type(exc).__name__,
                              provider=str(provider.name), model=requested_model, attempt=attempt + 1,
@@ -267,12 +292,14 @@ def _call_provider(provider, session: Session | None, *, opportunity_id: int | N
             raise
         if reservation is not None:
             reservation.finish(result)
+        finish_reason = getattr(result, "finish_reason", None)
         call_id = record_call(
             session, provider=str(getattr(result, "provider", None) or provider.name),
-            purpose=kwargs["purpose"], status="succeeded",
+            purpose=kwargs["purpose"], status=ledger_status_for_result(result),
             model=getattr(result, "model", None) or requested_model,
             opportunity_id=opportunity_id, usage=getattr(result, "usage", None),
             latency_ms=getattr(result, "latency_ms", None), engine=engine,
+            finish_reason=finish_reason if isinstance(finish_reason, str) else None,
         )
         try:
             result.usage_call_id = call_id

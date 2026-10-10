@@ -142,6 +142,9 @@ _CALL_NONNEGATIVE = (
     "AND (latency_ms IS NULL OR latency_ms >= 0)"
 )
 _CALL_STATUS = "status IN ('succeeded', 'failed', 'blocked', 'local')"
+_CALL_STATUS_V2 = (
+    "status IN ('succeeded', 'failed', 'blocked', 'local', 'truncated', 'output_rejected')"
+)
 
 
 def _replace_check(table: str, name: str, condition: str, required_terms: tuple[str, ...]) -> None:
@@ -216,6 +219,25 @@ def ensure_ai_usage_v1() -> None:
     create_index_if_missing("ix_ai_provider_calls_created_at", "ai_provider_calls", ["created_at"])
     create_index_if_missing("ix_ai_provider_calls_opportunity_id", "ai_provider_calls", ["opportunity_id"])
     create_index_if_missing("ix_ai_provider_calls_provider_model", "ai_provider_calls", ["provider", "model"])
+
+
+def ensure_ai_usage_v2() -> None:
+    """Widen call status for truncated/discarded answers and store their links.
+
+    ``ensure_ai_usage_v1`` must not change once released. A laptop database that
+    already ran v1 keeps its rows; this adds ``finish_reason``,
+    ``compliance_run_id``, and the two new status values.
+    """
+    ensure_ai_usage_v1()
+    if table_exists("ai_provider_calls"):
+        add_column_if_missing("ai_provider_calls", sa.Column("finish_reason", sa.Text()))
+        add_column_if_missing("ai_provider_calls", sa.Column("compliance_run_id", sa.BigInteger()))
+        _replace_check(
+            "ai_provider_calls",
+            "ck_ai_provider_calls_status",
+            _CALL_STATUS_V2,
+            ("truncated", "output_rejected"),
+        )
 
 
 def seed_model_prices(rows: tuple[dict[str, object], ...]) -> None:

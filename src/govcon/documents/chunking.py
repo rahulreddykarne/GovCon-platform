@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 
 # Long pages are split at paragraph, then line, boundaries into pieces of at
 # most this many bytes, so one dense page never overflows a call on its own.
-MAX_CHUNK_BYTES = 6_000
+# Sized so a 20-page RFQ produces more, smaller parts whose answers fit the
+# DeepSeek 8,192-token output cap.
+MAX_CHUNK_BYTES = 4_000
 
 
 def nbytes(text: str) -> int:
@@ -107,6 +109,50 @@ def batch_chunks(chunks: list[SourceChunk], byte_budget: int) -> list[list[Sourc
 
 def render_batch(batch: list[SourceChunk]) -> str:
     return "\n\n".join(chunk.render() for chunk in batch)
+
+
+def split_source_batch(batch: list[SourceChunk]) -> list[list[SourceChunk]]:
+    """Halve a truncated part so it can be retried as smaller calls.
+
+    An unsplittable single chunk returns an empty list: the caller records a
+    gap instead of looping on the same capped request.
+    """
+    if len(batch) >= 2:
+        mid = len(batch) // 2
+        return [batch[:mid], batch[mid:]]
+    if not batch:
+        return []
+    chunk = batch[0]
+    limit = max(nbytes(chunk.text) // 2, 500)
+    pieces = split_text(chunk.text, limit)
+    if len(pieces) < 2:
+        return []
+    return [
+        [SourceChunk(chunk.file_id, chunk.filename, chunk.page, chunk.label, piece, part=index)]
+        for index, piece in enumerate(pieces, start=1)
+    ]
+
+
+def split_text_batch(batch: list[dict]) -> list[list[dict]]:
+    """Halve a dict-shaped extraction batch the same way as ``split_source_batch``."""
+    if len(batch) >= 2:
+        mid = len(batch) // 2
+        return [batch[:mid], batch[mid:]]
+    if not batch:
+        return []
+    chunk = dict(batch[0])
+    text = str(chunk.get("text") or "")
+    limit = max(nbytes(text) // 2, 500)
+    pieces = split_text(text, limit)
+    if len(pieces) < 2:
+        return []
+    out: list[list[dict]] = []
+    for index, piece in enumerate(pieces, start=1):
+        part = dict(chunk)
+        part["text"] = piece
+        part["chunk_id"] = f"{chunk.get('chunk_id', 'chunk')}:{index}"
+        out.append([part])
+    return out
 
 
 def gaps_for(chunks: Iterable[SourceChunk], reason: str) -> list[Gap]:

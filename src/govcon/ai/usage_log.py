@@ -22,7 +22,9 @@ from govcon.models import AIModelPrice, AIProviderCall
 
 _MILLION = Decimal(1_000_000)
 _THOUSAND = Decimal(1_000)
-_link_ids: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar("ai_usage_link_ids", default=None)
+_link_stack: contextvars.ContextVar[tuple[list[int], ...] | None] = contextvars.ContextVar(
+    "ai_usage_link_stack", default=None
+)
 
 
 @dataclass(frozen=True)
@@ -148,6 +150,8 @@ def record_call(
     latency_ms: int | None = None,
     analysis_id: int | None = None,
     decision_run_id: int | None = None,
+    compliance_run_id: int | None = None,
+    finish_reason: str | None = None,
     engine: Engine | Connection | None = None,
 ) -> int | None:
     """Persist one attempt on its own connection. Returns the row id, or None if there is no database."""
@@ -191,25 +195,55 @@ def record_call(
             latency_ms=latency_ms,
             analysis_id=analysis_id,
             decision_run_id=decision_run_id,
+            compliance_run_id=compliance_run_id,
+            finish_reason=finish_reason,
             cost_usd=cost,
             price_id=price_id,
         )
         db.add(row)
         db.flush()
         row_id = row.id
-    bucket = _link_ids.get()
-    if bucket is not None:
-        bucket.append(row_id)
+    stack = _link_stack.get()
+    if stack:
+        for bucket in stack:
+            bucket.append(row_id)
     return row_id
 
 
-def collect_call_ids() -> tuple[contextvars.Token[list[int] | None], list[int]]:
+def collect_call_ids() -> tuple[contextvars.Token[tuple[list[int], ...] | None], list[int]]:
+    """Start collecting call ids. Nested collectors each receive every new id."""
     bucket: list[int] = []
-    return _link_ids.set(bucket), bucket
+    stack = _link_stack.get() or ()
+    return _link_stack.set((*stack, bucket)), bucket
 
 
-def stop_collecting(token: contextvars.Token[list[int] | None]) -> None:
-    _link_ids.reset(token)
+def stop_collecting(token: contextvars.Token[tuple[list[int], ...] | None]) -> None:
+    _link_stack.reset(token)
+
+
+def update_call_status(
+    session: Session | None,
+    call_id: int | None,
+    *,
+    status: str,
+    finish_reason: str | None = None,
+    engine: Engine | Connection | None = None,
+) -> None:
+    """Reclassify a persisted attempt (invalid JSON is not a plain success)."""
+    if call_id is None:
+        return
+    bind = _engine_for(session, engine)
+    if bind is None:
+        return
+    with Session(bind) as db, db.begin():
+        row = db.get(AIProviderCall, call_id)
+        if row is None:
+            return
+        if row.status == "truncated" and status == "output_rejected":
+            return
+        row.status = status
+        if finish_reason is not None:
+            row.finish_reason = finish_reason
 
 
 def attach_call_ids(
@@ -218,6 +252,7 @@ def attach_call_ids(
     *,
     analysis_id: int | None = None,
     decision_run_id: int | None = None,
+    compliance_run_id: int | None = None,
     engine: Engine | Connection | None = None,
 ) -> None:
     if not ids:
@@ -232,6 +267,8 @@ def attach_call_ids(
                 row.analysis_id = analysis_id
             if decision_run_id is not None:
                 row.decision_run_id = decision_run_id
+            if compliance_run_id is not None:
+                row.compliance_run_id = compliance_run_id
 
 
 def _money(value: Decimal) -> str:
@@ -268,12 +305,13 @@ def _cost_label(rows: list[AIProviderCall]) -> str:
     known = [row.cost_usd for row in rows if row.cost_usd is not None]
     unpriced = [
         row for row in rows
-        if row.status in {"succeeded", "failed"} and row.cost_usd is None
+        if row.status in {"succeeded", "failed", "truncated", "output_rejected"} and row.cost_usd is None
         and (row.input_tokens is not None or row.output_tokens is not None)
     ]
     unreported = [
         row for row in rows
-        if row.status in {"succeeded", "failed"} and row.input_tokens is None and row.output_tokens is None
+        if row.status in {"succeeded", "failed", "truncated", "output_rejected"}
+        and row.input_tokens is None and row.output_tokens is None
     ]
     if not known and unpriced and not unreported:
         return "price not set"
