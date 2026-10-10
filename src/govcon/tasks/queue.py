@@ -234,7 +234,7 @@ def guard_publish(session: Session, claim_: Claim) -> Task:
         or task.lease_owner != claim_.worker_id
         or task.claim_token != claim_.token
         or task.lease_expires_at is None
-        or task.lease_expires_at <= session.scalar(select(text("now()")))
+        or task.lease_expires_at <= session.scalar(select(text("clock_timestamp()")))
     ):
         raise LeaseLost(f"task {claim_.task_id}: lease lost (claim {claim_.token})")
     return task

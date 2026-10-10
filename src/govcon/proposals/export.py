@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from govcon.diagnostics import trace_phase
 from govcon.models import (
     Opportunity,
     Proposal,
@@ -29,6 +30,7 @@ from govcon.models import (
 from govcon.proposals.versions import get_sections_for_version
 
 
+@trace_phase("proposals.export.export_proposal_docx")
 def export_proposal_docx(
     session: Session,
     *,
@@ -72,6 +74,7 @@ def export_proposal_docx(
     return data
 
 
+@trace_phase("proposals.export.export_proposal_pdf")
 def export_proposal_pdf(session: Session, *, proposal_version_id: int) -> bytes:
     """Render proposal text with automatic wrapping and pagination."""
     from xml.sax.saxutils import escape
@@ -138,6 +141,7 @@ def _export_proposal_text(
     return "\n".join(lines)
 
 
+@trace_phase("proposals.export.export_coverage_xlsx")
 def export_coverage_xlsx(
     session: Session,
     *,
@@ -202,6 +206,7 @@ def export_coverage_xlsx(
     return buf.getvalue()
 
 
+@trace_phase("proposals.export.export_submission_zip")
 def export_submission_zip(
     session: Session,
     *,

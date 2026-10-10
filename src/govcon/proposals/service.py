@@ -39,6 +39,7 @@ from govcon.compliance.submission_preflight import (
 )
 from govcon.concurrency import StaleRecordError, apply_versioned_update
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import (
     Notification,
     Opportunity,
@@ -94,6 +95,7 @@ def get_or_create_proposal(
     return proposal
 
 
+@trace_phase("proposals.service.generate_proposal")
 def generate_proposal(
     session: Session,
     *,
@@ -174,6 +176,7 @@ def _generation_target(session: Session, opportunity_id: int) -> Proposal:
     return proposal
 
 
+@trace_phase("proposals.service.publish_generated_proposal")
 def publish_generated_proposal(
     session: Session,
     *,
@@ -423,6 +426,7 @@ def get_proposal_workspace(
     }
 
 
+@trace_phase("proposals.service.finalize_proposal")
 def finalize_proposal(
     session: Session,
     *,
@@ -590,6 +594,7 @@ def finalize_proposal(
     }
 
 
+@trace_phase("proposals.service.record_submission_confirmation")
 def record_submission_confirmation(
     session: Session,
     *,

@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from govcon.config import Settings
 from govcon.db import make_engine, session_scope
+from govcon.diagnostics import trace_phase
 from govcon.models import SchedulerJobRun, Task
 from govcon.scheduler import chains
 from govcon.scheduler.jobs import StepResult
@@ -113,6 +114,7 @@ def _record_step(db: Session, claim: queue.Claim, result: StepResult, *, done: b
     task.checkpoint = checkpoint
 
 
+@trace_phase("scheduler.chain_tasks.run_chain_task")
 def run_chain_task(settings: Settings, claim: queue.Claim, heartbeat) -> str:
     with session_scope(settings) as db:
         task = queue.guard_publish(db, claim)
@@ -150,6 +152,7 @@ def run_chain_task(settings: Settings, claim: queue.Claim, heartbeat) -> str:
         engine.dispose()
 
 
+@trace_phase("scheduler.chain_tasks.run_steps")
 def _run_steps(settings, claim, heartbeat, chain_def, run_id, completed, lock_connection) -> str:
     failed_step: str | None = None
     chain_error: str | None = None

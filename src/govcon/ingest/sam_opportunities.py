@@ -34,6 +34,7 @@ from tenacity import wait_exponential
 from tenacity.wait import wait_base
 
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.enrich.attachment_refs import resource_link_urls
 from govcon.http import RETRYABLE_STATUS, build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
@@ -263,13 +264,29 @@ def _description_body(value: object) -> str | None:
     return text
 
 
+# Notice types that announce a decision already made rather than ask for offers.
+AWARDED_STATUS = "awarded"
+NOTICE_ONLY_STATUS = "notice_only"
+_NOTICE_ONLY_MARKERS = ("justification", "sale of surplus")
+
+
 def _status(raw: dict) -> str:
+    """Lifecycle status. Only ``open`` notices are biddable (matching, ranking, auto-pursue).
+
+    An Award Notice reports a contract already awarded; a Justification (J&A)
+    explains a sole-source award; a surplus sale sells government property.
+    They are kept for award history and context, never offered as solicitations.
+    """
     kind = " ".join(_text(raw.get(key)) or "" for key in ("type", "baseType", "archiveType")).lower()
     if "cancel" in kind:
         return "cancelled"
     active = (_text(raw.get("active")) or "").lower()
     if active == "no":
         return "archived"
+    if "award" in kind:
+        return AWARDED_STATUS
+    if any(marker in kind for marker in _NOTICE_ONLY_MARKERS):
+        return NOTICE_ONLY_STATUS
     return "open"
 
 
@@ -520,6 +537,7 @@ def iter_search_records(
             raise SamApiError("SAM search exceeded the page safety limit")
 
 
+@trace_phase("ingest.sam_opportunities.ingest_opportunity_records")
 def ingest_opportunity_records(session: Session, records: list[dict]) -> IngestStats:
     stats = IngestStats(fetched=len(records))
     for record in records:
@@ -539,6 +557,7 @@ def ingest_opportunity_records(session: Session, records: list[dict]) -> IngestS
     return stats
 
 
+@trace_phase("ingest.sam_opportunities.pull_sam_opportunities")
 def pull_sam_opportunities(
     session: Session,
     *,
@@ -571,6 +590,7 @@ def pull_sam_opportunities(
             client.close()
 
 
+@trace_phase("ingest.sam_opportunities.backfill_sam_opportunities")
 def backfill_sam_opportunities(
     session: Session,
     *,
@@ -601,6 +621,7 @@ def backfill_sam_opportunities(
     return totals
 
 
+@trace_phase("ingest.sam_opportunities.archive_expired_sam_opportunities")
 def archive_expired_sam_opportunities(session: Session, *, today: date | None = None) -> IngestStats:
     """Mark locally stored SAM rows archived when ``archive_date`` is past.
 

@@ -1121,7 +1121,7 @@ class AlertDelivery(Base):
 
 TASK_TYPES = (
     "proposal_generation", "ai_analysis", "solicitation_summary", "scheduler_chain", "opportunity_preparation",
-    "notification_email", "quote_extraction", "bot_run",
+    "notification_email", "quote_extraction", "bot_run", "market_price_research",
 )
 TASK_STATUSES = (
     "queued", "running", "waiting_for_input", "waiting_for_budget", "retrying",
@@ -1333,6 +1333,47 @@ class RfqDraft(TimestampMixin, Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'draft'"))
     created_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class MarketPriceRun(CreatedAtMixin, Base):
+    """One web price search for an opportunity's product.
+
+    Listings are commercial web prices, not supplier quotes: their median is an
+    estimated cost for margin math until a supplier quote is recorded.
+    """
+
+    __tablename__ = "market_price_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('completed','no_results','skipped','blocked','failed')",
+                        name="ck_market_price_runs_status"),
+        Index("ix_market_price_runs_opportunity_created", "opportunity_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False)
+    task_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("tasks.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    source_revision: Mapped[str | None] = mapped_column(Text)
+    # The product description that was searched, as sent.
+    product: Mapped[dict | None] = mapped_column(JSONB)
+    provider: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
+    prompt_version: Mapped[str | None] = mapped_column(Text)
+    prompt_sha256: Mapped[str | None] = mapped_column(Text)
+    listings: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    # Listings dropped after the search (government sites, invalid prices) with the reason.
+    excluded: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    estimate_unit_cost: Mapped[Decimal | None] = mapped_column(Numeric)
+    estimate_low: Mapped[Decimal | None] = mapped_column(Numeric)
+    estimate_high: Mapped[Decimal | None] = mapped_column(Numeric)
+    estimate_confidence: Mapped[str | None] = mapped_column(Text)
+    estimate_basis: Mapped[str | None] = mapped_column(Text)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric)
+    unit: Mapped[str | None] = mapped_column(Text)
+    estimated_total_cost: Mapped[Decimal | None] = mapped_column(Numeric)
+    usage: Mapped[dict | None] = mapped_column(JSONB)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
 
 
 class AISharingAuthorization(Base):

@@ -16,6 +16,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CSRF_COOKIE = "govcon_csrf"
 PACKAGE_UPLOAD_LIMIT = 50_000_000
+FORM_BODY_LIMIT = 1_000_000
+SOURCING_UPLOAD_LIMIT = 25 * 1024 * 1024 + FORM_BODY_LIMIT
 
 
 class PackageUploadLimitMiddleware:
@@ -25,9 +27,12 @@ class PackageUploadLimitMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not scope["path"].endswith("/submission/package/assemble"):
+        if scope["type"] != "http" or scope.get("method") in {"GET", "HEAD", "OPTIONS"}:
             await self.app(scope, receive, send)
             return
+        path = scope["path"]
+        limit = (PACKAGE_UPLOAD_LIMIT if path.endswith("/submission/package/assemble") else
+                 SOURCING_UPLOAD_LIMIT if path == "/suppliers" or path.endswith("/quotes") else FORM_BODY_LIMIT)
         received = 0
         # Reject oversize streams before calling the inner app. Exceptions from
         # receive are wrapped by BaseHTTPMiddleware and cannot reliably become 413.
@@ -38,8 +43,8 @@ class PackageUploadLimitMiddleware:
                     return
                 chunk = message.get("body", b"")
                 received += len(chunk)
-                if received > PACKAGE_UPLOAD_LIMIT:
-                    await PlainTextResponse("Package uploads are limited to 50 MB including form data", status_code=413)(scope, receive, send)
+                if received > limit:
+                    await PlainTextResponse("Upload exceeds the request size limit", status_code=413)(scope, receive, send)
                     return
                 await run_in_threadpool(body.write, chunk)
                 if not message.get("more_body", False):
@@ -127,9 +132,14 @@ async def protect_mutation(request: Request) -> None:
         raise HTTPException(403, "Invalid request origin")
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise HTTPException(403, "Cross-site submission refused")
+    if not request.cookies.get(CSRF_COOKIE):
+        raise HTTPException(403, "Invalid CSRF token; reload the page")
+    header = request.headers.get("x-csrf-token")
+    if header is not None and (len(header) != 64 or not header.isascii()
+                               or not hmac.compare_digest(header, csrf_token(request))):
+        raise HTTPException(403, "Invalid CSRF token; reload the page")
     form = await request.form()
     values = form.getlist("csrf_token")
-    header = request.headers.get("x-csrf-token")
     submitted = header if header is not None else (values[0] if len(values) == 1 else "")
     if (len(values) > 1 or not request.cookies.get(CSRF_COOKIE) or not isinstance(submitted, str)
             or len(submitted) != 64 or not submitted.isascii()

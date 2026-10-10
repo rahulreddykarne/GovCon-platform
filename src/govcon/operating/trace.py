@@ -15,7 +15,14 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.bots.catalog import CATALOG
-from govcon.models import AIAnalysis, BotApproval, BotRun, Opportunity, StoredFile
+from govcon.models import (
+    AIAnalysis,
+    BotApproval,
+    BotRun,
+    MarketPriceRun,
+    Opportunity,
+    StoredFile,
+)
 
 LA = ZoneInfo("America/Los_Angeles")
 
@@ -38,9 +45,16 @@ def opportunity_trace(session: Session, opportunity: Opportunity) -> list[dict[s
     files = list(session.scalars(
         select(StoredFile).where(StoredFile.opportunity_id == opportunity.id, StoredFile.active.is_(True))
     ).all())
+    market = session.scalar(
+        select(MarketPriceRun).where(MarketPriceRun.opportunity_id == opportunity.id)
+        .order_by(MarketPriceRun.created_at.desc(), MarketPriceRun.id.desc()).limit(1)
+    )
     stages = [_notice(opportunity), _files(files)]
     for name in _BOTS:
         stages.append(_bot(name, runs.get(name)))
+        if name == "compliance":
+            # Preparation searches web prices after compliance, before the decision.
+            stages.append(_market_prices(market))
     stages.append(_human(approval))
     stages.append(_analysis(analysis))
     return stages
@@ -94,6 +108,19 @@ def _bot(name: str, run: BotRun | None) -> dict[str, Any]:
         tag = "info"
         status = run.status
     return _stage(name, title, status.replace("_", " "), tag, f"Attempt {run.attempt}. {when}. {detail}")
+
+
+_MARKET_TAGS = {"completed": "good", "no_results": "info", "skipped": "info", "blocked": "warn", "failed": "bad"}
+
+
+def _market_prices(run: MarketPriceRun | None) -> dict[str, Any]:
+    from govcon.sourcing.market_prices import run_summary
+
+    if run is None:
+        return _stage("market_prices", "Market prices", "not run", "info",
+                      "No web price search is stored for this notice. Preparation runs it for pursued products.")
+    return _stage("market_prices", "Market prices", run.status.replace("_", " "), _MARKET_TAGS.get(run.status, "info"),
+                  f"{_local(run.created_at)}. {run_summary(run)}")
 
 
 def _human(approval: BotApproval | None) -> dict[str, Any]:

@@ -47,12 +47,15 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import httpx
 from sqlalchemy import Integer, event, inspect
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
+
+from govcon.diagnostics import diagnostic_event, trace_phase
 
 logger = logging.getLogger("govcon.ai.replay")
 
@@ -100,6 +103,7 @@ class Recorder:
 
     def start_pass(self) -> None:
         self.passes += 1
+        diagnostic_event("ai.replay_pass", passes=self.passes, calls=self.calls_made, divergences=self.divergences)
         self._seen = Counter()
         self._position = 0
         self._ids_used = Counter()
@@ -114,6 +118,7 @@ class Recorder:
         position = self._position
         self._position += 1
         outcome = self._outcomes.get(key)
+        diagnostic_event("ai.replay_lookup", cached=outcome is not None, calls=self.calls_made, passes=self.passes)
         if outcome is None:
             needed = CallNeeded(key, position, perform)
             if not self.live:
@@ -145,6 +150,9 @@ class Recorder:
             outcome = _Outcome(error=exc)
         self._outcomes[needed.key] = outcome
         self._order.append(needed.key)
+        diagnostic_event("ai.replay_recorded", calls=self.calls_made,
+                         status="failed" if outcome.error is not None else "completed",
+                         error_type=type(outcome.error).__name__ if outcome.error is not None else None)
 
     # Row ids --------------------------------------------------------------
 
@@ -258,6 +266,7 @@ def _retryable_conflict(exc: BaseException) -> bool:
     return isinstance(exc, DBAPIError) and getattr(exc.orig, "sqlstate", None) in _RETRYABLE_SQLSTATES
 
 
+@trace_phase("ai.replay.run_recorded")
 def run_recorded[T](
     run_pass: Callable[[], T],
     *,
@@ -276,6 +285,7 @@ def run_recorded[T](
     if _active.get() is not None:
         raise RuntimeError("recorded runs cannot be nested")
     recorder = Recorder.restore(restore, max_divergences=max_divergences, max_calls=max_calls)
+    diagnostic_event("ai.replay_restored", restored=restore is not None, calls=recorder.calls_made, passes=recorder.passes)
     conflicts = 0
     while True:
         token = _active.set(recorder)
@@ -297,6 +307,7 @@ def run_recorded[T](
             recorder.perform(pending)
             if persist is not None:
                 persist(recorder.snapshot())
+                diagnostic_event("ai.replay_checkpoint_saved", calls=recorder.calls_made, passes=recorder.passes)
 
 
 def _freeze(value: Any) -> Any:
@@ -321,8 +332,15 @@ def _freeze(value: Any) -> Any:
             "latency_ms": value.latency_ms,
             "finish_reason": value.finish_reason,
         }
-    if isinstance(value, Reservation):
-        return {"__replay__": "reservation"}
+    if isinstance(value, (Reservation, _RestoredReservation)):
+        # Callers read the estimated cost from the reservation (structured
+        # analyses store it), so a restored record must keep it.
+        return {
+            "__replay__": "reservation",
+            "id": value.id,
+            "rate": None if value.rate is None else str(value.rate),
+            "cost": None if value.cost is None else str(value.cost),
+        }
     if isinstance(value, httpx.Response):
         return {
             "__replay__": "http_response",
@@ -351,15 +369,32 @@ def _thaw(value: Any) -> Any:
             finish_reason=value.get("finish_reason"),
         )
     if kind == "reservation":
-        return _RestoredReservation()
+        return _RestoredReservation(
+            id=int(value["id"]) if value.get("id") is not None else None,
+            rate=_decimal_or_none(value.get("rate")),
+            cost=_decimal_or_none(value.get("cost")),
+        )
     if kind == "http_response":
         body = value.get("body") or ""
         return httpx.Response(int(value["status_code"]), content=body.encode("utf-8"))
     raise TypeError(f"AI replay cannot restore {kind}")
 
 
+def _decimal_or_none(value: Any) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
+
+
+@dataclass
 class _RestoredReservation:
-    """A budget reservation that already finished before the worker crashed."""
+    """A budget reservation that already finished before the worker crashed.
+
+    It carries the same fields as :class:`govcon.ai.budget.Reservation` except
+    the engine; its accounting row is already settled, so ``finish`` does nothing.
+    """
+
+    id: int | None = None
+    rate: Decimal | None = None
+    cost: Decimal | None = None
 
     def finish(self, result: Any = None) -> None:
         return None
@@ -391,6 +426,8 @@ def _thaw_error(payload: dict[str, Any]) -> BaseException:
         try:
             if class_name == "ProviderAPIError":
                 return cls(str(payload.get("provider") or "provider"), payload.get("status_code"))
+            if class_name == "DeepSeekAPIError" and payload.get("status_code") is not None:
+                return cls(int(payload["status_code"]))
             return cls(message)
         except Exception:  # noqa: BLE001  boundary must record any failure
             logger.warning("could not restore recorded error %s", qualname)

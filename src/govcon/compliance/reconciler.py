@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from govcon.compliance.matrix import active_requirements, record_run
 from govcon.compliance.records import Candidate, CanonicalRequirement, max_severity
 from govcon.compliance.text import containment, jaccard, normalize_ws, numbers, tokens
+from govcon.diagnostics import trace_phase
 from govcon.models import Requirement
 
 RECONCILER_VERSION = "requirement_reconciliation.v1"
@@ -68,6 +69,7 @@ def candidate_similarity(a: Candidate, b: Candidate) -> float:
     return similarity(a.requirement_text, a.supporting_quote, b.requirement_text, b.supporting_quote)
 
 
+@trace_phase("compliance.reconciler.reconcile")
 def reconcile(
     candidates: list[Candidate],
     *,
@@ -251,6 +253,7 @@ def _requirement_similarity(req: Requirement, canonical: CanonicalRequirement) -
     return similarity(req.requirement_text, req.source_quote, canonical.requirement_text, canonical.source_quote)
 
 
+@trace_phase("compliance.reconciler.persist_reconciliation")
 def persist_reconciliation(
     session: Session,
     opportunity_id: int,

@@ -62,6 +62,16 @@ def analysis_selection(
     return described["analysis_provider"], chosen, described["fallback_reason"]
 
 
+def analysis_available(session: Session | None, settings: Settings) -> bool:
+    """Whether an analysis call has a provider with a key on the effective route.
+
+    Follows the saved route (and its known-good fallback) the way
+    :func:`analysis_selection` does, so a saved Anthropic route counts as
+    available even when the configured primary provider has no key.
+    """
+    return _configured(settings, describe_route(session, settings)["analysis_provider"])
+
+
 def decision_providers(session: Session | None, settings: Settings) -> tuple[str, str]:
     saved = _saved(session)
     if saved is None:
@@ -132,14 +142,10 @@ def _saved(session: Session | None) -> dict[str, Any] | None:
 
 
 def _from_settings(settings: Settings) -> dict[str, Any]:
+    from govcon.ai.providers import resolve_provider_model
+
     provider = (settings.ai_primary_provider or KNOWN_GOOD_PROVIDER).strip().lower()
-    model = settings.deepseek_model or KNOWN_GOOD_MODEL
-    if provider == "anthropic" and settings.anthropic_model:
-        model = settings.anthropic_model
-    elif provider == "openai" and settings.openai_model:
-        model = settings.openai_model
-    elif provider == "deepseek":
-        model = settings.deepseek_model or KNOWN_GOOD_MODEL
+    _, model = resolve_provider_model(settings, provider_name=provider)
     return {
         "version": "settings",
         "analysis": {"provider": provider, "model": model},

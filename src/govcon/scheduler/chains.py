@@ -25,6 +25,7 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
+from govcon.diagnostics import trace_phase
 from govcon.scheduler.jobs import StepResult
 from govcon.scheduler.schedule import describe
 
@@ -106,6 +107,7 @@ def _chain_lock_key(chain_name: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+@trace_phase("scheduler.chains.run_chain")
 def run_chain(chain_name: str, settings, *, trigger: str = "manual") -> "ChainResult":
     """Serialize each chain across workers; crashes automatically release locks."""
     from sqlalchemy import text
@@ -312,6 +314,7 @@ class ChainResult:
 # ---------------------------------------------------------------------------
 
 
+@trace_phase("scheduler.chains.invoke_step")
 def _invoke_step(fn, db: Session, settings):
     """Call a step function with the correct signature."""
     import inspect

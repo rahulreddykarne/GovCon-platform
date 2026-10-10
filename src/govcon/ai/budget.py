@@ -7,6 +7,7 @@ The UTF-8 byte estimate is deliberately conservative without model tokenizers.
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -15,6 +16,7 @@ from sqlalchemy import Connection, Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings
+from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.models import AICallUsage
 
 
@@ -106,6 +108,7 @@ class Reservation:
             self.cost = row.cost_usd
 
 
+@trace_phase("ai.budget.reserve")
 def reserve(session: Session | None, *, opportunity_id: int | None, settings: Settings,
             system_prompt: str, user_prompt: str, purpose: str, provider: str,
             model: str | None = None, engine: Engine | Connection | None = None) -> Reservation | None:
@@ -115,6 +118,8 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
     open (ADR-061); accounting commits on its own connection either way.
     """
     tokens = input_bound(system_prompt, user_prompt)
+    diagnostic_event("ai.budget_check", provider=provider, model=model, prompt=purpose,
+                     input_tokens=tokens, max_output_tokens=settings.ai_max_output_tokens_per_call)
     if tokens > min(settings.ai_max_input_tokens_per_call, settings.ai_max_input_tokens_per_opportunity):
         raise AIBudgetExceeded("Combined context exceeds the input limit; no source text was sent. Reduce the source set or explicitly chunk it; omitted sources remain unreviewed.")
     rate = Decimal(str(settings.ai_budget_usd_per_million_tokens)) if settings.ai_budget_usd_per_million_tokens is not None else None
@@ -174,6 +179,7 @@ def _retryable(exc: Exception) -> bool:
     return isinstance(exc, httpx.TransportError)
 
 
+@trace_phase("ai.budget.complete_with_budget")
 def complete_with_budget(provider, session: Session | None, *, opportunity_id: int | None,
                          settings: Settings, engine: Engine | None = None, **kwargs):
     from govcon.ai.gateway import authorize_external_call
@@ -200,9 +206,12 @@ def complete_with_budget(provider, session: Session | None, *, opportunity_id: i
                           requested_model=requested_model, kwargs=kwargs)
 
 
+@trace_phase("ai.budget.call_provider")
 def _call_provider(provider, session: Session | None, *, opportunity_id: int | None, settings: Settings,
                    engine: Engine | None, requested_model: str | None, kwargs: dict):
     for attempt in range(1 + settings.ai_max_provider_retries):
+        diagnostic_event("ai.provider_attempt", provider=str(provider.name), model=requested_model,
+                         attempt=attempt + 1, attempts=1 + settings.ai_max_provider_retries)
         reservation = reserve(session, opportunity_id=opportunity_id, settings=settings,
                               system_prompt=kwargs["system_prompt"], user_prompt=kwargs["user_prompt"],
                               purpose=kwargs["purpose"], provider=str(provider.name), model=requested_model,
@@ -210,13 +219,19 @@ def _call_provider(provider, session: Session | None, *, opportunity_id: int | N
         try:
             result = provider.complete(**kwargs, max_tokens=settings.ai_max_output_tokens_per_call)
         except Exception as exc:
+            diagnostic_event("ai.provider_failed", level=logging.WARNING, error_type=type(exc).__name__,
+                             provider=str(provider.name), model=requested_model, attempt=attempt + 1,
+                             http_status=getattr(exc, "status_code", None))
             if reservation is not None:
                 reservation.finish()
             if attempt < settings.ai_max_provider_retries and _retryable(exc):
+                diagnostic_event("ai.provider_retry", attempt=attempt + 1, timeout_seconds=0.5 * 2 ** attempt)
                 time.sleep(0.5 * 2 ** attempt)
                 continue
             raise
         if reservation is not None:
             reservation.finish(result)
+        diagnostic_event("ai.provider_completed", provider=str(provider.name), model=getattr(result, "model", None),
+                         latency_ms=getattr(result, "latency_ms", None), attempt=attempt + 1)
         return result, reservation
     raise AssertionError("unreachable provider retry state")

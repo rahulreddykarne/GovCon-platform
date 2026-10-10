@@ -14,7 +14,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings
-from govcon.models import AIAnalysis, DecisionRun, IngestionRun, ProcessHeartbeat
+from govcon.models import (
+    AIAnalysis,
+    DecisionRun,
+    IngestionRun,
+    MarketPriceRun,
+    ProcessHeartbeat,
+)
 from govcon.ops.health import STALE_PROCESS, STALE_SOURCE, _embedding_check
 
 LA = ZoneInfo("America/Los_Angeles")
@@ -41,6 +47,7 @@ def integration_cards(session: Session, settings: Settings) -> list[dict[str, An
         _deepseek_card(session, settings),
         _jev_card(session, settings),
         _optional_model_card(settings, "Anthropic", settings.anthropic_api_key),
+        market_price_card(session, settings),
         _optional_model_card(settings, "OpenAI", settings.openai_api_key),
         _embeddings_card(settings),
         _process_card(session, "Database", "database"),
@@ -145,6 +152,47 @@ def _optional_model_card(settings: Settings, name: str, key: str | None) -> dict
         {"label": "Data-sharing policy", "value": _sharing(settings)},
         {"label": "Last stored call", "value": "Not queried; this page does not assume a call happened"},
     ])
+
+
+MARKET_PRICE_CARD = "Claude web search"
+_MARKET_PRICE_BLURB = "Web market prices for pursued product opportunities; government sites excluded"
+
+
+def market_price_card(session: Session, settings: Settings) -> dict[str, Any]:
+    """Health from the last stored search that reached the provider; skipped runs made no call."""
+    limits = (f"{settings.market_price_max_results} prices, {settings.market_price_max_searches} searches, "
+              f"{settings.market_price_max_fetches} page reads per opportunity")
+    if not settings.market_price_research_enabled:
+        return _card(MARKET_PRICE_CARD, _MARKET_PRICE_BLURB, DISABLED,
+                     [{"label": "Switch", "value": "MARKET_PRICE_RESEARCH_ENABLED is off"}])
+    if not settings.anthropic_api_key:
+        return _card(MARKET_PRICE_CARD, _MARKET_PRICE_BLURB, NOT_CONFIGURED,
+                     [{"label": "Credential", "value": "No ANTHROPIC_API_KEY in this process"}])
+    rows = [
+        {"label": "Credential", "value": "Present, not printed"},
+        {"label": "Model id", "value": settings.market_price_model or settings.anthropic_model or "provider default"},
+        {"label": "Limits", "value": limits},
+        {"label": "Data-sharing policy", "value": _sharing(settings)},
+    ]
+    latest = session.scalar(
+        select(MarketPriceRun).where(MarketPriceRun.status.in_(("completed", "no_results", "failed", "blocked")))
+        .order_by(MarketPriceRun.created_at.desc(), MarketPriceRun.id.desc()).limit(1)
+    )
+    if latest is None:
+        rows.append({"label": "Last stored search", "value": "None"})
+        return _card(MARKET_PRICE_CARD, _MARKET_PRICE_BLURB, UNVERIFIED, rows)
+    searches = (latest.usage or {}).get("web_search_requests")
+    rows.append({"label": "Last stored search", "value": (
+        f"{_local(latest.created_at)} · opportunity #{latest.opportunity_id} · {latest.status.replace('_', ' ')}"
+        + (f" · {searches} search(es)" if searches is not None else "")
+    )})
+    if latest.estimate_unit_cost is not None:
+        rows.append({"label": "Estimate", "value": f"${latest.estimate_unit_cost:,.2f} per {latest.unit or 'unit'} "
+                                                   f"from {len(latest.listings)} listing(s)"})
+    elif latest.note:
+        rows.append({"label": "Note", "value": latest.note[:200]})
+    status = {"completed": HEALTHY, "no_results": HEALTHY, "failed": FAILED, "blocked": BLOCKED}[latest.status]
+    return _card(MARKET_PRICE_CARD, _MARKET_PRICE_BLURB, status, rows)
 
 
 def _embeddings_card(settings: Settings) -> dict[str, Any]:

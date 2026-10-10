@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from govcon.audit import record_audit
 from govcon.collaboration.users import require_permission
 from govcon.compliance.deterministic import SubmissionPackage
+from govcon.diagnostics import trace_phase
 from govcon.models import PackageManifest, Submission, User
 from govcon.workflow.invalidation import lock_one, lock_opportunity
 
@@ -28,6 +29,7 @@ def manifest_hash(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
 
 
+@trace_phase("submissions.manifest.verify_package")
 def verify_package(package: SubmissionPackage) -> list[str]:
     """Problems that stop ``package`` from counting as an assembled package.
 
@@ -81,6 +83,7 @@ def record_proposal_artifact(session: Session, *, proposal_version_id: int, oppo
     return digest
 
 
+@trace_phase("submissions.manifest.approve_proposal_artifact")
 def approve_proposal_artifact(
     session: Session, *, opportunity_id: int, proposal_version_id: int, local_path: str, actor: User, reason: str
 ) -> str:
@@ -159,6 +162,7 @@ def snapshot_package(session: Session, submission: Submission, package: Submissi
     return row
 
 
+@trace_phase("submissions.manifest.assemble_package")
 def assemble_package(session: Session, *, opportunity_id: int, package: SubmissionPackage, actor: User) -> PackageManifest:
     require_permission(actor, "approve")
     lock_opportunity(session, opportunity_id)

@@ -23,6 +23,7 @@ import httpx
 from govcon.ai.gateway import authorize_external_call
 from govcon.ai.providers.base import CompletionResult, ProviderAPIError, ProviderRefusal
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.ai.providers.openai")
@@ -56,6 +57,7 @@ class OpenAIProvider:
         self._attempts = max(1, attempts)
         self._backoff = backoff_seconds
 
+    @trace_phase("ai.providers.openai.complete")
     def complete(
         self,
         *,

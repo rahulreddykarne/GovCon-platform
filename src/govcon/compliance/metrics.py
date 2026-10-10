@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from govcon.compliance.matrix import active_requirements, open_findings, record_run
 from govcon.compliance.records import RESOLVED_STATUSES
+from govcon.diagnostics import trace_phase
 from govcon.models import ComplianceFinding, Requirement
 
 METRICS_VERSION = "compliance_matrix.v1"
@@ -99,6 +100,7 @@ def coverage_summary(requirements: list[Requirement]) -> dict[str, Any]:
     return {k: v for k, v in counts.items() if k not in ("by_category", "percentages")}
 
 
+@trace_phase("compliance.metrics.record_matrix_run")
 def record_matrix_run(session: Session, opportunity_id: int, *, status: str = "complete", warnings: list | None = None, extra: dict[str, Any] | None = None) -> tuple[dict[str, Any], int]:
     requirements = active_requirements(session, opportunity_id)
     findings = open_findings(session, opportunity_id)

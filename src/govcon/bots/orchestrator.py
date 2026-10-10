@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from govcon.bots.store import begin_run, finish_run
+from govcon.bots.store import begin_run, finish_run, owner_still_running
 from govcon.bots.workflows import (
     execute_alert,
     execute_amendment,
@@ -20,11 +21,13 @@ from govcon.bots.workflows import (
     execute_operations,
 )
 from govcon.config import Settings
+from govcon.diagnostics import trace_phase
 from govcon.logging import redact
-from govcon.models import BotRun, Task
+from govcon.models import BotRun, ProcessHeartbeat, Task
 from govcon.tasks import queue
 
 
+@trace_phase("bots.orchestrator.queue_orchestrator")
 def queue_orchestrator(
     session: Session,
     *,
@@ -44,6 +47,7 @@ def queue_orchestrator(
     )
 
 
+@trace_phase("bots.orchestrator.execute_orchestrator")
 def execute_orchestrator(
     session: Session,
     settings: Settings,
@@ -52,11 +56,33 @@ def execute_orchestrator(
     slot: str,
     pull: bool,
     persist_start: bool = False,
+    task_claim: queue.Claim | None = None,
 ) -> BotRun:
+    key = f"orchestrator:{slot}:pull={int(pull)}"
+    inputs: dict[str, Any] = {"slot": slot, "pull": pull}
+    recover = False
+    if task_claim is not None:
+        inputs.update(task_id=task_claim.task_id, claim_token=task_claim.token)
+        previous = session.scalar(select(BotRun).where(BotRun.idempotency_key == key))
+        if previous is not None and previous.status in {"running", "queued"}:
+            prior_inputs = previous.inputs or {}
+            recover = (prior_inputs.get("task_id") == task_claim.task_id
+                       and int(prior_inputs.get("claim_token", 0)) < task_claim.token)
+            owner = (previous.outputs or {}).get("worker_id")
+            if not recover and isinstance(owner, str):
+                beats = {beat.instance_id: beat.beat_at for beat in session.scalars(
+                    select(ProcessHeartbeat).where(ProcessHeartbeat.role == "worker")
+                )}
+                recover = not owner_still_running(owner, beats)
     run, started = begin_run(
-        session, bot_name="orchestrator", idempotency_key=f"orchestrator:{slot}:pull={int(pull)}",
-        trigger=trigger, inputs={"slot": slot, "pull": pull},
+        session, bot_name="orchestrator", idempotency_key=key,
+        trigger=trigger, inputs=inputs, force=recover,
     )
+    if task_claim is not None:
+        # Acquire the run's write lock before the task lock, matching final
+        # publication. A successor must not hold the task while waiting for
+        # the previous attempt's uncommitted run writes.
+        queue.guard_publish(session, task_claim)
     if not started:
         return run
     if persist_start:
@@ -78,7 +104,7 @@ def execute_orchestrator(
         operations = execute_operations(session, settings, slot=slot, trigger="orchestrator", parent_run_id=run.id)
         children.extend([_child(alert), _child(operations)])
         incomplete = discovery.status == "failed" or any(value == "incomplete" for value in states.values())
-        if alert.status == "failed":
+        if alert.status == "failed" or operations.status == "failed":
             incomplete = True
         finish_run(run, "completed_with_errors" if incomplete else "succeeded", outputs={
             "children": children,

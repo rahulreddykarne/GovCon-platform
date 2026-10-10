@@ -46,6 +46,7 @@ from govcon.compliance.records import RESOLVED_STATUSES, ValidatorResult
 from govcon.compliance.schemas import SubmissionPreflightAIV1
 from govcon.concurrency import apply_versioned_update
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import (
     Opportunity,
     Pursuit,
@@ -355,6 +356,7 @@ def preflight_items(
     return items
 
 
+@trace_phase("compliance.submission_preflight.run_submission_preflight")
 def run_submission_preflight(
     session: Session,
     opportunity_id: int,
@@ -540,6 +542,7 @@ def readiness_blockers(session: Session, opportunity_id: int) -> list[dict[str, 
     return blockers
 
 
+@trace_phase("compliance.submission_preflight.move_to_ready_to_submit")
 def move_to_ready_to_submit(
     session: Session,
     opportunity_id: int,

@@ -9,12 +9,27 @@ from __future__ import annotations
 
 import threading
 import time
+from contextlib import contextmanager
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy.exc import OperationalError
 
 from govcon.config import get_settings
 from govcon.tasks import worker
+
+
+@pytest.fixture(autouse=True)
+def isolate_worker_startup(monkeypatch):
+    """The scripted loop tests must not contact a real database at startup."""
+    @contextmanager
+    def session_scope(*args, **kwargs):
+        yield Mock()
+
+    monkeypatch.setattr(worker, "session_scope", session_scope)
+    monkeypatch.setattr(worker, "fail_interrupted_runs", Mock(return_value=0))
+    monkeypatch.setattr(worker, "_beat", Mock())
+    monkeypatch.setattr("govcon.prompting.registry.ensure_prompt_registry", Mock(return_value=[]))
 
 
 def _db_down() -> OperationalError:

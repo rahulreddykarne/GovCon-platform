@@ -16,6 +16,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from govcon.diagnostics import diagnostic_event, pipeline_phase, trace_phase
+
 if TYPE_CHECKING:
     from pytesseract import ImageData
 
@@ -96,14 +98,18 @@ def _page_text(data: ImageData) -> tuple[str, float | None]:
     return text, (round(sum(confidences) / len(confidences), 1) if confidences else None)
 
 
+@trace_phase("enrich.ocr.ocr_pdf_pages")
 def ocr_pdf_pages(pdf_bytes: bytes, page_numbers: list[int], config: OcrConfig) -> tuple[dict[int, OcrPage], dict[int, str]]:
     """OCR the given 1-based pages. Returns ``(read, failed)``; ``failed`` maps page to reason."""
     read: dict[int, OcrPage] = {}
     failed: dict[int, str] = {}
+    diagnostic_event("ocr.request", pages=len(page_numbers), bytes=len(pdf_bytes))
     if not page_numbers:
         return read, failed
     if not ocr_available(config):
         reason = "OCR disabled" if not config.enabled else "Tesseract OCR is not installed"
+        diagnostic_event("ocr.unavailable", level=logging.WARNING,
+                         reason="disabled" if not config.enabled else "dependency_missing", pages=len(page_numbers))
         return read, {page: reason for page in page_numbers}
 
     import pypdfium2 as pdfium
@@ -114,18 +120,23 @@ def ocr_pdf_pages(pdf_bytes: bytes, page_numbers: list[int], config: OcrConfig) 
     pytesseract.pytesseract.tesseract_cmd = command
     allowed = page_numbers[: config.max_pages]
     for skipped in page_numbers[config.max_pages:]:
+        diagnostic_event("ocr.page_skipped", page=skipped, reason="page_limit")
         failed[skipped] = f"over the OCR limit of {config.max_pages} pages per file"
     try:
         document = pdfium.PdfDocument(pdf_bytes)
     except Exception as exc:  # unreadable PDF: nothing can be OCR'd  # noqa: BLE001  boundary must record any failure
+        diagnostic_event("ocr.render_failed", level=logging.WARNING, error_type=type(exc).__name__)
         return read, {**failed, **{page: f"PDF could not be rendered: {type(exc).__name__}" for page in allowed}}
     try:
         for page_no in allowed:
             try:
-                rendered_page = document[page_no - 1]
-                image = rendered_page.render(scale=config.dpi / 72).to_pil()
-                data = pytesseract.image_to_data(image, lang=config.lang, output_type=pytesseract.Output.DICT)
-                text, confidence = _page_text(data)
+                with pipeline_phase("ocr.page", page=page_no):
+                    rendered_page = document[page_no - 1]
+                    image = rendered_page.render(scale=config.dpi / 72).to_pil()
+                    data = pytesseract.image_to_data(image, lang=config.lang, output_type=pytesseract.Output.DICT)
+                    text, confidence = _page_text(data)
+                    diagnostic_event("ocr.page_result", characters=len(text), confidence=confidence,
+                                     status="read" if text.strip() else "empty")
             except Exception as exc:  # noqa: BLE001  boundary must record any failure
                 logger.warning("OCR failed on page %s: %s", page_no, type(exc).__name__)
                 failed[page_no] = f"OCR error: {type(exc).__name__}"
@@ -136,4 +147,5 @@ def ocr_pdf_pages(pdf_bytes: bytes, page_numbers: list[int], config: OcrConfig) 
                 failed[page_no] = "OCR found no text on the page"
     finally:
         document.close()
+    diagnostic_event("ocr.result", pages=len(read), warnings=len(failed))
     return read, failed

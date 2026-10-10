@@ -41,8 +41,18 @@ def test_analysis_label_is_not_run_without_a_bot_run(db) -> None:
     assert labels[424242]["label"] == "not run"
 
 
-def test_source_documents_does_nothing_without_a_recent_ingest(db, monkeypatch) -> None:
+def test_source_documents_fetches_backlog_without_a_recent_ingest(db, monkeypatch) -> None:
     from datetime import datetime as real_datetime
+
+    from govcon.models import Opportunity
+
+    notice = Opportunity(source="sam", source_id=uuid4().hex, raw={},
+                         links={"description": "https://example.test/retained-notice"})
+    db.add(notice)
+    db.flush()
+    downloaded = []
+    monkeypatch.setattr("govcon.enrich.attachments.download_attachments",
+                        lambda session, opportunity, settings: downloaded.append(opportunity.id) or [])
 
     class FarFuture(real_datetime):
         @classmethod
@@ -52,10 +62,12 @@ def test_source_documents_does_nothing_without_a_recent_ingest(db, monkeypatch) 
 
     # Other tests leave recent ingest rows in this database. A clock past all of them
     # is the same condition as a laptop with no ingest in the last six hours.
+    # Pending documents must still be fetched after that window closes.
     monkeypatch.setattr("datetime.datetime", FarFuture)
     result = step_source_documents(db, Settings(_env_file=None))
     assert result.status == "succeeded"
-    assert result.extra == {"reason": "no recent ingest"}
+    assert notice.id in downloaded
+    assert result.extra["candidates"] >= 1
 
 
 def test_settings_page_renders_the_operator_clocks(db, client) -> None:

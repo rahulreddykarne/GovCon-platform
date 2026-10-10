@@ -73,11 +73,11 @@ def _current_inputs(session: Session, task: Task, ctx: StepContext) -> dict[str,
 
 
 def _prepare(session: Session, task: Task, ctx: StepContext) -> _Draft:
-    from govcon.ai.providers import provider_available
+    from govcon.ai.routing import analysis_available
     from govcon.proposals.drafting import prepare_draft_call
 
     inputs = _current_inputs(session, task, ctx)
-    if inputs["without_ai"] or not provider_available(ctx.settings):
+    if inputs["without_ai"] or not analysis_available(session, ctx.settings):
         return _Draft(inputs=inputs, prepared=None)
     return _Draft(
         inputs=inputs,

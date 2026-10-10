@@ -23,6 +23,44 @@ pytest
 
 `docker-compose.yml` runs PostgreSQL 16 with pgvector and publishes it on `127.0.0.1:5432` only. The database name, user, and password match the local URL in `.env.example`. Do not commit `.env`.
 
+## Pipeline troubleshooting
+
+Set `LOG_LEVEL=DEBUG` in `.env` and restart the web server, worker, and scheduler
+to enable detailed pipeline diagnostics. For a single PowerShell session:
+
+```powershell
+$env:LOG_LEVEL = "DEBUG"
+govcon worker start
+```
+
+Logs go to stderr and `LOG_DIR/govcon.log` (the default directory is `logs`).
+Pipeline events contain JSON with `event`, `phase`, `trace_id`, elapsed time,
+and task/opportunity IDs when available. Nested phases share a trace ID within
+one execution; retries and later executions can be joined by task/opportunity ID.
+Ingestion, matching, downloads, extraction/OCR, summaries, AI budget/provider
+attempts, replay, compliance, decisions, review, proposals, and submission
+assembly have phase boundaries. Worker steps separately trace prepare, execute,
+and publish, including checkpoint skips and task failure classification.
+
+Start with `phase.error` and its matching `phase.error_location` for the exception
+class and failing file/function/line. Then follow that `trace_id` backwards through
+provider selection, retries, OCR pages, batching, and checkpoints. A completed
+phase means the function returned; inspect its result/status and warning events
+for refusals, partial output, or fallback decisions. `phase.deferred` is normal
+AI replay control flow, not a failed provider call.
+
+```powershell
+Get-Content logs/govcon.log -Tail 100 -Wait
+Select-String -Path logs/govcon.log* -SimpleMatch '"task_id": 123'
+```
+
+New diagnostics record metadata and counts, never document/prompt/response
+contents, credentials, or exception messages. Set `LOG_LEVEL=INFO` for phase
+boundaries without detailed events. To enable rotation, set a separate `LOG_DIR`
+for each process and `LOG_MAX_BYTES=5000000`; `LOG_BACKUP_COUNT` defaults to 5.
+Rotation defaults to disabled (`LOG_MAX_BYTES=0`) so web, worker, and scheduler
+can keep using the existing shared file without competing file renames on Windows.
+
 ## Installed deployment
 
 Wheels include the web templates, static assets, prompts, Alembic migrations,

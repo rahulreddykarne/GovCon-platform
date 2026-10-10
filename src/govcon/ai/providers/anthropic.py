@@ -12,6 +12,9 @@
   Anthropic's recommended fallback model. ``result.model`` is the model that
   actually answered. A refusal that survives the fallback raises
   :class:`ProviderRefusal`.
+- Server tools: ``server_tools`` (web search, web fetch) run on Anthropic's
+  servers. A turn the server pauses (``pause_turn``) is resumed by sending the
+  paused assistant turn back, up to ``MAX_CONTINUATIONS`` times; usage is summed.
 - Errors: the SDK retries 408/409/429/5xx and connection errors. Anything it
   gives up on becomes :class:`ProviderAPIError` carrying the status only — the
   SDK's own error text includes the response body, which can echo prompt
@@ -32,6 +35,7 @@ from anthropic.types.beta import BetaMessage
 from govcon.ai.gateway import authorize_external_call
 from govcon.ai.providers.base import CompletionResult, ProviderAPIError, ProviderRefusal
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.ai.providers.anthropic")
@@ -46,6 +50,8 @@ FALLBACK_MODELS = frozenset({"claude-opus-5-5", "claude-sonnet-5-5", "claude-opu
 # Larger outputs are streamed: a non-streaming request that long can outlive
 # the HTTP timeout (SDK guidance). The final message is the same either way.
 STREAM_ABOVE_MAX_TOKENS = DEFAULT_MAX_TOKENS
+# Resumptions of a server-tool turn the API paused (``pause_turn``).
+MAX_CONTINUATIONS = 3
 JSON_INSTRUCTION = "\n\nRespond with a single JSON object only: no prose before or after it and no code fences."
 
 
@@ -81,6 +87,7 @@ class AnthropicProvider:
             http_client=http_client,
         )
 
+    @trace_phase("ai.providers.anthropic.complete")
     def complete(
         self,
         *,
@@ -92,6 +99,7 @@ class AnthropicProvider:
         json_mode: bool = True,
         classification: DataClassification,
         purpose: str,
+        server_tools: list[dict[str, Any]] | None = None,
     ) -> CompletionResult:
         """Call the Messages API once the AI gateway has approved the call."""
         use_model = model or self._model
@@ -110,22 +118,31 @@ class AnthropicProvider:
             "system": system_prompt + (JSON_INSTRUCTION if json_mode else ""),
             "messages": [{"role": "user", "content": user_prompt}],
         }
+        if server_tools:
+            request["tools"] = server_tools
         use_fallback = use_model in FALLBACK_MODELS and self._settings.anthropic_refusal_fallback
 
         start = time.monotonic()
         response: Message | BetaMessage
+        usage: dict[str, int] = {}
+        texts: list[str] = []
         try:
-            stream = request["max_tokens"] > STREAM_ABOVE_MAX_TOKENS
-            if use_fallback and stream:
-                with self._client.beta.messages.stream(**request, betas=[FALLBACK_BETA], fallbacks="default") as events:
-                    response = events.get_final_message()
-            elif use_fallback:
-                response = self._client.beta.messages.create(**request, betas=[FALLBACK_BETA], fallbacks="default")
-            elif stream:
-                with self._client.messages.stream(**request) as events:
-                    response = events.get_final_message()
-            else:
-                response = self._client.messages.create(**request)
+            for continuation in range(MAX_CONTINUATIONS + 1):
+                response = self._send(request, use_fallback=use_fallback)
+                _add_usage(usage, _usage(response.usage))
+                texts.extend(block.text for block in response.content if block.type == "text")
+                if response.stop_reason != "pause_turn" or not server_tools:
+                    break
+                if continuation == MAX_CONTINUATIONS:
+                    logger.warning("anthropic server-tool turn still paused after %d continuations purpose=%s",
+                                   MAX_CONTINUATIONS, purpose)
+                    break
+                logger.info("anthropic server-tool turn paused purpose=%s; resuming (%d/%d)",
+                            purpose, continuation + 1, MAX_CONTINUATIONS)
+                # Resume: send the paused assistant turn back; the server continues it.
+                request["messages"] = [request["messages"][0],
+                                       {"role": "assistant", "content": [block.model_dump(exclude_none=True)
+                                                                         for block in response.content]}]
         except anthropic.APIStatusError as exc:
             logger.error("anthropic api error status=%d purpose=%s", exc.status_code, purpose)
             raise ProviderAPIError(self.name, exc.status_code) from None
@@ -144,15 +161,27 @@ class AnthropicProvider:
             raise ProviderRefusal(self.name, served_model, category)
 
         # Thinking and fallback blocks carry no answer text; keep text blocks only.
-        content = "".join(block.text for block in response.content if block.type == "text")
+        content = "".join(texts)
         return CompletionResult(
             content=content,
             model=served_model,
             provider=self.name,
-            usage=_usage(response.usage),
+            usage=usage,
             latency_ms=latency_ms,
             finish_reason=response.stop_reason,
         )
+
+    def _send(self, request: dict[str, Any], *, use_fallback: bool) -> Message | BetaMessage:
+        stream = request["max_tokens"] > STREAM_ABOVE_MAX_TOKENS
+        if use_fallback and stream:
+            with self._client.beta.messages.stream(**request, betas=[FALLBACK_BETA], fallbacks="default") as events:
+                return events.get_final_message()
+        if use_fallback:
+            return self._client.beta.messages.create(**request, betas=[FALLBACK_BETA], fallbacks="default")
+        if stream:
+            with self._client.messages.stream(**request) as events:
+                return events.get_final_message()
+        return self._client.messages.create(**request)
 
 
 def _usage(usage: Any) -> dict[str, int]:
@@ -161,4 +190,14 @@ def _usage(usage: Any) -> dict[str, int]:
         value = getattr(usage, key, None)
         if isinstance(value, int):
             out[key] = value
+    server = getattr(usage, "server_tool_use", None)
+    for key in ("web_search_requests", "web_fetch_requests"):
+        value = getattr(server, key, None) if server is not None else None
+        if isinstance(value, int):
+            out[key] = value
     return out
+
+
+def _add_usage(total: dict[str, int], part: dict[str, int]) -> None:
+    for key, value in part.items():
+        total[key] = total.get(key, 0) + value

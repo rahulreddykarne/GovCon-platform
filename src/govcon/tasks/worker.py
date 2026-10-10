@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from govcon.bots.store import fail_interrupted_runs, reset_bot_worker, set_bot_worker
 from govcon.config import Settings, get_settings
 from govcon.db import session_scope
+from govcon.diagnostics import diagnostic_event, pipeline_phase, trace_phase
 from govcon.models import Task
 from govcon.tasks import queue
 from govcon.tasks.errors import TaskFailedPermanently, TaskSuperseded, classify
@@ -78,9 +79,12 @@ def _context(task: Task, settings: Settings) -> StepContext:
     )
 
 
+@trace_phase("tasks.worker.record_outcome")
 def _record_outcome(settings: Settings, claim: queue.Claim, exc: BaseException) -> str:
     """Store the outcome of a failed step; returns the task's new status."""
     outcome = classify(exc)
+    diagnostic_event("task.failure_classified", level=logging.WARNING, status=outcome.kind,
+                     error_type=type(exc).__name__)
     try:
         with session_scope(settings) as db:
             task = queue.guard_publish(db, claim)
@@ -120,15 +124,18 @@ def _record_outcome(settings: Settings, claim: queue.Claim, exc: BaseException) 
         return "lease_lost"
 
 
+@trace_phase("tasks.worker.run_claimed")
 def run_claimed(settings: Settings, claim: queue.Claim) -> str:
     """Run every remaining step of a claimed task. Returns the final status."""
     handler = get_handler(claim.task_type)
+    diagnostic_event("task.claimed", task_type=claim.task_type)
     heartbeat = _Heartbeat(settings, claim)
     heartbeat.start()
     try:
         if handler.run is not None:
             try:
-                return handler.run(settings, claim, heartbeat)
+                with pipeline_phase("worker.handler", task_type=claim.task_type):
+                    return handler.run(settings, claim, heartbeat)
             except queue.LeaseLost as exc:
                 logger.warning("%s; discarding this worker's result", exc)
                 return "lease_lost"
@@ -140,19 +147,21 @@ def run_claimed(settings: Settings, claim: queue.Claim) -> str:
             heartbeat.set_deadline(step.timeout_seconds)
             try:
                 # 1. Prepare: short transaction under the locks.
-                with session_scope(settings) as db:
+                with pipeline_phase("worker.prepare", step=step.name, timeout_seconds=step.timeout_seconds), session_scope(settings) as db:
                     task = queue.guard_publish(db, claim)
                     if step.name in (task.checkpoint or {}).get("completed_steps", []):
+                        diagnostic_event("task.checkpoint_skip", step=step.name, cached=True)
                         continue
                     task.current_step = step.name
                     ctx = _context(task, settings)
                     inputs = step.prepare(db, task, ctx)
                 # 2. Execute: no transaction open.
-                output = step.execute(inputs, ctx) if step.execute is not None else inputs
+                with pipeline_phase("worker.execute", step=step.name, opportunity_id=ctx.opportunity_id):
+                    output = step.execute(inputs, ctx) if step.execute is not None else inputs
                 if heartbeat.lost:
                     raise queue.LeaseLost(f"task {claim.task_id}: lease lost during {step.name}")
                 # 3. Publish: recheck lease and inputs, write, checkpoint — one commit.
-                with session_scope(settings) as db:
+                with pipeline_phase("worker.publish", step=step.name, opportunity_id=ctx.opportunity_id), session_scope(settings) as db:
                     task = queue.guard_publish(db, claim)
                     step.publish(db, task, output, ctx)
                     if task.status == "running":
@@ -160,6 +169,8 @@ def run_claimed(settings: Settings, claim: queue.Claim) -> str:
                         if last:
                             queue.complete(task, ctx.result)
                     status = task.status
+                    diagnostic_event("task.checkpoint_saved", step=step.name, status=status,
+                                     completed_steps=len((task.checkpoint or {}).get("completed_steps", [])))
                 if status != "running":
                     return status
             except queue.LeaseLost as exc:

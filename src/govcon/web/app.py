@@ -31,6 +31,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app):
+        from govcon.logging import configure_logging
+
+        configure_logging(settings)
         try:
             from govcon.db import session_scope
             from govcon.prompting.registry import (
@@ -129,6 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         workspace_comment,
         workspace_complete_review,
         workspace_draft_rfq,
+        workspace_market_prices,
         workspace_outcome_suggestion,
         workspace_prepare,
         workspace_proposal_approve,
@@ -215,6 +219,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/workspace/{opp_id}/quotes/{quote_id}/use", workspace_use_quote, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/pursuit-facts", workspace_pursuit_facts, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/rfq", workspace_draft_rfq, methods=["POST"])
+    app.add_api_route("/workspace/{opp_id}/market-prices", workspace_market_prices, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/prepare", workspace_prepare, methods=["POST"])
     app.add_api_route("/ops/tasks/{task_id}/{action}", ops_task_action, methods=["POST"])
 

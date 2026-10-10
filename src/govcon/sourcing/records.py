@@ -35,6 +35,8 @@ from govcon.models import (
 )
 
 QUOTE_SCOPE = "supplier_quotes"
+MAX_CATALOG_BYTES = 25 * 1024 * 1024
+MAX_CATALOG_ROWS = 10_000
 SOURCING_REQUIREMENT_TYPES = frozenset(
     {"technical", "delivery", "country_of_origin", "packaging", "quality", "certification", "item", "marking"}
 )
@@ -107,6 +109,8 @@ def import_catalog_csv(session: Session, *, supplier_id: int, data: bytes, filen
     reported with their line number and skipped; valid rows are upserted.
     """
     require_permission(actor, "review")
+    if len(data) > MAX_CATALOG_BYTES:
+        raise SourcingError("catalog files are limited to 25 MB")
     supplier = session.get(Supplier, supplier_id)
     if supplier is None:
         raise SourcingError("supplier not found")
@@ -118,6 +122,9 @@ def import_catalog_csv(session: Session, *, supplier_id: int, data: bytes, filen
     headers = {h.strip().lower() for h in reader.fieldnames or []}
     if "part_number" not in headers:
         raise SourcingError("the catalog CSV needs a part_number column")
+    if sum(1 for _ in reader) > MAX_CATALOG_ROWS:
+        raise SourcingError(f"catalogs are limited to {MAX_CATALOG_ROWS} rows")
+    reader = csv.DictReader(io.StringIO(text))
     run = CatalogImport(supplier_id=supplier.id, filename=filename, sha256=hashlib.sha256(data).hexdigest(),
                         imported_by_user_id=actor.id)
     session.add(run)

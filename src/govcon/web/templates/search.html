@@ -36,6 +36,8 @@
           <option value="open" {% if status == 'open' %}selected{% endif %}>Open</option>
           <option value="closed" {% if status == 'closed' %}selected{% endif %}>Closed</option>
           <option value="archived" {% if status == 'archived' %}selected{% endif %}>Archived</option>
+          <option value="awarded" {% if status == 'awarded' %}selected{% endif %}>Awarded (award notices)</option>
+          <option value="notice_only" {% if status == 'notice_only' %}selected{% endif %}>Notice only (J&amp;A, surplus sales)</option>
         </select>
       </div>
       <button type="submit" class="btn btn-primary">Search</button>

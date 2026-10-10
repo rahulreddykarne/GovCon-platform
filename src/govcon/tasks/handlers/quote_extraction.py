@@ -77,9 +77,12 @@ class _Call:
 
 
 def _extract_prepare(session: Session, task: Task, ctx: StepContext) -> _Call:
+    from govcon.ai.routing import analysis_selection
     from govcon.sourcing.records import active_authorization
 
-    provider = (ctx.settings.ai_primary_provider or "").strip().lower()
+    # Authorize the provider the call will actually use: the saved route, not the default.
+    routed, _model, _reason = analysis_selection(session, ctx.settings, provider_name=None, model=None)
+    provider = (routed or "").strip().lower()
     if not provider or active_authorization(session, provider=provider) is None:
         raise TaskBlocked(f"no current authorization to send supplier quotes to {provider or 'an AI provider'}",
                           owner_role="owner", next_action=_AUTH_ACTION)

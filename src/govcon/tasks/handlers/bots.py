@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 from govcon.db import session_scope
-from govcon.models import Task
 from govcon.tasks import queue
 from govcon.tasks.registry import TaskHandler, register
 
 
 def run_bot_task(settings, claim, heartbeat) -> str:
-    del heartbeat
+    heartbeat.set_deadline(4 * 3600)
     with session_scope(settings) as db:
-        task = db.get(Task, claim.task_id)
-        if task is None:
-            raise RuntimeError(f"task {claim.task_id} disappeared")
+        task = queue.guard_publish(db, claim)
         payload = dict(task.payload or {})
     bot_name = payload.get("bot_name")
     if bot_name != "orchestrator":
@@ -27,10 +24,18 @@ def run_bot_task(settings, claim, heartbeat) -> str:
             slot=str(payload["slot"]),
             pull=bool(payload.get("pull")),
             persist_start=True,
+            task_claim=claim,
         )
         result = {"bot_run_id": run.id, "status": run.status, "state": (run.outputs or {}).get("state")}
-    with session_scope(settings) as db:
+        if heartbeat.lost:
+            raise queue.LeaseLost(f"task {claim.task_id}: heartbeat lost")
         task = queue.guard_publish(db, claim)
+        if run.status in {"running", "queued"}:
+            raise RuntimeError(f"bot run {run.id} is still owned by another execution")
+        if run.status in {"failed", "completed_with_errors"}:
+            task.result = result
+            queue.retry_later(db, task, RuntimeError(run.error or f"bot run {run.id} is incomplete"), settings=settings)
+            return task.status
         queue.complete(task, result)
     return "succeeded"
 

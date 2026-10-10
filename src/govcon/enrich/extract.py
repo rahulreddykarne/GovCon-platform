@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
+from govcon.diagnostics import trace_phase
+
 if TYPE_CHECKING:
     from govcon.enrich.ocr import OcrConfig
 
@@ -118,6 +120,7 @@ class ExtractionResult:
         self.ocr_failed_pages = ocr_failed_pages or []
 
 
+@trace_phase("enrich.extract.extract_text")
 def extract_text(
     data: bytes,
     mime_type: str,

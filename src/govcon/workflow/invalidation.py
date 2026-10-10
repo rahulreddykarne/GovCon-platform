@@ -392,8 +392,8 @@ def process_pending_source_changes(
 
     settings = settings or get_settings()
     if use_ai is None:
-        from govcon.ai.providers import provider_available
-        use_ai = provider_available(settings)
+        from govcon.ai.routing import analysis_available
+        use_ai = analysis_available(session, settings)
     now = now or datetime.now(UTC)
     summary: dict[str, Any] = {"events": 0, "opportunities": 0, "invalidated": 0, "deferred": 0, "errors": []}
     attempts = failed_attempts(session, opportunity_ids=opportunity_ids)

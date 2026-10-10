@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from govcon.bots.store import begin_run, finish_run, open_approval
 from govcon.config import Settings
+from govcon.ingest.snapshots import canonical_content_hash, json_safe
 from govcon.logging import redact
 from govcon.models import (
     BotRun,
@@ -139,11 +140,32 @@ def execute_matching(
     session: Session, settings: Settings, *, opportunity_id: int, trigger: str, parent_run_id: int | None,
 ) -> BotRun:
     del settings
+    from govcon.matching.eligibility import pursuit_eligibility
+    from govcon.matching.engine import evaluate_match
+    from govcon.models import Match, Watchlist
+
     revision = _revision(session, opportunity_id)
+    watchlists = list(session.scalars(select(Watchlist).where(Watchlist.enabled.is_(True)).order_by(Watchlist.id)))
+    opportunity = session.get(Opportunity, opportunity_id)
+    now = datetime.now(UTC)
+    evaluations = [evaluate_match(watch, opportunity, now=now) for watch in watchlists] if opportunity else []
+    eligibility, reason = pursuit_eligibility(opportunity) if opportunity else ("unknown", "opportunity not found")
+    rank = session.scalar(select(Match.rank_score).where(
+        Match.opportunity_id == opportunity_id, Match.active.is_(True)
+    ).order_by(Match.id).limit(1))
+    criteria = ["id", "name", "psc_codes", "naics_codes", "keywords", "exclude_keywords", "nsn_list",
+                "set_asides", "max_value", "min_value", "min_deadline_days", "sources"]
+    dependency_revision = canonical_content_hash({
+        "watchlists": [{field: getattr(watch, field) for field in criteria} for watch in watchlists],
+        "rank": rank, "eligibility": [eligibility, reason],
+        "evaluations": [{"matched": hit, "score": score,
+                         "groups": {name: group.get("status") for name, group in (evidence.get("groups") or {}).items()}}
+                        for hit, evidence, score in evaluations],
+    })
     run, started = begin_run(
-        session, bot_name="matching", idempotency_key=f"matching:{opportunity_id}:{revision}",
+        session, bot_name="matching", idempotency_key=f"matching:{opportunity_id}:{revision}:{dependency_revision}",
         trigger=trigger, opportunity_id=opportunity_id, source_revision=revision,
-        parent_run_id=parent_run_id, inputs={"source_revision": revision},
+        parent_run_id=parent_run_id, inputs={"source_revision": revision, "dependency_revision": dependency_revision},
     )
     if not started:
         return run
@@ -151,15 +173,9 @@ def execute_matching(
     if opportunity is None:
         return finish_run(run, "failed", error="opportunity not found", outputs={"matched": False, "state": "incomplete"})
     try:
-        from govcon.matching.eligibility import pursuit_eligibility
-        from govcon.matching.engine import evaluate_match
-        from govcon.models import Match, Watchlist
-
-        eligibility, reason = pursuit_eligibility(opportunity)
         groups = []
         matched = False
-        for watchlist in session.scalars(select(Watchlist).where(Watchlist.enabled.is_(True))).all():
-            is_match, matched_on, score = evaluate_match(watchlist, opportunity)
+        for watchlist, (is_match, matched_on, score) in zip(watchlists, evaluations, strict=True):
             matched = matched or is_match
             groups.append({
                 "watchlist_id": watchlist.id,
@@ -173,9 +189,6 @@ def execute_matching(
                     if isinstance(evidence, dict) and evidence.get("status") == "fail"
                 ],
             })
-        rank = session.scalar(
-            select(Match.rank_score).where(Match.opportunity_id == opportunity_id, Match.active.is_(True)).limit(1)
-        )
         hard = []
         if eligibility == "ineligible":
             hard.append(reason or "ineligible")
@@ -283,11 +296,16 @@ def execute_awards(
     session: Session, settings: Settings, *, opportunity_id: int, trigger: str, parent_run_id: int | None,
 ) -> BotRun:
     del settings
+    from govcon.matching.pricing import recent_award_comps
+
     revision = _revision(session, opportunity_id)
+    opportunity = session.get(Opportunity, opportunity_id)
+    points = recent_award_comps(session, nsn=opportunity.nsn, psc_code=opportunity.psc_code, limit=5) if opportunity else []
+    dependency_revision = canonical_content_hash({"awards": [json_safe(vars(point)) for point in points]})
     run, started = begin_run(
-        session, bot_name="awards", idempotency_key=f"awards:{opportunity_id}:{revision}",
+        session, bot_name="awards", idempotency_key=f"awards:{opportunity_id}:{revision}:{dependency_revision}",
         trigger=trigger, opportunity_id=opportunity_id, source_revision=revision,
-        parent_run_id=parent_run_id, inputs={"source_revision": revision},
+        parent_run_id=parent_run_id, inputs={"source_revision": revision, "dependency_revision": dependency_revision},
     )
     if not started:
         return run
@@ -295,9 +313,6 @@ def execute_awards(
     if opportunity is None:
         return finish_run(run, "failed", error="opportunity not found", outputs={"state": "incomplete"})
     try:
-        from govcon.matching.pricing import recent_award_comps
-
-        points = recent_award_comps(session, nsn=opportunity.nsn, psc_code=opportunity.psc_code, limit=5)
         comps = [{
             "award_id": point.award_id,
             "action_date": point.action_date.isoformat() if point.action_date else None,
@@ -320,10 +335,17 @@ def execute_bid(
     session: Session, settings: Settings, *, opportunity_id: int, trigger: str, parent_run_id: int | None,
 ) -> BotRun:
     revision = _revision(session, opportunity_id)
+    from govcon.ai.routing import decision_providers
+    from govcon.decision.engine import build_decision_state
+
+    dependency_revision = canonical_content_hash({
+        "state": json_safe(build_decision_state(session, opportunity_id)),
+        "providers": decision_providers(session, settings),
+    })
     run, started = begin_run(
-        session, bot_name="bid_decision", idempotency_key=f"bid_decision:{opportunity_id}:{revision}",
+        session, bot_name="bid_decision", idempotency_key=f"bid_decision:{opportunity_id}:{revision}:{dependency_revision}",
         trigger=trigger, opportunity_id=opportunity_id, source_revision=revision,
-        parent_run_id=parent_run_id, inputs={"source_revision": revision},
+        parent_run_id=parent_run_id, inputs={"source_revision": revision, "dependency_revision": dependency_revision},
     )
     if not started:
         return run

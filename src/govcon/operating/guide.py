@@ -16,6 +16,7 @@ EXPLAIN = {
     "document": "The document bot reads the stored text and cites passages. Unread files leave this stage incomplete.",
     "matching": "Matching compares the notice with enabled watchlists. Rank is not a decision.",
     "compliance": "Compliance records eligibility, clauses, deadlines, and questions that are still unanswered.",
+    "market_prices": "For a pursued product, Claude searches commercial websites, never government sites, for up to five prices. Their median is an estimated cost that margin math uses until a supplier quote is recorded. It is not a quote.",
     "awards": "Awards shows historical USAspending rows already stored. History is not this notice's price.",
     "amendment": "Amendments list source events. An empty event list that was read means no stored change.",
     "bid_decision": "Bid or no-bid prepares a recommendation. It does not submit a bid.",

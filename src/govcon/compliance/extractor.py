@@ -53,6 +53,7 @@ from govcon.compliance.text import (
     split_sentences,
 )
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import Opportunity
 
 logger = logging.getLogger("govcon.compliance.extractor")
@@ -363,6 +364,7 @@ def _gaps(chunks: list[dict[str, Any]], inventory: Inventory, reason: str) -> li
 _PART_LOCAL_FAILURES = frozenset({"invalid_output", "output_truncated", "provider_error"})
 
 
+@trace_phase("compliance.extractor.run_ai_pass")
 def run_ai_pass(
     session: Session,
     opportunity: Opportunity,
@@ -518,6 +520,7 @@ def run_ai_pass(
     )
 
 
+@trace_phase("compliance.extractor.run_scanner_pass")
 def run_scanner_pass(session: Session, opportunity_id: int, inventory: Inventory) -> PassOutcome:
     candidates = scan_requirements(inventory) + structural_candidates(inventory)
     run = record_run(

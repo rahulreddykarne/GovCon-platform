@@ -9,9 +9,10 @@ excluded or auto-pursued.
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from govcon.matching.eligibility import ELIGIBLE_STATUSES, pursuit_eligibility
@@ -72,6 +73,7 @@ def _vector_search(
     session: Session,
     query_embedding: list[float],
     *,
+    model_id: str | None,
     exclude_id: int | None = None,
     exclude_watchlist_id: int | None = None,
     limit: int = _DEFAULT_LIMIT,
@@ -82,14 +84,24 @@ def _vector_search(
     ineligible results (flag them, not auto-pursue).
     """
     limit = max(1, min(limit, _MAX_LIMIT))
+    if not model_id or len(query_embedding) != 384 or not all(math.isfinite(v) for v in query_embedding):
+        return []
 
     # pgvector <=> operator returns cosine distance (0 = identical, 2 = opposite).
     # We embed the vector as a literal cast so psycopg does not need special handling.
-    vec_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
+    distance = Opportunity.embedding.cosine_distance(list(query_embedding))
+    # Match opportunity_text: omit empty fields, join with spaces, strip edges.
+    content = func.regexp_replace(func.concat_ws(" ", *[
+        func.nullif(column, "") for column in (Opportunity.title, Opportunity.description,
+        Opportunity.psc_code, Opportunity.naics_code, Opportunity.nsn, Opportunity.agency_path)
+    ]), r"^\s+|\s+$", "", "g")
+    source_hash = func.encode(func.sha256(func.convert_to(content, "UTF8")), "hex")
     stmt = (
-        select(Opportunity, text(f"embedding <=> '{vec_literal}'::vector AS cosine_dist"))
+        select(Opportunity, distance.label("cosine_dist"))
         .where(Opportunity.embedding.is_not(None))
-        .order_by(text(f"embedding <=> '{vec_literal}'::vector"))
+        .where(Opportunity.embedding_model == model_id, Opportunity.embedding_dimension == 384,
+               Opportunity.embedding_source_hash == source_hash)
+        .order_by(distance, Opportunity.id)
         .limit(limit)
     )
     if exclude_id is not None:
@@ -130,8 +142,15 @@ def similar_opportunities(
 
     limit = max(1, min(limit, _MAX_LIMIT))
 
-    if opp.embedding is not None:
-        results = _vector_search(session, opp.embedding, exclude_id=opportunity_id, limit=limit)
+    from govcon.enrich.embeddings import _refresh, _source_hash, opportunity_text
+
+    if provider is not None:
+        _refresh(opp, provider)
+        session.flush()
+    if (opp.embedding is not None and opp.embedding_model and opp.embedding_dimension == 384
+            and opp.embedding_source_hash == _source_hash(opportunity_text(opp))):
+        results = _vector_search(session, opp.embedding, model_id=opp.embedding_model,
+                                 exclude_id=opportunity_id, limit=limit)
         matches = [
             _compact_opp(o, distance=d)
             for o, d in results
@@ -141,25 +160,6 @@ def similar_opportunities(
             "method": "vector",
             "matches": matches,
         }
-
-    # Heuristic fallback: no embedding on the target opportunity
-    if provider is not None:
-        from govcon.enrich.embeddings import opportunity_text
-
-        text_for_embed = opportunity_text(opp)
-        if text_for_embed:
-            opp.embedding = provider.embed(text_for_embed)
-            session.flush()
-            results = _vector_search(session, opp.embedding, exclude_id=opportunity_id, limit=limit)
-            matches = [
-                _compact_opp(o, distance=d)
-                for o, d in results
-            ]
-            return {
-                "opportunity_id": opportunity_id,
-                "method": "vector",
-                "matches": matches,
-            }
 
     # Final heuristic (no provider, no embedding)
     from sqlalchemy import or_
@@ -208,7 +208,7 @@ def semantic_recommendations_for_watchlist(
     if wl is None:
         return {"ok": False, "error": {"code": "NOT_FOUND", "message": f"Watchlist {watchlist_id} not found"}}
 
-    if wl.embedding is None:
+    if wl.embedding is None or not wl.embedding_model or wl.embedding_dimension != 384:
         return {
             "watchlist_id": watchlist_id,
             "category": CATEGORY_SEMANTIC_MATCH,
@@ -217,7 +217,8 @@ def semantic_recommendations_for_watchlist(
         }
 
     limit = max(1, min(limit, _MAX_LIMIT))
-    results = _vector_search(session, wl.embedding, limit=limit, exclude_watchlist_id=watchlist_id)
+    results = _vector_search(session, wl.embedding, model_id=wl.embedding_model,
+                             limit=limit, exclude_watchlist_id=watchlist_id)
     matches = [_compact_opp(opp, distance=dist) for opp, dist in results]
 
     return {
@@ -240,7 +241,7 @@ def win_profile_recommendations(
     Returns an empty list with an explanatory note when fewer than ``min_wins``
     genuine wins exist (spec task 5).
     """
-    from govcon.enrich.embeddings import compute_win_profile
+    from govcon.enrich.embeddings import _model_id, compute_win_profile
 
     win_embedding = compute_win_profile(session, provider, min_wins=min_wins)
     if win_embedding is None:
@@ -252,7 +253,7 @@ def win_profile_recommendations(
             "matches": [],
         }
 
-    results = _vector_search(session, win_embedding, limit=limit)
+    results = _vector_search(session, win_embedding, model_id=_model_id(provider), limit=limit)
     return {
         "category": CATEGORY_SIMILAR_WON,
         "matches": [_compact_opp(o, distance=d) for o, d in results],
@@ -266,7 +267,7 @@ def pursued_profile_recommendations(
     limit: int = _DEFAULT_LIMIT,
 ) -> dict[str, Any]:
     """Return opportunities similar to actively pursued bids."""
-    from govcon.enrich.embeddings import compute_pursued_profile
+    from govcon.enrich.embeddings import _model_id, compute_pursued_profile
 
     pursued_embedding = compute_pursued_profile(session, provider)
     if pursued_embedding is None:
@@ -276,7 +277,7 @@ def pursued_profile_recommendations(
             "matches": [],
         }
 
-    results = _vector_search(session, pursued_embedding, limit=limit)
+    results = _vector_search(session, pursued_embedding, model_id=_model_id(provider), limit=limit)
     return {
         "category": CATEGORY_SIMILAR_PURSUED,
         "matches": [_compact_opp(o, distance=d) for o, d in results],

@@ -26,6 +26,7 @@ from govcon.compliance.matrix import (
     upsert_open_finding,
 )
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import (
     Proposal,
     Pursuit,
@@ -172,6 +173,7 @@ def _extract_submission_info(requirements: list[Requirement]) -> dict[str, Any]:
     }
 
 
+@trace_phase("submissions.service.generate_submission_package")
 def generate_submission_package(
     session: Session,
     *,

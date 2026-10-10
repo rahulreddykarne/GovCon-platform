@@ -65,6 +65,9 @@ from govcon.web.routes.sourcing import suppliers_save as suppliers_save
 from govcon.web.routes.sourcing import workspace_add_quote as workspace_add_quote
 from govcon.web.routes.sourcing import workspace_draft_rfq as workspace_draft_rfq
 from govcon.web.routes.sourcing import (
+    workspace_market_prices as workspace_market_prices,
+)
+from govcon.web.routes.sourcing import (
     workspace_pursuit_facts as workspace_pursuit_facts,
 )
 from govcon.web.routes.sourcing import workspace_use_quote as workspace_use_quote

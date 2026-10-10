@@ -1,7 +1,7 @@
 """Sanitized SAM and DIBBS documents: a failed download is retried on the next run.
 
-No test in this module contacts SAM or DIBBS. The clock inside the step is
-moved to 2099 so notices left by other tests stay outside the six-hour window.
+No test in this module contacts SAM or DIBBS. The candidate page is isolated
+to these two notices so shared-database leftovers cannot change retry counts.
 """
 
 from __future__ import annotations
@@ -55,6 +55,8 @@ def test_failed_source_documents_are_retried(db, monkeypatch) -> None:
         session.flush()
 
     monkeypatch.setattr("govcon.enrich.attachments.download_attachments", fake_download)
+    monkeypatch.setattr("govcon.scheduler.jobs._source_document_page",
+                        lambda session, after, upper: [row for row in (sam, dibbs) if after < row.id <= upper])
     monkeypatch.setattr("datetime.datetime", _FrozenClock)
     settings = Settings(_env_file=None)
     try:

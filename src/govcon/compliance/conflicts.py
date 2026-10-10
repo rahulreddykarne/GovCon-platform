@@ -38,6 +38,7 @@ from govcon.compliance.matrix import (
 from govcon.compliance.records import Inventory, SourceDocument
 from govcon.compliance.schemas import ContradictionDetectionV1
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import Requirement
 from govcon.security.classification import DataClassification
 
@@ -244,6 +245,7 @@ def apply_conflicts(session: Session, opportunity_id: int, conflicts: list[Confl
     return {"superseded": sorted(set(superseded_ids)), "ambiguous": sorted(set(ambiguous_ids)), "finding_ids": finding_ids}
 
 
+@trace_phase("compliance.conflicts.run_conflict_scan")
 def run_conflict_scan(
     session: Session,
     opportunity_id: int,

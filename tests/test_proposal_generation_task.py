@@ -295,7 +295,7 @@ def test_ac4_a_task_waiting_for_input_is_requeued_not_duplicated(db, client):
 def test_budget_and_policy_errors_block_with_an_owner(db, client, monkeypatch, reason, status):
     from govcon.ai.structured import StructuredCallError
     opp, _, _, _ = approved_bid(db, client)
-    monkeypatch.setattr("govcon.ai.providers.provider_available", lambda settings: True)
+    monkeypatch.setattr("govcon.ai.routing.analysis_available", lambda session, settings: True)
 
     def refuse(*args, **kwargs):
         raise StructuredCallError(reason, "synthetic refusal")

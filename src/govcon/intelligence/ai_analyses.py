@@ -203,37 +203,34 @@ def _supplier_request(session: Session, opportunity_id: int, settings: Settings)
 
 def _pricing_request(session: Session, opportunity_id: int, settings: Settings) -> dict[str, Any]:
     opp = _opportunity(session, opportunity_id)
-    from govcon.sourcing.records import lowest_current_total
+    from govcon.sourcing.market_prices import effective_cost_basis
+    from govcon.sourcing.product_facts import effective_product_facts
 
     pursuit = session.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp.id))
     quote_price = pursuit.quote_price if pursuit is not None else None
-    cost = pursuit.sourcing_cost if pursuit is not None else None
-    cost_source = "pursuit record entered by a user" if cost is not None else None
-    best = lowest_current_total(session, opp.id) if cost is None else None
-    if best is not None:
-        # The lowest current supplier quote stands in for an unrecorded cost (ADR-071).
-        cost, cost_source = best.total_price, f"lowest current supplier quote #{best.id}"
-    if quote_price is None and cost is None:
-        raise AnalysisInputMissing(
-            "record a quote price or sourcing cost on the pursuit, or a current supplier quote, before running "
-            "pricing analysis"
-        )
-    comps = recent_award_comps(session, nsn=opp.nsn, psc_code=opp.psc_code, limit=25)
-    from govcon.sourcing.product_facts import effective_product_facts
-
     facts = effective_product_facts(session, opp)
     quantity = facts.quantity if facts.quantity is not None and facts.quantity > 0 else None
+    # Recorded cost, else the lowest current supplier quote (ADR-071), else the web price estimate.
+    basis = effective_cost_basis(session, opp, pursuit, quantity)
+    cost, cost_source = basis.total, basis.detail
+    if quote_price is None and cost is None and basis.unit is None:
+        raise AnalysisInputMissing(
+            "record a quote price or sourcing cost on the pursuit, or a current supplier quote, or run the web "
+            "price search on the Products tab before running pricing analysis"
+        )
+    comps = recent_award_comps(session, nsn=opp.nsn, psc_code=opp.psc_code, limit=25)
     markup = ((quote_price - cost) / cost * 100) if quote_price is not None and cost else None
     inputs = {
         "quote_price_total": _num(quote_price),
         "sourcing_cost_total": _num(cost),
         "sourcing_cost_source": cost_source,
+        "sourcing_cost_is_estimate": basis.is_estimate,
         "markup_on_cost_pct": _num(markup),
         "quantity": _num(quantity),
         "unit": facts.unit,
         "product_facts_analysis_id": facts.source_analysis_id,
         "proposed_unit_price": _num(quote_price / quantity) if quote_price is not None and quantity else None,
-        "unit_cost": _num(cost / quantity) if cost is not None and quantity else None,
+        "unit_cost": _num(cost / quantity) if cost is not None and quantity else _num(basis.unit),
         "note": "Arithmetic is computed by the application; markup_on_cost_pct = (price - cost) / cost.",
     }
     return _request(
@@ -248,7 +245,7 @@ def _pricing_request(session: Session, opportunity_id: int, settings: Settings) 
         classification=DataClassification.PROPRIETARY,
         settings=settings,
         manifest={"award_ids": [p.award_id for p in comps], "pursuit_id": pursuit.id if pursuit else None,
-                  "cost_source": cost_source},
+                  "cost_source": cost_source, "market_price_run_id": basis.market_price_run_id},
     )
 
 

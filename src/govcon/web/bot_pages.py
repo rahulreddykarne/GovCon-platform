@@ -63,9 +63,12 @@ def bots_run(
         return _redirect("/bots", request=request, notice="Run the orchestrator. It starts the other bots.")
     settings = request.app.state.settings
     with session_scope() as db:
-        execute_orchestrator(
+        run = execute_orchestrator(
             db, settings, trigger=f"manual:{user.id}", slot=new_slot(), pull=pull == "yes",
         )
+        status = run.status
+    if status in {"failed", "completed_with_errors", "running", "queued"}:
+        return _redirect("/bots", request=request, error=f"Orchestrator {status}. Review the run history for unfinished steps.")
     return _redirect("/bots", request=request, notice="Orchestrator finished. Nothing was emailed or submitted.")
 
 

@@ -44,6 +44,7 @@ from govcon.compliance.matrix import (
 from govcon.compliance.records import RESOLVED_STATUSES
 from govcon.compliance.schemas import ComplianceValidationV1
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import Requirement, RequirementEvidence
 from govcon.security.classification import DataClassification
 
@@ -134,6 +135,7 @@ def _ai_validate(
     return out
 
 
+@trace_phase("compliance.validator.run_validation")
 def run_validation(
     session: Session,
     opportunity_id: int,
@@ -242,6 +244,7 @@ def compliance_state(requirements: list[Requirement], counts: dict[str, Any]) ->
     }
 
 
+@trace_phase("compliance.validator.run_jev_routing")
 def run_jev_routing(
     session: Session,
     opportunity_id: int,

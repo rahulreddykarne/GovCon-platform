@@ -53,6 +53,7 @@ from govcon.compliance.red_team import run_red_team
 from govcon.compliance.schemas import RequirementReconciliationV1
 from govcon.compliance.validator import run_jev_routing, run_validation
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.models import Opportunity
 from govcon.security.classification import strictest_classification
 
@@ -133,6 +134,7 @@ def _ai_reconciliation_hints(session, opportunity_id, candidates, canonicals, in
     return {"status": "complete", "ai_analysis_id": result.analysis.id if result.analysis else None, "groups": len(checked_output(result.output, RequirementReconciliationV1).groups)}
 
 
+@trace_phase("compliance.pipeline.run_compliance_pipeline")
 def run_compliance_pipeline(
     session: Session,
     opportunity_id: int,
@@ -155,6 +157,8 @@ def run_compliance_pipeline(
     inventory, inventory_run = build_document_inventory(session, opportunity_id)
     warnings += [w for w in (inventory_run.warnings or []) if w.get("blocking")]
     prior = latest_run(session, opportunity_id, "requirement_reconciliation")
+    diagnostic_event("compliance.inventory_ready", files=len(inventory.documents), ready=inventory.complete,
+                     warnings=len(warnings))
     prior_files = (prior.output_json or {}).get("inventory_files", []) if prior else []
     prior_requirement_ids = {r.id for r in active_requirements(session, opportunity_id)}
     current_hash = inventory_hash(inventory)
@@ -244,6 +248,9 @@ def run_compliance_pipeline(
         bid_rerun = run_decision_bundle(session, opportunity_id=opportunity_id, bundle_name="bid_decision", settings=settings).run.id
 
     complete = inventory.complete and ai_passes_ok
+    diagnostic_event("compliance.result", status="complete" if complete else "incomplete",
+                     independent=passes_independent(ai_outcomes) if extraction_needed else None,
+                     cached=not extraction_needed, warnings=len(warnings))
     counts, matrix_run_id = record_matrix_run(
         session,
         opportunity_id,

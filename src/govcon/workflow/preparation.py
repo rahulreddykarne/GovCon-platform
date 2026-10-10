@@ -8,6 +8,11 @@ in order, each checkpointed so a retry resumes at the first unfinished step:
    Network calls and OCR run with no transaction open.
 2. ``summary``: solicitation summary over the whole document set (ADR-066).
 3. ``compliance``: the compliance pipeline (requirements, evidence, matrix).
+3a. ``market_prices``: for a product opportunity, search the web with Claude
+   for up to five commercial prices of the specified product
+   (``sourcing/market_prices.py``). Their median is the estimated cost that
+   margin math uses until a supplier quote exists. A skipped, blocked or failed
+   search is recorded and never stops preparation.
 4. ``research``: queue market, supplier and pricing analyses (ADR-064);
    analyses missing their inputs or blocked by policy are listed with the
    action that unblocks them, and never stop preparation.
@@ -36,7 +41,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from govcon.db import session_scope
+from govcon.diagnostics import trace_phase
 from govcon.models import FilePage, Opportunity, StoredFile, Task, User
+from govcon.sourcing import market_prices
 from govcon.tasks import queue
 from govcon.tasks.registry import (
     Step,
@@ -50,24 +57,30 @@ from govcon.workflow.source_revision import current_source_revision
 logger = logging.getLogger("govcon.workflow.preparation")
 
 PREPARATION_TASK = "opportunity_preparation"
-STEPS = ("documents", "summary", "compliance", "research", "decision", "review")
+STEPS = ("documents", "summary", "compliance", "market_prices", "research", "decision", "review")
 STEP_LABELS = {
     "documents": "Download and read documents",
     "summary": "Solicitation summary",
     "compliance": "Compliance requirements and matrix",
+    "market_prices": "Web market prices",
     "research": "Market, supplier and pricing research",
     "decision": "Decision package",
     "review": "Review setup",
 }
 
 
-def queue_preparation(session: Session, *, opportunity_id: int, actor_user_id: int | None) -> tuple[Task, bool]:
+@trace_phase("workflow.preparation.queue_preparation")
+def queue_preparation(session: Session, *, opportunity_id: int, actor_user_id: int | None,
+                      review_return_version: int | None = None) -> tuple[Task, bool]:
     """Queue preparation in the caller's transaction; one active run per source revision."""
+    inputs: dict[str, Any] = {"source_revision": str(current_source_revision(session, opportunity_id))}
+    if review_return_version is not None:
+        inputs["review_return_version"] = review_return_version
     return queue.enqueue(
         session,
         task_type=PREPARATION_TASK,
         opportunity_id=opportunity_id,
-        input_revision={"source_revision": str(current_source_revision(session, opportunity_id))},
+        input_revision=inputs,
         actor_user_id=actor_user_id,
     )
 
@@ -97,6 +110,7 @@ class _Documents:
     extracted: dict[int, Any] = field(default_factory=dict)
 
 
+@trace_phase("workflow.preparation.documents_prepare")
 def _documents_prepare(session: Session, task: Task, ctx: StepContext) -> _Documents:
     from govcon.enrich.attachment_refs import attachment_refs_for
     from govcon.enrich.attachments import (
@@ -125,6 +139,7 @@ def _documents_prepare(session: Session, task: Task, ctx: StepContext) -> _Docum
                       reused=current_sam_versions(session, opportunity.id, refs, snapshot_id))
 
 
+@trace_phase("workflow.preparation.documents_execute")
 def _documents_execute(docs: _Documents, ctx: StepContext) -> _Documents:
     from govcon.enrich.attachments import fetch_attachment
     from govcon.enrich.extract import extract_text
@@ -147,6 +162,7 @@ def _documents_execute(docs: _Documents, ctx: StepContext) -> _Documents:
     return docs
 
 
+@trace_phase("workflow.preparation.documents_publish")
 def _documents_publish(session: Session, task: Task, docs: _Documents, ctx: StepContext) -> None:
     from govcon.enrich.attachments import (
         reconcile_attachment_versions,
@@ -189,12 +205,13 @@ def _checkpoint_service(session: Session, ctx: StepContext, step: str, output: d
         raise queue.LeaseLost(f"task {ctx.task_id}: lease expired during preparation")
     revision = str(current_source_revision(session, required_opportunity_id(ctx.opportunity_id)))
     if revision != ctx.payload["_preparation_source_revision"]:
-        raise TaskSuperseded("source changed during preparation", input_revision={"source_revision": revision},
+        raise TaskSuperseded("source changed during preparation", input_revision={**ctx.input_revision, "source_revision": revision},
                              payload=dict(task.payload or {}))
     _note(ctx, **output)
     queue.record_step(task, step, ctx.checkpoint_data)
 
 
+@trace_phase("workflow.preparation.run_service")
 def _run_service(ctx: StepContext, step: str, service: Callable[[Session], dict[str, Any]]) -> dict[str, Any]:
     """Run ``service`` in recorded passes; the last pass commits its writes with the checkpoint."""
     from govcon.ai.replay import run_recorded, stable_ids
@@ -242,6 +259,7 @@ def _run_service(ctx: StepContext, step: str, service: Callable[[Session], dict[
     )
 
 
+@trace_phase("workflow.preparation.summary_execute")
 def _summary_execute(_: None, ctx: StepContext) -> dict[str, Any]:
     from govcon.enrich.summarize import run_solicitation_analysis
 
@@ -253,6 +271,7 @@ def _summary_execute(_: None, ctx: StepContext) -> dict[str, Any]:
 
             raise TaskCancelled("the task's opportunity was removed")
         analysis = run_solicitation_analysis(db, opportunity, settings=ctx.settings,
+                                             force=bool(ctx.input_revision.get("review_return_version")),
                                              refusals=refusals)
         if analysis is None:
             return {"analysis_id": None, "note": "No summary: " + ("; ".join(refusals) or "the analysis did not run") + "."}
@@ -262,20 +281,23 @@ def _summary_execute(_: None, ctx: StepContext) -> dict[str, Any]:
     return _run_service(ctx, "summary", service)
 
 
+@trace_phase("workflow.preparation.compliance_execute")
 def _compliance_execute(_: None, ctx: StepContext) -> dict[str, Any]:
-    from govcon.ai.providers import provider_available
+    from govcon.ai.routing import analysis_available
     from govcon.compliance.pipeline import run_compliance_pipeline
 
-    use_ai = provider_available(ctx.settings)
     now = datetime.now(UTC)  # one clock for every pass, so passes build the same prompts
 
     def service(db: Session) -> dict[str, Any]:
-        result = run_compliance_pipeline(db, required_opportunity_id(ctx.opportunity_id), use_ai=use_ai, settings=ctx.settings, now=now)
+        use_ai = analysis_available(db, ctx.settings)
+        result = run_compliance_pipeline(db, required_opportunity_id(ctx.opportunity_id), use_ai=use_ai, settings=ctx.settings, now=now,
+                                         force=bool(ctx.input_revision.get("review_return_version")))
         return {"status": result["status"], "matrix_run_id": result.get("matrix_run_id")}
 
     return _run_service(ctx, "compliance", service)
 
 
+@trace_phase("workflow.preparation.decision_execute")
 def _decision_execute(_: None, ctx: StepContext) -> dict[str, Any]:
     from govcon.decision.engine import run_preliminary_decision_package
 
@@ -292,6 +314,7 @@ def _record(session: Session, task: Task, output: dict[str, Any], ctx: StepConte
 
 # ── 4. research ───────────────────────────────────────────────────────────────
 
+@trace_phase("workflow.preparation.research_publish")
 def _research_publish(session: Session, task: Task, _: None, ctx: StepContext) -> None:
     from govcon.ai.structured import StructuredCallError
     from govcon.intelligence.ai_analyses import ANALYSIS_KINDS, AnalysisInputMissing
@@ -312,6 +335,7 @@ def _research_publish(session: Session, task: Task, _: None, ctx: StepContext) -
 
 # ── 6. review ─────────────────────────────────────────────────────────────────
 
+@trace_phase("workflow.preparation.review_publish")
 def _review_publish(session: Session, task: Task, _: None, ctx: StepContext) -> None:
     from govcon.collaboration.assignments import assign_reviewer, assignment_for_user
     from govcon.collaboration.review_sessions import ensure_review_session
@@ -348,6 +372,8 @@ register(TaskHandler(task_type=PREPARATION_TASK, steps=[
          timeout_seconds=3600),
     Step("summary", prepare=_nothing, execute=_summary_execute, publish=_record, timeout_seconds=3600),
     Step("compliance", prepare=_nothing, execute=_compliance_execute, publish=_record, timeout_seconds=3600),
+    Step("market_prices", prepare=market_prices.prepare_step, execute=market_prices.execute_step,
+         publish=market_prices.publish_step, timeout_seconds=900),
     Step("research", prepare=_nothing, publish=_research_publish, timeout_seconds=300),
     Step("decision", prepare=_nothing, execute=_decision_execute, publish=_record, timeout_seconds=1800),
     Step("review", prepare=_nothing, publish=_review_publish, timeout_seconds=300),

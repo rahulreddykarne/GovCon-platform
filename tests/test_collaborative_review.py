@@ -181,6 +181,9 @@ def test_two_reviewers_share_workspace_parallel_with_attributed_comments(session
 
 
 def test_ai_validation_populates_side_opinion_without_changing_human_comment(session) -> None:
+    from govcon.prompting.registry import ensure_prompt_registry
+
+    ensure_prompt_registry(session)
     opp = _opp(session)
     reviewer = _user(session, "reviewer", "solo")
     assign_reviewer(session, opportunity_id=opp.id, user_id=reviewer.id)
@@ -199,7 +202,7 @@ def test_ai_validation_populates_side_opinion_without_changing_human_comment(ses
         row.body
         == "The proposed lead time is not supported by supplier evidence and appears optimistic."
     )
-    assert row.ai_position == "disagree"
+    assert row.ai_position == "disagree", row.ai_reason
     assert row.ai_confidence == "medium"
     assert "conflicts with cited source evidence" in (row.ai_reason or "")
     assert isinstance(row.ai_supporting_evidence, list) and row.ai_supporting_evidence

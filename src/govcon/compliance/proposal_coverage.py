@@ -48,6 +48,7 @@ from govcon.compliance.text import (
     tokens,
 )
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import (
     ProposalSection,
     ProposalVersion,
@@ -218,6 +219,7 @@ def _sections(session: Session, version: ProposalVersion) -> list[SectionView]:
     return [SectionView(None, "full_text", None, version.full_text or "", [])]
 
 
+@trace_phase("compliance.proposal_coverage.check_proposal_coverage")
 def check_proposal_coverage(
     session: Session,
     opportunity_id: int,

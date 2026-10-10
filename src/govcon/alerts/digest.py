@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.logging import redact
 from govcon.matching.pricing import PricePoint, recent_award_comps
 from govcon.models import Match, Opportunity, OpportunityEvent, Watchlist
@@ -90,6 +91,7 @@ class _Item:
     changes: tuple[str, ...] = ()
 
 
+@trace_phase("alerts.digest.run_digest")
 def run_digest(
     session: Session,
     *,

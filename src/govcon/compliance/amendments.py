@@ -40,6 +40,7 @@ from govcon.compliance.records import Inventory, SourceDocument
 from govcon.compliance.schemas import AmendmentAnalysisV1
 from govcon.compliance.text import split_sentences
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import OpportunityEvent, ProposalSection, Requirement, ReviewSession
 from govcon.security.classification import DataClassification
 
@@ -208,6 +209,7 @@ def mark_stale(session: Session, requirements: dict[int, Requirement], reasons: 
     return {"stale_requirement_ids": sorted(staled), "previously_satisfied_ids": sorted(previously_satisfied), "stale_proposal_section_ids": sorted(sections)}
 
 
+@trace_phase("compliance.amendments.run_amendment_revalidation")
 def run_amendment_revalidation(
     session: Session,
     opportunity_id: int,

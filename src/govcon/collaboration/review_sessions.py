@@ -23,6 +23,8 @@ from govcon.compliance.matrix import open_findings
 from govcon.concurrency import StaleRecordError, apply_versioned_update
 from govcon.config import get_settings
 from govcon.decision.engine import build_decision_state, run_decision_bundle
+from govcon.diagnostics import trace_phase
+from govcon.ingest.snapshots import canonical_content_hash
 from govcon.models import (
     AIAnalysis,
     BidDecision,
@@ -30,6 +32,7 @@ from govcon.models import (
     Pursuit,
     Requirement,
     ReviewAssignment,
+    ReviewComment,
     ReviewSession,
     User,
 )
@@ -118,6 +121,7 @@ def set_review_policy(
     return row
 
 
+@trace_phase("collaboration.review_sessions.complete_assignment")
 def complete_assignment(
     session: Session,
     *,
@@ -168,8 +172,15 @@ def complete_assignment(
     )
     if assignment is None:
         raise ReviewWorkflowError("review assignment not found")
-    if assignment.status == "complete":
+    if assignment.status == "complete" and action != "return_for_ai_analysis":
         return assignment
+    if action == "return_for_ai_analysis" and review.status == "returned_for_review":
+        from govcon.tasks.queue import active_task
+        from govcon.workflow.preparation import PREPARATION_TASK
+
+        pending = active_task(session, task_type=PREPARATION_TASK, opportunity_id=opportunity_id)
+        if pending is not None and (pending.input_revision or {}).get("review_return_version") == review.version:
+            return assignment
 
     start_assignment(session, opportunity_id=opportunity_id, user_id=user_id)
     comment_count = reviewer_comment_count(
@@ -200,11 +211,19 @@ def complete_assignment(
     session.flush()
 
     if action == "return_for_ai_analysis":
+        _reopen_for_return(session, opportunity_id=opportunity_id, actor_id=user_id)
         if can_transition("review_session", review.status, "returned_for_review"):
             review.status = "returned_for_review"
         review.final_approval_status = "returned_for_review"
         review.ai_consolidated_review = None
         review.version = (review.version or 1) + 1
+        from govcon.tasks.queue import cancel_active
+        from govcon.workflow.preparation import PREPARATION_TASK, queue_preparation
+
+        cancel_active(session, opportunity_id=opportunity_id, task_types=(PREPARATION_TASK,),
+                      reason="Reviewer requested fresh AI analysis")
+        queue_preparation(session, opportunity_id=opportunity_id, actor_user_id=user_id,
+                          review_return_version=review.version)
     session.flush()
 
     record_audit(
@@ -349,13 +368,15 @@ def recalculate_quorum(session: Session, *, opportunity_id: int) -> QuorumState:
         if completed_count > 0 and review.status in {"ready_for_review", "pending"}:
             review.status = "under_review"
         if completed_count >= required:
-            signature = _quorum_signature(completed)
+            signature = _quorum_signature(completed, list_comments(session, opportunity_id))
             consolidated = review.ai_consolidated_review or {}
             already_consolidated = (
                 consolidated.get("quorum_signature") == signature
                 and review.status in {"approval_pending", "review_complete"}
             )
             if not already_consolidated:
+                if consolidated:
+                    review.version = (review.version or 1) + 1
                 review.status = "review_complete"
                 _run_consolidated_review(session, review=review, signature=signature)
         elif review.status != "returned_for_review":
@@ -415,6 +436,7 @@ def approval_context(session: Session, *, opportunity_id: int) -> dict[str, Any]
     }
 
 
+@trace_phase("collaboration.review_sessions.finalize_approval")
 def finalize_approval(
     session: Session,
     *,
@@ -470,6 +492,8 @@ def finalize_approval(
         )
 
     quorum = recalculate_quorum(session, opportunity_id=opportunity_id)
+    if review.version != expected_version:
+        raise ReviewWorkflowError("Review evidence changed; reload the review before deciding")
     now = datetime.now(UTC)
     settings = get_settings()
     override_fields: dict[str, Any] = {}
@@ -912,6 +936,7 @@ def _run_consolidated_review(
     )
 
 
+@trace_phase("collaboration.review_sessions.run_consolidated_review_prompt")
 def run_consolidated_review_prompt(
     session: Session,
     *,
@@ -1080,10 +1105,27 @@ def _approvers(session: Session) -> list[User]:
     )
 
 
-def _quorum_signature(completed: list[ReviewAssignment]) -> list[list[Any]]:
-    return sorted(
-        [row.id, row.completed_at.isoformat() if row.completed_at else None, row.recommendation]
+def invalidate_comment_summary(session: Session, opportunity_id: int) -> None:
+    """Reject an old approval form immediately, without AI work in publication."""
+    lock_opportunity(session, opportunity_id)
+    review = lock_one(session, select(ReviewSession).where(ReviewSession.opportunity_id == opportunity_id))
+    if review is not None and review.status not in DECIDED_REVIEW_STATES and review.ai_consolidated_review:
+        review.ai_consolidated_review = None
+        review.status = "under_review"
+        review.version = (review.version or 1) + 1
+
+
+def _quorum_signature(completed: list[ReviewAssignment], comments: list[ReviewComment]) -> list[list[Any]]:
+    assignments = sorted(
+        [row.id, row.completed_at.isoformat() if row.completed_at else None, row.recommendation,
+         row.agree_with_ai_assessment, row.second_review_requested, row.second_review_request_reason]
         for row in completed
     )
+    fields = ["id", "parent_comment_id", "topic", "body", "source_refs", "user_recommendation", "ai_position",
+              "ai_confidence", "ai_reason", "ai_supporting_evidence", "ai_contradicting_evidence",
+              "ai_missing_information", "ai_suggested_action"]
+    return assignments + [["comments", canonical_content_hash({
+        "comments": [{field: getattr(comment, field) for field in fields} for comment in comments],
+    })]]
 
 

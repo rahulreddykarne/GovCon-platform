@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,7 @@ from govcon.ai.analysis_types import AnalysisType
 from govcon.config import Settings, get_settings
 from govcon.decision.bundles import bundle_definition, load_decision_spec_metadata
 from govcon.decision.provider import (
+    DecisionProviderInvalidResponse,
     DecisionProviderUnavailable,
     ProviderDecision,
 )
@@ -41,6 +43,7 @@ from govcon.decision.signals import (
     sourcing_signals,
     supplier_lead_time_signal,
 )
+from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.ingest.snapshots import canonical_content_hash, json_safe
 from govcon.intelligence.competitors import competitor_summary
 from govcon.matching.pricing import recent_award_comps
@@ -85,6 +88,7 @@ class DecisionPackageExecution:
     package_output: dict[str, Any]
 
 
+@trace_phase("decision.engine.build_decision_state")
 def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any]:
     """Build source-backed state for decision bundles."""
     opportunity = session.get(Opportunity, opportunity_id)
@@ -218,6 +222,10 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
 
     product_facts = product_facts_from_summary(opportunity, latest_summary)
     pricing_signals(opportunity, latest_pursuit, award_comps, signals, product_quantity=product_facts.quantity)
+    from govcon.sourcing.market_prices import effective_cost_basis
+
+    # Recorded cost, else the lowest current supplier quote, else the web estimate.
+    cost_basis = effective_cost_basis(session, opportunity, latest_pursuit, product_facts.quantity)
     competition_signals(comp_summary, signals)
     amendment_signal(session, opportunity_id, amendment_count, signals)
     sig = signals.values
@@ -264,13 +272,16 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
         },
         "pricing": {
             "proposed_price": _as_float(latest_pursuit.quote_price) if latest_pursuit else None,
-            "supplier_cost": _as_float(latest_pursuit.sourcing_cost) if latest_pursuit else None,
-            "margin_pct": _as_float(latest_pursuit.margin_pct) if latest_pursuit else None,
+            "supplier_cost": _as_float(cost_basis.total),
+            **_margin(latest_pursuit, cost_basis, sig["historical_median_unit_price"]),
+            "cost_basis": cost_basis.basis,
+            "cost_basis_detail": cost_basis.detail,
+            "market_price_run_id": cost_basis.market_price_run_id,
             # Only awards that state a unit price are comparable to a quote.
             "historical_comparable_count": sig["historical_unit_price_count"],
             "historical_median_unit_price": sig["historical_median_unit_price"],
             "proposed_unit_price": sig["proposed_unit_price"],
-            "unit_cost": sig["unit_cost"],
+            "unit_cost": sig["unit_cost"] if sig["unit_cost"] is not None else _as_float(cost_basis.unit),
             # Whole-contract totals are context only, never a price benchmark.
             "historical_median_award_total": sig["historical_median_award_total"],
         },
@@ -320,6 +331,7 @@ def build_decision_state(session: Session, opportunity_id: int) -> dict[str, Any
     return state
 
 
+@trace_phase("decision.engine.run_decision_bundle")
 def run_decision_bundle(
     session: Session,
     *,
@@ -360,6 +372,7 @@ def run_decision_bundle(
     from govcon.ai.routing import decision_providers
 
     primary, fallback = decision_providers(session, settings)
+    diagnostic_event("decision.route", provider=primary, source=fallback, blockers=len(hard_findings))
     jev_error: Exception | None = None
     if primary == "jev":
         try:
@@ -369,8 +382,7 @@ def run_decision_bundle(
                 bundle_version=definition.version,
                 state=state,
             )
-            merged = dict(baseline.result)
-            merged.update(jev_result.result)
+            merged = _merge_provider_result(bundle_name, baseline.result, jev_result)
             active = ProviderDecision(
                 provider=jev_result.provider,
                 model=jev_result.model,
@@ -382,6 +394,8 @@ def run_decision_bundle(
             )
         except DecisionProviderUnavailable as exc:
             jev_error = exc
+            diagnostic_event("decision.provider_fallback", level=logging.WARNING, provider="jev",
+                             source="rules", error_type=type(exc).__name__)
             logger.warning(
                 "JEV unavailable for bundle=%s opportunity=%s; using the rules provider: %s",
                 bundle_name,
@@ -396,8 +410,7 @@ def run_decision_bundle(
                 bundle_version=definition.version,
                 state=state,
             )
-            merged = dict(baseline.result)
-            merged.update(llm_result.result)
+            merged = _merge_provider_result(bundle_name, baseline.result, llm_result)
             active = ProviderDecision(
                 provider=llm_result.provider,
                 model=llm_result.model,
@@ -408,6 +421,8 @@ def run_decision_bundle(
                 raw_response=llm_result.raw_response,
             )
         except DecisionProviderUnavailable as exc:
+            diagnostic_event("decision.provider_fallback", level=logging.WARNING, provider="llm",
+                             source="rules", error_type=type(exc).__name__)
             logger.warning("LLM decision provider unavailable for bundle=%s; using rules: %s", bundle_name, exc)
             active = baseline
 
@@ -423,8 +438,7 @@ def run_decision_bundle(
                 bundle_version=definition.version,
                 state=state,
             )
-            merged = dict(active.result)
-            merged.update(llm_result.result)
+            merged = _merge_provider_result(bundle_name, active.result, llm_result)
             active = ProviderDecision(
                 provider=llm_result.provider,
                 model=llm_result.model,
@@ -434,8 +448,9 @@ def run_decision_bundle(
                 latency_ms=llm_result.latency_ms,
                 raw_response=llm_result.raw_response,
             )
-        except DecisionProviderUnavailable:
-            pass
+        except DecisionProviderUnavailable as exc:
+            diagnostic_event("decision.fallback_unavailable", level=logging.WARNING, provider="llm",
+                             source="rules", error_type=type(exc).__name__)
 
     result_data = apply_hard_rule_override(bundle_name, active.result, hard_findings)
     threshold = settings.jev_human_review_threshold or 0.7
@@ -447,6 +462,8 @@ def run_decision_bundle(
     )
 
     validated = validate_bundle_result(bundle_name, result_data).model_dump(mode="json")
+    diagnostic_event("decision.validated", provider=active.provider, model=active.model,
+                     confidence=active.confidence, blockers=len(hard_findings), schema=definition.input_schema)
     spec_meta = load_decision_spec_metadata(bundle_name, settings=settings)
     row = DecisionRun(
         opportunity_id=opportunity_id,
@@ -485,6 +502,45 @@ def run_decision_bundle(
     )
 
 
+def _merge_provider_result(bundle_name: str, base: dict[str, Any], decision: ProviderDecision) -> dict[str, Any]:
+    """``base`` updated with a provider's answers, refused unless it fits the bundle schema.
+
+    Runs inside the caller's fallback boundary, so an answer with an invalid
+    value (a choice outside the enum, a string score) falls back to the rules
+    result instead of failing the decision. The message names only the fields:
+    the values are untrusted provider output.
+    """
+    merged = dict(base)
+    merged.update(decision.result)
+    try:
+        validate_bundle_result(bundle_name, merged)
+    except ValidationError as exc:
+        fields = sorted({".".join(str(part) for part in error["loc"]) or "(root)" for error in exc.errors()})
+        raise DecisionProviderInvalidResponse(
+            f"{decision.provider} answers do not fit the {bundle_name} schema (fields: {', '.join(fields)})"
+        ) from exc
+    return merged
+
+
+def _margin(pursuit: Pursuit | None, cost_basis: Any, historical_unit_price: float | None) -> dict[str, Any]:
+    """Margin on the effective cost: the recorded one, a supplier quote, or the web estimate.
+
+    Without a proposed price, the margin is what bidding at the historical
+    median award unit price would earn on the estimated unit cost.
+    """
+    if pursuit is not None and pursuit.margin_pct is not None:
+        return {"margin_pct": _as_float(pursuit.margin_pct), "margin_basis": "proposed price vs recorded cost"}
+    price = pursuit.quote_price if pursuit is not None else None
+    if price is not None and cost_basis.total is not None and cost_basis.total > 0:
+        margin = (Decimal(price) - cost_basis.total) / cost_basis.total * 100
+        return {"margin_pct": float(round(margin, 1)), "margin_basis": f"proposed price vs {cost_basis.basis} cost"}
+    if historical_unit_price is not None and cost_basis.unit is not None and cost_basis.unit > 0:
+        margin = (Decimal(str(historical_unit_price)) - cost_basis.unit) / cost_basis.unit * 100
+        return {"margin_pct": float(round(margin, 1)),
+                "margin_basis": f"historical median award unit price vs {cost_basis.basis} unit cost"}
+    return {"margin_pct": None, "margin_basis": None}
+
+
 def _rules_payload(bid_bundle: dict[str, Any], runs: list[BundleExecution]) -> dict[str, Any]:
     payload: dict[str, Any] = {"hard_rule_blockers": bid_bundle.get("hard_rule_blockers", [])}
     reasons = [run.fallback_reason for run in runs if run.fallback_reason]
@@ -493,6 +549,7 @@ def _rules_payload(bid_bundle: dict[str, Any], runs: list[BundleExecution]) -> d
     return payload
 
 
+@trace_phase("decision.engine.run_preliminary_decision_package")
 def run_preliminary_decision_package(
     session: Session,
     *,

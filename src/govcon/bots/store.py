@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
+import sys
 from collections.abc import Callable
 from contextvars import ContextVar, Token
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 from govcon.models import BotApproval, BotRun, ProcessHeartbeat
 from govcon.ops.health import STALE_PROCESS
 
-_FINISHED_OK = frozenset({"succeeded", "skipped", "waiting_approval", "completed_with_errors"})
+_FINISHED_OK = frozenset({"succeeded", "skipped", "waiting_approval"})
 _STALE_RUNNING = timedelta(minutes=15)
 _OWNER: ContextVar[str | None] = ContextVar("govcon_bot_worker", default=None)
 INTERRUPTED_REASON = (
@@ -114,13 +115,48 @@ def owner_still_running(worker_id: str | None, heartbeats: dict[str, datetime]) 
     host, pid_text = parts[0], parts[1]
     beat = heartbeats.get(worker_id)
     fresh = beat is not None and datetime.now(UTC) - _aware(beat) <= STALE_PROCESS
+    try:
+        pid = int(pid_text)
+    except ValueError:
+        return False
+    if not fresh or pid <= 0:
+        return False
     if host != socket.gethostname():
         return fresh
+    if sys.platform == "win32":
+        return _windows_process_running(pid)
     try:
-        os.kill(int(pid_text), 0)
-    except (OSError, ValueError):
+        os.kill(pid, 0)
+    except ProcessLookupError:
         return False
-    return fresh
+    except PermissionError:
+        # An inaccessible process may still own the fresh heartbeat.
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _windows_process_running(pid: int) -> bool:
+    """Query process status without sending Windows' signal-zero Ctrl+C event."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only
+    if not handle:
+        # Access denied is not evidence that a process with a fresh beat died.
+        return ctypes.get_last_error() == 5
+    try:
+        return kernel.WaitForSingleObject(handle, 0) == 0x00000102  # WAIT_TIMEOUT
+    finally:
+        kernel.CloseHandle(handle)
 
 
 def fail_interrupted_runs(

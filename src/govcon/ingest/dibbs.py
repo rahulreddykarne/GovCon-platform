@@ -64,6 +64,7 @@ from sqlalchemy.orm import Session
 from tenacity import wait_exponential
 
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.http import build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
 from govcon.ingest.snapshots import (
@@ -429,6 +430,7 @@ def _log_coverage(index_name: str, coverage: DibbsCoverage) -> None:
     )
 
 
+@trace_phase("ingest.dibbs.ingest_index_bytes")
 def ingest_index_bytes(session: Session, payload: bytes, *, index_name: str) -> DibbsIngestResult:
     """Upsert every parsed index line. Unchanged records do not add snapshots."""
     items, errors = parse_index(payload.decode("latin-1"), index_name=index_name)
@@ -458,6 +460,7 @@ def retain_batch_file(data_dir: Path, index_name: str, payload: bytes) -> Path:
     return path
 
 
+@trace_phase("ingest.dibbs.ingest_index_file")
 def ingest_index_file(session: Session, path: Path, *, data_dir: Path) -> DibbsIngestResult:
     payload = path.read_bytes()
     index_name = path.name.lower() if _INDEX_NAME.match(path.name) else path.name
@@ -483,6 +486,7 @@ def _sleep(interval: float) -> None:
         time.sleep(interval)
 
 
+@trace_phase("ingest.dibbs.fetch_consented")
 def fetch_consented(client: httpx.Client, url: str, *, interval: float) -> httpx.Response:
     """GET a DIBBS URL, accepting the notice-and-consent banner when it is shown."""
     response = request_with_retry(client, "GET", url, attempts=DIBBS_RETRY_ATTEMPTS, wait=DIBBS_RETRY_WAIT)
@@ -556,9 +560,36 @@ def _catchup_urls(links: list[str], last: date | None) -> list[str]:
     if not newer:
         # Re-pull the newest: idempotent, and it picks up same-day revisions.
         return [newest]
-    return [url for _, url in newer[-MAX_CATCHUP_INDEXES:]]
+    return [url for _, url in newer[:MAX_CATCHUP_INDEXES]]
 
 
+def _pending_index_urls(session: Session) -> list[str]:
+    """Replay durable run records so a later success cannot hide an earlier gap.
+
+    Transport failures already contain the public index URL in ``messages``.
+    A subsequent successful pull of that filename clears it. This also repairs
+    gaps recorded before retry tracking was introduced, without a migration.
+    """
+    pending: dict[str, str] = {}
+    rows = session.execute(select(IngestionRun.status, IngestionRun.errors).where(
+        IngestionRun.job.in_(DIBBS_RUN_JOBS),
+    ).order_by(IngestionRun.started_at, IngestionRun.id).execution_options(yield_per=200))
+    for status, payload in rows:
+        if not isinstance(payload, dict):
+            continue
+        if status in {"succeeded", "completed_with_errors"}:
+            for name in (payload.get("details") or {}).get("indexes") or []:
+                pending.pop(str(name).lower(), None)
+        for message in payload.get("messages") or []:
+            for url in _INDEX_LINK.findall(str(message)):
+                name = Path(urlparse(url).path).name.lower()
+                # Move the latest failed attempt behind other pending files.
+                pending.pop(name, None)
+                pending[name] = url
+    return list(pending.values())
+
+
+@trace_phase("ingest.dibbs.pull_one")
 def _pull_one(session: Session, client: httpx.Client, url: str, *, settings: Settings, interval: float) -> DibbsIngestResult:
     response = fetch_consented(client, url, interval=interval)
     payload = response.content
@@ -570,6 +601,7 @@ def _pull_one(session: Session, client: httpx.Client, url: str, *, settings: Set
     return result
 
 
+@trace_phase("ingest.dibbs.pull_dibbs_index")
 def pull_dibbs_index(
     session: Session,
     *,
@@ -598,7 +630,17 @@ def pull_dibbs_index(
             links = index_links(html)
             if not links:
                 raise DibbsError("DIBBS recent RFQ page did not list an index file")
-            urls = _catchup_urls(links, last_ingested_index_date(session))
+            pending = _pending_index_urls(session)
+            candidates = [url for url in links if url not in set(pending)]
+            selected = _catchup_urls(candidates, last_ingested_index_date(session)) if candidates else []
+            # Reserve room for new indexes and rotate failures using durable
+            # attempt history; unavailable archives cannot stop the whole feed.
+            if pending:
+                selected = selected[:MAX_CATCHUP_INDEXES // 2]
+            retries = pending[:MAX_CATCHUP_INDEXES - len(selected)]
+            urls = sorted(set(retries + selected), key=lambda url: (
+                posted_date_from_name(Path(urlparse(url).path).name) or date.min, url,
+            ))[:MAX_CATCHUP_INDEXES]
             _sleep(interval)
         else:
             urls = [index_file_url(posted_date)]

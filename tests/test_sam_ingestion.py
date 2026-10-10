@@ -317,7 +317,8 @@ def test_raw_source_json_remains_available(session: Session) -> None:
         assert opportunity.estimated_value_max is None
         assert opportunity.naics_code == "236220"
         assert opportunity.psc_code == "Z"
-        assert opportunity.status == "open"
+        # The published sample is an Award Notice: stored for history, never an open solicitation.
+        assert opportunity.status == "awarded"
         assert opportunity.raw_hash
         snapshot = session.scalar(
             select(OpportunitySnapshot).where(OpportunitySnapshot.opportunity_id == opportunity.id)
@@ -523,6 +524,7 @@ def test_archive_sweep_does_not_call_the_network(session: Session, monkeypatch: 
     monkeypatch.setattr("govcon.ingest.sam_opportunities.build_client", boom)
     monkeypatch.setattr("govcon.ingest.sam_opportunities.request_with_retry", boom)
     expired = _record()
+    expired["type"] = "Combined Synopsis/Solicitation"  # the sample is an award notice; sweep a biddable one
     expired["noticeId"] = "phase1-archive-past"
     expired["archiveDate"] = "2020-01-01"
     expired["active"] = "Yes"

@@ -67,6 +67,9 @@ def add_comment(
     user_recommendation = "needs_more_info" if user_recommendation == "needs_info" else user_recommendation
     if user_recommendation not in {None, "bid", "no_bid", "needs_more_info"}:
         raise ValueError("unknown comment recommendation")
+    from govcon.workflow.invalidation import lock_opportunity
+
+    lock_opportunity(session, opportunity_id)
     assignment = assignment_for_user(
         session, opportunity_id=opportunity_id, user_id=user_id
     )
@@ -110,6 +113,9 @@ def add_comment(
         },
     )
     session.flush()
+    from govcon.collaboration.review_sessions import invalidate_comment_summary
+
+    invalidate_comment_summary(session, opportunity_id)
     return row
 
 

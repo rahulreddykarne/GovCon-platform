@@ -22,7 +22,8 @@ def progress_state(db: Session, opp_id: int) -> dict[str, Any]:
         func.md5(func.string_agg(fingerprint, aggregate_order_by(literal(","), Task.id))),
         func.bool_or(Task.status.in_(ACTIVE_STATUSES)),
     ).where(Task.opportunity_id == opp_id, Task.task_type.in_(
-        ("opportunity_preparation", "ai_analysis", "proposal_generation", "quote_extraction", "solicitation_summary")))).one()
+        ("opportunity_preparation", "ai_analysis", "proposal_generation", "quote_extraction", "solicitation_summary",
+         "market_price_research")))).one()
     return {"revision": revision or "empty", "active": bool(active)}
 
 

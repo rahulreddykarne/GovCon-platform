@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from logging.handlers import RotatingFileHandler
 
 from govcon.config import Settings, get_settings
 
@@ -50,7 +51,7 @@ def configure_logging(settings: Settings | None = None, *, force: bool = False) 
     settings.log_dir.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("govcon")
     logger.disabled = False
-    logger.setLevel(logging.INFO)
+    logger.setLevel(settings.log_level)
     logger.propagate = False
     for name, existing in logging.root.manager.loggerDict.items():
         if isinstance(existing, logging.Logger) and name.startswith("govcon."):
@@ -65,7 +66,16 @@ def configure_logging(settings: Settings | None = None, *, force: bool = False) 
     stream = logging.StreamHandler()
     stream.setFormatter(formatter)
     stream.addFilter(RedactionFilter())
-    file_handler = logging.FileHandler(settings.log_dir / "govcon.log")
+    # Shared web/worker files must not be renamed while another Windows process
+    # has them open. Rotation is opt-in for a process-specific LOG_DIR.
+    file_handler: logging.FileHandler
+    if settings.log_max_bytes:
+        file_handler = RotatingFileHandler(
+            settings.log_dir / "govcon.log", maxBytes=settings.log_max_bytes,
+            backupCount=settings.log_backup_count, encoding="utf-8",
+        )
+    else:
+        file_handler = logging.FileHandler(settings.log_dir / "govcon.log", encoding="utf-8")
     file_handler.setFormatter(formatter)
     file_handler.addFilter(RedactionFilter())
     logger.addHandler(stream)

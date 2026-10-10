@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from govcon.diagnostics import trace_phase
 from govcon.matching.eligibility import ELIGIBLE_STATUSES, pursuit_eligibility
 from govcon.matching.pricing import canonical_nsn
 from govcon.models import Match, Opportunity, Watchlist
@@ -377,6 +378,7 @@ def _deactivate(session: Session, watchlist: Watchlist, keep: set[int], now: dat
     return count
 
 
+@trace_phase("matching.engine.run_matching")
 def run_matching(
     session: Session,
     *,

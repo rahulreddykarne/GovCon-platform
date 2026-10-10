@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from govcon.ai.analysis_types import AnalysisType
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.documents.chunking import (
     Gap,
     SourceChunk,
@@ -53,6 +54,7 @@ class AnalysisWarning(UserWarning):
     """Non-fatal issue during analysis (e.g. missing API key)."""
 
 
+@trace_phase("enrich.summarize.run_solicitation_analysis")
 def run_solicitation_analysis(
     session: Session,
     opportunity: Opportunity,
@@ -88,6 +90,7 @@ def run_solicitation_analysis(
             .limit(1)
         ).first()
         if existing is not None and is_stale(stamp_of(existing.context_manifest), source_revision):
+            diagnostic_event("summary.cache_miss", reason="stale", result_id=existing.id)
             logger.info(
                 "cached solicitation analysis %d is stale for opportunity %d; re-running",
                 existing.id,
@@ -110,6 +113,7 @@ def run_solicitation_analysis(
                 "solicitation analysis already exists for opportunity %d",
                 opportunity.id,
             )
+            diagnostic_event("summary.cache_hit", cached=True, result_id=existing.id)
             return existing
 
     # The current attachment set only (the same rows the inventory and the
@@ -123,6 +127,7 @@ def run_solicitation_analysis(
     ).scalars().all()
 
     if not files:
+        diagnostic_event("summary.skipped", reason="no_extracted_files", files=0)
         logger.info("no extracted text for opportunity %d", opportunity.id)
         if refusals is not None:
             refusals.append("no document text is available")
@@ -132,6 +137,7 @@ def run_solicitation_analysis(
     context_manifest[SOURCE_REVISION_KEY] = source_revision
     chunks = _source_chunks(session, files)
     if not chunks:
+        diagnostic_event("summary.skipped", reason="no_readable_text", files=len(files))
         logger.info("no readable source text for opportunity %d", opportunity.id)
         if refusals is not None:
             refusals.append(
@@ -143,6 +149,7 @@ def run_solicitation_analysis(
     budget = min(settings.ai_max_input_tokens_per_call // 2, settings.ai_max_input_tokens_per_opportunity // 2,
                  settings.ai_source_batch_bytes)
     batches = batch_chunks(chunks, max(budget - nbytes(header) - 200, 2_000))
+    diagnostic_event("summary.batches", files=len(files), parts=len(batches), candidates=len(chunks))
     classification = strictest_classification(*(f.classification for f in files))
     from govcon.ai.structured import (
         StructuredCallError,
@@ -153,6 +160,7 @@ def run_solicitation_analysis(
     calls: list[tuple[Any, Any]] = []
     gaps: list[Gap] = []
     for index, batch in enumerate(batches):
+        diagnostic_event("summary.batch_start", part=index + 1, parts=len(batches), candidates=len(batch))
         part = f" (part {index + 1} of {len(batches)}; other parts are analysed separately)" if len(batches) > 1 else ""
         source = f"{header}\n\n## Extracted Source Content{part}\n{render_batch(batch)}"
         try:
@@ -175,6 +183,8 @@ def run_solicitation_analysis(
             )
             executed = execute_prepared_call(prepared, settings=settings, session=session)
         except StructuredCallError as exc:
+            diagnostic_event("summary.batch_refused", level=logging.WARNING, reason=exc.reason,
+                             part=index + 1, parts=len(batches))
             if not calls:
                 if exc.reason == "no_provider":
                     import warnings
@@ -190,6 +200,7 @@ def run_solicitation_analysis(
                            opportunity.id, index + 1, exc.reason)
             break
         calls.append((prepared, executed))
+        diagnostic_event("summary.batch_complete", part=index + 1, quality=executed.quality)
 
     merged = merge_summaries([executed.output.model_dump(mode="json") for _, executed in calls])
     sent = sum(len(batch) for batch in batches[: len(calls)])

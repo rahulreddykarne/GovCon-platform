@@ -19,6 +19,7 @@ from govcon.decision.provider import (
     DecisionProviderUnavailable,
     ProviderDecision,
 )
+from govcon.diagnostics import trace_phase
 from govcon.security.classification import DataClassification
 
 DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai"
@@ -69,6 +70,7 @@ class JevDecisionProvider:
             session=session,
         )
 
+    @trace_phase("decision.providers.jev.decide")
     def decide(
         self,
         *,
@@ -151,6 +153,7 @@ class JevDecisionProvider:
             raw_response={"usage": usage},
         )
 
+    @trace_phase("decision.providers.jev.post")
     def _post(self, endpoint: str, body: dict[str, Any], headers: dict[str, str], bundle_name: str,
               budget_opportunity_id: int | None, *, session=None, engine=None) -> tuple[httpx.Response, int]:
         """Reserve budget and send the request; returns the response and its latency."""

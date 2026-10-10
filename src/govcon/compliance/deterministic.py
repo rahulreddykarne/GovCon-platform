@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from govcon.compliance.matrix import active_requirements, record_run
 from govcon.compliance.records import Inventory, ValidatorResult
+from govcon.diagnostics import trace_phase
 from govcon.models import Opportunity, Requirement
 
 VALIDATOR_VERSION = "v1"
@@ -517,6 +518,7 @@ def build_context(
     )
 
 
+@trace_phase("compliance.deterministic.run_deterministic_validation")
 def run_deterministic_validation(session: Session, opportunity_id: int, ctx: ValidationContext) -> dict[str, Any]:
     requirements: list[Requirement] = active_requirements(session, opportunity_id)
     summary: dict[str, int] = {"pass": 0, "fail": 0, "unknown": 0}

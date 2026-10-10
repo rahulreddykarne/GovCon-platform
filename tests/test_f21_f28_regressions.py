@@ -341,6 +341,7 @@ def test_f24_stamps_written_before_v2_compare_with_the_legacy_revision() -> None
 
 def _state_without_supplier_evidence() -> dict:
     from govcon.decision import engine as m
+    from govcon.sourcing.market_prices import CostBasis
 
     db = MagicMock()
     db.get.return_value = Opportunity(id=1, response_deadline=datetime.now(UTC) + timedelta(days=15))
@@ -359,7 +360,7 @@ def _state_without_supplier_evidence() -> dict:
     with patch.object(m, "current_source_revision", return_value="revision"), patch.object(m, "recent_award_comps", return_value=[]), \
          patch.object(m, "competitor_summary", return_value=None), patch.object(m, "load_company_profile", return_value={}), \
          patch.object(m, "eligibility_signals", side_effect=eligibility), patch.object(m, "capability_signal", side_effect=capability), \
-         patch.object(m, "amendment_signal", side_effect=lambda s, o, c, sig: sig.set("amendment_material", None, source="none", confidence="unknown")):
+         patch.object(m, "amendment_signal", side_effect=lambda s, o, c, sig: sig.set("amendment_material", None, source="none", confidence="unknown")),          patch("govcon.sourcing.market_prices.effective_cost_basis", return_value=CostBasis(None, None, None, None)):
         return m.build_decision_state(db, 1)
 
 

@@ -418,8 +418,17 @@ def test_f18_login_throttle_is_bounded(monkeypatch):
 
 
 def test_f20_excludes_live_rule_matches_before_vector_limit(db):
+    from govcon.enrich.embeddings import _refresh, build_watchlist_profiles
     from govcon.matching.semantic import semantic_recommendations_for_watchlist
     vector = [1.0] + [0.0] * 383
+
+    class Provider:
+        model_version = "F20@test"
+
+        def embed(self, text):
+            return vector
+
+    provider = Provider()
     watchlist = Watchlist(name=f"F20 {uuid4().hex}", embedding=vector)
     db.add(watchlist)
     db.flush()
@@ -434,6 +443,10 @@ def test_f20_excludes_live_rule_matches_before_vector_limit(db):
         Match(watchlist_id=watchlist.id, opportunity_id=inactive.id, score=1, matched_on={}, active=False, status="seen"),
         Match(watchlist_id=watchlist.id, opportunity_id=dismissed.id, score=1, matched_on={}, active=True, status="dismissed"),
     ])
+    db.flush()
+    build_watchlist_profiles(db, provider, watchlist_id=watchlist.id)
+    for opp in (inactive, dismissed, candidate):
+        _refresh(opp, provider)
     db.flush()
     # Isolate distance ranking from opportunities created by other test modules.
     db.execute(update(Opportunity).where(Opportunity.id.not_in([inactive.id, dismissed.id, candidate.id])).values(embedding=None))

@@ -80,6 +80,9 @@ def publish_validation(session: Session, task: Task, prepared: PreparedCall, exe
     validation = checked_output(executed.output, ReviewerCommentValidationV1)
     analysis = persist_structured_result(session, prepared, executed).analysis
     apply_ai_validation_to_comment(comment, validation)
+    from govcon.collaboration.review_sessions import invalidate_comment_summary
+
+    invalidate_comment_summary(session, comment.opportunity_id)
     if validation.position == "insufficient_evidence":
         notify(session, user_id=comment.user_id, opportunity_id=comment.opportunity_id,
                notification_type="ai_flagged_comment_needs_evidence", payload={"comment_id": comment.id})

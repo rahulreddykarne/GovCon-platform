@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 
 from govcon.bots.catalog import CATALOG
 from govcon.config import Settings
-from govcon.models import BotApproval, BotRun, Match, Opportunity
-from govcon.operating.integrations import integration_cards
+from govcon.models import BotApproval, BotRun, MarketPriceRun, Match, Opportunity
+from govcon.operating.integrations import MARKET_PRICE_CARD, integration_cards
 
 LA = ZoneInfo("America/Los_Angeles")
 
@@ -42,6 +42,7 @@ ARCHITECTURE: list[dict[str, Any]] = [
             {"id": "document", "kind": "Agent", "title": "Document", "caption": "Extract requirements", "tip": "Reads files and cites passages"},
             {"id": "matching", "kind": "Agent", "title": "Matching", "caption": "Explain fit", "tip": "Compares a notice with the watchlist"},
             {"id": "compliance", "kind": "Agent", "title": "Compliance", "caption": "Risks and gaps", "tip": "Eligibility, clauses, deadlines, unanswered questions"},
+            {"id": "market_prices", "kind": "Agent", "title": "Market prices", "caption": "Web prices, estimated cost", "tip": "For a pursued product, Claude searches commercial sites for up to five prices. Government sites are excluded."},
             {"id": "bid_decision", "kind": "Agent", "title": "Decision", "caption": "Bid or no-bid", "tip": "Prepares a recommendation. A person decides."},
         ],
     },
@@ -50,6 +51,7 @@ ARCHITECTURE: list[dict[str, Any]] = [
         "layout": "branches",
         "nodes": [
             {"id": "deepseek", "kind": "Model", "title": "DeepSeek", "caption": "Analysis", "tip": "Reads solicitation text only when the gateway allows it"},
+            {"id": "claude_web", "kind": "Model", "title": "Claude web search", "caption": "Commercial prices", "tip": "Anthropic web search and fetch, only when the gateway allows the opportunity's data"},
             {"id": "jev", "kind": "Model", "title": "JEV", "caption": "Recommendation", "tip": "Structured decision package when policy and a key allow it"},
             {"id": "rules", "kind": "Fallback", "title": "Rules engine", "caption": "Hard checks", "tip": "Used when JEV does not run. The reason is stored."},
             {"id": "human", "kind": "Approval", "title": "You decide", "caption": "Pursue or no-bid", "tip": "Pursuit, submission, and external messages stay human"},
@@ -139,6 +141,7 @@ def agent_board(session: Session, selected: str | None) -> dict[str, Any]:
 def architecture_board(session: Session, settings: Settings, selected: str | None) -> dict[str, Any]:
     latest = _latest_by_bot(session)
     cards = {card["name"]: card for card in integration_cards(session, settings)}
+    cards[_MARKET_NODE] = _market_prices_node(session)
     rows = []
     known = set()
     for band in ARCHITECTURE:
@@ -151,7 +154,48 @@ def architecture_board(session: Session, settings: Settings, selected: str | Non
     return {"rows": rows, "selected": _node_detail(session, chosen, latest, cards)}
 
 
+_MARKET_NODE = "market_prices"
+# Architecture nodes whose health is an integration card.
+_CARD_FOR_NODE = {"sam": "SAM.gov", "dibbs": "DIBBS", "usaspending": "USAspending", "deepseek": "DeepSeek", "jev": "JEV",
+                  "claude_web": MARKET_PRICE_CARD, _MARKET_NODE: _MARKET_NODE}
+_MARKET_RUN_TAGS = {"completed": "good", "no_results": "info", "skipped": "info", "blocked": "warn", "failed": "bad"}
+
+
+def _market_prices_node(session: Session) -> dict[str, Any]:
+    """The newest stored web price search, as a card-shaped row for the diagram."""
+    from govcon.sourcing.market_prices import run_summary
+
+    run = session.scalar(select(MarketPriceRun).order_by(MarketPriceRun.created_at.desc(), MarketPriceRun.id.desc()).limit(1))
+    if run is None:
+        return {"status": "No run", "tag": "info", "blurb": "No web price search is stored yet.", "rows": [], "run": None}
+    return {
+        "status": run.status.replace("_", " "),
+        "tag": _MARKET_RUN_TAGS.get(run.status, "info"),
+        "blurb": run_summary(run),
+        "rows": [{"label": "Opportunity", "value": f"#{run.opportunity_id}"}],
+        "run": {"status": run.status.replace("_", " "), "when": _local(run.created_at), "detail": run_summary(run)[:240]},
+    }
+
+
 def _node_detail(session: Session, node_id: str, latest: dict[str, BotRun], cards: dict | None = None) -> dict[str, Any]:
+    if node_id == _MARKET_NODE:
+        node = (cards or {}).get(_MARKET_NODE) or _market_prices_node(session)
+        return {
+            "id": node_id,
+            "title": "Market prices",
+            "trigger": "Preparation runs it after compliance for every pursued product opportunity. "
+                       "The Products tab can search again.",
+            "inputs": "Product description, NSN, part number, quantity, unit and specifications from the "
+                      "solicitation summary and requirements.",
+            "outputs": "Up to five priced web listings with links, and an estimated cost: the median of the listings "
+                       "that match the specification. Margin math uses it until a supplier quote is recorded.",
+            "permissions": "The product description goes to Anthropic only when the gateway allows the opportunity's "
+                           "data class. Government sites are excluded. Web prices are never treated as quotes.",
+            "failure": "A skipped, blocked or failed search is stored with its reason. Preparation continues and "
+                       "margin math uses no estimate.",
+            "run": node["run"],
+            "rows": node["rows"],
+        }
     bot_name = _BOT_FOR_NODE.get(node_id)
     if bot_name and bot_name in CATALOG:
         spec = CATALOG[bot_name]
@@ -174,9 +218,10 @@ def _node_detail(session: Session, node_id: str, latest: dict[str, BotRun], card
         "jev": ("JEV", "Bid/no-bid uses JEV when the package is allowed. Otherwise the rules engine runs and the reason is stored."),
         "rules": ("Rules engine", "Deterministic checks. They remain the result when JEV does not run."),
         "human": ("Human authority", "Approving a bot recommendation records the person. It does not submit a bid, send email, or change AI sharing."),
+        "claude_web": ("Claude web search", "The market prices step calls Anthropic web search and fetch for a pursued product. At most five prices are kept; government sites are excluded."),
     }
     title, body = static.get(node_id, (node_id, "No definition is stored for this node."))
-    card = (cards or {}).get({"sam": "SAM.gov", "dibbs": "DIBBS", "usaspending": "USAspending", "deepseek": "DeepSeek", "jev": "JEV"}.get(node_id, ""))
+    card = (cards or {}).get(_CARD_FOR_NODE.get(node_id, ""))
     return {
         "id": node_id,
         "title": title,
@@ -284,8 +329,7 @@ def _node_status(node_id: str, latest: dict[str, BotRun], cards: dict[str, dict]
     bot_name = _BOT_FOR_NODE.get(node_id)
     if bot_name:
         return _run_status(latest.get(bot_name))
-    names = {"sam": "SAM.gov", "dibbs": "DIBBS", "usaspending": "USAspending", "deepseek": "DeepSeek", "jev": "JEV"}
-    card = cards.get(names.get(node_id, ""))
+    card = cards.get(_CARD_FOR_NODE.get(node_id, ""))
     if card:
         return card["status"]
     if node_id == "rules":
@@ -299,8 +343,7 @@ def _node_tag(node_id: str, latest: dict[str, BotRun], cards: dict[str, dict]) -
     bot_name = _BOT_FOR_NODE.get(node_id)
     if bot_name:
         return _run_tag(latest.get(bot_name))
-    names = {"sam": "SAM.gov", "dibbs": "DIBBS", "usaspending": "USAspending", "deepseek": "DeepSeek", "jev": "JEV"}
-    card = cards.get(names.get(node_id, ""))
+    card = cards.get(_CARD_FOR_NODE.get(node_id, ""))
     if card:
         return card["tag"]
     return "info"

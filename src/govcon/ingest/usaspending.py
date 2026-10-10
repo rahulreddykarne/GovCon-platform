@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 from tenacity.wait import wait_base
 
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.http import build_client, request_with_retry
 from govcon.ingest.runs import IngestStats
 from govcon.ingest.sam_opportunities import parse_nsn_candidates, parse_quantity
@@ -533,6 +534,7 @@ def _search_body(filters: dict, *, page: int, limit: int) -> dict:
     }
 
 
+@trace_phase("ingest.usaspending.request_page")
 def _request_page(
     client: httpx.Client,
     body: dict,
@@ -616,6 +618,7 @@ def _record(stats: IngestStats, outcome: str) -> None:
         stats.unchanged += 1
 
 
+@trace_phase("ingest.usaspending.ingest_award_records")
 def ingest_award_records(session: Session, records: list[dict]) -> IngestStats:
     """Upsert award objects from a file or an already downloaded page."""
     stats = IngestStats()
@@ -682,6 +685,7 @@ def _code_families(psc_codes: list[str] | tuple[str, ...], naics_codes: list[str
     return families
 
 
+@trace_phase("ingest.usaspending.pull_usaspending")
 def pull_usaspending(
     session: Session,
     plan: PullPlan,
@@ -759,6 +763,7 @@ class ScheduledPullResult:
     details: dict
 
 
+@trace_phase("ingest.usaspending.ingest_usaspending_awards")
 def ingest_usaspending_awards(
     session: Session,
     *,

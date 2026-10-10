@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
     outbox_dir: Path = Path("./outbox")
     log_dir: Path = Path("./logs")
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    log_max_bytes: int = Field(default=0, ge=0)
+    log_backup_count: int = Field(default=5, ge=1)
 
     ai_max_input_tokens_per_opportunity: int = Field(default=120_000, ge=1)
     ai_max_input_tokens_per_call: int = Field(default=48_000, ge=1)
@@ -112,6 +115,15 @@ class Settings(BaseSettings):
     # Share of each opportunity's token and dollar budget that only proposal
     # drafting and proposal review may spend, so preparation cannot use it all.
     ai_proposal_budget_share: float = Field(default=0.25, ge=0, lt=1, allow_inf_nan=False)
+    # Web market price research for pursued product opportunities (Claude web search).
+    # Listings feed an estimated cost into margin math until a supplier quote exists.
+    market_price_research_enabled: bool = True
+    # Defaults to ANTHROPIC_MODEL; web search needs a model that supports web_search_20260209.
+    market_price_model: str | None = None
+    market_price_max_results: int = Field(default=5, ge=1, le=5)
+    market_price_max_searches: int = Field(default=3, ge=1, le=10)
+    market_price_max_fetches: int = Field(default=3, ge=0, le=10)
+    market_price_fetch_max_tokens: int = Field(default=6000, ge=1000, le=50_000)
     # Email each in-app notification to its user through SMTP_HOST (ADR-070).
     notify_email_enabled: bool = False
     # Review reminders and escalations (ADR-070).
@@ -189,6 +201,7 @@ class Settings(BaseSettings):
         "smtp_pass",
         "alert_email_to",
         "mcp_actor_email",
+        "market_price_model",
         mode="before",
     )
     @classmethod

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import Form, Request
@@ -14,6 +15,8 @@ from starlette.datastructures import UploadFile
 from govcon.collaboration.users import can
 from govcon.db import session_scope
 from govcon.models import Task, User
+from govcon.sourcing.intake import MAX_QUOTE_BYTES
+from govcon.sourcing.records import MAX_CATALOG_BYTES
 from govcon.web.routes.common import (
     _WORKFLOW_ERRORS,
     _actor,
@@ -25,6 +28,8 @@ from govcon.web.routes.common import (
     _require_login,
 )
 from govcon.workflow.invalidation import lock_opportunity
+
+logger = logging.getLogger("govcon.web.sourcing")
 
 
 def _sourcing_context(db: OrmSession, opp_id: int) -> dict[str, Any]:
@@ -52,6 +57,7 @@ def _sourcing_context(db: OrmSession, opp_id: int) -> dict[str, Any]:
                            Task.status != "succeeded").order_by(Task.id.desc()).limit(10)
     ).all()
     return {
+        **_market_price_context(db, opp_id),
         "quotes": quotes,
         "quote_tasks": list(quote_tasks),
         "suppliers": list(db.scalars(select(Supplier).order_by(Supplier.name)).all()),
@@ -97,7 +103,7 @@ async def workspace_add_quote(request: Request, opp_id: int) -> Response:
     target = f"/workspace/{opp_id}?tab=products"
     form = await request.form()
     upload = form.get("quote_file")
-    data = await upload.read() if isinstance(upload, UploadFile) and upload.filename else b""
+    data = await upload.read(MAX_QUOTE_BYTES + 1) if isinstance(upload, UploadFile) and upload.filename else b""
     # File storage (fsync), spreadsheet parsing and database work run in the thread pool.
     return await run_in_threadpool(_add_quote_sync, request, user, opp_id, target, form, upload, data)
 
@@ -178,6 +184,61 @@ def workspace_pursuit_facts(
                                     "decisions that relied on them were reopened.", request=request)
 
 
+def _market_price_context(db: OrmSession, opp_id: int) -> dict[str, Any]:
+    from govcon.models import Opportunity, Pursuit
+    from govcon.sourcing.market_prices import (
+        MARKET_PRICE_TASK,
+        effective_cost_basis,
+        latest_estimate,
+        latest_run,
+    )
+    from govcon.sourcing.product_facts import effective_product_facts
+
+    run = latest_run(db, opp_id)
+    current = latest_estimate(db, opp_id)
+    in_use = False
+    opportunity = db.get(Opportunity, opp_id)
+    if current is not None and run is not None and current.id == run.id and opportunity is not None:
+        pursuit = db.scalar(select(Pursuit).where(Pursuit.opportunity_id == opp_id))
+        basis = effective_cost_basis(db, opportunity, pursuit, effective_product_facts(db, opportunity).quantity)
+        in_use = basis.market_price_run_id == run.id
+    tasks = db.scalars(
+        select(Task).where(Task.opportunity_id == opp_id, Task.task_type == MARKET_PRICE_TASK,
+                           Task.status.in_(("queued", "running", "retrying", "failed")))
+        .order_by(Task.id.desc()).limit(3)
+    ).all()
+    # A failed search older than the latest run is history, not a pending state.
+    tasks = [t for t in tasks if t.status != "failed" or run is None or t.id > (run.task_id or 0)]
+    return {
+        "market_run": run,
+        "market_estimate_current": current is not None and run is not None and current.id == run.id,
+        "market_estimate_in_use": in_use,
+        "market_tasks": tasks,
+    }
+
+
+def workspace_market_prices(request: Request, opp_id: int) -> Response:
+    """Queue a fresh web price search for this opportunity."""
+    from govcon.sourcing.market_prices import queue_market_price_research
+
+    try:
+        user = _require_login(request)
+    except _NeedsLogin:
+        return RedirectResponse("/login", status_code=303)
+    target = f"/workspace/{opp_id}?tab=products"
+    try:
+        with session_scope() as db:
+            actor = _actor(db, user, "review")
+            lock_opportunity(db, opp_id)
+            task, created = queue_market_price_research(db, opportunity_id=opp_id, actor_user_id=actor.id)
+            task_id = task.id
+    except _WORKFLOW_ERRORS as exc:
+        return _redirect(target, error=_error_text(exc), request=request)
+    logger.info("web price search queued from the workspace opportunity=%s task=%s user=%s created=%s",
+                opp_id, task_id, user.id, created)
+    return _redirect(target, notice="Web price search queued; results appear here when it finishes.", request=request)
+
+
 def workspace_draft_rfq(
     request: Request, opp_id: int, supplier_id: Annotated[str | None, Form()] = None
 ) -> Response:
@@ -227,7 +288,7 @@ async def suppliers_save(request: Request) -> Response:
         return RedirectResponse("/login", status_code=303)
     form = await request.form()
     upload = form.get("catalog_file")
-    data = await upload.read() if isinstance(upload, UploadFile) and upload.filename else b""
+    data = await upload.read(MAX_CATALOG_BYTES + 1) if isinstance(upload, UploadFile) and upload.filename else b""
     # Catalog parsing and database work run in the thread pool.
     return await run_in_threadpool(_suppliers_save_sync, request, user, form, upload, data)
 

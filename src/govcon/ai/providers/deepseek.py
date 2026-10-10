@@ -14,10 +14,12 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from govcon.ai.gateway import authorize_external_call
+from govcon.ai.providers.base import CompletionResult
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.security.classification import DataClassification
 
 logger = logging.getLogger("govcon.ai.providers.deepseek")
@@ -27,13 +29,10 @@ DEFAULT_MODEL = "deepseek-flash"
 
 
 @dataclass
-class DeepSeekResult:
-    content: str
-    model: str
+class DeepSeekResult(CompletionResult):
+    """The shared result type, so recorded runs can checkpoint DeepSeek responses."""
+
     provider: str = "deepseek"
-    usage: dict = field(default_factory=dict)
-    latency_ms: int = 0
-    finish_reason: str | None = None
 
 
 class DeepSeekAPIError(RuntimeError):
@@ -61,6 +60,7 @@ class DeepSeekProvider:
         # The same settings object the factory used drives the gateway policy.
         self._settings = settings or get_settings()
 
+    @trace_phase("ai.providers.deepseek.complete")
     def complete(
         self,
         *,

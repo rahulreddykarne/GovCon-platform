@@ -1,0 +1,72 @@
+<!-- Web market prices: Claude web search for the solicitation's product (sourcing/market_prices.py) -->
+<div class="card" id="market-prices" data-progress-key="market-prices">
+  <div class="card-header">
+    <span class="card-title">Web market prices <span class="label-ai">AI</span></span>
+    {% if market_run %}<span class="text-sm text-muted">Searched {{ market_run.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>{% endif %}
+  </div>
+  {% if market_run %}
+    {% if market_run.estimate_unit_cost is not none %}
+    <p><strong>Estimated cost:</strong> ${{ '{:,.2f}'.format(market_run.estimate_unit_cost) }} per {{ market_run.unit or 'unit' }}
+      {% if market_run.estimate_low is not none and market_run.estimate_high is not none and market_run.estimate_low != market_run.estimate_high %}
+        (range ${{ '{:,.2f}'.format(market_run.estimate_low) }}–${{ '{:,.2f}'.format(market_run.estimate_high) }})
+      {% endif %}
+      {% if market_run.estimated_total_cost is not none %} · about ${{ '{:,.2f}'.format(market_run.estimated_total_cost) }} for {{ '{:,}'.format(market_run.quantity|float) }} {{ market_run.unit or 'units' }}{% endif %}
+      · {{ market_run.estimate_confidence }} confidence</p>
+    <p class="text-sm text-muted">{{ market_run.estimate_basis }}.</p>
+    <p class="text-sm">
+      {% if market_estimate_in_use %}Margin math uses this estimate until a supplier quote or a sourcing cost is recorded.
+      {% elif market_estimate_current %}Not used for margin: a recorded sourcing cost or supplier quote takes precedence.
+      {% else %}Not used for margin: the solicitation changed after this search; search again.{% endif %}
+    </p>
+    {% elif market_run.status == 'completed' %}
+    <p>Prices were found, but none could be converted to the solicitation's unit, so there is no estimate.</p>
+    {% else %}
+    <p><strong>{{ market_run.status|replace('_', ' ')|capitalize }}:</strong> {{ market_run.note or 'no detail recorded' }}</p>
+    {% endif %}
+
+    {% if market_run.listings %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Seller</th><th>Listing</th><th>Price</th><th>Per {{ market_run.unit or 'unit' }}</th><th>Specification</th><th>Notes</th></tr></thead>
+        <tbody>
+          {% for item in market_run.listings %}
+          <tr>
+            <td>{{ item.seller }}{% if item.used_in_estimate %} <span class="badge badge-primary" title="Used in the estimate">used</span>{% endif %}
+              <div class="text-sm text-muted">{{ item.domain }}</div></td>
+            <td><a href="{{ item.url }}" target="_blank" rel="noopener noreferrer nofollow">{{ item.product_title }}</a>
+              {% if item.pack_description %}<div class="text-sm text-muted">{{ item.pack_description }}</div>{% endif %}</td>
+            <td>{% if item.price %}${{ '{:,.2f}'.format(item.price|float) }}{% else %}—{% endif %}</td>
+            <td>{% if item.unit_price %}${{ '{:,.2f}'.format(item.unit_price|float) }}{% else %}<span class="text-muted">pack size unclear</span>{% endif %}</td>
+            <td>{{ item.spec_match }}
+              {% if item.spec_gaps %}<div class="text-sm text-muted">{{ item.spec_gaps|join('; ') }}</div>{% endif %}</td>
+            <td class="text-sm">{% if item.availability %}{{ item.availability }}{% endif %}
+              {% if item.country_of_origin %}<div>Origin: {{ item.country_of_origin }}</div>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if market_run.excluded %}
+    <details class="mt-1"><summary class="text-sm">{{ market_run.excluded|length }} listing(s) left out</summary>
+      <ul class="text-sm">{% for item in market_run.excluded %}<li>{{ item.domain or 'unknown site' }}: {{ item.reason }}</li>{% endfor %}</ul>
+    </details>
+    {% endif %}
+    {% if market_run.status == 'completed' and market_run.note %}<p class="text-sm mt-1">{{ market_run.note }}</p>{% endif %}
+    <p class="text-sm text-muted mt-1">Public web list prices, not supplier quotes: shipping, tax, minimums and volume pricing are not included.
+      Government sites are excluded.{% if market_run.model %} Searched by {{ market_run.model }}{% if market_run.usage %}, {{ (market_run.usage.get('web_search_requests') or 0) }} search(es){% endif %}.{% endif %}</p>
+  {% else %}
+    <p class="text-muted">No web price search yet. Preparation searches automatically for product opportunities.</p>
+  {% endif %}
+  {% for t in market_tasks %}
+  <div class="alert {% if t.status in ('failed', 'waiting_for_input') %}alert-error{% else %}alert-info{% endif %}" role="status">
+    Web price search: {{ t.status|replace('_', ' ') }}.{% if t.last_error and t.status != 'succeeded' %} {{ t.last_error }}{% endif %}
+  </div>
+  {% endfor %}
+  {% if can_run_analysis and not market_tasks %}
+  <form method="post" action="/workspace/{{ opp.id }}/market-prices">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-secondary btn-sm">{{ 'Search web prices again' if market_run else 'Search web prices' }}</button>
+  </form>
+  {% endif %}
+</div>

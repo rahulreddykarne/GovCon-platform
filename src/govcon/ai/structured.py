@@ -37,6 +37,7 @@ from govcon.ai.providers.deepseek import parse_json_response
 from govcon.ai.quality import assess_output_quality
 from govcon.ai.schemas import SCHEMA_REGISTRY
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import diagnostic_event, trace_phase
 from govcon.models import AIAnalysis
 from govcon.prompting.loader import PromptAsset
 from govcon.prompting.registry import (
@@ -87,6 +88,7 @@ def checked_output(output: BaseModel, schema: type[_Output]) -> _Output:
     return output
 
 
+@trace_phase("ai.structured.resolve_prompt")
 def resolve_prompt(session: Session | None, prompt_name: str, settings: Settings) -> PromptAsset:
     """Registry is authoritative; disk bootstrap is explicitly opt-in."""
     prompt_root = settings.resolved_prompt_root()
@@ -178,6 +180,7 @@ class ExecutedCall:
     quality_reason: str = ""
 
 
+@trace_phase("ai.structured.prepare_structured_call")
 def prepare_structured_call(
     session: Session | None,
     *,
@@ -243,6 +246,10 @@ def prepare_structured_call(
         generation_settings["model"] = model
     if route_fallback:
         generation_settings["route_fallback"] = route_fallback
+    diagnostic_event("ai.call_prepared", provider=resolved_provider, model=model or "default",
+                     prompt=prompt.name, prompt_version=prompt.version, schema=schema_version,
+                     classification=classification.value,
+                     bytes=len(system_prompt.encode("utf-8")) + len(user_prompt.encode("utf-8")))
     return PreparedCall(
         prompt=prompt,
         schema_cls=schema_cls,
@@ -261,6 +268,7 @@ def prepare_structured_call(
     )
 
 
+@trace_phase("ai.structured.execute_prepared_call")
 def execute_prepared_call(
     prepared: PreparedCall,
     *,
@@ -277,6 +285,9 @@ def execute_prepared_call(
     attempts = 1 + max(0, int(settings.prompt_max_retries_on_invalid_json or 0))
     last_error: StructuredCallError | None = None
     for attempt in range(attempts):
+        diagnostic_event("ai.validation_attempt", attempt=attempt + 1, attempts=attempts,
+                         provider=prepared.provider_name, model=prepared.model,
+                         prompt=prepared.prompt.name, schema=prepared.schema_version)
         try:
             result, reservation = complete_with_budget(prepared.provider, session,
                 opportunity_id=prepared.opportunity_id,
@@ -300,6 +311,18 @@ def execute_prepared_call(
             data = parse_json_response(result)
             validated = prepared.schema_cls.model_validate(data)
         except (json.JSONDecodeError, ValueError, ValidationError) as exc:
+            diagnostic_event("ai.output_rejected", level=logging.WARNING, error_type=type(exc).__name__,
+                             attempt=attempt + 1, schema=prepared.schema_version,
+                             reason="truncated" if getattr(result, "finish_reason", None) in _TRUNCATED else "invalid_output")
+            if isinstance(exc, ValidationError):
+                diagnostic_event("ai.schema_errors", warnings=exc.error_count(), schema=prepared.schema_version)
+                for issue in exc.errors(include_url=False, include_context=False, include_input=False)[:10]:
+                    # Only declared top-level schema fields; arbitrary dict keys and
+                    # validation messages may contain provider/document contents.
+                    location = issue["loc"]
+                    field = location[0] if location and location[0] in prepared.schema_cls.model_fields else "nested_or_root"
+                    diagnostic_event("ai.schema_field_rejected", schema=prepared.schema_version,
+                                     stage=str(field), reason=issue["type"])
             # Never log the provider response body; it can echo sensitive input.
             logger.warning("structured output rejected prompt=%s attempt=%d: %s", prepared.prompt.name, attempt + 1, type(exc).__name__)
             if getattr(result, "finish_reason", None) in _TRUNCATED:
@@ -313,6 +336,8 @@ def execute_prepared_call(
             last_error = StructuredCallError("invalid_output", f"attempt {attempt + 1}: {type(exc).__name__}")
             continue
         quality, reason = _output_quality(prepared.schema_cls, validated)
+        diagnostic_event("ai.output_validated", quality=quality, schema=prepared.schema_version,
+                         attempt=attempt + 1, latency_ms=getattr(result, "latency_ms", None))
         executed = ExecutedCall(
             output=validated, result=result, reservation=reservation, quality=quality, quality_reason=reason,
         )
@@ -370,6 +395,7 @@ def build_analysis(prepared: PreparedCall, executed: ExecutedCall) -> AIAnalysis
     )
 
 
+@trace_phase("ai.structured.persist_structured_result")
 def persist_structured_result(
     session: Session | None, prepared: PreparedCall, executed: ExecutedCall
 ) -> StructuredCallResult:

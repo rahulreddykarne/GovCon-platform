@@ -36,6 +36,7 @@ from govcon.compliance.matrix import (
 from govcon.compliance.records import RESOLVED_STATUSES, Inventory
 from govcon.compliance.schemas import ComplianceRedTeamV1
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.models import Requirement
 from govcon.security.classification import DataClassification
 
@@ -79,6 +80,7 @@ def rule_findings(requirements: list[Requirement], inventory: Inventory, known_a
     return out
 
 
+@trace_phase("compliance.red_team.run_red_team")
 def run_red_team(
     session: Session,
     opportunity_id: int,

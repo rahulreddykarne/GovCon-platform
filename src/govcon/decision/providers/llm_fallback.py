@@ -11,6 +11,7 @@ from govcon.ai.providers import NoProviderConfigured, get_provider
 from govcon.ai.providers.deepseek import parse_json_response
 from govcon.config import Settings, get_settings
 from govcon.decision.provider import DecisionProviderUnavailable, ProviderDecision
+from govcon.diagnostics import trace_phase
 from govcon.security.classification import DataClassification
 
 
@@ -27,6 +28,7 @@ class LLMDecisionProvider:
         self._settings = settings or get_settings()
         self._session = session
 
+    @trace_phase("decision.providers.llm_fallback.decide")
     def decide(
         self,
         *,
@@ -34,8 +36,12 @@ class LLMDecisionProvider:
         bundle_version: str,
         state: dict[str, Any],
     ) -> ProviderDecision:
+        from govcon.ai.routing import analysis_selection
+
+        provider_name, model, _reason = analysis_selection(self._session, self._settings,
+                                                           provider_name=None, model=None)
         try:
-            provider = get_provider(self._settings)
+            provider = get_provider(self._settings, provider_name=provider_name)
         except NoProviderConfigured as exc:
             raise DecisionProviderUnavailable(str(exc)) from exc
 
@@ -63,6 +69,7 @@ class LLMDecisionProvider:
                 opportunity_id=state.get("budget_opportunity_id"), settings=self._settings,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
+                model=model,
                 temperature=0.0,
                 json_mode=True,
                 classification=DataClassification(state.get("data_classification", "PROPRIETARY")),

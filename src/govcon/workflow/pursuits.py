@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
+from govcon.diagnostics import trace_phase
 from govcon.models import Pursuit, User
 from govcon.workflow.invalidation import lock_opportunity
 
@@ -20,6 +21,7 @@ ORIGINS = ("web_inbox", "web_workspace", "mcp", "cli", "approval", "auto_policy"
 START_STAGES = frozenset({"evaluating", "sourcing", "drafting", "review"})
 
 
+@trace_phase("workflow.pursuits.create_or_get_pursuit")
 def create_or_get_pursuit(
     session: Session,
     *,

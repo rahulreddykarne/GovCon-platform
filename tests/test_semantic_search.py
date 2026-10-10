@@ -26,6 +26,8 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from govcon.enrich.embeddings import (
+    _model_id,
+    _source_hash,
     build_watchlist_profiles,
     compute_win_profile,
     opportunity_text,
@@ -117,6 +119,9 @@ def _opp(
     if embed:
         text_content = opportunity_text(row)
         row.embedding = _mock.embed(text_content)
+        row.embedding_model = _model_id(_mock)
+        row.embedding_dimension = 384
+        row.embedding_source_hash = _source_hash(text_content)
         session.flush()
     return row
 
@@ -258,6 +263,10 @@ def test_semantic_match_no_keyword_overlap(session: Session):
         embedding=unrelated_emb,
     )
     session.add(unrelated)
+    for row in (target, similar, unrelated):
+        row.embedding_model = _model_id(_mock)
+        row.embedding_dimension = 384
+        row.embedding_source_hash = _source_hash(opportunity_text(row))
     session.flush()
 
     result = similar_opportunities(session, target.id, limit=5)
@@ -330,6 +339,10 @@ def test_ineligible_opportunity_flagged_in_results(session: Session):
         embedding=closed_emb,
     )
     session.add_all([source, closed])
+    for row in (source, closed):
+        row.embedding_model = _model_id(_mock)
+        row.embedding_dimension = 384
+        row.embedding_source_hash = _source_hash(opportunity_text(row))
     session.flush()
 
     result = similar_opportunities(session, source.id, limit=5)

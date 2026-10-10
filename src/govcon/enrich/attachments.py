@@ -40,6 +40,7 @@ from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
 from govcon.config import Settings, get_settings
+from govcon.diagnostics import trace_phase
 from govcon.enrich.attachment_refs import (
     DIBBS_RFQ_PDF,
     SAM_DESCRIPTION,
@@ -62,6 +63,7 @@ _GENERIC_NAMES = frozenset({"", "download", "file", "attachment", "content"})
 _MAX_NAME = 120
 
 
+@trace_phase("enrich.attachments.download_attachments")
 def download_attachments(
     session: Session,
     opportunity: Opportunity,
@@ -328,6 +330,7 @@ def needs_ocr_retry(row: StoredFile, settings: Settings) -> bool:
     ))
 
 
+@trace_phase("enrich.attachments.update_extraction")
 def update_extraction(session: Session, row: StoredFile, extraction: ExtractionResult) -> None:
     """Repair extraction in place; byte identity and classification stay intact."""
     from govcon.workflow.invalidation import lock_one
@@ -395,6 +398,7 @@ def known_versions(
     return known
 
 
+@trace_phase("enrich.attachments.fetch_attachment")
 def fetch_attachment(
     ref: AttachmentRef,
     *,
@@ -448,6 +452,7 @@ def fetch_attachment(
     return FetchedAttachment(ref, sha=sha, filename=filename, mime=mime, local_path=local_path, extraction=extraction)
 
 
+@trace_phase("enrich.attachments.record_fetched")
 def record_fetched(
     session: Session, opportunity: Opportunity, fetched: FetchedAttachment, *, snapshot_id: int | None
 ) -> StoredFile:
@@ -509,6 +514,7 @@ def _download_one(
     return record_fetched(session, opportunity, fetched, snapshot_id=snapshot_id)
 
 
+@trace_phase("enrich.attachments.process_local_file")
 def process_local_file(
     session: Session,
     opportunity: Opportunity,

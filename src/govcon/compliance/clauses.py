@@ -26,6 +26,7 @@ from govcon.compliance.matrix import (
 )
 from govcon.compliance.records import Inventory
 from govcon.compliance.text import ClauseReference, find_clause_references, normalize_ws
+from govcon.diagnostics import trace_phase
 from govcon.models import ClauseLibraryEntry, Requirement
 
 CLAUSE_CHECK_VERSION = "clause_validation.v1"
@@ -115,6 +116,7 @@ def match_references(references: list[tuple[ClauseReference, int | None]], libra
     return list(merged.values())
 
 
+@trace_phase("compliance.clauses.run_clause_validation")
 def run_clause_validation(session: Session, opportunity_id: int, inventory: Inventory) -> dict[str, Any]:
     """Extract clause references, link/create requirements, and surface unknown/modified clauses."""
     library = {

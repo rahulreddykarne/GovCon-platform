@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from govcon.audit import record_audit
 from govcon.collaboration.users import require_permission
+from govcon.diagnostics import trace_phase
 from govcon.learning.schemas import OUTCOME_SCHEMAS
 from govcon.models import (
     Opportunity,
@@ -67,6 +68,7 @@ def _denorm_from_opportunity(opp: Opportunity) -> dict[str, Any]:
     }
 
 
+@trace_phase("learning.outcomes.record_outcome")
 def record_outcome(
     session: Session,
     *,
@@ -169,7 +171,8 @@ def record_outcome(
 
         cancel_active(
             session, opportunity_id=opportunity_id,
-            task_types=("opportunity_preparation", "proposal_generation", "ai_analysis", "quote_extraction", "reviewer_comment_validation"),
+            task_types=("opportunity_preparation", "proposal_generation", "ai_analysis", "quote_extraction", "reviewer_comment_validation",
+                        "market_price_research"),
             reason="The pursuit was cancelled.",
         )
     row = session.scalar(

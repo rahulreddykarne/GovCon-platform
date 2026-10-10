@@ -40,3 +40,7 @@ logs-live/
 
 # Generated local code-analysis graphs and caches
 graphify-out/
+
+# Files the test suite writes while running
+tests/data/
+tests/logs/

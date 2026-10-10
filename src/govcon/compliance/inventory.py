@@ -24,6 +24,7 @@ from govcon.compliance.matrix import (
     upsert_open_finding,
 )
 from govcon.compliance.records import Inventory, InventoryWarning, SourceDocument
+from govcon.diagnostics import trace_phase
 from govcon.models import (
     ComplianceRun,
     FilePage,
@@ -357,6 +358,7 @@ def load_inventory(session: Session, opportunity: Opportunity) -> Inventory:
     return analyze_inventory(documents, expected_urls=expected, source_changed_after_download=changed_after)
 
 
+@trace_phase("compliance.inventory.build_document_inventory")
 def build_document_inventory(session: Session, opportunity_id: int) -> tuple[Inventory, ComplianceRun]:
     """Build and persist the inventory; blocking problems also become open findings."""
     opportunity = session.get(Opportunity, opportunity_id)
