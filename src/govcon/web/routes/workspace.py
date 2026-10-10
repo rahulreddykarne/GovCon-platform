@@ -90,10 +90,18 @@ def opp_start_workspace(request: Request, opp_id: int) -> Response:
 
 
 WORKSPACE_TABS = [
-    ("overview", "Overview"), ("compliance", "Requirements & Compliance"), ("market", "Market"),
-    ("sourcing", "Sourcing & Pricing"), ("review", "Review & Decision"),
-    ("submission", "Proposal & Submission"), ("activity", "Activity"),
+    ("summary", "Summary"),
+    ("compliance", "Compliance"),
+    ("decision", "Decision"),
+    ("pricing", "Pricing / Products"),
+    ("documents", "Documents"),
 ]
+WORKSPACE_MORE_TABS = [
+    ("market", "Market"),
+    ("submission", "Proposal"),
+    ("activity", "Activity"),
+]
+WORKSPACE_TAB_KEYS = {key for key, _label in WORKSPACE_TABS + WORKSPACE_MORE_TABS}
 
 
 REQUIREMENTS_PAGE_SIZE = 200
@@ -109,12 +117,15 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
     except _NeedsLogin:
         return RedirectResponse("/login", status_code=303)
 
-    aliases = {"requirements": "compliance", "awards": "market", "competitors": "market",
-               "products": "sourcing", "pricing": "sourcing", "ai_decision": "review", "proposal": "submission"}
-    requested_tab = request.query_params.get("tab", "overview")
+    aliases = {
+        "overview": "summary", "requirements": "compliance", "review": "decision", "ai_decision": "decision",
+        "sourcing": "pricing", "products": "pricing", "awards": "market", "competitors": "market",
+        "proposal": "submission",
+    }
+    requested_tab = request.query_params.get("tab", "summary")
     active_tab = aliases.get(requested_tab, requested_tab)
-    if active_tab not in {"overview", "compliance", "market", "sourcing", "review", "submission", "activity"}:
-        active_tab = "overview"
+    if active_tab not in WORKSPACE_TAB_KEYS:
+        active_tab = "summary"
 
     with session_scope() as db:
         opp = db.get(Opportunity, opp_id)
@@ -135,8 +146,9 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
         # build tab-specific context
         tab_ctx: dict[str, Any] = {}
 
-        if active_tab == "overview":
+        if active_tab in {"summary", "documents"}:
             tab_ctx["attachments"] = db.scalars(select(StoredFile).where(StoredFile.opportunity_id == opp_id)).all()
+        if active_tab == "summary":
             tab_ctx["events"] = db.scalars(select(OpportunityEvent).where(OpportunityEvent.opportunity_id == opp_id)
                 .order_by(OpportunityEvent.detected_at.desc()).limit(20)).all()
             tab_ctx["contacts"] = db.scalars(select(Contact).where(Contact.agency_path == opp.agency_path).limit(5)).all() if opp.agency_path else []
@@ -190,14 +202,14 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
                 .order_by(desc(AIAnalysis.created_at))
             )
 
-        if active_tab == "sourcing":
+        if active_tab == "pricing":
             tab_ctx.update(_sourcing_context(db, opp_id))
             tab_ctx["ai_sourcing"] = db.scalar(
                 select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.SOURCING)
                 .order_by(desc(AIAnalysis.created_at))
             )
 
-        if active_tab == "sourcing":
+        if active_tab == "pricing":
             tab_ctx["ai_pricing"] = db.scalar(
                 select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.PRICING)
                 .order_by(desc(AIAnalysis.created_at))
@@ -206,13 +218,13 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
         if active_tab == "market":
             tab_ctx["competitors"] = _get_competitor_detail(db, opp)
 
-        if active_tab in {"review", "overview"}:
+        if active_tab in {"decision", "summary"}:
             tab_ctx["decision_package_analysis"] = db.scalar(
                 select(AIAnalysis).where(AIAnalysis.opportunity_id == opp_id, AIAnalysis.analysis_type == AnalysisType.DECISION_PACKAGE)
                 .order_by(desc(AIAnalysis.created_at))
             )
 
-        if active_tab == "review":
+        if active_tab == "decision":
             from govcon.decision.engine import build_decision_state
             from govcon.decision.scorecard import build_scorecard
 
@@ -350,6 +362,7 @@ def workspace(request: Request, opp_id: int, requirements_page: Annotated[int, Q
             "active_tab": active_tab,
             "active_page": "pipeline",
             "workspace_tabs": WORKSPACE_TABS,
+            "workspace_more_tabs": WORKSPACE_MORE_TABS,
             "progress": progress_state(db, opp_id),
             **tab_ctx,
         }

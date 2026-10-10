@@ -701,3 +701,52 @@ fieldset.form-group input[type="checkbox"] { width: auto; }
 .check-label { display: inline-flex; gap: 6px; align-items: center; font-weight: 400; }
 .scorecard-table td ul { margin: 0; padding-left: 1.1rem; }
 .check-label input { width: auto; }
+
+/* ── Status strip ──────────────────────────────────────────────── */
+.status-strip {
+  display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+  padding: 6px 20px; border-top: 1px solid var(--color-border);
+  background: #f7f9fc; font-size: 12px; color: var(--color-muted);
+}
+.strip-item { white-space: nowrap; }
+.strip-item.tone-ok { color: var(--color-success); }
+.strip-item.tone-warn { color: var(--color-warning); }
+.strip-item.tone-danger { color: var(--color-danger); font-weight: 700; }
+.strip-item.tone-missing { color: var(--color-muted); }
+
+/* ── Overflow nav ─────────────────────────────────────────────── */
+.nav-more { position: relative; display: inline-flex; align-items: center; }
+.nav-more summary {
+  list-style: none; cursor: pointer; font-size: 12px; font-weight: 700;
+  color: var(--color-muted); padding: 11px 12px;
+}
+.nav-more summary::-webkit-details-marker { display: none; }
+.nav-more[open] summary { color: var(--color-primary); }
+.nav-more > a, .nav-more > *:not(summary) {
+  /* dropdown children laid out below */
+}
+.nav-more[open] {
+  z-index: 40;
+}
+.nav-more[open] > :not(summary) {
+  display: block;
+}
+.nav-more[open] {
+  background: #fff;
+}
+.app-tabs .nav-more[open], .tab-bar .nav-more[open] {
+  box-shadow: var(--shadow);
+}
+.nav-more[open] > a {
+  display: block; padding: 8px 12px; font-size: 12px; font-weight: 600;
+  color: var(--color-text); background: #fff; border: 1px solid var(--color-border);
+  border-top: 0; min-width: 160px;
+}
+.nav-more[open] > a:first-of-type { border-top: 1px solid var(--color-border); }
+.nav-more { flex-direction: column; align-items: stretch; }
+.app-tabs { align-items: stretch; }
+
+/* ── Forms: labels above inputs ──────────────────────────────── */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.form-actions { display: flex; gap: 8px; margin-top: 12px; }
+.stack-form input, .stack-form select, .stack-form textarea { width: 100%; }

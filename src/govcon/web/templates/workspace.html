@@ -4,10 +4,10 @@
 
 <div class="page-header">
   <div style="flex:1;min-width:0;">
-    <p class="eyebrow">Notice</p>
+    <p class="eyebrow">Opportunity</p>
     <h1 class="page-title truncate">{{ opp.title or "(no title)" }}</h1>
     <div class="page-subtitle">
-      Workspace · {{ opp.source|upper }} · {{ opp.source_id }}
+      {{ opp.source|upper }} · {{ opp.source_id }}
       {% if review_session %} · <span class="badge badge-{{ review_session.status|replace('_','-') }}">{{ review_session.status|replace('_',' ') }}</span>{% endif %}
     </div>
   </div>
@@ -28,27 +28,35 @@
   </div>
 </div>
 
-<nav class="tab-bar">
+<nav class="tab-bar" aria-label="Opportunity">
   {% for key, label in workspace_tabs %}
   <a href="/workspace/{{ opp.id }}?tab={{ key }}" {% if active_tab == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
+  <details class="nav-more">
+    <summary>More</summary>
+    {% for key, label in workspace_more_tabs %}
+    <a href="/workspace/{{ opp.id }}?tab={{ key }}" {% if active_tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </details>
 </nav>
 <div id="progress-feedback" class="alert alert-info" role="status" hidden><span></span> <button class="btn btn-secondary btn-sm" onclick="window.location.reload()">Refresh results</button></div>
 <div id="workspace-content" data-progress-url="/workspace/{{ opp.id }}/progress" data-progress-revision="{{ progress.revision }}" data-progress-active="{{ 'true' if progress.active else 'false' }}">
-{% if active_tab == 'overview' %}
+{% if active_tab == 'summary' %}
   {% include "workspace/overview.html" %}
 {% elif active_tab == 'compliance' %}
   {% include "workspace/compliance.html" %}
+{% elif active_tab == 'decision' %}
+  {% include "workspace/ai_decision.html" %}
+  {% include "workspace/review.html" %}
+{% elif active_tab == 'pricing' %}
+  {% include "workspace/products.html" %}
+  {% include "workspace/pricing.html" %}
+{% elif active_tab == 'documents' %}
+  {% include "workspace/documents.html" %}
 {% elif active_tab == 'market' %}
   {% include "workspace/market.html" %}
   <details class="card"><summary>Historical Awards</summary>{% include "workspace/awards.html" %}</details>
   <details class="card"><summary>Competitors</summary>{% include "workspace/competitors.html" %}</details>
-{% elif active_tab == 'sourcing' %}
-  {% include "workspace/products.html" %}
-  {% include "workspace/pricing.html" %}
-{% elif active_tab == 'review' %}
-  {% include "workspace/ai_decision.html" %}
-  {% include "workspace/review.html" %}
 {% elif active_tab == 'submission' %}
   {% include "workspace/proposal.html" %}
   {% include "workspace/submission.html" %}

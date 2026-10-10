@@ -1,0 +1,44 @@
+<!-- Documents tab -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Documents</span>
+    <span class="text-sm text-muted">{{ attachments|length if attachments else 0 }} file(s)</span>
+  </div>
+  {% if not attachments %}
+  <p class="empty-state">No stored files yet. Attachments appear here after a SAM/DIBBS pull or a local import.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Type</th>
+          <th>Extraction</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in attachments %}
+        <tr>
+          <td>{{ f.filename or '(unnamed)' }}</td>
+          <td class="text-sm">{{ f.mime_type or 'not recorded' }}</td>
+          <td>
+            {% if f.extraction_status == 'success' or f.extraction_status == 'done' %}
+              <span class="pill pill-success">{{ f.extraction_status }}</span>
+            {% elif f.extraction_status == 'failed' %}
+              <span class="pill pill-danger">failed</span>
+              {% if f.extraction_error %}<div class="text-sm text-muted">{{ f.extraction_error }}</div>{% endif %}
+            {% else %}
+              <span class="pill pill-secondary">{{ f.extraction_status or 'not run' }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">Open source ↗</a>{% else %}<span class="text-muted">no URL</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>

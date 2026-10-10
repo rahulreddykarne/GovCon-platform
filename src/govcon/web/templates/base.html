@@ -8,27 +8,51 @@
   <script src="/static/vendor/htmx.min.js" defer></script>
 </head>
 <body class="app-shell">
-{% set sections = {
-  'operate': 'Mission control',
-  'inbox': 'Inbox',
-  'pipeline': 'Pipeline',
-  'search': 'Search',
-  'watchlists': 'Watchlists',
-  'vendors': 'Vendors',
-  'suppliers': 'Suppliers',
-  'ops': 'Operations',
-  'bots': 'Approvals',
-  'settings': 'Settings',
-  'learning': 'Insights',
-  'admin': 'Admin'
-} %}
+{% set main_nav = [
+  ('inbox', '/', 'Inbox'),
+  ('pipeline', '/pipeline', 'Pipeline'),
+] %}
+{% set more_nav = [
+  ('search', '/search', 'Search'),
+  ('watchlists', '/watchlists', 'Watchlists'),
+  ('vendors', '/vendors', 'Vendors'),
+  ('suppliers', '/suppliers', 'Suppliers'),
+  ('bots', '/bots', 'Bots'),
+  ('learning', '/learning', 'Insights'),
+  ('operate', '/operate', 'Operate'),
+] %}
+{% set admin_nav = [
+  ('ops', '/ops', 'Ops'),
+  ('admin', '/admin', 'Admin'),
+  ('settings', '/settings', 'Settings'),
+] %}
 
 <div class="shell-head">
 <header class="top-bar">
   <a class="brand" href="/">
     <span class="brandmark" aria-hidden="true">G</span>
-    <span>GovCon {% if active_page in sections %}<span class="brand-context">/ {{ sections[active_page] }}</span>{% endif %}</span>
+    <span>GovCon</span>
   </a>
+  <nav class="app-tabs" aria-label="Main">
+    {% for key, path, label in main_nav %}
+    <a href="{{ path }}" {% if active_page == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+    {% if active_page == 'pipeline' or opp is defined %}
+    <a href="{% if opp is defined %}/workspace/{{ opp.id }}{% else %}/pipeline{% endif %}" class="{% if opp is defined %}active{% endif %}" {% if opp is defined %}aria-current="page"{% endif %}>Opportunity</a>
+    {% endif %}
+    <details class="nav-more">
+      <summary>More</summary>
+      {% for key, path, label in more_nav %}
+      <a href="{{ path }}" {% if active_page == key %}aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </details>
+    <details class="nav-more">
+      <summary>Ops / Admin / Settings</summary>
+      {% for key, path, label in admin_nav %}
+      <a href="{{ path }}" {% if active_page == key or (active_page == 'admin' and admin_section is defined and key == admin_section) %}aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </details>
+  </nav>
   <span class="spacer"></span>
   <div class="user-badge">
     {% if current_user %}
@@ -46,11 +70,23 @@
     {% endif %}
   </div>
 </header>
-<nav class="app-tabs" aria-label="Main navigation">
-  {% for key, path, label in [('operate', '/operate', 'Operate'), ('inbox', '/', 'Inbox'), ('pipeline', '/pipeline', 'Pipeline'), ('search', '/search', 'Search'), ('watchlists', '/watchlists', 'Watchlists'), ('vendors', '/vendors', 'Vendors'), ('suppliers', '/suppliers', 'Suppliers'), ('ops', '/ops', 'Ops'), ('bots', '/bots', 'Bots'), ('settings', '/settings', 'Settings'), ('learning', '/learning', 'Insights'), ('admin', '/admin', 'Admin')] %}
-  <a href="{{ path }}" {% if active_page == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+{% if status_strip %}
+<div class="status-strip" role="status">
+  {% for item in status_strip.sources %}
+  <span class="strip-item tone-{{ item.tone }}" data-strip="{{ item.key }}">{{ item.label }} {{ item.text }}</span>
   {% endfor %}
-</nav>
+  {% if status_strip.jobs %}
+    {% for item in status_strip.jobs %}
+    <span class="strip-item tone-{{ item.tone }}" data-strip="{{ item.key }}" {% if item.stuck %}data-stuck="true"{% endif %}>{{ item.label }}: {{ item.text }}</span>
+    {% endfor %}
+  {% else %}
+  <span class="strip-item tone-ok" data-strip="jobs">No running jobs</span>
+  {% endif %}
+  {% for item in status_strip.heartbeats %}
+  <span class="strip-item tone-{{ item.tone }}" data-strip="{{ item.key }}">{{ item.label }} {{ item.text }}</span>
+  {% endfor %}
+</div>
+{% endif %}
 </div>
 
 <main class="main-content">

@@ -143,11 +143,19 @@ def _render(request: Request, template: str, ctx: dict[str, Any], user: User) ->
     ctx["unread_notification_count"] = _unread_count(user)
     if template in {"ops.html", "settings.html", "invite_user.html", "admin_users.html"}:
         ctx["active_page"] = "admin"
-        ctx["admin_section"] = {"ops.html": "operations", "settings.html": "settings", "invite_user.html": "users", "admin_users.html": "users"}[template]
+        ctx["admin_section"] = {"ops.html": "ops", "settings.html": "settings", "invite_user.html": "admin", "admin_users.html": "admin"}[template]
     ctx["source_options"] = [("sam", "SAM.gov"), ("dibbs", "DIBBS")]
     ctx["set_aside_options"] = [("SBA", "Small business"), ("8A", "8(a)"), ("HZC", "HUBZone"),
                                 ("SDVOSBC", "Service-disabled veteran-owned"), ("WOSB", "Women-owned"),
                                 ("EDWOSB", "Economically disadvantaged women-owned")]
+    if "status_strip" not in ctx:
+        try:
+            from govcon.web.status_strip import status_strip
+
+            with session_scope() as db:
+                ctx["status_strip"] = status_strip(db)
+        except Exception:
+            ctx["status_strip"] = None
     ctx["flash_error"] = ctx["flash_notice"] = None
     raw = request.cookies.get("govcon_flash")
     if raw:
