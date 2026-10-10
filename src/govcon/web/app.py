@@ -106,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         opp_detail,
         opp_start_workspace,
         ops,
+        ops_run_chain,
         ops_task_action,
         pipeline,
         search,
@@ -218,6 +219,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_api_route("/workspace/{opp_id}/rfq", workspace_draft_rfq, methods=["POST"])
     app.add_api_route("/workspace/{opp_id}/prepare", workspace_prepare, methods=["POST"])
     app.add_api_route("/ops/tasks/{task_id}/{action}", ops_task_action, methods=["POST"])
+    app.add_api_route("/ops/jobs/{chain_name}/run", ops_run_chain, methods=["POST"])
 
     # Learning
     app.add_api_route("/learning", learning, methods=["GET"])

@@ -128,6 +128,17 @@ class Settings(BaseSettings):
     task_retry_base_seconds: int = Field(default=30, ge=0)
     task_retry_max_seconds: int = Field(default=3600, ge=1)
     worker_poll_seconds: float = Field(default=2.0, gt=0)
+    # Hard limits for scheduler chain steps. A step past its limit is stopped,
+    # its transaction rolled back, and the step recorded as failed.
+    sam_ingest_timeout_seconds: int = Field(default=3600, ge=30)
+    dibbs_ingest_timeout_seconds: int = Field(default=2700, ge=30)
+    usaspending_ingest_timeout_seconds: int = Field(default=2700, ge=30)
+    source_documents_timeout_seconds: int = Field(default=2700, ge=30)
+    maintenance_step_timeout_seconds: int = Field(default=3600, ge=30)
+    scheduler_step_timeout_seconds: int = Field(default=1800, ge=30)
+    # A chain step waiting this long for a row or advisory lock fails instead of hanging.
+    scheduler_lock_timeout_seconds: int = Field(default=120, ge=1)
+    stale_run_reap_interval_seconds: int = Field(default=300, ge=30)
     # OCR for PDF pages without a text layer (ADR-065). Without the Tesseract
     # binary those pages stay flagged as unreadable, as before.
     ocr_enabled: bool = True

@@ -235,6 +235,9 @@ def run_worker(
             logger.warning("worker marked %s interrupted bot run(s) failed so they can be run again", interrupted)
     except Exception:
         logger.warning("worker could not reconcile interrupted bot runs")
+    from govcon.ops.reaper import reap_in_new_session
+
+    reap_in_new_session(settings, actor=f"worker {worker_id} startup")
     try:
         from govcon.prompting.registry import PromptSetupError, ensure_prompt_registry
 
@@ -313,9 +316,15 @@ def heartbeat_loop(
     *,
     interval: float = WORKER_HEARTBEAT_SECONDS,
 ) -> None:
-    """Keep /health green while a task is blocked on the network."""
+    """Keep /health green while a task is blocked on the network; reap stale runs periodically."""
+    from govcon.ops.reaper import reap_in_new_session
+
+    next_reap = time.monotonic() + settings.stale_run_reap_interval_seconds
     while not stop_event.is_set():
         _beat(settings, "worker", worker_id)
+        if time.monotonic() >= next_reap:
+            reap_in_new_session(settings, actor=f"worker {worker_id}")
+            next_reap = time.monotonic() + settings.stale_run_reap_interval_seconds
         if stop_event.wait(interval):
             return
 

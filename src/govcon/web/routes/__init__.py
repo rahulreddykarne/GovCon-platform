@@ -28,6 +28,7 @@ from govcon.web.routes.discovery import search as search
 from govcon.web.routes.discovery import vendors as vendors
 from govcon.web.routes.operations import learning as learning
 from govcon.web.routes.operations import ops as ops
+from govcon.web.routes.operations import ops_run_chain as ops_run_chain
 from govcon.web.routes.operations import ops_task_action as ops_task_action
 from govcon.web.routes.proposals import (
     workspace_outcome_suggestion as workspace_outcome_suggestion,

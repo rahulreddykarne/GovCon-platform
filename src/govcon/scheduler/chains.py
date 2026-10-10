@@ -157,7 +157,6 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
     chain_def = CHAIN_DEFINITIONS.get(chain_name)
     if chain_def is None:
         raise ValueError(f"Unknown chain: {chain_name!r}. Available: {list(CHAIN_DEFINITIONS)}")
-
     started_at = datetime.now(timezone.utc)
     steps_completed: list[str] = []
     step_results: list[StepResult] = []
@@ -211,8 +210,9 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
 
         logger.info("chain=%s step=%s starting", chain_name, step_name)
         try:
-            with session_scope(settings) as step_db:
-                result = _invoke_step(step_fn, step_db, settings)
+            from govcon.scheduler.limits import run_step_bounded
+
+            result = run_step_bounded(step_name, step_fn, settings)
         except Exception as exc:
             result = StepResult(step=step_name, status="failed", error=str(exc))
             logger.exception("chain=%s step=%s uncaught error", chain_name, step_name)

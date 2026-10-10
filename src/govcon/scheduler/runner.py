@@ -53,6 +53,9 @@ def start_blocking_scheduler(settings, *, embedded_worker: bool = True) -> None:
             logger.error("%s", PromptSetupError(missing))
     except Exception:
         logger.exception("prompt registry was not prepared")
+    from govcon.ops.reaper import reap_in_new_session
+
+    reap_in_new_session(settings, actor="scheduler startup")
     engine = make_engine(settings)
     try:
         with engine.connect() as connection:
@@ -169,7 +172,15 @@ def _start_scheduler(settings, *, leader_connection) -> None:
     stopped = Event()
 
     def heartbeat():
+        import time
+
+        from govcon.ops.reaper import reap_in_new_session
+
+        next_reap = time.monotonic() + settings.stale_run_reap_interval_seconds
         while not stopped.wait(15):
+            if time.monotonic() >= next_reap:
+                reap_in_new_session(settings, actor="scheduler")
+                next_reap = time.monotonic() + settings.stale_run_reap_interval_seconds
             try:
                 leader_connection.execute(text("SELECT 1"))
                 leader_connection.commit()

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
@@ -29,14 +30,16 @@ from govcon.db import make_engine, session_scope
 from govcon.models import SchedulerJobRun, Task
 from govcon.scheduler import chains
 from govcon.scheduler.jobs import StepResult
+from govcon.scheduler.limits import (
+    PUBLISH_GRACE_SECONDS,
+    run_step_bounded,
+    step_timeout,
+)
 from govcon.tasks import queue
 
 logger = logging.getLogger(__name__)
 
 CHAIN_TASK = "scheduler_chain"
-# Ingest steps can legitimately run for a long time; the lease is renewed
-# throughout, and only a step stuck past this stops renewing.
-CHAIN_STEP_TIMEOUT_SECONDS = 4 * 3600
 
 
 def queue_chain(session: Session, chain_name: str, *, trigger: str, slot: str,
@@ -52,6 +55,18 @@ def queue_chain(session: Session, chain_name: str, *, trigger: str, slot: str,
         payload={"chain_name": chain_name, "trigger": trigger},
         actor_user_id=actor_user_id,
     )
+
+
+def chain_task_failed(session: Session, task: Task) -> None:
+    """A chain task that failed outside a step must not leave its run row "running"."""
+    if task.scheduler_job_run_id is None:
+        return
+    run = session.get(SchedulerJobRun, task.scheduler_job_run_id)
+    if run is not None and run.status == "running":
+        run.status = "failed"
+        run.finished_at = datetime.now(UTC)
+        run.failed_step = run.failed_step or task.current_step
+        run.error = task.last_error or "the chain task failed before finishing"
 
 
 def _jsonable(result: StepResult) -> dict[str, Any]:
@@ -136,6 +151,18 @@ def run_chain_task(settings: Settings, claim: queue.Claim, heartbeat) -> str:
             acquired = lock_connection.scalar(text("SELECT pg_try_advisory_lock(742901, :key)"), {"key": lock_key})
             lock_connection.commit()
             if not acquired:
+                from govcon.ops.reaper import reap_in_new_session
+
+                # A holder past the chain maximum is stopped here, so this run can start.
+                if reap_in_new_session(settings, actor=f"chain task {claim.task_id}"):
+                    for _ in range(10):
+                        acquired = lock_connection.scalar(
+                            text("SELECT pg_try_advisory_lock(742901, :key)"), {"key": lock_key})
+                        lock_connection.commit()
+                        if acquired:
+                            break
+                        time.sleep(0.5)
+            if not acquired:
                 with session_scope(settings) as db:
                     queue.cancel(db, queue.guard_publish(db, claim),
                                  reason="another run of this chain group is in progress")
@@ -165,17 +192,23 @@ def _run_steps(settings, claim, heartbeat, chain_def, run_id, completed, lock_co
         if step_fn is None:
             failed_step, chain_error = step_name, f"No implementation for step '{step_name}'"
             break
-        heartbeat.set_deadline(CHAIN_STEP_TIMEOUT_SECONDS)
+        limit = step_timeout(step_name, settings)
+        heartbeat.set_deadline(limit + PUBLISH_GRACE_SECONDS + 60)
         with session_scope(settings) as db:
             queue.guard_publish(db, claim).current_step = step_name
-        logger.info("chain=%s step=%s starting", chain_def.name, step_name)
+        logger.info("chain=%s step=%s starting (limit %ss)", chain_def.name, step_name, limit)
         soft = step_name in chain_def.soft_steps
+
+        def publish(step_db: Session, result: StepResult, *, _soft: bool = soft, _step: str = step_name) -> None:
+            if heartbeat.lost:
+                raise queue.LeaseLost(f"task {claim.task_id}: lease lost during {_step}")
+            _record_step(step_db, claim, result, done=_soft or not result.failed)
+
         try:
-            with session_scope(settings) as step_db:
-                result = chains._invoke_step(step_fn, step_db, settings)
-                if heartbeat.lost:
-                    raise queue.LeaseLost(f"task {claim.task_id}: lease lost during {step_name}")
-                _record_step(step_db, claim, result, done=soft or not result.failed)
+            result = run_step_bounded(step_name, step_fn, settings, timeout=limit, publish=publish)
+            if result.extra.get("timed_out"):
+                with session_scope(settings) as db:
+                    _record_step(db, claim, result, done=soft)
         except queue.LeaseLost:
             raise
         except Exception as exc:

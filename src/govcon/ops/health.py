@@ -72,21 +72,30 @@ def collect_health(session: Session, settings: Settings | None = None) -> dict[s
     return {"status": "ok", "checks": checks}
 
 
-def chain_board(session: Session) -> list[dict[str, Any]]:
+def chain_board(session: Session, settings: Settings | None = None) -> list[dict[str, Any]]:
     """One row per chain: last success, last failure, next run, duration, counts."""
+    from govcon.scheduler.limits import chain_max_seconds
     from govcon.scheduler.schedule import effective_jobs
     from govcon.workflow.app_settings import OPERATOR_SCHEDULE, get_setting
 
+    settings = settings or get_settings()
     saved = get_setting(session, OPERATOR_SCHEDULE)
     jobs = effective_jobs(saved.get("jobs") if isinstance(saved, dict) else None)
     upcoming = _next_runs(session)
+    now = datetime.now(UTC)
     rows: list[dict[str, Any]] = []
     for name, chain_def in CHAIN_DEFINITIONS.items():
         last = _latest(session, name, statuses=None)
         last_ok = _latest(session, name, statuses=("succeeded", "completed_with_errors"))
         last_bad = _latest(session, name, statuses=("failed",))
         duration = _duration(last)
+        limit = chain_max_seconds(name, settings)
+        running_for = (now - _aware(last.started_at)).total_seconds() if last is not None and last.status == "running" else None
+        stuck = running_for is not None and running_for > limit
         rows.append({
+            "running_for_text": age_text(running_for) if running_for is not None else None,
+            "max_text": age_text(limit),
+            "stuck": stuck,
             "name": name,
             "description": chain_def.description,
             "cron": describe(name, jobs) if name in jobs else chain_def.cron,
@@ -97,9 +106,23 @@ def chain_board(session: Session) -> list[dict[str, Any]]:
             "next_run_local": _format_local(upcoming.get(name)),
             "duration_text": duration,
             "counts_text": _counts(last),
-            "action": _action(name, last, last_bad),
+            "action": _action(name, last, last_bad, stuck=stuck),
         })
     return rows
+
+
+def age_text(seconds: float) -> str:
+    """Compact relative duration: ``45 s``, ``12 min``, ``3 h 05 min``, ``2 d 4 h``."""
+    seconds = max(0, int(seconds))
+    if seconds < 90:
+        return f"{seconds} s"
+    minutes = seconds // 60
+    if minutes < 120:
+        return f"{minutes} min"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours} h {minutes % 60:02d} min"
+    return f"{hours // 24} d {hours % 24} h"
 
 
 def _process_check(session: Session, role: str, label: str) -> dict[str, str]:
@@ -250,7 +273,11 @@ def _counts(run: SchedulerJobRun | None) -> str:
     return " ".join(f"{key}={value}" for key, value in totals.items())
 
 
-def _action(name: str, last: SchedulerJobRun | None, last_bad: SchedulerJobRun | None) -> str:
+def _action(name: str, last: SchedulerJobRun | None, last_bad: SchedulerJobRun | None, *,
+            stuck: bool = False) -> str:
+    if last is not None and last.status == "running" and stuck:
+        return ("STUCK: this run is past its maximum duration. The stale-run check marks it failed and "
+                "frees the chain lock; Run now does that immediately, then queues a fresh run.")
     if last is not None and last.status == "running":
         return "A run is in progress. Wait, or check the worker log if this stays running."
     if last_bad is not None and (last is None or last.id == last_bad.id or (

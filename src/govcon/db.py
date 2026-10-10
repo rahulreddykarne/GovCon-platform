@@ -75,7 +75,14 @@ if hasattr(os, "register_at_fork"):
 
 def make_engine(settings: Settings | None = None) -> Engine:
     settings = settings or get_settings()
-    return create_engine(settings.require_database_url(), pool_pre_ping=True)
+    url = settings.require_database_url()
+    connect_args: dict[str, int] = {}
+    if url.startswith("postgresql"):
+        # A half-open socket (laptop sleep, Wi-Fi change) otherwise hangs a
+        # query or a held advisory lock for the kernel's two-hour default.
+        connect_args = {"connect_timeout": 10, "keepalives": 1, "keepalives_idle": 30,
+                        "keepalives_interval": 10, "keepalives_count": 3}
+    return create_engine(url, pool_pre_ping=True, connect_args=connect_args)
 
 
 def make_session_factory(engine: Engine | None = None) -> sessionmaker[Session]:
