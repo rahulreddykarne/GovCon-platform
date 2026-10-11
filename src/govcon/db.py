@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from threading import RLock
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from govcon.config import Settings, get_settings, settings_context
@@ -75,7 +75,12 @@ if hasattr(os, "register_at_fork"):
 
 def make_engine(settings: Settings | None = None) -> Engine:
     settings = settings or get_settings()
-    return create_engine(settings.require_database_url(), pool_pre_ping=True)
+    url = make_url(settings.require_database_url())
+    # Fail promptly on an unavailable local database; honor explicit URL timeouts.
+    connect_args = {"connect_timeout": 5} if (
+        url.get_backend_name() == "postgresql" and "connect_timeout" not in url.query
+    ) else {}
+    return create_engine(url, pool_pre_ping=True, connect_args=connect_args)
 
 
 def make_session_factory(engine: Engine | None = None) -> sessionmaker[Session]:

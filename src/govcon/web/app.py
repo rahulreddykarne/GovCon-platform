@@ -56,6 +56,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="GovCon", docs_url=None, redoc_url=None, openapi_url=None,
                   dependencies=[Depends(protect_mutation)], lifespan=lifespan)
+    from sqlalchemy.exc import OperationalError
+
+    @app.exception_handler(OperationalError)
+    async def database_unavailable(request, exc):
+        # Render independently of the workspace context, which also needs the DB.
+        from govcon.web.routes.common import _templates
+
+        return _templates.TemplateResponse(
+            request, "database_unavailable.html", {}, status_code=503,
+            headers={"Cache-Control": "no-store", "Retry-After": "10"},
+        )
+
     from govcon.web.request_activity import RequestActivity
 
     app.state.request_activity = RequestActivity()
