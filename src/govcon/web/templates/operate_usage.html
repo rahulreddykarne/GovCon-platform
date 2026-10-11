@@ -1,6 +1,7 @@
-<header class="mission-head">
+{% include '_console_toolbar.html' %}
+<header class="usage-intro">
   <p class="mission-kicker">Provider usage</p>
-  <h1>AI usage and cost</h1>
+  <h2>AI usage and cost</h2>
   <p class="mission-lead">Token counts are copied from provider usage fields. If a response omits them, the row says usage not reported. Cost uses the price table below. A model with no price says price not set. Times are America/Los_Angeles (PT).</p>
   <p class="text-sm text-muted">
     {% if usage.include_local %}
@@ -21,6 +22,12 @@
   {% endif %}
 </header>
 
+<div class="console-metrics">
+<div class="console-metric"><span class="metric-label">Attempts today (UTC)</span><strong>{{ usage.today_calls }}</strong><span class="metric-note">{{ usage.today_cost or 'No calls recorded' }}</span></div>
+<div class="console-metric"><span class="metric-label">Last 30 days</span><strong>{{ usage.month_calls }}</strong><span class="metric-note">{{ usage.month_cost or 'No calls recorded' }}</span></div>
+<div class="console-metric"><span class="metric-label">Failed attempts · all time</span><strong>{{ usage.status_counts.get('failed', 0) }}</strong><span class="metric-note">Use the status filter to inspect</span></div>
+<div class="console-metric"><span class="metric-label">Policy blocked · all time</span><strong>{{ usage.status_counts.get('blocked', 0) }}</strong><span class="metric-note">No data sent · no API cost</span></div>
+</div>
 {% if usage.empty %}
 <p class="empty-state">No usage recorded yet.</p>
 {% else %}
@@ -164,3 +171,5 @@
   <p class="text-sm text-muted">Saving a price does not call a provider and does not change who may receive data.</p>
   {% endif %}
 </section>
+
+<script src="/static/control-center.js" defer></script>

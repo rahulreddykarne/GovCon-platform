@@ -14,6 +14,7 @@ from govcon.config import get_settings
 from govcon.db import session_scope
 from govcon.models import AIModelPrice
 from govcon.operating.board import agent_board, architecture_board, overview
+from govcon.operating.console import control_center
 from govcon.operating.guide import guided_walk
 from govcon.operating.integrations import integration_cards
 from govcon.web.routes.common import (
@@ -24,7 +25,7 @@ from govcon.web.routes.common import (
     _require_login,
 )
 
-_VIEWS = ("overview", "agents", "architecture", "integrations", "usage", "how")
+_VIEWS = ("overview", "activity", "schedules", "documents", "agents", "architecture", "integrations", "usage", "how")
 
 
 def _usage(db, request: Request):
@@ -55,8 +56,17 @@ def operate(request: Request, view: str = "overview") -> Response:
     selected = request.query_params.get("node")
     requested = request.query_params.get("opp")
     opp_id = int(requested) if requested and requested.isdigit() else None
+    raw_page = request.query_params.get("page", "1")
+    page = min(int(raw_page), 1_000_000) if raw_page.isdigit() else 1
+    raw_file = request.query_params.get("file", "")
+    file_id = int(raw_file) if raw_file.isdigit() and len(raw_file) < 19 else None
     with session_scope() as db:
+        monitor = getattr(request.app.state, "request_activity", None)
         ctx = {
+            "web_activity": monitor.snapshot() if monitor is not None else None,
+            "console": control_center(db, settings, view=view, page=page, file_id=file_id,
+                                      chain=request.query_params.get("chain"))
+                       if view in {"overview", "activity", "schedules", "documents", "integrations"} else None,
             "view": view,
             "active_page": "operate",
             "overview": overview(db, settings) if view == "overview" else None,

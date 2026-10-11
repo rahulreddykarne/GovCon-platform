@@ -1,4 +1,8 @@
-/* GovCon Web UI — single stylesheet */
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operate — GovCon</title>
+<style>/* GovCon Web UI — single stylesheet */
 
 :root {
   --color-bg: #f3f6fa;
@@ -1012,3 +1016,743 @@ a.cell-sub { color:var(--color-primary); }
 .request-history { margin-top:20px; }
 .request-history > summary { margin-bottom:10px; }
 @media(max-width:760px) { .workspace-context { grid-template-columns:1fr; } .workspace-context > div { border-right:0; border-bottom:1px solid #e3e7ef; padding:12px 16px; } }
+
+[data-preview-view][hidden]{display:none!important;} a[aria-disabled="true"]{opacity:.6;cursor:default;}
+</style>
+</head><body class="app-shell">
+<a class="skip-link" href="#main-content">Skip to content</a>
+<aside class="app-sidebar">
+<a class="brand" href="#overview"><span class="brandmark" aria-hidden="true">G</span><span>GovCon<span class="brand-caption">CONTRACT INTELLIGENCE</span></span></a>
+<nav class="app-tabs" aria-label="Main"><div class="nav-group"><p class="nav-label">Workspace</p><a href="#overview" class="active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg><span>Control center</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3z M3 13h5l2 3h4l2-3h5"/></svg><span>Inbox</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h5v16H3z M10 4h5v16h-5z M17 4h4v16h-4z"/></svg><span>Pipeline</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 21l-6-6 M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0"/></svg><span>Search</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg><span>Watchlists</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10"/></svg><span>Suppliers</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3 M13 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M17 3a4 4 0 0 1 0 8 M22 21v-3a4 4 0 0 0-3-4"/></svg><span>Vendors</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18 M7 16v-5 M12 16V6 M17 16V9"/></svg><span>Insights</span></a></div>
+<div class="nav-group"><p class="nav-label">System visibility</p><a href="#activity" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg><span>Live activity</span></a>
+<a href="#schedules" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0 M12 7v5l3 2"/></svg><span>Schedules &amp; history</span></a>
+<a href="#documents" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H4v20h16V8z M14 2v6h6 M8 12h8 M8 16h8"/></svg><span>Document reading</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h6v6H3z M15 15h6v6h-6z M6 9v9h9 M15 3h6v6h-6z M9 6h6"/></svg><span>Workflow map</span></a>
+<a href="#integrations" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v5 M16 2v5 M5 7h14v3a7 7 0 0 1-14 0z M12 17v5"/></svg><span>APIs &amp; models</span></a>
+<a href="#usage" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18 M7 16v-5 M12 16V6 M17 16V9"/></svg><span>API costs</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg><span>Agents</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h6v6H3z M15 15h6v6h-6z M6 9v9h9 M15 3h6v6h-6z M9 6h6"/></svg><span>Bots</span></a></div>
+<div class="nav-group"><p class="nav-label">Ops / Admin / Settings</p><a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg><span>Ops</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5 5l3 3 M16 16l3 3 M5 19l3-3 M16 8l3-3 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg><span>Settings</span></a>
+<a href="#overview" aria-disabled="true" ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3 M13 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M17 3a4 4 0 0 1 0 8 M22 21v-3a4 4 0 0 0-3-4"/></svg><span>Admin</span></a></div>
+
+</nav>
+<div class="sidebar-foot"><span class="sidebar-dot"></span> Human approval stays in control</div>
+</aside>
+<div class="shell-head"><header class="top-bar">
+<div class="header-context"><span class="text-muted">Workspace</span><span aria-hidden="true"> / </span><strong>Control center</strong></div>
+
+<span class="spacer"></span>
+  <div class="user-badge">
+
+
+
+      <span class="avatar" aria-hidden="true">PR</span>
+      <span class="user-name">Preview reviewer</span>
+      <span class="role-badge">read_only</span>
+
+      <a href="#overview" aria-disabled="true" class="notification-bell" aria-label="Notifications: 0 unread"><span aria-hidden="true">&#128276;</span></a>
+
+
+  </div>
+</header>
+
+</div>
+<main id="main-content" class="main-content"><section data-preview-view="overview" ><div class="alert alert-info">DESIGN PREVIEW · Synthetic records for layout verification. No live APIs or database.</div>
+
+
+
+<div class="mission">
+  <header class="mission-head">
+    <div>
+      <p class="mission-kicker">Mission control</p>
+      <h1>Control center</h1>
+      <p class="mission-lead">Understand what is running, what was read, and what needs your attention.</p>
+    </div>
+  </header>
+
+  <nav class="mission-tabs" aria-label="Operating views">
+    <a href="#overview" class="active" aria-current="page">Overview</a>
+    <a href="#activity" >Activity</a>
+    <a href="#schedules" >Schedules</a>
+    <a href="#documents" >Documents</a>
+    <a href="#overview" aria-disabled="true" >Agents</a>
+    <a href="#overview" aria-disabled="true" >Architecture</a>
+    <a href="#integrations" >Integrations &amp; models</a>
+    <a href="#usage" >AI usage &amp; cost</a>
+    <a href="#overview" aria-disabled="true" >How GovCon works</a>
+  </nav>
+
+
+
+
+
+
+
+
+<div class="console-toolbar"><span class="snapshot-label"><span class="state-dot" aria-hidden="true"></span> Stored telemetry · updated <time datetime="2026-10-11T00:50:53.677778+00:00">2026-10-10 17:50:53 PT</time></span><span class="text-sm text-muted">Read-only design preview · synthetic records</span></div>
+
+
+<div class="console-metrics">
+<a class="console-metric" href="#activity"><span class="metric-label">Running now</span><strong>2</strong><span class="metric-note">background tasks <span>↗</span></span></a>
+<a class="console-metric" href="#activity"><span class="metric-label">Queued / retrying</span><strong>1</strong><span class="metric-note">waiting for a worker <span>↗</span></span></a>
+<a class="console-metric attention-metric" href="#overview" aria-disabled="true"><span class="metric-label">Needs attention</span><strong>2</strong><span class="metric-note">failed or waiting tasks <span>↗</span></span></a>
+<a class="console-metric" href="#usage"><span class="metric-label">Known API cost · last 30 days</span><strong class="cost-value">$0.1112</strong><span class="metric-note">4 attempts · 1 unpriced / unreported <span>↗</span></span></a>
+</div>
+<section class="console-panel"><header class="section-head"><div><p class="eyebrow">From discovery to submission</p><h2>Your GovCon workflow</h2></div><a href="#overview" aria-disabled="true">Explore the flow →</a></header>
+<div class="workflow-ribbon"><a href="#overview" aria-disabled="true"><span class="flow-number">01</span><strong>Discover</strong><small>SAM.gov · DIBBS</small></a><a href="#documents"><span class="flow-number">02</span><strong>Read documents</strong><small>Text · OCR · citations</small></a><a href="#integrations"><span class="flow-number">03</span><strong>Analyze &amp; qualify</strong><small>Models · compliance</small></a><a href="#overview" aria-disabled="true"><span class="flow-number">04</span><strong>Decide</strong><small>Human approval</small></a><a href="#overview" aria-disabled="true"><span class="flow-number">05</span><strong>Prepare bid</strong><small>Pricing · proposal</small></a><a href="#overview" aria-disabled="true"><span class="flow-number">06</span><strong>Submit &amp; learn</strong><small>Manual submission · outcomes</small></a></div><p class="panel-footnote">This is the lifecycle map. Open a notice to see which stages actually ran.</p></section>
+<div class="console-two-col">
+<section class="console-panel"><header class="section-head"><div><p class="eyebrow">Processes & source freshness</p><h2>System health</h2></div><a href="#overview" aria-disabled="true">Inspect →</a></header><div class="health-grid"><div class="health-tile"><div><strong>Database</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+</div><p>Preview: reachable · 4 ms</p></div><div class="health-tile"><div><strong>Web</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+</div><p>Preview heartbeat · 2s ago</p></div><div class="health-tile"><div><strong>Worker</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+</div><p>Preview heartbeat · 8s ago</p></div><div class="health-tile"><div><strong>Scheduler</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+</div><p>Preview heartbeat · 12s ago</p></div><div class="health-tile"><div><strong>Sam</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+</div><p>Preview: last pull completed</p></div><div class="health-tile"><div><strong>Dibbs</strong>
+<span class="state-badge state-stale"><span class="state-dot" aria-hidden="true"></span>stale</span>
+</div><p>Preview: source refresh overdue</p></div><div class="health-tile"><div><strong>Usaspending</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+</div><p>Preview: awards updated</p></div><div class="health-tile"><div><strong>Embeddings</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+</div><p>Preview: model cached</p></div></div></section>
+<section class="console-panel"><header class="section-head"><div><p class="eyebrow">Human decisions</p><h2>Waiting for you <span class="count-chip">1</span></h2></div><a href="#overview" aria-disabled="true">Approvals →</a></header><div class="attention-item"><strong>Preview — valve kit recommendation</strong><p>Synthetic preview: review eligibility and delivery terms.</p><a href="#overview" aria-disabled="true">Review opportunity →</a></div><div class="panel-divider"><h3>Company readiness</h3><p class="text-muted">Missing: Target agencies.</p><a href="#overview" aria-disabled="true">Complete company strategy →</a></div></section>
+</div>
+<section class="console-panel"><header class="section-head"><div><p class="eyebrow">Worker execution</p><h2>What the system is working on</h2></div><a href="#activity">All activity →</a></header>
+<div class="table-wrap"><table class="console-table"><thead><tr><th>Work / opportunity</th><th>Status</th><th>Current step</th><th>Time & attempts</th><th>Details / next action</th></tr></thead><tbody>
+<tr><td><strong>#5 · Scheduler Chain</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #5 →</a></td>
+<td>
+<span class="state-badge state-queued"><span class="state-dot" aria-hidden="true"></span>queued</span>
+</td><td>No step recorded</td>
+<td>5m 0s<span class="cell-sub">Started 2026-10-10 17:45 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<span class="cell-sub">Eligible from 2026-10-10 17:50 PT</span></td></tr><tr><td><strong>#4 · Solicitation Summary</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #4 →</a></td>
+<td>
+<span class="state-badge state-failed"><span class="state-dot" aria-hidden="true"></span>failed</span>
+</td><td>summary</td>
+<td>4m 0s<span class="cell-sub">Started 2026-10-10 17:46 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td><details><summary>Failure details</summary><p class="error-copy">Synthetic preview: provider did not return valid output</p></details>
+<a href="#overview" aria-disabled="true">Inspect and retry in Ops →</a></td></tr><tr><td><strong>#3 · Opportunity Review</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #3 →</a></td>
+<td>
+<span class="state-badge state-waiting-for-budget"><span class="state-dot" aria-hidden="true"></span>waiting for budget</span>
+</td><td>compliance</td>
+<td>3m 0s<span class="cell-sub">Started 2026-10-10 17:47 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<p>Review the opportunity budget before retrying</p><span class="cell-sub">Owner: owner</span></td></tr><tr><td><strong>#2 · Proposal Generation</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #2 →</a></td>
+<td>
+<span class="state-badge state-running"><span class="state-dot" aria-hidden="true"></span>running</span>
+</td><td>proposal</td>
+<td>2m 0s<span class="cell-sub">Started 2026-10-10 17:48 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<span class="cell-sub">Worker is processing this step. Provider calls are recorded after an attempt finishes.</span></td></tr><tr><td><strong>#1 · Opportunity Preparation</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #1 →</a></td>
+<td>
+<span class="state-badge state-running"><span class="state-dot" aria-hidden="true"></span>running</span>
+</td><td>documents</td>
+<td>1m 0s<span class="cell-sub">Started 2026-10-10 17:49 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<span class="cell-sub">Worker is processing this step. Provider calls are recorded after an attempt finishes.</span></td></tr>
+</tbody></table></div>
+<p class="panel-footnote">The web/API server serves this UI and queues work. Document reading and model calls run in the worker. Inspect current HTTP requests and response times in Live activity.</p></section>
+<section class="console-panel"><header class="section-head"><div><p class="eyebrow">America/Los_Angeles</p><h2>Upcoming schedules</h2></div><a href="#schedules">7 recorded runs · view history →</a></header><div class="schedule-preview"><a href="#schedules"><strong>Morning Ingest</strong><span>Daily · 6:30 AM PT</span><small>Next: 2026-10-10 18:50 PT</small><span class="count-chip">7 runs</span></a><a href="#schedules"><strong>Usaspending</strong><span>Daily · 7:00 AM PT</span><small>Next: 2026-10-10 19:50 PT</small><span class="count-chip">0 runs</span></a><a href="#schedules"><strong>Embeddings</strong><span>Daily · 8:00 AM PT</span><small>Next: 2026-10-10 20:50 PT</small><span class="count-chip">0 runs</span></a><a href="#schedules"><strong>Midday Check</strong><span>Daily · 12:00 PM PT</span><small>Next: 2026-10-10 21:50 PT</small><span class="count-chip">0 runs</span></a><a href="#schedules"><strong>Evening Ingest</strong><span>Daily · 5:00 PM PT</span><small>Next: 2026-10-10 22:50 PT</small><span class="count-chip">0 runs</span></a><a href="#schedules"><strong>Sunday Sweep</strong><span>Sunday · 9:00 AM PT</span><small>Next: 2026-10-10 23:50 PT</small><span class="count-chip">0 runs</span></a></div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div>
+
+</section>
+<section data-preview-view="activity" hidden><div class="alert alert-info">DESIGN PREVIEW · Synthetic records for layout verification. No live APIs or database.</div>
+
+
+
+<div class="mission">
+  <header class="mission-head">
+    <div>
+      <p class="mission-kicker">Mission control</p>
+      <h1>Live activity</h1>
+      <p class="mission-lead">Understand what is running, what was read, and what needs your attention.</p>
+    </div>
+  </header>
+
+  <nav class="mission-tabs" aria-label="Operating views">
+    <a href="#overview" >Overview</a>
+    <a href="#activity" class="active" aria-current="page">Activity</a>
+    <a href="#schedules" >Schedules</a>
+    <a href="#documents" >Documents</a>
+    <a href="#overview" aria-disabled="true" >Agents</a>
+    <a href="#overview" aria-disabled="true" >Architecture</a>
+    <a href="#integrations" >Integrations &amp; models</a>
+    <a href="#usage" >AI usage &amp; cost</a>
+    <a href="#overview" aria-disabled="true" >How GovCon works</a>
+  </nav>
+
+
+
+
+
+
+
+
+<div class="console-toolbar"><span class="snapshot-label"><span class="state-dot" aria-hidden="true"></span> Stored telemetry · updated <time datetime="2026-10-11T00:50:53.787616+00:00">2026-10-10 17:50:53 PT</time></span><span class="text-sm text-muted">Read-only design preview · synthetic records</span></div>
+
+
+
+
+<div class="console-two-col"><section class="console-panel"><h2>Web / API server</h2><p>Handles authenticated requests, renders pages, and queues work. Provider analysis executes in background workers.</p><div class="health-line"><strong>Web</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+<small>Preview heartbeat · 2s ago</small></div><div class="health-line"><strong>Worker</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+<small>Preview heartbeat · 8s ago</small></div><div class="health-line"><strong>Scheduler</strong>
+<span class="state-badge state-ok"><span class="state-dot" aria-hidden="true"></span>ok</span>
+<small>Preview heartbeat · 12s ago</small></div></section><section class="console-panel"><h2>Task queue</h2><div class="chip-row"><span class="chip">failed <strong>1</strong></span><span class="chip">queued <strong>1</strong></span><span class="chip">running <strong>2</strong></span><span class="chip">waiting for budget <strong>1</strong></span></div><p class="panel-footnote">The step is the latest worker checkpoint. A running task does not prove a provider is currently receiving a request.</p></section></div>
+
+<section class="console-panel"><header class="section-head"><div><p class="eyebrow">This web process · since 2026-10-10 17:50 PT</p><h2>API server request activity</h2></div><span class="count-chip">1 active · 128 completed · 1 server errors</span></header>
+<p class="panel-footnote">These are real HTTP requests in this process, including this page's request. Static assets are excluded. Counters reset on restart; other web processes have separate counters. Duration measures time to response headers.</p>
+<h3>Handling now</h3><div class="table-wrap"><table><thead><tr><th>Method</th><th>Route template</th><th>Started (PT)</th><th>Elapsed</th></tr></thead><tbody><tr><td>GET</td><td><code>/operate/{view}</code></td><td>2026-10-10 17:50 PT</td><td>12 ms</td></tr></tbody></table></div>
+<details class="request-history"><summary>Recent HTTP responses · average 42 ms</summary><div class="table-wrap"><table><thead><tr><th>Method / route</th><th>Response</th><th>Started (PT)</th><th>Duration</th></tr></thead><tbody><tr><td><code>GET /workspace/{opp_id}</code></td><td>200</td><td>2026-10-10 17:50 PT</td><td>44 ms</td></tr></tbody></table></div></details>
+</section>
+<section class="console-panel"><header class="section-head"><h2>Task execution history</h2><a href="#overview" aria-disabled="true">Failure recovery →</a></header>
+<div class="table-wrap"><table class="console-table"><thead><tr><th>Work / opportunity</th><th>Status</th><th>Current step</th><th>Time & attempts</th><th>Details / next action</th></tr></thead><tbody>
+<tr><td><strong>#5 · Scheduler Chain</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #5 →</a></td>
+<td>
+<span class="state-badge state-queued"><span class="state-dot" aria-hidden="true"></span>queued</span>
+</td><td>No step recorded</td>
+<td>5m 0s<span class="cell-sub">Started 2026-10-10 17:45 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<span class="cell-sub">Eligible from 2026-10-10 17:50 PT</span></td></tr><tr><td><strong>#4 · Solicitation Summary</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #4 →</a></td>
+<td>
+<span class="state-badge state-failed"><span class="state-dot" aria-hidden="true"></span>failed</span>
+</td><td>summary</td>
+<td>4m 0s<span class="cell-sub">Started 2026-10-10 17:46 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td><details><summary>Failure details</summary><p class="error-copy">Synthetic preview: provider did not return valid output</p></details>
+<a href="#overview" aria-disabled="true">Inspect and retry in Ops →</a></td></tr><tr><td><strong>#3 · Opportunity Review</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #3 →</a></td>
+<td>
+<span class="state-badge state-waiting-for-budget"><span class="state-dot" aria-hidden="true"></span>waiting for budget</span>
+</td><td>compliance</td>
+<td>3m 0s<span class="cell-sub">Started 2026-10-10 17:47 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<p>Review the opportunity budget before retrying</p><span class="cell-sub">Owner: owner</span></td></tr><tr><td><strong>#2 · Proposal Generation</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #2 →</a></td>
+<td>
+<span class="state-badge state-running"><span class="state-dot" aria-hidden="true"></span>running</span>
+</td><td>proposal</td>
+<td>2m 0s<span class="cell-sub">Started 2026-10-10 17:48 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<span class="cell-sub">Worker is processing this step. Provider calls are recorded after an attempt finishes.</span></td></tr><tr><td><strong>#1 · Opportunity Preparation</strong><a class="cell-sub" href="#overview" aria-disabled="true">Opportunity #1 →</a></td>
+<td>
+<span class="state-badge state-running"><span class="state-dot" aria-hidden="true"></span>running</span>
+</td><td>documents</td>
+<td>1m 0s<span class="cell-sub">Started 2026-10-10 17:49 PT</span><span class="cell-sub">Attempt 1 / 5</span></td>
+<td>
+<span class="cell-sub">Worker is processing this step. Provider calls are recorded after an attempt finishes.</span></td></tr>
+</tbody></table></div>
+
+
+</section>
+<section class="console-panel"><header class="section-head"><h2>Recent agent handoffs</h2><a href="#overview" aria-disabled="true">Agent details →</a></header><div class="activity-timeline"><p class="console-empty compact">No agent run recorded yet.</p></div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div>
+
+</section>
+<section data-preview-view="schedules" hidden><div class="alert alert-info">DESIGN PREVIEW · Synthetic records for layout verification. No live APIs or database.</div>
+
+
+
+<div class="mission">
+  <header class="mission-head">
+    <div>
+      <p class="mission-kicker">Mission control</p>
+      <h1>Schedules &amp; run history</h1>
+      <p class="mission-lead">Understand what is running, what was read, and what needs your attention.</p>
+    </div>
+  </header>
+
+  <nav class="mission-tabs" aria-label="Operating views">
+    <a href="#overview" >Overview</a>
+    <a href="#activity" >Activity</a>
+    <a href="#schedules" class="active" aria-current="page">Schedules</a>
+    <a href="#documents" >Documents</a>
+    <a href="#overview" aria-disabled="true" >Agents</a>
+    <a href="#overview" aria-disabled="true" >Architecture</a>
+    <a href="#integrations" >Integrations &amp; models</a>
+    <a href="#usage" >AI usage &amp; cost</a>
+    <a href="#overview" aria-disabled="true" >How GovCon works</a>
+  </nav>
+
+
+
+
+
+
+
+
+<div class="console-toolbar"><span class="snapshot-label"><span class="state-dot" aria-hidden="true"></span> Stored telemetry · updated <time datetime="2026-10-11T00:50:53.797805+00:00">2026-10-10 17:50:53 PT</time></span><span class="text-sm text-muted">Read-only design preview · synthetic records</span></div>
+
+
+
+
+
+
+<div class="section-callout"><strong>7 executions recorded</strong><span>Includes manual and scheduled runs. Next-run times come from the scheduler's persisted jobs; they can be stale if the scheduler is down.</span><a href="#overview" aria-disabled="true">Edit schedule →</a></div>
+<div class="schedule-grid"><section class="console-panel schedule-card"><header><span class="flow-number">01</span><span class="count-chip">7 recorded runs</span></header><h2>Morning Ingest</h2><p>Find notices and prepare the daily opportunity feed.</p><dl class="schedule-facts"><div><dt>Configured schedule</dt><dd>Daily · 6:30 AM PT</dd></div><div><dt>Next persisted run</dt><dd>2026-10-10 18:50 PT</dd></div><div><dt>Last successful run</dt><dd>2026-10-10 15:50 PT</dd></div><div><dt>Latest run duration</dt><dd>1m 20s</dd></div></dl><details><summary>Steps & last failure</summary><ol class="execution-steps"><li>sam ingest</li><li>source documents</li><li>match</li></ol><p>No failure recorded.</p><p>No action.</p></details><a class="schedule-history-link" href="?chain=morning_ingest#run-history">View this schedule's history →</a></section><section class="console-panel schedule-card"><header><span class="flow-number">02</span><span class="count-chip">0 recorded runs</span></header><h2>Usaspending</h2><p>Refresh historical award context.</p><dl class="schedule-facts"><div><dt>Configured schedule</dt><dd>Daily · 7:00 AM PT</dd></div><div><dt>Next persisted run</dt><dd>2026-10-10 19:50 PT</dd></div><div><dt>Last successful run</dt><dd>2026-10-10 15:50 PT</dd></div><div><dt>Latest run duration</dt><dd>1m 20s</dd></div></dl><details><summary>Steps & last failure</summary><ol class="execution-steps"><li>sam ingest</li><li>source documents</li><li>match</li></ol><p>No failure recorded.</p><p>No action.</p></details><a class="schedule-history-link" href="?chain=usaspending#run-history">View this schedule's history →</a></section><section class="console-panel schedule-card"><header><span class="flow-number">03</span><span class="count-chip">0 recorded runs</span></header><h2>Embeddings</h2><p>Update semantic matching.</p><dl class="schedule-facts"><div><dt>Configured schedule</dt><dd>Daily · 8:00 AM PT</dd></div><div><dt>Next persisted run</dt><dd>2026-10-10 20:50 PT</dd></div><div><dt>Last successful run</dt><dd>2026-10-10 15:50 PT</dd></div><div><dt>Latest run duration</dt><dd>1m 20s</dd></div></dl><details><summary>Steps & last failure</summary><ol class="execution-steps"><li>sam ingest</li><li>source documents</li><li>match</li></ol><p>No failure recorded.</p><p>No action.</p></details><a class="schedule-history-link" href="?chain=embeddings#run-history">View this schedule's history →</a></section><section class="console-panel schedule-card"><header><span class="flow-number">04</span><span class="count-chip">0 recorded runs</span></header><h2>Midday Check</h2><p>Check deadlines and amendments.</p><dl class="schedule-facts"><div><dt>Configured schedule</dt><dd>Daily · 12:00 PM PT</dd></div><div><dt>Next persisted run</dt><dd>2026-10-10 21:50 PT</dd></div><div><dt>Last successful run</dt><dd>2026-10-10 15:50 PT</dd></div><div><dt>Latest run duration</dt><dd>1m 20s</dd></div></dl><details><summary>Steps & last failure</summary><ol class="execution-steps"><li>sam ingest</li><li>source documents</li><li>match</li></ol><p>No failure recorded.</p><p>No action.</p></details><a class="schedule-history-link" href="?chain=midday_check#run-history">View this schedule's history →</a></section><section class="console-panel schedule-card"><header><span class="flow-number">05</span><span class="count-chip">0 recorded runs</span></header><h2>Evening Ingest</h2><p>Second discovery cycle.</p><dl class="schedule-facts"><div><dt>Configured schedule</dt><dd>Daily · 5:00 PM PT</dd></div><div><dt>Next persisted run</dt><dd>2026-10-10 22:50 PT</dd></div><div><dt>Last successful run</dt><dd>2026-10-10 15:50 PT</dd></div><div><dt>Latest run duration</dt><dd>1m 20s</dd></div></dl><details><summary>Steps & last failure</summary><ol class="execution-steps"><li>sam ingest</li><li>source documents</li><li>match</li></ol><p>No failure recorded.</p><p>No action.</p></details><a class="schedule-history-link" href="?chain=evening_ingest#run-history">View this schedule's history →</a></section><section class="console-panel schedule-card"><header><span class="flow-number">06</span><span class="count-chip">0 recorded runs</span></header><h2>Sunday Sweep</h2><p>Archive and refresh analytics.</p><dl class="schedule-facts"><div><dt>Configured schedule</dt><dd>Sunday · 9:00 AM PT</dd></div><div><dt>Next persisted run</dt><dd>2026-10-10 23:50 PT</dd></div><div><dt>Last successful run</dt><dd>2026-10-10 15:50 PT</dd></div><div><dt>Latest run duration</dt><dd>1m 20s</dd></div></dl><details><summary>Steps & last failure</summary><ol class="execution-steps"><li>sam ingest</li><li>source documents</li><li>match</li></ol><p>No failure recorded.</p><p>No action.</p></details><a class="schedule-history-link" href="?chain=sunday_sweep#run-history">View this schedule's history →</a></section></div>
+<section class="console-panel" id="run-history"><header class="section-head"><h2>Previous executions</h2></header>
+<div class="table-wrap"><table class="console-table"><thead><tr><th>Run</th><th>Status / trigger</th><th>Started (PT)</th><th>Duration</th><th>Execution trace</th></tr></thead><tbody>
+<tr><td><strong>Morning Ingest</strong><span class="cell-sub">Run #1</span></td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+<span class="cell-sub">scheduled</span></td><td>2026-10-09 17:50 PT<span class="cell-sub">Finished 2026-10-09 17:52 PT</span></td><td>1m 20s</td><td><details><summary>4 completed steps</summary><ol class="execution-steps"><li>sam ingest <span class="text-success">✓</span></li><li>dibbs ingest <span class="text-success">✓</span></li><li>source documents <span class="text-success">✓</span></li><li>match <span class="text-success">✓</span></li></ol></details></td></tr><tr><td><strong>Morning Ingest</strong><span class="cell-sub">Run #2</span></td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+<span class="cell-sub">scheduled</span></td><td>2026-10-08 17:50 PT<span class="cell-sub">Finished 2026-10-08 17:52 PT</span></td><td>1m 20s</td><td><details><summary>4 completed steps</summary><ol class="execution-steps"><li>sam ingest <span class="text-success">✓</span></li><li>dibbs ingest <span class="text-success">✓</span></li><li>source documents <span class="text-success">✓</span></li><li>match <span class="text-success">✓</span></li></ol></details></td></tr><tr><td><strong>Morning Ingest</strong><span class="cell-sub">Run #3</span></td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+<span class="cell-sub">scheduled</span></td><td>2026-10-07 17:50 PT<span class="cell-sub">Finished 2026-10-07 17:52 PT</span></td><td>1m 20s</td><td><details><summary>4 completed steps</summary><ol class="execution-steps"><li>sam ingest <span class="text-success">✓</span></li><li>dibbs ingest <span class="text-success">✓</span></li><li>source documents <span class="text-success">✓</span></li><li>match <span class="text-success">✓</span></li></ol></details></td></tr><tr><td><strong>Morning Ingest</strong><span class="cell-sub">Run #4</span></td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+<span class="cell-sub">scheduled</span></td><td>2026-10-06 17:50 PT<span class="cell-sub">Finished 2026-10-06 17:52 PT</span></td><td>1m 20s</td><td><details><summary>4 completed steps</summary><ol class="execution-steps"><li>sam ingest <span class="text-success">✓</span></li><li>dibbs ingest <span class="text-success">✓</span></li><li>source documents <span class="text-success">✓</span></li><li>match <span class="text-success">✓</span></li></ol></details></td></tr><tr><td><strong>Morning Ingest</strong><span class="cell-sub">Run #5</span></td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+<span class="cell-sub">scheduled</span></td><td>2026-10-05 17:50 PT<span class="cell-sub">Finished 2026-10-05 17:52 PT</span></td><td>1m 20s</td><td><details><summary>4 completed steps</summary><ol class="execution-steps"><li>sam ingest <span class="text-success">✓</span></li><li>dibbs ingest <span class="text-success">✓</span></li><li>source documents <span class="text-success">✓</span></li><li>match <span class="text-success">✓</span></li></ol></details></td></tr><tr><td><strong>Morning Ingest</strong><span class="cell-sub">Run #6</span></td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+<span class="cell-sub">scheduled</span></td><td>2026-10-04 17:50 PT<span class="cell-sub">Finished 2026-10-04 17:52 PT</span></td><td>1m 20s</td><td><details><summary>4 completed steps</summary><ol class="execution-steps"><li>sam ingest <span class="text-success">✓</span></li><li>dibbs ingest <span class="text-success">✓</span></li><li>source documents <span class="text-success">✓</span></li><li>match <span class="text-success">✓</span></li></ol></details></td></tr><tr><td><strong>Morning Ingest</strong><span class="cell-sub">Run #7</span></td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+<span class="cell-sub">scheduled</span></td><td>2026-10-03 17:50 PT<span class="cell-sub">Finished 2026-10-03 17:52 PT</span></td><td>1m 20s</td><td><details><summary>4 completed steps</summary><ol class="execution-steps"><li>sam ingest <span class="text-success">✓</span></li><li>dibbs ingest <span class="text-success">✓</span></li><li>source documents <span class="text-success">✓</span></li><li>match <span class="text-success">✓</span></li></ol></details></td></tr>
+</tbody></table></div>
+
+
+</section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div>
+
+</section>
+<section data-preview-view="documents" hidden><div class="alert alert-info">DESIGN PREVIEW · Synthetic records for layout verification. No live APIs or database.</div>
+
+
+
+<div class="mission">
+  <header class="mission-head">
+    <div>
+      <p class="mission-kicker">Mission control</p>
+      <h1>Document reading</h1>
+      <p class="mission-lead">Understand what is running, what was read, and what needs your attention.</p>
+    </div>
+  </header>
+
+  <nav class="mission-tabs" aria-label="Operating views">
+    <a href="#overview" >Overview</a>
+    <a href="#activity" >Activity</a>
+    <a href="#schedules" >Schedules</a>
+    <a href="#documents" class="active" aria-current="page">Documents</a>
+    <a href="#overview" aria-disabled="true" >Agents</a>
+    <a href="#overview" aria-disabled="true" >Architecture</a>
+    <a href="#integrations" >Integrations &amp; models</a>
+    <a href="#usage" >AI usage &amp; cost</a>
+    <a href="#overview" aria-disabled="true" >How GovCon works</a>
+  </nav>
+
+
+
+
+
+
+
+
+<div class="console-toolbar"><span class="snapshot-label"><span class="state-dot" aria-hidden="true"></span> Stored telemetry · updated <time datetime="2026-10-11T00:50:53.806604+00:00">2026-10-10 17:50:53 PT</time></span><span class="text-sm text-muted">Read-only design preview · synthetic records</span></div>
+
+
+
+
+
+
+
+
+<div class="section-callout"><strong>1 active files</strong><span>Inspect download, extraction, native text versus OCR, and unreadable pages. Superseded versions remain in history.</span><a href="#overview" aria-disabled="true">How reading connects to analysis →</a></div>
+<div class="document-layout"><section class="console-panel"><header class="section-head"><h2>Document history</h2></header><div class="document-list"><a class="document-item selected" href="#overview" aria-disabled="true"><span class="document-icon" aria-hidden="true">▤</span><div><strong>Preview — valve kit specification.pdf</strong><small>Opportunity #1 · Current · PUBLIC</small>
+<span class="state-badge state-partial"><span class="state-dot" aria-hidden="true"></span>partial</span>
+</div></a></div>
+
+</section>
+<section class="console-panel document-inspector"><header class="section-head"><div><p class="eyebrow">Reading trace · file #1</p><h2>Preview — valve kit specification.pdf</h2></div>
+<span class="state-badge state-partial"><span class="state-dot" aria-hidden="true"></span>partial</span>
+</header><a href="#overview" aria-disabled="true">Open opportunity & source evidence →</a><dl class="reading-facts"><div><dt>Downloaded</dt><dd>2026-10-10 17:50 PT</dd></div><div><dt>Type / classification</dt><dd>application/pdf · PUBLIC</dd></div><div><dt>Source origin</dt><dd>synthetic_preview</dd></div><div><dt>Version</dt><dd>Current</dd></div><div><dt>Page count</dt><dd>3</dd></div><div><dt>OCR pages</dt><dd>2</dd></div><div><dt>Unreadable pages</dt><dd>3</dd></div></dl><h3>How each page was read</h3><div class="table-wrap"><table><thead><tr><th>Page / part</th><th>Method</th><th>Characters</th><th>OCR confidence</th></tr></thead><tbody><tr><td>1</td><td>Native</td><td>1400</td><td>Not reported</td></tr><tr><td>2</td><td>Ocr</td><td>1400</td><td>88.0000000000%</td></tr><tr><td>3</td><td>None</td><td>0</td><td>Not reported</td></tr></tbody></table></div><details><summary>Document integrity</summary><code class="hash-value">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</code></details><p class="panel-footnote">Native = the file's text layer. OCR = text read from page images. None = no readable text. OCR confidence is extraction confidence, not a compliance decision.</p></section></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div>
+
+</section>
+<section data-preview-view="integrations" hidden><div class="alert alert-info">DESIGN PREVIEW · Synthetic records for layout verification. No live APIs or database.</div>
+
+
+
+<div class="mission">
+  <header class="mission-head">
+    <div>
+      <p class="mission-kicker">Mission control</p>
+      <h1>APIs &amp; models</h1>
+      <p class="mission-lead">Understand what is running, what was read, and what needs your attention.</p>
+    </div>
+  </header>
+
+  <nav class="mission-tabs" aria-label="Operating views">
+    <a href="#overview" >Overview</a>
+    <a href="#activity" >Activity</a>
+    <a href="#schedules" >Schedules</a>
+    <a href="#documents" >Documents</a>
+    <a href="#overview" aria-disabled="true" >Agents</a>
+    <a href="#overview" aria-disabled="true" >Architecture</a>
+    <a href="#integrations" class="active" aria-current="page">Integrations &amp; models</a>
+    <a href="#usage" >AI usage &amp; cost</a>
+    <a href="#overview" aria-disabled="true" >How GovCon works</a>
+  </nav>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <div class="console-toolbar"><span class="snapshot-label"><span class="state-dot" aria-hidden="true"></span> Stored telemetry · updated <time datetime="2026-10-11T00:50:53.817864+00:00">2026-10-10 17:50:53 PT</time></span><span class="text-sm text-muted">Read-only design preview · synthetic records</span></div>
+
+<section class="console-panel"><header class="section-head"><div><p class="eyebrow">Recorded attempts · all time</p><h2>What each API actually did</h2></div><a href="#usage">Tokens, latency & cost →</a></header>
+<p class="panel-footnote">A configured key is not proof of a working API. Counts below come from recorded attempts; blocked means policy stopped the call. Configuration and routing are shown below.</p>
+<div class="provider-grid"><article class="provider-stat"><div class="provider-title"><span class="provider-symbol">AN</span><h3>Anthropic</h3><span class="count-chip">1 attempts</span></div>
+<div class="provider-bar" aria-label="anthropic recorded statuses"><span class="bar-succeeded" style="width:100.0%" title="succeeded: 1"></span></div><div class="provider-legend"><span>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+ <strong>1</strong></span></div></article><article class="provider-stat"><div class="provider-title"><span class="provider-symbol">DE</span><h3>Deepseek</h3><span class="count-chip">2 attempts</span></div>
+<div class="provider-bar" aria-label="deepseek recorded statuses"><span class="bar-failed" style="width:50.0%" title="failed: 1"></span><span class="bar-succeeded" style="width:50.0%" title="succeeded: 1"></span></div><div class="provider-legend"><span>
+<span class="state-badge state-failed"><span class="state-dot" aria-hidden="true"></span>failed</span>
+ <strong>1</strong></span><span>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+ <strong>1</strong></span></div></article><article class="provider-stat"><div class="provider-title"><span class="provider-symbol">JE</span><h3>Jev</h3><span class="count-chip">1 attempts</span></div>
+<div class="provider-bar" aria-label="jev recorded statuses"><span class="bar-blocked" style="width:100.0%" title="blocked: 1"></span></div><div class="provider-legend"><span>
+<span class="state-badge state-blocked"><span class="state-dot" aria-hidden="true"></span>blocked</span>
+ <strong>1</strong></span></div></article><article class="provider-stat"><div class="provider-title"><span class="provider-symbol">OP</span><h3>Openai</h3><span class="count-chip">0 attempts</span></div>
+<p class="text-muted">No attempt recorded. Connection is unverified.</p></article></div>
+</section>
+<section class="console-panel"><header class="section-head"><h2>Latest API attempts</h2><a href="#usage">Complete call log →</a></header><div class="table-wrap"><table><thead><tr><th>Provider / model</th><th>Purpose</th><th>Status</th><th>Recorded (PT)</th><th>Latency</th><th>Evidence</th></tr></thead><tbody><tr><td><strong>Deepseek</strong><span class="cell-sub">Preview model</span></td><td>solicitation analysis</td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+</td><td>2026-10-10 17:49:53 PT</td><td>2,100 ms</td><td><a href="#overview" aria-disabled="true">Opportunity #1 →</a></td></tr><tr><td><strong>Jev</strong><span class="cell-sub">Preview model</span></td><td>solicitation analysis</td><td>
+<span class="state-badge state-blocked"><span class="state-dot" aria-hidden="true"></span>blocked</span>
+</td><td>2026-10-10 17:48:53 PT</td><td>2,100 ms</td><td><a href="#overview" aria-disabled="true">Opportunity #2 →</a></td></tr><tr><td><strong>Anthropic</strong><span class="cell-sub">Preview model</span></td><td>solicitation analysis</td><td>
+<span class="state-badge state-succeeded"><span class="state-dot" aria-hidden="true"></span>succeeded</span>
+</td><td>2026-10-10 17:47:53 PT</td><td>2,100 ms</td><td><a href="#overview" aria-disabled="true">Opportunity #3 →</a></td></tr><tr><td><strong>Deepseek</strong><span class="cell-sub">Preview model</span></td><td>solicitation analysis</td><td>
+<span class="state-badge state-failed"><span class="state-dot" aria-hidden="true"></span>failed</span>
+</td><td>2026-10-10 17:46:53 PT</td><td>2,100 ms</td><td><a href="#overview" aria-disabled="true">Opportunity #4 →</a></td></tr></tbody></table></div>
+<p class="panel-footnote">Latency is the recorded call duration. Request bodies, credentials, and raw provider responses are not displayed.</p></section>
+
+
+
+  <div class="integration-grid">
+
+    <article class="integration-card">
+      <header>
+        <h2>DeepSeek</h2>
+        <span class="tag info">Configured but unverified</span>
+      </header>
+      <p>Synthetic preview; no connection was made.</p>
+      <dl>
+
+        <div>
+          <dt>Connection evidence</dt>
+          <dd>Preview only</dd>
+        </div>
+
+      </dl>
+    </article>
+
+    <article class="integration-card">
+      <header>
+        <h2>JEV</h2>
+        <span class="tag info">Configured but unverified</span>
+      </header>
+      <p>Synthetic preview; no connection was made.</p>
+      <dl>
+
+        <div>
+          <dt>Connection evidence</dt>
+          <dd>Preview only</dd>
+        </div>
+
+      </dl>
+    </article>
+
+    <article class="integration-card">
+      <header>
+        <h2>Anthropic</h2>
+        <span class="tag info">Configured but unverified</span>
+      </header>
+      <p>Synthetic preview; no connection was made.</p>
+      <dl>
+
+        <div>
+          <dt>Connection evidence</dt>
+          <dd>Preview only</dd>
+        </div>
+
+      </dl>
+    </article>
+
+    <article class="integration-card">
+      <header>
+        <h2>OpenAI</h2>
+        <span class="tag info">Configured but unverified</span>
+      </header>
+      <p>Synthetic preview; no connection was made.</p>
+      <dl>
+
+        <div>
+          <dt>Connection evidence</dt>
+          <dd>Preview only</dd>
+        </div>
+
+      </dl>
+    </article>
+
+  </div>
+
+</div>
+
+</section>
+<section data-preview-view="usage" hidden><div class="alert alert-info">DESIGN PREVIEW · Synthetic records for layout verification. No live APIs or database.</div>
+
+
+
+<div class="mission">
+  <header class="mission-head">
+    <div>
+      <p class="mission-kicker">Mission control</p>
+      <h1>API usage &amp; cost</h1>
+      <p class="mission-lead">Understand what is running, what was read, and what needs your attention.</p>
+    </div>
+  </header>
+
+  <nav class="mission-tabs" aria-label="Operating views">
+    <a href="#overview" >Overview</a>
+    <a href="#activity" >Activity</a>
+    <a href="#schedules" >Schedules</a>
+    <a href="#documents" >Documents</a>
+    <a href="#overview" aria-disabled="true" >Agents</a>
+    <a href="#overview" aria-disabled="true" >Architecture</a>
+    <a href="#integrations" >Integrations &amp; models</a>
+    <a href="#usage" class="active" aria-current="page">AI usage &amp; cost</a>
+    <a href="#overview" aria-disabled="true" >How GovCon works</a>
+  </nav>
+
+
+
+
+
+
+
+
+
+
+  <div class="console-toolbar"><span class="snapshot-label"><span class="state-dot" aria-hidden="true"></span> Stored telemetry · updated <time datetime="2026-10-11T00:50:53.831169+00:00">2026-10-10 17:50:53 PT</time></span><span class="text-sm text-muted">Read-only design preview · synthetic records</span></div>
+<header class="usage-intro">
+  <p class="mission-kicker">Provider usage</p>
+  <h2>AI usage and cost</h2>
+  <p class="mission-lead">Token counts are copied from provider usage fields. If a response omits them, the row says usage not reported. Cost uses the price table below. A model with no price says price not set. Times are America/Los_Angeles (PT).</p>
+  <p class="text-sm text-muted">
+
+    <a href="#usage">Show local embeddings</a>
+
+    · Local embedding batches are hidden from this view by default.
+  </p>
+
+  <p class="text-sm" style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+    Status:
+    <a class="tag info" href="#usage">all</a>
+
+    <a class="tag " href="#usage">succeeded (2)</a>
+
+    <a class="tag " href="#usage">failed (1)</a>
+
+    <a class="tag " href="#usage">blocked (1)</a>
+
+  </p>
+
+</header>
+
+<div class="console-metrics">
+<div class="console-metric"><span class="metric-label">Attempts today (UTC)</span><strong>4</strong><span class="metric-note">$0.1112 · usage not reported on 1</span></div>
+<div class="console-metric"><span class="metric-label">Last 30 days</span><strong>4</strong><span class="metric-note">$0.1112 · usage not reported on 1</span></div>
+<div class="console-metric"><span class="metric-label">Failed attempts · all time</span><strong>1</strong><span class="metric-note">Use the status filter to inspect</span></div>
+<div class="console-metric"><span class="metric-label">Policy blocked · all time</span><strong>1</strong><span class="metric-note">No data sent · no API cost</span></div>
+</div>
+
+
+<section class="mission-panel" style="margin-bottom:0.9rem;">
+  <h2>Today (synthetic preview)</h2>
+
+  <p class="text-sm text-muted">4 calls.</p>
+  <h3>By provider and model</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Provider · model</th><th>Calls</th><th>Input tokens</th><th>Output tokens</th><th>Web searches</th><th>Cost</th></tr></thead>
+      <tbody>
+
+        <tr><td>DeepSeek · Preview model</td><td>2</td><td>4,200 · usage not reported on 1</td><td>850 · usage not reported on 1</td><td>Not reported</td><td>$0.0182 · usage not reported on 1</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+  <h3>By purpose</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Purpose</th><th>Calls</th><th>Input tokens</th><th>Output tokens</th><th>Web searches</th><th>Cost</th></tr></thead>
+      <tbody>
+
+        <tr><td>solicitation_analysis</td><td>4</td><td>4,200 · partial</td><td>850 · partial</td><td>Not reported</td><td>$0.1112 · partial</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+  <h3>By opportunity</h3>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Opportunity</th><th>Calls</th><th>Input tokens</th><th>Output tokens</th><th>Web searches</th><th>Cost</th></tr></thead>
+      <tbody>
+
+        <tr>
+          <td><a href="#overview" aria-disabled="true">#1</a></td>
+          <td>1</td><td>4,200</td><td>850</td><td>Not reported</td><td>$0.0182</td>
+        </tr>
+
+      </tbody>
+    </table>
+  </div>
+
+
+
+</section>
+
+
+<section class="mission-panel" style="margin-bottom:0.9rem;">
+  <h2>Recent calls</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>When (PT)</th><th>Status</th><th>Provider</th><th>Model</th><th>Purpose</th><th>Opportunity</th><th>Input</th><th>Output</th><th>Cached</th><th>Server tools</th><th>Cost</th><th>Latency</th></tr>
+      </thead>
+      <tbody>
+
+        <tr>
+          <td>2026-10-10 17:50 PT</td>
+          <td><span class="tag good">succeeded</span></td>
+          <td>deepseek</td>
+          <td>Preview model</td>
+          <td>solicitation_analysis</td>
+          <td><a href="#overview" aria-disabled="true">#1</a></td>
+          <td>4,200</td>
+          <td>850</td>
+          <td>0</td>
+          <td>Not reported</td>
+          <td>$0.0182</td>
+          <td>2,100 ms</td>
+        </tr>
+
+      </tbody>
+    </table>
+  </div>
+
+</section>
+
+
+<section class="mission-panel">
+  <h2>Price table</h2>
+  <p class="text-sm text-muted">Token rates are USD per 1,000,000 tokens; the web search fee is USD per 1,000 searches. These rows are editable. A model that is not listed shows price not set.</p>
+
+  <p class="mission-empty">No model price is stored.</p>
+
+
+
+</section>
+
+
+
+
+
+
+
+</div>
+
+</section></main><script>
+function showPreview(){const raw=location.hash.slice(1)||'overview';const key=['overview','activity','schedules','documents','integrations','usage'].includes(raw)?raw:'overview';document.querySelectorAll('[data-preview-view]').forEach(s=>{s.hidden=s.dataset.previewView!==key;});document.querySelectorAll('.app-sidebar a').forEach(a=>{a.classList.toggle('active',!a.hasAttribute('aria-disabled')&&a.getAttribute('href')==='#'+key);});window.scrollTo(0,0);}
+document.addEventListener('click',e=>{if(e.target.closest('a[aria-disabled="true"]'))e.preventDefault();});window.addEventListener('hashchange',showPreview);showPreview();
+</script></body></html>

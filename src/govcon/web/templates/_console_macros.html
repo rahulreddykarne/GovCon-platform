@@ -1,0 +1,3 @@
+{% macro state(value) %}
+<span class="state-badge state-{{ value|lower|replace('_','-')|replace(' ','-') }}"><span class="state-dot" aria-hidden="true"></span>{{ value|replace('_',' ') }}</span>
+{% endmacro %}

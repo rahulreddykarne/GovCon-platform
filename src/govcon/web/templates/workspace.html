@@ -28,16 +28,18 @@
   </div>
 </div>
 
+<div class="workspace-context">
+<div><span>Response deadline</span><strong class="{{ deadline_class }}">{{ opp.response_deadline|pt if opp.response_deadline else 'Unknown — verify source' }}</strong>{% if deadline_label %}<small>{{ deadline_label }}</small>{% endif %}</div>
+<div><span>Current stage</span><strong>{{ pursuit.stage|replace('_',' ')|title if pursuit else 'Not pursued' }}</strong><small>{{ review_session.status|replace('_',' ') if review_session else 'No human review opened' }}</small></div>
+<div><span>Preliminary recommendation</span><strong>{{ bid_decision.recommendation|replace('_',' ')|title if bid_decision else 'Not generated' }}</strong><small>Human approval required before bidding</small></div>
+</div>
 <nav class="tab-bar" aria-label="Opportunity">
   {% for key, label in workspace_tabs %}
   <a href="/workspace/{{ opp.id }}?tab={{ key }}" {% if active_tab == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
-  <details class="nav-more">
-    <summary>More</summary>
-    {% for key, label in workspace_more_tabs %}
-    <a href="/workspace/{{ opp.id }}?tab={{ key }}" {% if active_tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
-    {% endfor %}
-  </details>
+  {% for key, label in workspace_more_tabs %}
+  <a href="/workspace/{{ opp.id }}?tab={{ key }}" {% if active_tab == key %}class="active" aria-current="page"{% endif %}>{{ 'Proposal & submission' if key == 'submission' else label }}</a>
+  {% endfor %}
 </nav>
 <div id="progress-feedback" class="alert alert-info" role="status" hidden><span></span> <button class="btn btn-secondary btn-sm" onclick="window.location.reload()">Refresh results</button></div>
 <div id="workspace-content" data-progress-url="/workspace/{{ opp.id }}/progress" data-progress-revision="{{ progress.revision }}" data-progress-active="{{ 'true' if progress.active else 'false' }}">

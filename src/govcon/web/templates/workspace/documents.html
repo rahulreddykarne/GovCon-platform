@@ -20,18 +20,18 @@
       <tbody>
         {% for f in attachments %}
         <tr>
-          <td>{{ f.filename or '(unnamed)' }}</td>
+          <td><strong>{{ f.filename or '(unnamed)' }}</strong><span class="cell-sub">{{ 'Current' if f.active else 'Superseded' }} · {{ f.classification }}</span><a class="cell-sub" href="/operate/documents?file={{ f.id }}">Inspect reading trace →</a></td>
           <td class="text-sm">{{ f.mime_type or 'not recorded' }}</td>
           <td>
             {% if f.extraction_status == 'success' or f.extraction_status == 'done' %}
               <span class="pill pill-success">{{ f.extraction_status }}</span>
-            {% elif f.extraction_status == 'failed' %}
+            {% elif f.extraction_status in ['failed', 'download_failed'] %}
               <span class="pill pill-danger">failed</span>
               {% if f.extraction_error %}<div class="text-sm text-muted">{{ f.extraction_error }}</div>{% endif %}
             {% else %}
-              <span class="pill pill-secondary">{{ f.extraction_status or 'not run' }}</span>
+              <span class="pill pill-secondary">{{ f.extraction_status or 'not run' }}</span>{% if f.extraction_error %}<details><summary>Extraction details</summary><p>{{ f.extraction_error }}</p></details>{% endif %}
             {% endif %}
-          </td>
+          <span class="cell-sub">{{ f.page_count if f.page_count is not none else 'Unknown' }} pages · {{ (f.ocr_pages or [])|length }} OCR · {{ (f.ocr_failed_pages or [])|length }} unreadable</span></td>
           <td>
             {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">Open source ↗</a>{% else %}<span class="text-muted">no URL</span>{% endif %}
           </td>

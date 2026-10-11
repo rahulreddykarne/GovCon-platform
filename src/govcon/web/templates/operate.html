@@ -5,13 +5,16 @@
   <header class="mission-head">
     <div>
       <p class="mission-kicker">Mission control</p>
-      <h1>How the agents are connected</h1>
-      <p class="mission-lead">Counts, statuses, and the last run come from rows already stored. A missing run stays missing.</p>
+      <h1>{{ {"overview": "Control center", "activity": "Live activity", "schedules": "Schedules & run history", "documents": "Document reading", "agents": "Agents", "architecture": "Workflow map", "integrations": "APIs & models", "usage": "API usage & cost", "how": "How GovCon works"}.get(view, "Control center") }}</h1>
+      <p class="mission-lead">Understand what is running, what was read, and what needs your attention.</p>
     </div>
   </header>
 
   <nav class="mission-tabs" aria-label="Operating views">
     <a href="/operate" {% if view == 'overview' %}class="active" aria-current="page"{% endif %}>Overview</a>
+    <a href="/operate/activity" {% if view == 'activity' %}class="active" aria-current="page"{% endif %}>Activity</a>
+    <a href="/operate/schedules" {% if view == 'schedules' %}class="active" aria-current="page"{% endif %}>Schedules</a>
+    <a href="/operate/documents" {% if view == 'documents' %}class="active" aria-current="page"{% endif %}>Documents</a>
     <a href="/operate/agents" {% if view == 'agents' %}class="active" aria-current="page"{% endif %}>Agents</a>
     <a href="/operate/architecture" {% if view == 'architecture' %}class="active" aria-current="page"{% endif %}>Architecture</a>
     <a href="/operate/integrations" {% if view == 'integrations' %}class="active" aria-current="page"{% endif %}>Integrations &amp; models</a>
@@ -19,7 +22,11 @@
     <a href="/operate/how" {% if view == 'how' %}class="active" aria-current="page"{% endif %}>How GovCon works</a>
   </nav>
 
-  {% if view == 'overview' and overview %}
+  {% if console and view in ['overview', 'activity', 'schedules', 'documents'] %}
+  {% include 'control_center.html' %}
+  {% endif %}
+
+  {% if view == 'overview' and overview and not console %}
   <p class="mission-greeting">{{ overview.greeting }}</p>
   <section class="mission-panel" style="margin-bottom:0.9rem;">
     <h2>Company strategy</h2>
@@ -206,6 +213,7 @@
   {% endif %}
 
   {% if view == 'integrations' and integrations %}
+  {% if console %}{% include 'provider_telemetry.html' %}{% endif %}
   {% if routing %}
   <section class="mission-panel" style="margin-bottom:0.9rem;">
     <h2>Model route <span class="tag info">{{ routing.version }}</span></h2>

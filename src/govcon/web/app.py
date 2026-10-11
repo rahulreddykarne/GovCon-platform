@@ -56,6 +56,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="GovCon", docs_url=None, redoc_url=None, openapi_url=None,
                   dependencies=[Depends(protect_mutation)], lifespan=lifespan)
+    from govcon.web.request_activity import RequestActivity
+
+    app.state.request_activity = RequestActivity()
     app.state.settings = settings
     app.state.csrf_secret = settings.web_csrf_secret.encode() if settings.web_csrf_secret else secrets.token_bytes(32)
     app.state.login_throttle = LoginThrottle()
@@ -65,6 +68,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def bind_settings(request, call_next):
         with settings_scope(settings):
             return await call_next(request)
+
+    @app.middleware("http")
+    async def track_requests(request, call_next):
+        from starlette.routing import Match
+
+        # Store route templates, never raw paths, query parameters or request bodies.
+        if request.url.path.startswith("/static/"):
+            return await call_next(request)
+        route_label = "/unmatched"
+        for route in app.routes:
+            match, _ = route.matches(request.scope)
+            if match == Match.FULL:
+                route_label = getattr(route, "path", "/unmatched")
+                break
+        key = app.state.request_activity.begin(request.method, route_label)
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            app.state.request_activity.finish(key, status)
 
     app.add_middleware(PackageUploadLimitMiddleware)
 

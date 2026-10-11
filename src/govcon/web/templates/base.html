@@ -1,59 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}GovCon{% endblock %}</title>
-  <link rel="stylesheet" href="/static/govcon.css">
-  <script src="/static/vendor/htmx.min.js" defer></script>
-</head>
-<body class="app-shell">
-{% set main_nav = [
-  ('inbox', '/', 'Inbox'),
-  ('pipeline', '/pipeline', 'Pipeline'),
-] %}
-{% set more_nav = [
-  ('search', '/search', 'Search'),
-  ('watchlists', '/watchlists', 'Watchlists'),
-  ('vendors', '/vendors', 'Vendors'),
-  ('suppliers', '/suppliers', 'Suppliers'),
-  ('bots', '/bots', 'Bots'),
-  ('learning', '/learning', 'Insights'),
-  ('operate', '/operate', 'Operate'),
-] %}
-{% set admin_nav = [
-  ('ops', '/ops', 'Ops'),
-  ('admin', '/admin', 'Admin'),
-  ('settings', '/settings', 'Settings'),
-] %}
-
-<div class="shell-head">
-<header class="top-bar">
-  <a class="brand" href="/">
-    <span class="brandmark" aria-hidden="true">G</span>
-    <span>GovCon</span>
-  </a>
-  <nav class="app-tabs" aria-label="Main">
-    {% for key, path, label in main_nav %}
-    <a href="{{ path }}" {% if active_page == key %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
-    {% endfor %}
-    {% if active_page == 'pipeline' or opp is defined %}
-    <a href="{% if opp is defined %}/workspace/{{ opp.id }}{% else %}/pipeline{% endif %}" class="{% if opp is defined %}active{% endif %}" {% if opp is defined %}aria-current="page"{% endif %}>Opportunity</a>
-    {% endif %}
-    <details class="nav-more">
-      <summary>More</summary>
-      {% for key, path, label in more_nav %}
-      <a href="{{ path }}" {% if active_page == key %}aria-current="page"{% endif %}>{{ label }}</a>
-      {% endfor %}
-    </details>
-    <details class="nav-more">
-      <summary>Ops / Admin / Settings</summary>
-      {% for key, path, label in admin_nav %}
-      <a href="{{ path }}" {% if active_page == key or (active_page == 'admin' and admin_section is defined and key == admin_section) %}aria-current="page"{% endif %}>{{ label }}</a>
-      {% endfor %}
-    </details>
-  </nav>
-  <span class="spacer"></span>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}GovCon{% endblock %}</title>
+<link rel="stylesheet" href="/static/govcon.css"><script src="/static/vendor/htmx.min.js" defer></script>
+</head><body class="app-shell">
+<a class="skip-link" href="#main-content">Skip to content</a>
+<aside class="app-sidebar">
+<a class="brand" href="/operate"><span class="brandmark" aria-hidden="true">G</span><span>GovCon<span class="brand-caption">CONTRACT INTELLIGENCE</span></span></a>
+<nav class="app-tabs" aria-label="Main"><div class="nav-group"><p class="nav-label">Workspace</p><a href="/operate" {% if active_page == 'operate' and view == 'overview' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg><span>Control center</span></a>
+<a href="/" {% if active_page == 'inbox' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3z M3 13h5l2 3h4l2-3h5"/></svg><span>Inbox</span></a>
+<a href="/pipeline" {% if active_page == 'pipeline' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h5v16H3z M10 4h5v16h-5z M17 4h4v16h-4z"/></svg><span>Pipeline</span></a>
+<a href="/search" {% if active_page == 'search' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 21l-6-6 M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0"/></svg><span>Search</span></a>
+<a href="/watchlists" {% if active_page == 'watchlists' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg><span>Watchlists</span></a>
+<a href="/suppliers" {% if active_page == 'suppliers' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10"/></svg><span>Suppliers</span></a>
+<a href="/vendors" {% if active_page == 'vendors' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3 M13 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M17 3a4 4 0 0 1 0 8 M22 21v-3a4 4 0 0 0-3-4"/></svg><span>Vendors</span></a>
+<a href="/learning" {% if active_page == 'learning' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18 M7 16v-5 M12 16V6 M17 16V9"/></svg><span>Insights</span></a></div>
+<div class="nav-group"><p class="nav-label">System visibility</p><a href="/operate/activity" {% if active_page == 'operate' and view == 'activity' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg><span>Live activity</span></a>
+<a href="/operate/schedules" {% if active_page == 'operate' and view == 'schedules' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0 M12 7v5l3 2"/></svg><span>Schedules &amp; history</span></a>
+<a href="/operate/documents" {% if active_page == 'operate' and view == 'documents' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H4v20h16V8z M14 2v6h6 M8 12h8 M8 16h8"/></svg><span>Document reading</span></a>
+<a href="/operate/architecture" {% if active_page == 'operate' and view == 'architecture' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h6v6H3z M15 15h6v6h-6z M6 9v9h9 M15 3h6v6h-6z M9 6h6"/></svg><span>Workflow map</span></a>
+<a href="/operate/integrations" {% if active_page == 'operate' and view == 'integrations' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v5 M16 2v5 M5 7h14v3a7 7 0 0 1-14 0z M12 17v5"/></svg><span>APIs &amp; models</span></a>
+<a href="/operate/usage" {% if active_page == 'operate' and view == 'usage' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18 M7 16v-5 M12 16V6 M17 16V9"/></svg><span>API costs</span></a>
+<a href="/operate/agents" {% if active_page == 'operate' and view == 'agents' %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg><span>Agents</span></a>
+<a href="/bots" {% if active_page == 'bots' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h6v6H3z M15 15h6v6h-6z M6 9v9h9 M15 3h6v6h-6z M9 6h6"/></svg><span>Bots</span></a></div>
+<div class="nav-group"><p class="nav-label">Ops / Admin / Settings</p><a href="/ops" {% if active_page == 'ops' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg><span>Ops</span></a>
+<a href="/settings" {% if active_page == 'settings' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5 5l3 3 M16 16l3 3 M5 19l3-3 M16 8l3-3 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg><span>Settings</span></a>
+<a href="/admin" {% if active_page == 'admin' and opp is not defined %}class="active" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3 M13 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M17 3a4 4 0 0 1 0 8 M22 21v-3a4 4 0 0 0-3-4"/></svg><span>Admin</span></a></div>
+{% if opp is defined %}<a class="active" aria-current="page" href="/workspace/{{ opp.id }}">Opportunity</a>{% endif %}
+</nav>
+<div class="sidebar-foot"><span class="sidebar-dot"></span> Human approval stays in control</div>
+</aside>
+<div class="shell-head"><header class="top-bar">
+<div class="header-context"><span class="text-muted">Workspace</span><span aria-hidden="true"> / </span><strong>{% if active_page == 'operate' %}Control center{% elif opp is defined %}Opportunity{% else %}{{ active_page|default('GovCon')|replace('_',' ')|title }}{% endif %}</strong></div>
+<form class="header-search" method="get" action="/search"><label class="sr-only" for="global-search">Search opportunities</label><input id="global-search" type="search" name="q" placeholder="Search opportunities..."></form>
+<span class="spacer"></span>
   <div class="user-badge">
     {% if current_user %}
       {% set raw_name = current_user.display_name or current_user.email or "?" %}
@@ -88,13 +68,8 @@
 </div>
 {% endif %}
 </div>
-
-<main class="main-content">
-  {% if flash_error %}<div class="alert alert-error" role="alert">{{ flash_error }}</div>{% endif %}
-  {% if flash_notice %}<div class="alert alert-success" role="status">{{ flash_notice }}</div>{% endif %}
-
-  {% block content %}{% endblock %}
-</main>
-
-</body>
-</html>
+<main id="main-content" class="main-content">
+{% if flash_error %}<div class="alert alert-error" role="alert">{{ flash_error }}</div>{% endif %}
+{% if flash_notice %}<div class="alert alert-success" role="status">{{ flash_notice }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main></body></html>

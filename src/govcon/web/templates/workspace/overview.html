@@ -11,7 +11,7 @@
 
         {% if opp.response_deadline %}
         <dt>Deadline</dt>
-        <dd class="{{ deadline_class }}">{{ opp.response_deadline.strftime('%Y-%m-%d') }}</dd>
+        <dd class="{{ deadline_class }}">{{ opp.response_deadline|pt }}</dd>
         {% endif %}
 
         {% if opp.psc_code %}
