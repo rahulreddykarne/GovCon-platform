@@ -401,23 +401,8 @@ def _prior_resume(session: Session, opportunity_id: int, run_type: str, current_
     return index, candidates, notes
 
 
-def _prefix_that_fits(unread: list[dict[str, Any]], remaining: int) -> list[dict[str, Any]]:
-    """Keep a leading slice of unread chunks that can be sent without silently dropping the rest."""
-    if not unread:
-        return []
-    sizes = [_chunk_token_estimate(chunk) for chunk in unread]
-    if sum(sizes) + _PROMPT_OVERHEAD_TOKENS <= remaining:
-        return list(unread)
-    fitted: list[dict[str, Any]] = []
-    used = _PROMPT_OVERHEAD_TOKENS
-    for chunk, size in zip(unread, sizes, strict=True):
-        if fitted and used + size > remaining:
-            break
-        if not fitted and used + size > remaining:
-            break
-        fitted.append(chunk)
-        used += size
-    return fitted
+def _unread_token_estimate(unread: list[dict[str, Any]]) -> int:
+    return sum(_chunk_token_estimate(chunk) for chunk in unread) + _PROMPT_OVERHEAD_TOKENS
 
 
 @trace_phase("compliance.extractor.run_ai_pass")
@@ -433,8 +418,8 @@ def run_ai_pass(
 
     Chunks are sent in as many calls as the per-call limit needs. If the
     per-opportunity budget (or the provider) stops the pass part-way, the
-    chunks not sent are recorded as coverage gaps and the pass is
-    ``incomplete``; it is never reported complete.
+    chunks not sent are recorded as coverage gaps with a resume cursor and
+    the pass is ``incomplete``; it is never reported complete.
     """
     settings = settings or get_settings()
     prompt_name = PASS_PROMPTS[pass_label]
@@ -446,10 +431,9 @@ def run_ai_pass(
     )
     unread = list(chunks[resume_index:])
     remaining = remaining_spendable_tokens(session, opportunity.id, settings, prompt_name)
-    fitted = _prefix_that_fits(unread, remaining)
-    deferred = unread[len(fitted):]
+    estimated_unread = _unread_token_estimate(unread)
     planner = AdaptivePlanner(
-        list(fitted), units=1, max_units=2,
+        list(unread), units=1, max_units=2,
         output_cap=settings.ai_max_output_tokens_per_call,
         byte_budget=settings.ai_source_batch_bytes,
     )
@@ -578,47 +562,62 @@ def run_ai_pass(
                     gaps += _gaps(batch, inventory, reason)
                     planner.consume(len(batch), truncated=True)
                     continue
-                deferred = list(planner.pending) + deferred
-                planner.pending.clear()
+                gaps += _gaps(planner.pending, inventory, reason)
                 break
     finally:
         stop_collecting(link_token)
 
-    if planner.pending:
-        deferred = list(planner.pending) + deferred
-        planner.pending.clear()
+    leftover = list(planner.pending)
     unsent_reason = "budget_exhausted"
     if last_error is not None and last_error.reason not in _PART_LOCAL_FAILURES | {"output_truncated"}:
         unsent_reason = "budget_exhausted" if last_error.reason == "budget_exceeded" else last_error.reason
-    if deferred:
-        gaps += _gaps(deferred, inventory, unsent_reason)
-    next_index = resume_index + sent
-    unread_left = max(0, len(chunks) - next_index)
+    # Leftover pending chunks were never read; persist a resume cursor instead of dropping them.
+    next_index = resume_index + (len(unread) - len(leftover))
+    unread_left = len(leftover)
     resume_payload = {
         "next_chunk_index": next_index,
         "unread_chunk_count": unread_left,
         "inventory_hash": current_hash,
-        "pages": [g for g in _gaps(chunks[next_index:], inventory, "unread")],
+        "estimated_unread_tokens": _unread_token_estimate(leftover),
+        "remaining_spendable_tokens": remaining,
+        "pages": [g for g in _gaps(leftover, inventory, "unread")],
     } if unread_left else None
+    if leftover and last_error is not None and last_error.reason not in _PART_LOCAL_FAILURES | {"output_truncated"}:
+        # Already recorded as gaps in the stop-the-pass branch.
+        pass
+    elif leftover:
+        gaps += _gaps(leftover, inventory, unsent_reason)
+    will_need_resume = bool(unread_left) or estimated_unread > remaining
+
+    def _partial_warning(reason: str, pages: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "code": "context_truncated",
+            "severity": "high",
+            "message": (
+                f"Pass {pass_label} could not read part of the source set ({reason}): "
+                + "; ".join(
+                    f"{g['filename'] or g['file_id']} pages {', '.join(str(p) for p in g['pages'])}"
+                    for g in pages
+                )
+                + ". Requirements there are not extracted."
+                + (" The next run resumes unread pages." if resume_payload else "")
+            ),
+        }
 
     if not results:
-        if prior_candidates or resume_index or deferred:
-            if deferred:
-                warnings.append({"code": "context_truncated", "severity": "high", "message": (
-                    f"Pass {pass_label} coverage is partial (budget_exhausted): "
-                    + "; ".join(
-                        f"{g['filename'] or g['file_id']} pages {', '.join(str(p) for p in g['pages'])}"
-                        for g in _gaps(deferred, inventory, "budget_exhausted")
-                    )
-                    + ". Requirements there are not extracted. The next run resumes unread pages."
-                )})
+        failure = last_error
+        if failure is not None and failure.reason == "budget_exceeded":
+            unread_gaps = [g for g in gaps if g.get("reason") in {"budget_exhausted", "unread"}]
+            if unread_gaps:
+                warnings.append(_partial_warning("budget_exhausted", unread_gaps))
             run = record_run(
                 session,
                 opportunity_id=opportunity.id,
                 run_type=run_type,
                 run_version=EXTRACTOR_VERSION,
                 output={
-                    "error": "budget_exhausted" if deferred else "partial_coverage",
+                    "error": "budget_exhausted",
+                    "detail": failure.detail,
                     "manifest": {**base_manifest, "parts": part_no},
                     "candidates": [c.__dict__ for c in prior_candidates],
                     "extraction_notes": prior_notes,
@@ -626,6 +625,7 @@ def run_ai_pass(
                         "chunks_total": len(chunks),
                         "chunks_sent": resume_index + sent,
                         "gaps": gaps,
+                        "estimated_unread_tokens": estimated_unread,
                     },
                     "resume": resume_payload,
                 },
@@ -635,7 +635,6 @@ def run_ai_pass(
             )
             attach_call_ids(session, linked_ids, compliance_run_id=run.id)
             return PassOutcome(pass_label, prior_candidates, "incomplete", run.id, warnings=warnings)
-        failure = last_error
         if failure is None:
             raise StructuredCallError("provider_error", "No extraction result or recorded failure")
         warnings.append({"code": f"pass_{pass_label.lower()}_{failure.reason}", "severity": "high", "message": f"Extraction pass {pass_label} produced no usable output: {failure.detail}"})
@@ -657,12 +656,9 @@ def run_ai_pass(
 
     read_gaps = [gap for gap in gaps if gap.get("reason") not in {"download_failed", "no_extracted_content"}]
     if read_gaps:
-        warnings.append({"code": "context_truncated", "severity": "high", "message": (
-            f"Pass {pass_label} could not read part of the source set ({read_gaps[0]['reason']}): "
-            + "; ".join(f"{g['filename'] or g['file_id']} pages {', '.join(str(p) for p in g['pages'])}" for g in read_gaps)
-            + ". Requirements there are not extracted."
-            + (" The next run resumes unread pages." if resume_payload else "")
-        )})
+        warnings.append(_partial_warning(read_gaps[0]["reason"], read_gaps))
+    elif will_need_resume and resume_payload:
+        warnings.append(_partial_warning("budget_exhausted", resume_payload["pages"] or read_gaps))
     new_candidates = [c for result in results for c in candidates_from_output(pass_label, checked_output(result.output, RequirementExtractionV1).requirements, inventory)]
     candidates = prior_candidates + new_candidates
     first = results[0]
@@ -680,7 +676,8 @@ def run_ai_pass(
             "candidates": [c.__dict__ for c in candidates],
             "extraction_notes": notes,
             "coverage": {"chunks_total": len(chunks), "chunks_sent": resume_index + sent, "parts": part_no,
-                         "parts_sent": len(results), "gaps": gaps},
+                         "parts_sent": len(results), "gaps": gaps,
+                         "estimated_unread_tokens": estimated_unread},
             "resume": resume_payload,
         },
         status="incomplete" if incomplete else "complete",

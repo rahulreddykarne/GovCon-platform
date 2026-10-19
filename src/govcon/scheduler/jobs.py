@@ -191,7 +191,7 @@ def step_source_documents(session: Session, settings) -> StepResult:
         stored = 0
         for opportunity in chosen:
             try:
-                files = download_attachments(session, opportunity, settings=settings)
+                files = download_attachments(session, opportunity, settings=settings) or []
                 stored += sum(1 for file in files if file.sha256)
                 fetched += 1
                 if files and any(file.extraction_status == "download_failed" for file in files):

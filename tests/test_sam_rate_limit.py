@@ -173,7 +173,7 @@ def test_source_documents_counts_stored_files_and_queues_one_retry(db, tmp_path,
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     monkeypatch.setattr(
-        "govcon.http.build_client",
+        "govcon.enrich.attachments.build_client",
         lambda *a, **k: client,
     )
     monkeypatch.setattr(

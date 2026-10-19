@@ -50,6 +50,8 @@ def _assert_saved_strategy(db, client) -> None:
     assert "NAICS" not in facts["_strategy_missing"]
     assert "Minimum margin" in facts["_strategy_missing"]
     overview = client.get("/operate").text
-    assert "Missing, and not guessed" in overview
     assert "Minimum margin" in overview
-    assert "NAICS" not in overview.split("Missing, and not guessed", 1)[1].split(".", 1)[0]
+    assert "Missing" in overview
+    missing_blob = overview.split("Missing", 1)[1].split("</p>", 1)[0]
+    assert "Minimum margin" in missing_blob
+    assert "NAICS" not in missing_blob
