@@ -239,6 +239,7 @@ def test_start_govcon_script_starts_portable_postgres_on_5433() -> None:
     assert "pg_ctl" in text
     assert "-t 600" in text
     assert "SELECT 1" in text
+    assert "wait_postgres.py" in text
     assert "5432" in text
     assert "never starts or touches a Postgres service on port 5432" in text
     assert "PostgresPort = 5433" in text

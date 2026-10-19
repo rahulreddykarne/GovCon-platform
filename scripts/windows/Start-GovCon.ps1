@@ -6,7 +6,8 @@ param(
     [string]$ListenHost = "127.0.0.1",
     [int]$PostgresPort = 5433,
     [int]$WebPort = 8001,
-    [string]$PgRoot = "C:\Users\suhas\Documents\Codex\2026-09-27\here-s-a-full-laptop-setup\work\local-postgres"
+    [string]$PgRoot = "C:\Users\suhas\Documents\Codex\2026-09-27\here-s-a-full-laptop-setup\work\local-postgres",
+    [int]$DbConnectTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,24 +80,19 @@ function Move-StalePostmasterPid([string]$DataDir) {
 }
 
 function Test-PostgresSelect1 {
-    $binDir = Join-Path $PgRoot "15\bin"
-    $psql = Join-Path $binDir "psql.exe"
-    if (Test-Path $psql) {
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        $env:PGCONNECT_TIMEOUT = "8"
-        & $psql -h $ListenHost -p $PostgresPort -d postgres -w -t -A -c "SELECT 1" | Out-Null
-        $code = $LASTEXITCODE
-        $ErrorActionPreference = $prev
-        return ($code -eq 0)
-    }
+    # Use the app DATABASE_URL (user/password/db) via wait_postgres.py. Never
+    # connect as the Windows account, and never print the URL or password.
     $helper = Join-Path $PSScriptRoot "wait_postgres.py"
     if (-not (Test-Path $helper)) {
         return $false
     }
+    if ($DbConnectTimeoutSeconds -lt 1) {
+        Write-Error "DbConnectTimeoutSeconds must be >= 1"
+        return $false
+    }
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $Python $helper $ListenHost "$PostgresPort"
+    & $Python $helper --timeout "$DbConnectTimeoutSeconds"
     $code = $LASTEXITCODE
     $ErrorActionPreference = $prev
     return ($code -eq 0)
