@@ -147,6 +147,7 @@ def step_source_documents(session: Session, settings) -> StepResult:
     )
     from govcon.enrich.attachments import download_attachments
     from govcon.ingest.runs import IngestStats, finish_run, start_run
+    from govcon.ingest.sam_quota import ensure_sam_budget
     from govcon.logging import redact
     from govcon.models import AppSetting, Opportunity, StoredFile
 
@@ -184,25 +185,33 @@ def step_source_documents(session: Session, settings) -> StepResult:
                 if len(chosen) == batch:
                     break
         cursor.value = {"after_id": after if after < upper else 0}
+        ensure_sam_budget(settings)
         errors: list[str] = []
         fetched = 0
+        stored = 0
         for opportunity in chosen:
             try:
                 files = download_attachments(session, opportunity, settings=settings)
+                stored += sum(1 for file in files if file.sha256)
+                fetched += 1
                 if files and any(file.extraction_status == "download_failed" for file in files):
                     errors.append(f"opportunity {opportunity.id}: source document download failed")
-                    continue
-                fetched += 1
             except Exception as exc:  # noqa: BLE001  one notice must not stop the batch
                 errors.append(redact(f"opportunity {opportunity.id}: {exc}"))
-        stats = IngestStats(fetched=fetched, errors=errors)
-        details = {"candidates": len(chosen), "scanned": scanned, "backlog_scan_pending": after < upper}
+        stats = IngestStats(fetched=fetched, inserted=stored, errors=errors)
+        details = {
+            "candidates": len(chosen),
+            "scanned": scanned,
+            "stored": stored,
+            "backlog_scan_pending": after < upper,
+        }
         status = "completed_with_errors" if errors else "succeeded"
         finish_run(run, stats, status=status, details=details)
         return StepResult(
             step="source_documents",
             status=status,
             fetched=fetched,
+            inserted=stored,
             error="; ".join(errors) if errors else None,
             extra=details,
         )

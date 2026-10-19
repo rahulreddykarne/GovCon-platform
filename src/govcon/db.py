@@ -77,7 +77,8 @@ def make_engine(settings: Settings | None = None) -> Engine:
     settings = settings or get_settings()
     url = make_url(settings.require_database_url())
     # Fail promptly on an unavailable local database; honor explicit URL timeouts.
-    connect_args = {"connect_timeout": 5} if (
+    timeout = int(settings.db_connect_timeout_seconds)
+    connect_args = {"connect_timeout": timeout} if (
         url.get_backend_name() == "postgresql" and "connect_timeout" not in url.query
     ) else {}
     return create_engine(url, pool_pre_ping=True, connect_args=connect_args)

@@ -73,11 +73,12 @@ def test_rate_limited_download_queues_download_only_task(db, tmp_path) -> None:
         resolver=lambda _host: ["93.184.216.34"],
     )
     assert files[0].extraction_status == "download_failed"
-    download = db.scalar(select(Task).where(Task.opportunity_id == opp.id, Task.task_type == "attachment_download"))
+    download = db.scalar(select(Task).where(Task.task_type == "attachment_download"))
     prep = db.scalar(select(Task).where(Task.opportunity_id == opp.id, Task.task_type == "opportunity_preparation"))
     assert download is not None
     assert prep is None
     assert download.payload.get("retry_reason") == "rate_limited"
+    assert opp.id in (download.payload.get("opportunity_ids") or [])
     assert download.created_by_user_id is None
 
 

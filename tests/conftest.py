@@ -36,7 +36,11 @@ def _clear_settings_cache(monkeypatch):
     # Existing fixtures exercise offline replay/bootstrap with synthetic data.
     # Candidate behavioral enforcement is tested separately with explicit True.
     monkeypatch.setenv("PROMPT_REQUIRE_BEHAVIORAL_EVALUATION", "false")
+    from govcon.ingest.sam_quota import reset_sam_budget
+
+    reset_sam_budget()
     yield
+    reset_sam_budget()
     get_settings.cache_clear()
 
 

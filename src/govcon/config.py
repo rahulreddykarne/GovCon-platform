@@ -32,8 +32,14 @@ class Settings(BaseSettings):
     )
 
     database_url: str | None = None
+    # Seconds the Postgres client waits for a TCP connection. Local laptops
+    # under load often need more than the previous hardcoded 5s.
+    db_connect_timeout_seconds: int = Field(default=30, ge=1)
 
     sam_api_key: str | None = None
+    # Max api.sam.gov requests for one ingest or source-documents run (shared
+    # when those steps run in the same process, e.g. a scheduler chain).
+    sam_request_budget_per_run: int = Field(default=80, ge=1)
     deepseek_api_key: str | None = None
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

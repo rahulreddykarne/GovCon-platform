@@ -90,16 +90,71 @@ def opportunity_input_limit(session: Session, opportunity_id: int | None, settin
     return settings.ai_max_input_tokens_per_opportunity
 
 
-def _counts_toward_budget(row: AICallUsage) -> bool:
-    """A truncated parent that was split and retried is not counted again."""
+def _counts_toward_token_budget(row: AICallUsage) -> bool:
+    """A truncated parent that was split, or a superseded compliance run, is not counted again."""
+    usage = row.usage if isinstance(row.usage, dict) else {}
+    if usage.get("replaced_by_split") is True:
+        return False
+    return usage.get("superseded_run") is not True
+
+
+def _counts_toward_cost_budget(row: AICallUsage) -> bool:
+    """Dollar guardrails still count superseded extraction; only split parents are dropped."""
     usage = row.usage if isinstance(row.usage, dict) else {}
     return usage.get("replaced_by_split") is not True
 
 
+def _counts_toward_budget(row: AICallUsage) -> bool:
+    """Token-budget membership. Kept as the public name used by tests and callers."""
+    return _counts_toward_token_budget(row)
+
+
 def opportunity_input_used(session: Session, opportunity_id: int) -> int:
-    """Lifetime input tokens that still count against the opportunity cap."""
+    """Input tokens that still count against the opportunity cap for a new run."""
     rows = session.scalars(select(AICallUsage).where(AICallUsage.opportunity_id == opportunity_id)).all()
-    return sum(int(row.input_tokens or 0) for row in rows if _counts_toward_budget(row))
+    return sum(int(row.input_tokens or 0) for row in rows if _counts_toward_token_budget(row))
+
+
+COMPLIANCE_EXTRACTION_PURPOSES = frozenset({
+    "requirement_extraction_a",
+    "requirement_extraction_b",
+})
+
+
+def supersede_extraction_usage(session: Session, opportunity_id: int, *, purpose: str) -> int:
+    """Drop earlier extraction tokens of ``purpose`` from the token cap, not the dollar cap.
+
+    A ``--force`` or resumed compliance pass must not be charged for replaced
+    runs of the same extraction prompt. Cost accounting still sees those rows.
+    """
+    bind = session.get_bind()
+    engine = _engine_for_accounting(getattr(bind, "engine", bind))
+    with Session(engine) as db, db.begin():
+        rows = db.scalars(
+            select(AICallUsage).where(
+                AICallUsage.opportunity_id == opportunity_id,
+                AICallUsage.purpose == purpose,
+            )
+        ).all()
+        changed = 0
+        for row in rows:
+            usage = dict(row.usage or {})
+            if usage.get("superseded_run") is True:
+                continue
+            usage["superseded_run"] = True
+            row.usage = usage
+            changed += 1
+        return changed
+
+
+def remaining_spendable_tokens(
+    session: Session, opportunity_id: int, settings: Settings, purpose: str,
+) -> int:
+    """Tokens this purpose may still spend on the current opportunity cap slice."""
+    used = opportunity_input_used(session, opportunity_id)
+    limit = opportunity_input_limit(session, opportunity_id, settings)
+    spendable = int(limit * _spendable_share(settings, purpose))
+    return max(0, spendable - used)
 
 
 def opportunity_budget_status(session: Session, opportunity_id: int, settings: Settings) -> dict[str, int | float | None]:
@@ -244,13 +299,15 @@ def reserve(session: Session | None, *, opportunity_id: int | None, settings: Se
                 raise AIBudgetExceeded("Opportunity reservations require PostgreSQL atomic budget locking.")
             key = int.from_bytes(hashlib.sha256(f"govcon:ai-budget:{opportunity_id}".encode()).digest()[:8], "big", signed=True)
             db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
-            counted = [row for row in db.scalars(
+            all_rows = list(db.scalars(
                 select(AICallUsage).where(AICallUsage.opportunity_id == opportunity_id)
-            ).all() if _counts_toward_budget(row)]
-            used_input = sum(int(row.input_tokens or 0) for row in counted)
-            used_cost = sum(_decimal_amount(row.cost_usd) for row in counted if row.cost_usd is not None)
+            ).all())
+            token_rows = [row for row in all_rows if _counts_toward_token_budget(row)]
+            cost_rows = [row for row in all_rows if _counts_toward_cost_budget(row)]
+            used_input = sum(int(row.input_tokens or 0) for row in token_rows)
+            used_cost = sum(_decimal_amount(row.cost_usd) for row in cost_rows if row.cost_usd is not None)
             unpriced = sum(int(row.input_tokens or 0) + int(row.output_tokens or 0)
-                           for row in counted if row.cost_usd is None)
+                           for row in cost_rows if row.cost_usd is None)
             opp_limit = opportunity_input_limit(db, opportunity_id, settings)
             share = _spendable_share(settings, purpose)
             spendable = int(opp_limit * share)

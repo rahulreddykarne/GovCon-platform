@@ -88,6 +88,14 @@ class SamApiError(RuntimeError):
     """The SAM.gov opportunities search could not be completed."""
 
 
+class SamRateLimited(SamApiError):
+    """Search stopped after a SAM 429; records already received should still be stored."""
+
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 def format_sam_date(value: date) -> str:
     return value.strftime("%m/%d/%Y")
 
@@ -453,10 +461,20 @@ def fetch_search_page(
     limit: int,
     attempts: int = SAM_RETRY_ATTEMPTS,
     wait: wait_base | None = None,
+    settings: Settings | None = None,
 ) -> dict:
+    from govcon.enrich.safe_fetch import retry_after_seconds
+    from govcon.ingest.sam_quota import ensure_sam_budget, note_sam_rate_limited
+
     assert_search_window(posted_from, posted_to)
     if limit < 1 or limit > SAM_PAGE_LIMIT:
         raise ValueError("SAM limit must be from 1 to 1000")
+    budget = ensure_sam_budget(settings)
+    if not budget.consume(SAM_SEARCH_URL):
+        raise SamRateLimited(
+            "SAM request budget exhausted for this run; remaining search pages deferred",
+            retry_after=budget.retry_after,
+        )
     logger.info(
         "SAM search postedFrom=%s postedTo=%s offset=%s limit=%s",
         format_sam_date(posted_from),
@@ -478,6 +496,10 @@ def fetch_search_page(
         attempts=attempts,
         wait=wait if wait is not None else SAM_RETRY_WAIT,
     )
+    if response.status_code == 429:
+        delay = retry_after_seconds(response)
+        note_sam_rate_limited(delay, settings)
+        raise SamRateLimited("SAM opportunities search rate limited", retry_after=delay)
     return decode_search_response(response)
 
 
@@ -490,6 +512,7 @@ def iter_search_records(
     limit: int = SAM_PAGE_LIMIT,
     attempts: int = SAM_RETRY_ATTEMPTS,
     wait: wait_base | None = None,
+    settings: Settings | None = None,
 ) -> Iterator[dict]:
     """Yield every opportunity, following ``offset`` as a page index."""
     offset = 0
@@ -506,6 +529,7 @@ def iter_search_records(
             limit=limit,
             attempts=attempts,
             wait=wait,
+            settings=settings,
         )
         rows = page.get("opportunitiesData") or []
         if not isinstance(rows, list):
@@ -571,10 +595,12 @@ def pull_sam_opportunities(
     wait: wait_base | None = None,
 ) -> IngestStats:
     own_client = client is None
-    client = client or build_client(settings or get_settings(), timeout=SAM_CLIENT_TIMEOUT)
+    settings = settings or get_settings()
+    client = client or build_client(settings, timeout=SAM_CLIENT_TIMEOUT)
     try:
-        records = list(
-            iter_search_records(
+        records: list[dict] = []
+        try:
+            for record in iter_search_records(
                 client,
                 api_key=api_key,
                 posted_from=posted_from,
@@ -582,8 +608,13 @@ def pull_sam_opportunities(
                 limit=limit,
                 attempts=attempts,
                 wait=wait,
-            )
-        )
+                settings=settings,
+            ):
+                records.append(record)
+        except SamRateLimited as exc:
+            stats = ingest_opportunity_records(session, records)
+            stats.errors.append(redact(str(exc)))
+            return stats
         return ingest_opportunity_records(session, records)
     finally:
         if own_client:

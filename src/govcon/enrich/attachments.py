@@ -48,7 +48,16 @@ from govcon.enrich.attachment_refs import (
     attachment_refs_for,
 )
 from govcon.enrich.extract import ExtractionResult, extract_text, guess_mime_type
-from govcon.enrich.safe_fetch import FetchError, FetchRateLimited, Resolver, safe_fetch
+from govcon.enrich.safe_fetch import (
+    NEXT_RETRY_MARKER,
+    RATE_LIMITED_MESSAGE,
+    FetchError,
+    FetchRateLimited,
+    Resolver,
+    next_retry_from_delay,
+    rate_limited_message,
+    safe_fetch,
+)
 from govcon.http import build_client
 from govcon.ingest.snapshots import current_snapshot_id
 from govcon.logging import redact
@@ -71,6 +80,7 @@ def download_attachments(
     settings: Settings | None = None,
     client: httpx.Client | None = None,
     resolver: Resolver | None = None,
+    schedule_retry: bool = True,
 ) -> list[StoredFile]:
     """Download every attachment the source currently lists.
 
@@ -99,8 +109,10 @@ def download_attachments(
         client = client or build_client(settings, timeout=60.0)
         try:
             for ref in to_fetch:
-                row = _download_one(session, opportunity, ref, settings=settings, client=client,
-                                    resolver=resolver, snapshot_id=snapshot_id)
+                row = _download_one(
+                    session, opportunity, ref, settings=settings, client=client,
+                    resolver=resolver, snapshot_id=snapshot_id, schedule_retry=schedule_retry,
+                )
                 current[ref.url] = row.id
         finally:
             if own_client:
@@ -263,7 +275,8 @@ def _existing(session: Session, opportunity_id: int, url: str, sha: str | None) 
 
 
 def _record_failure(
-    session: Session, opportunity: Opportunity, ref: AttachmentRef, *, snapshot_id: int | None, message: str
+    session: Session, opportunity: Opportunity, ref: AttachmentRef, *, snapshot_id: int | None, message: str,
+    next_retry_at: datetime | None = None,
 ) -> StoredFile:
     """Record that the current fetch of ``ref`` failed.
 
@@ -278,6 +291,10 @@ def _record_failure(
         session.add(row)
     row.filename = sanitize_filename(ref.filename or _url_basename(ref.url))
     row.extraction_status = DOWNLOAD_FAILED
+    if next_retry_at is not None and RATE_LIMITED_MESSAGE in message and NEXT_RETRY_MARKER not in message:
+        message = rate_limited_message(next_retry_at)
+    elif next_retry_at is not None and NEXT_RETRY_MARKER not in message:
+        message = f"{message}; {NEXT_RETRY_MARKER}{next_retry_at.isoformat()}"
     row.extraction_error = message
     row.snapshot_id = snapshot_id
     row.active = True
@@ -413,8 +430,15 @@ def fetch_attachment(
     from govcon.enrich.ocr import ocr_config
     from govcon.enrich.source_documents import fetch_dibbs_pdf, sam_description_text
 
+    from govcon.ingest.sam_quota import ensure_sam_budget, is_sam_api_url
+
     origin = ref.source_metadata.get("origin")
     max_bytes = int(settings.attachment_max_mb) * 1024 * 1024
+    budget = ensure_sam_budget(settings)
+    if is_sam_api_url(ref.url) and not budget.allow(ref.url):
+        return FetchedAttachment(ref, error=RATE_LIMITED_MESSAGE, retry_after=budget.retry_after)
+    if is_sam_api_url(ref.url) and not budget.consume(ref.url):
+        return FetchedAttachment(ref, error=RATE_LIMITED_MESSAGE, retry_after=budget.retry_after)
     try:
         if origin == DIBBS_RFQ_PDF:
             fetched = fetch_dibbs_pdf(client, ref.url, max_bytes=max_bytes,
@@ -434,6 +458,8 @@ def fetch_attachment(
             data, content_type = sam_description_text(data).encode("utf-8"), "text/plain"
     except FetchRateLimited as exc:
         logger.warning("attachment download rate-limited for opportunity %s; retry scheduled", opportunity_id)
+        if is_sam_api_url(ref.url):
+            budget.mark_rate_limited(exc.retry_after)
         return FetchedAttachment(ref, error=str(exc), retry_after=exc.retry_after)
     except FetchError as exc:
         message = redact(f"download failed: {exc}", settings.secret_values())
@@ -463,7 +489,13 @@ def record_fetched(
     """Persist one fetch as an attachment version, a refreshed version, or a failure row."""
     ref = fetched.ref
     if fetched.error is not None:
-        return _record_failure(session, opportunity, ref, snapshot_id=snapshot_id, message=fetched.error)
+        next_retry_at = next_retry_from_delay(fetched.retry_after) if (
+            fetched.retry_after is not None or (fetched.error or "").startswith(RATE_LIMITED_MESSAGE)
+        ) else None
+        return _record_failure(
+            session, opportunity, ref, snapshot_id=snapshot_id, message=fetched.error,
+            next_retry_at=next_retry_at,
+        )
     existing = _existing(session, opportunity.id, ref.url, fetched.sha)
     if existing is not None:
         logger.debug("deduplicated attachment for opportunity %s (sha256 match)", opportunity.id)
@@ -510,19 +542,36 @@ def _download_one(
     client: httpx.Client,
     resolver: Resolver | None,
     snapshot_id: int | None,
+    schedule_retry: bool = True,
 ) -> StoredFile:
     """Download one ref and persist it as an attachment version (or a failure row)."""
+    from govcon.ingest.sam_quota import ensure_sam_budget, is_sam_api_url
+
+    budget = ensure_sam_budget(settings)
+    if is_sam_api_url(ref.url) and not budget.allow(ref.url):
+        skipped = FetchedAttachment(
+            ref,
+            error=RATE_LIMITED_MESSAGE,
+            retry_after=budget.retry_after,
+        )
+        row = record_fetched(session, opportunity, skipped, snapshot_id=snapshot_id)
+        if schedule_retry:
+            _schedule_download_retry(session, opportunity.id, budget.retry_after)
+        return row
     known = known_versions(session, opportunity.id, [ref], settings=settings)[ref.url]
     fetched = fetch_attachment(ref, opportunity_id=opportunity.id, known_shas=known, settings=settings,
                                client=client, resolver=resolver)
     row = record_fetched(session, opportunity, fetched, snapshot_id=snapshot_id)
-    if fetched.retry_after is not None or (fetched.error or "").startswith("rate limited"):
-        _schedule_download_retry(session, opportunity.id, fetched.retry_after)
+    if fetched.retry_after is not None or (fetched.error or "").startswith(RATE_LIMITED_MESSAGE):
+        if is_sam_api_url(ref.url):
+            budget.mark_rate_limited(fetched.retry_after)
+        if schedule_retry:
+            _schedule_download_retry(session, opportunity.id, fetched.retry_after)
     return row
 
 
 def _schedule_download_retry(session: Session, opportunity_id: int, retry_after: float | None) -> None:
-    """Queue a documents-only retry. Never starts analysis, compliance, decision, or market."""
+    """Queue one documents-only retry for the SAM-rate-limited batch, not one per opportunity."""
     from govcon.workflow.attachment_download import queue_attachment_download
 
     queue_attachment_download(session, opportunity_id=opportunity_id, retry_after=retry_after)

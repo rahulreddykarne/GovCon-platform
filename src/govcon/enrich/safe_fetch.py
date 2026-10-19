@@ -16,10 +16,13 @@ not prevented here. Network egress policy is the defence for that.
 from __future__ import annotations
 
 import ipaddress
+import random
 import socket
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -28,6 +31,9 @@ Resolver = Callable[[str], list[str]]
 
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
 RATE_LIMITED_MESSAGE = "rate limited, retry scheduled"
+NEXT_RETRY_MARKER = "next_retry="
+MAX_RETRY_AFTER_SECONDS = 300.0
+_BACKOFF_CAP_SECONDS = 60.0
 
 
 class FetchError(RuntimeError):
@@ -136,10 +142,10 @@ def safe_fetch(
             )
         except _Retryable as exc:
             last_error = exc
-            wait = exc.retry_after if exc.retry_after is not None else backoff_seconds * (2**attempt)
+            wait = _backoff_wait(attempt, backoff_seconds, retry_after=exc.retry_after)
         except httpx.TransportError as exc:
             last_error = FetchError(f"transport error: {type(exc).__name__}")
-            wait = backoff_seconds * (2**attempt)
+            wait = _backoff_wait(attempt, backoff_seconds)
         if attempt + 1 < attempts:
             time.sleep(max(0.0, wait))
     if isinstance(last_error, _Retryable) and last_error.status_code == 429:
@@ -157,13 +163,44 @@ class _Retryable(FetchError):
 
 
 def retry_after_seconds(response: httpx.Response) -> float | None:
+    """Parse Retry-After as integer seconds or an HTTP-date. Values are capped."""
     raw = response.headers.get("retry-after")
     if raw is None:
         return None
     text = raw.strip()
+    if not text:
+        return None
     if text.isdigit():
-        return float(text)
-    return None
+        return min(float(text), MAX_RETRY_AFTER_SECONDS)
+    try:
+        when = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    delay = (when - datetime.now(UTC)).total_seconds()
+    return min(MAX_RETRY_AFTER_SECONDS, max(0.0, delay))
+
+
+def _backoff_wait(attempt: int, backoff_seconds: float, *, retry_after: float | None = None) -> float:
+    """Honor Retry-After when present; otherwise exponential backoff with jitter, capped."""
+    if retry_after is not None:
+        return min(MAX_RETRY_AFTER_SECONDS, max(0.0, retry_after))
+    base = min(_BACKOFF_CAP_SECONDS, max(0.0, backoff_seconds) * (2**attempt))
+    jitter = 0.5 + random.random()  # 0.5–1.5x
+    return min(_BACKOFF_CAP_SECONDS, base * jitter)
+
+
+def rate_limited_message(next_retry_at: datetime | None = None) -> str:
+    if next_retry_at is None:
+        return RATE_LIMITED_MESSAGE
+    return f"{RATE_LIMITED_MESSAGE}; {NEXT_RETRY_MARKER}{next_retry_at.isoformat()}"
+
+
+def next_retry_from_delay(retry_after: float | None, *, default_seconds: float = 60.0) -> datetime:
+    delay = default_seconds if retry_after is None else retry_after
+    delay = min(MAX_RETRY_AFTER_SECONDS, max(1.0, delay))
+    return datetime.now(UTC) + timedelta(seconds=delay)
 
 
 def _fetch_once(

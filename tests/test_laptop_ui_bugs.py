@@ -285,15 +285,17 @@ def test_rate_limited_download_records_gap_and_queues_retry(db, tmp_path) -> Non
     )
     assert len(files) == 1
     assert files[0].extraction_status == "download_failed"
-    assert files[0].extraction_error == "rate limited, retry scheduled"
+    assert (files[0].extraction_error or "").startswith("rate limited, retry scheduled")
+    assert "next_retry=" in (files[0].extraction_error or "")
     task = db.scalar(
         select(Task).where(
-            Task.opportunity_id == opp.id,
             Task.task_type == "attachment_download",
             Task.payload["retry_reason"].astext == "rate_limited",
         )
     )
     assert task is not None
+    assert opp.id in (task.payload.get("opportunity_ids") or [])
+    assert task.opportunity_id is None
     assert task.next_attempt_at is not None
     assert task.next_attempt_at > datetime.now(UTC) - timedelta(seconds=1)
 

@@ -147,9 +147,11 @@ def request_with_retry(
             outcome = retry_state.outcome
             exc = outcome.exception() if outcome is not None and outcome.failed else None
             if isinstance(exc, RetryableStatus):
-                raw = exc.response.headers.get("retry-after")
-                if raw and raw.strip().isdigit():
-                    return float(raw.strip())
+                from govcon.enrich.safe_fetch import retry_after_seconds
+
+                wait = retry_after_seconds(exc.response)
+                if wait is not None:
+                    return wait
             return float(fallback(retry_state))
 
     @retry(

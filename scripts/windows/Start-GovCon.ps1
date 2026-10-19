@@ -1,10 +1,12 @@
-# Start the local GovCon processes against an already-running Postgres.
-# Does not install Docker, does not start the Windows Postgres service, and
-# does not print DATABASE_URL or any other secret.
+# Start the local GovCon processes. If TCP PostgresPort is closed, start the
+# portable Postgres 15 under -PgRoot. Does not install Docker, does not start
+# or stop a Postgres service on port 5432, and does not print DATABASE_URL
+# or any other secret.
 param(
     [string]$ListenHost = "127.0.0.1",
     [int]$PostgresPort = 5433,
-    [int]$WebPort = 8001
+    [int]$WebPort = 8001,
+    [string]$PgRoot = "C:\Users\suhas\Documents\Codex\2026-09-27\here-s-a-full-laptop-setup\work\local-postgres"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,8 +36,127 @@ function Test-PortOpen([string]$TargetHost, [int]$Port) {
     }
 }
 
+function Get-PostmasterPid([string]$DataDir) {
+    $pidFile = Join-Path $DataDir "postmaster.pid"
+    if (-not (Test-Path $pidFile)) {
+        return $null
+    }
+    $lines = @(Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue)
+    if ($lines.Count -lt 1) {
+        return $null
+    }
+    $first = [string]$lines[0]
+    if ($first -match '^\s*(\d+)') {
+        return [int]$Matches[1]
+    }
+    return $null
+}
+
+function Test-LivePostgresPid([int]$ProcessId) {
+    if ($ProcessId -le 0) {
+        return $false
+    }
+    $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $proc) {
+        return $false
+    }
+    return ($proc.ProcessName -eq "postgres")
+}
+
+function Move-StalePostmasterPid([string]$DataDir) {
+    $pidFile = Join-Path $DataDir "postmaster.pid"
+    if (-not (Test-Path $pidFile)) {
+        return
+    }
+    $existing = Get-PostmasterPid $DataDir
+    if (($existing -ne $null) -and (Test-LivePostgresPid $existing)) {
+        return
+    }
+    $stamp = Get-Date -Format "yyyyMMddHHmmss"
+    $moved = $pidFile + ".stale-" + $stamp
+    Move-Item -LiteralPath $pidFile -Destination $moved -Force
+    Write-Output "Moved stale postmaster.pid aside ($moved)"
+}
+
+function Test-PostgresSelect1 {
+    $binDir = Join-Path $PgRoot "15\bin"
+    $psql = Join-Path $binDir "psql.exe"
+    if (Test-Path $psql) {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $env:PGCONNECT_TIMEOUT = "8"
+        & $psql -h $ListenHost -p $PostgresPort -d postgres -w -t -A -c "SELECT 1" | Out-Null
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $prev
+        return ($code -eq 0)
+    }
+    $helper = Join-Path $PSScriptRoot "wait_postgres.py"
+    if (-not (Test-Path $helper)) {
+        return $false
+    }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $Python $helper $ListenHost "$PostgresPort"
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+    return ($code -eq 0)
+}
+
+function Wait-PostgresReady([int]$TimeoutSeconds) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if ((Test-PortOpen $ListenHost $PostgresPort) -and (Test-PostgresSelect1)) {
+            return $true
+        }
+        Start-Sleep -Seconds 2
+    }
+    return $false
+}
+
+function Start-PortablePostgres {
+    if ($PostgresPort -eq 5432) {
+        Write-Error "This script never starts or touches a Postgres service on port 5432."
+        return
+    }
+    $binDir = Join-Path $PgRoot "15\bin"
+    $pgCtl = Join-Path $binDir "pg_ctl.exe"
+    $dataDir = Join-Path $PgRoot "data"
+    $logFile = Join-Path $PgRoot "postgres-stderr.log"
+    if (-not (Test-Path $pgCtl)) {
+        Write-Error ("Portable Postgres pg_ctl not found at {0}. Set -PgRoot to the local-postgres folder (15\bin and data)." -f $pgCtl)
+        return
+    }
+    if (-not (Test-Path $dataDir)) {
+        Write-Error ("Portable Postgres data directory not found at {0}." -f $dataDir)
+        return
+    }
+    $existing = Get-PostmasterPid $dataDir
+    if (($existing -ne $null) -and (Test-LivePostgresPid $existing)) {
+        Write-Output ("Portable Postgres already running (pid {0}); waiting for {1}:{2}" -f $existing, $ListenHost, $PostgresPort)
+        return
+    }
+    Move-StalePostmasterPid $dataDir
+    $portOpt = "-p $PostgresPort"
+    Write-Output ("Starting portable Postgres 15 on {0}:{1}" -f $ListenHost, $PostgresPort)
+    & $pgCtl start -D $dataDir -o $portOpt -l $logFile -w -t 600
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error ("pg_ctl start failed with exit code {0}. See {1}." -f $LASTEXITCODE, $logFile)
+    }
+}
+
+if ($PostgresPort -eq 5432) {
+    Write-Error "This script never starts or touches a Postgres service on port 5432."
+}
+
 if (-not (Test-PortOpen $ListenHost $PostgresPort)) {
-    Write-Error ("Postgres is not accepting connections on {0}:{1}. This script does not use Docker and does not touch a Postgres service on port 5432. Start the local Postgres 15 instance that listens on port {1}, then run this script again." -f $ListenHost, $PostgresPort)
+    Start-PortablePostgres
+    if (-not (Wait-PostgresReady 600)) {
+        Write-Error ("Postgres is not accepting connections on {0}:{1} after start. This script does not use Docker and does not touch a Postgres service on port 5432." -f $ListenHost, $PostgresPort)
+    }
+} elseif (-not (Test-PostgresSelect1)) {
+    if (-not (Wait-PostgresReady 60)) {
+        Write-Error ("Postgres port {0}:{1} is open but SELECT 1 failed." -f $ListenHost, $PostgresPort)
+    }
 }
 
 $RunDir = Join-Path $Root "data\run"

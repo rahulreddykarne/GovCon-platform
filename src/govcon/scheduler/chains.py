@@ -193,96 +193,102 @@ def _run_chain_locked(chain_name: str, settings, *, trigger: str, lock_connectio
             error=chain_error,
         )
 
-    # Execute each step in its own session.
-    for step_name in chain_def.steps:
-        # Stop before a new step if the connection that owns our lock was lost.
-        from sqlalchemy import text
-        try:
-            lock_connection.execute(text("SELECT 1"))
-            lock_connection.commit()
-        except Exception as exc:
-            failed_step = step_name
-            chain_error = f"chain lock connection was lost: {exc}"
-            break
-        step_fn = _STEP_FUNCTIONS.get(step_name)
-        if step_fn is None:
-            logger.error("chain=%s step=%s: no implementation found", chain_name, step_name)
-            failed_step = step_name
-            chain_error = f"No implementation for step '{step_name}'"
-            break
+    from govcon.ingest.sam_quota import begin_sam_budget, reset_sam_budget
 
-        logger.info("chain=%s step=%s starting", chain_name, step_name)
-        try:
-            with session_scope(settings) as step_db:
-                result = _invoke_step(step_fn, step_db, settings)
-        except Exception as exc:
-            result = StepResult(step=step_name, status="failed", error=str(exc))
-            logger.exception("chain=%s step=%s uncaught error", chain_name, step_name)
-
-        step_results.append(result)
-
-        if result.failed and step_name in chain_def.soft_steps:
-            logger.error(
-                "chain=%s step=%s FAILED (soft): %s — continuing with later steps",
-                chain_name,
-                step_name,
-                result.error,
-            )
-            soft_errors.append(f"{step_name}: {result.error}")
-            continue
-
-        if result.failed:
-            logger.error(
-                "chain=%s step=%s FAILED: %s — aborting chain",
-                chain_name,
-                step_name,
-                result.error,
-            )
-            failed_step = step_name
-            chain_error = result.error
-            break
-
-        if result.status == "completed_with_errors":
-            soft_errors.append(f"{step_name}: {result.error}")
-        logger.info("chain=%s step=%s %s", chain_name, step_name, result.status)
-        steps_completed.append(step_name)
-
-    finished_at = datetime.now(timezone.utc)
-    if failed_step is not None:
-        status = "failed"
-    elif soft_errors:
-        status = "completed_with_errors"
-        chain_error = "; ".join(soft_errors)
-    else:
-        status = "succeeded"
-    row_counts = {r.step: r.row_counts() for r in step_results}
-
-    # Update the job_run record in a fresh session.
+    begin_sam_budget(settings.sam_request_budget_per_run)
     try:
-        with session_scope(settings) as db:
-            from sqlalchemy import select as sa_select
-            completed_run = db.scalars(
-                sa_select(SchedulerJobRun).where(SchedulerJobRun.id == run_id)
-            ).first()
-            if completed_run is not None:
-                completed_run.finished_at = finished_at
-                completed_run.status = status
-                completed_run.steps_completed = steps_completed
-                completed_run.failed_step = failed_step
-                completed_run.error = chain_error
-                completed_run.row_counts = row_counts
-    except Exception:
-        logger.exception("chain=%s: failed to update job_run id=%s", chain_name, run_id)
+        # Execute each step in its own session.
+        for step_name in chain_def.steps:
+            # Stop before a new step if the connection that owns our lock was lost.
+            from sqlalchemy import text
+            try:
+                lock_connection.execute(text("SELECT 1"))
+                lock_connection.commit()
+            except Exception as exc:
+                failed_step = step_name
+                chain_error = f"chain lock connection was lost: {exc}"
+                break
+            step_fn = _STEP_FUNCTIONS.get(step_name)
+            if step_fn is None:
+                logger.error("chain=%s step=%s: no implementation found", chain_name, step_name)
+                failed_step = step_name
+                chain_error = f"No implementation for step '{step_name}'"
+                break
 
-    return ChainResult(
-        chain_name=chain_name,
-        run_id=run_id,
-        status=status,
-        steps_completed=steps_completed,
-        failed_step=failed_step,
-        error=chain_error,
-        step_results=step_results,
-    )
+            logger.info("chain=%s step=%s starting", chain_name, step_name)
+            try:
+                with session_scope(settings) as step_db:
+                    result = _invoke_step(step_fn, step_db, settings)
+            except Exception as exc:
+                result = StepResult(step=step_name, status="failed", error=str(exc))
+                logger.exception("chain=%s step=%s uncaught error", chain_name, step_name)
+
+            step_results.append(result)
+
+            if result.failed and step_name in chain_def.soft_steps:
+                logger.error(
+                    "chain=%s step=%s FAILED (soft): %s — continuing with later steps",
+                    chain_name,
+                    step_name,
+                    result.error,
+                )
+                soft_errors.append(f"{step_name}: {result.error}")
+                continue
+
+            if result.failed:
+                logger.error(
+                    "chain=%s step=%s FAILED: %s — aborting chain",
+                    chain_name,
+                    step_name,
+                    result.error,
+                )
+                failed_step = step_name
+                chain_error = result.error
+                break
+
+            if result.status == "completed_with_errors":
+                soft_errors.append(f"{step_name}: {result.error}")
+            logger.info("chain=%s step=%s %s", chain_name, step_name, result.status)
+            steps_completed.append(step_name)
+
+        finished_at = datetime.now(timezone.utc)
+        if failed_step is not None:
+            status = "failed"
+        elif soft_errors:
+            status = "completed_with_errors"
+            chain_error = "; ".join(soft_errors)
+        else:
+            status = "succeeded"
+        row_counts = {r.step: r.row_counts() for r in step_results}
+
+        # Update the job_run record in a fresh session.
+        try:
+            with session_scope(settings) as db:
+                from sqlalchemy import select as sa_select
+                completed_run = db.scalars(
+                    sa_select(SchedulerJobRun).where(SchedulerJobRun.id == run_id)
+                ).first()
+                if completed_run is not None:
+                    completed_run.finished_at = finished_at
+                    completed_run.status = status
+                    completed_run.steps_completed = steps_completed
+                    completed_run.failed_step = failed_step
+                    completed_run.error = chain_error
+                    completed_run.row_counts = row_counts
+        except Exception:
+            logger.exception("chain=%s: failed to update job_run id=%s", chain_name, run_id)
+
+        return ChainResult(
+            chain_name=chain_name,
+            run_id=run_id,
+            status=status,
+            steps_completed=steps_completed,
+            failed_step=failed_step,
+            error=chain_error,
+            step_results=step_results,
+        )
+    finally:
+        reset_sam_budget()
 
 
 @dataclass

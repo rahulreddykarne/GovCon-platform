@@ -30,7 +30,9 @@ def test_postgres_timeout_preserves_explicit_configuration(monkeypatch):
     factory = Mock()
     monkeypatch.setattr("govcon.db.create_engine", factory)
     make_engine(Settings(_env_file=None, database_url="postgresql+psycopg://localhost/db"))
-    assert factory.call_args.kwargs["connect_args"] == {"connect_timeout": 5}
+    assert factory.call_args.kwargs["connect_args"] == {"connect_timeout": 30}
+    make_engine(Settings(_env_file=None, database_url="postgresql+psycopg://localhost/db", db_connect_timeout_seconds=12))
+    assert factory.call_args.kwargs["connect_args"] == {"connect_timeout": 12}
     make_engine(Settings(_env_file=None, database_url="postgresql+psycopg://localhost/db?connect_timeout=9"))
     assert factory.call_args.kwargs["connect_args"] == {}
     make_engine(Settings(_env_file=None, database_url="sqlite://"))

@@ -78,6 +78,56 @@ def test_every_page_is_sent_across_as_many_calls_as_needed(db, monkeypatch):
     assert len(run.output_json["ai_analysis_ids"]) == len(calls)
 
 
+def twenty_page_solicitation(db):
+    opp = Opportunity(source="sam", source_id=uuid4().hex, title="Twenty page RFQ", status="open", raw={}, links={})
+    db.add(opp)
+    db.flush()
+    pages = [f"PAGE-MARK-{n:02d} " + f"The contractor shall meet clause {n}. " * 40 for n in range(1, 21)]
+    document = SourceDocument(
+        file_id=800_000 + opp.id, filename="rfq.pdf", url=None, sha256="y" * 64, downloaded_at=None,
+        snapshot_id=None, document_type="solicitation", mime_type="application/pdf", text="\n\n".join(pages),
+        page_texts=pages, page_count=len(pages), text_extraction_status="success", classification="PUBLIC",
+    )
+    return opp, Inventory(documents=[document], warnings=[])
+
+
+def test_twenty_page_document_is_covered_across_resumable_passes(db, monkeypatch):
+    """A small per-run budget must resume unread pages until every page has been read."""
+    from govcon.models import ComplianceRun
+
+    opp, inventory = twenty_page_solicitation(db)
+    calls = provider(monkeypatch, usage={})
+    settings = Settings(
+        _env_file=None,
+        ai_max_input_tokens_per_opportunity=20_000,
+        ai_proposal_budget_share=0,
+    )
+    seen_pages: set[int] = set()
+    outcome = None
+    for _ in range(25):
+        before = len(calls)
+        outcome = run_ai_pass(db, opp, inventory, "A", settings=settings)
+        for call in calls[before:]:
+            for n in range(1, 21):
+                if f"PAGE-MARK-{n:02d}" in call["user_prompt"]:
+                    seen_pages.add(n)
+        if outcome.status == "complete":
+            break
+        assert outcome.status == "incomplete"
+        run = db.get(ComplianceRun, outcome.run_id)
+        resume = (run.output_json or {}).get("resume") or {}
+        assert resume.get("next_chunk_index", 0) >= 1 or seen_pages
+        assert resume.get("inventory_hash")
+    assert outcome is not None and outcome.status == "complete"
+    assert seen_pages == set(range(1, 21))
+    final = db.get(ComplianceRun, outcome.run_id)
+    coverage = final.output_json["coverage"]
+    assert coverage["chunks_sent"] == coverage["chunks_total"]
+    truncation = [g for g in coverage["gaps"] if g.get("reason") not in {"download_failed", "no_extracted_content"}]
+    assert truncation == []
+    assert final.output_json.get("resume") in (None, {})
+
+
 def test_exhausted_budget_makes_the_pass_incomplete_with_named_pages(db, monkeypatch):
     opp, inventory = long_solicitation(db)
     calls = provider(monkeypatch, usage={})  # unreported usage keeps the full reservation
