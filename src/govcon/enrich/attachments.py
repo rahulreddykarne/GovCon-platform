@@ -429,7 +429,6 @@ def fetch_attachment(
     """Fetch, store and extract one ref (OCR included). Opens no database session."""
     from govcon.enrich.ocr import ocr_config
     from govcon.enrich.source_documents import fetch_dibbs_pdf, sam_description_text
-
     from govcon.ingest.sam_quota import ensure_sam_budget, is_sam_api_url
 
     origin = ref.source_metadata.get("origin")
